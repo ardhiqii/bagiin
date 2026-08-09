@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+backend/venv/
+
+# Secrets & local config
+backend/.env
+
+# Database (contains user data)
+*.db
+*.db-journal
+
+# OS
+.DS_Store
+
+# Logs
+*.log
