@@ -209,6 +209,7 @@ function renderSettings() {
       <p class="muted" style="margin-bottom:10px;">Nomor ini bakal ditampilin ke orang yang mau bayar bill lu.</p>
       <div id="accounts-list"><div class="muted" style="text-align:center;padding:8px;">Memuat...</div></div>
       <button class="btn-outline btn-sm" id="add-account-btn" style="width:100%;margin-top:8px;">＋ Tambah metode bayar</button>
+      <button class="btn-outline btn-sm" id="paste-account-btn" style="width:100%;margin-top:8px;">📋 Tempel teks metode bayar</button>
       <div id="account-form" class="hidden" style="margin-top:10px;">
         <select id="acct-brand"></select>
         <input id="acct-no" placeholder="Nomor rekening / e-money" maxlength="40" style="margin-top:8px;">
@@ -310,9 +311,117 @@ function renderSettings() {
     } catch (e) { toast(e.message); }
   });
 
+  // paste-text account parser
+  $("#paste-account-btn").addEventListener("click", () => openPasteAccountsSheet(me.id, loadAccounts));
+
   // logout
   $("#logout-btn").addEventListener("click", () => {
     if (confirm("Keluar dari akun ini? Nama & riwayat di device ini bakal dihapus.")) logout();
+  });
+}
+
+// ---------- Paste-text account parser ----------
+function parseAccountsText(text) {
+  // Accepts lines like:
+  //   AUFA FAUQI ARDHIQI          <- holder (applies to following methods)
+  //   Bank Mandiri                <- brand
+  //   1630004111673               <- account number
+  //   Bank Jago 104276913799      <- brand + number on one line
+  //   GoPay 08990821878           <- e-money brand + number
+  // Returns [{brand, account_no, holder_name}]
+  const lines = String(text || "").split("\n").map(l => l.trim()).filter(Boolean);
+  const out = [];
+  let holder = "";
+  pendingBrand = null;
+  for (const line of lines) {
+    // brand on this line? (match longest brand name first)
+    const brand = BRANDS
+      .slice()
+      .sort((a, b) => b.c.length - a.c.length)
+      .find(b => line.toLowerCase().includes(b.c.toLowerCase()));
+    // number-like chunk on this line: digits, optionally grouped with spaces/dashes
+    const numMatch = line.match(/(?:^|\s)([0-9][0-9\s\-]{5,})/);
+    const number = numMatch ? numMatch[1].replace(/[\s\-]/g, "") : null;
+
+    if (brand && number) {
+      out.push({ brand: brand.c, account_no: number, holder_name: holder || null });
+    } else if (brand) {
+      // brand line only; next number line will attach to it
+      // (remember brand for the next numeric line)
+      pendingBrand = brand.c;
+    } else if (number) {
+      out.push({ brand: pendingBrand || "Lainnya", account_no: number, holder_name: holder || null });
+      pendingBrand = null;
+    } else {
+      // assume it's a holder name
+      holder = line;
+      pendingBrand = null;
+    }
+  }
+  return out;
+}
+
+let pendingBrand = null;
+
+function openPasteAccountsSheet(identityId, onAdded) {
+  const sheet = el(`
+    <div class="sheet-overlay" id="paste-acct-sheet">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">Tempel teks metode bayar</div>
+        <p class="muted" style="margin-bottom:10px;">Copy dari notes/m-banking, contoh:</p>
+        <div class="card" style="background:var(--surface-2);border:none;margin-bottom:10px;padding:10px 12px;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6;">
+          AUFA FAUQI ARDHIQI<br>Bank Mandiri<br>1630004111673<br>Bank Jago<br>104276913799
+        </div>
+        <textarea id="paste-input" rows="6" placeholder="Tempel teks di sini..." style="width:100%;resize:vertical;margin-bottom:10px;"></textarea>
+        <button class="btn-primary" id="parse-acct-btn" style="width:100%;">Parse</button>
+        <div id="paste-result"></div>
+        <button class="btn-outline" id="close-sheet" style="width:100%;margin-top:8px;">Tutup</button>
+      </div>
+    </div>`);
+  document.body.appendChild(sheet);
+  $("#close-sheet", sheet).addEventListener("click", () => sheet.remove());
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) sheet.remove(); });
+
+  $("#parse-acct-btn", sheet).addEventListener("click", () => {
+    const parsed = parseAccountsText($("#paste-input", sheet).value);
+    const box = $("#paste-result", sheet);
+    if (!parsed.length) {
+      box.innerHTML = `<p class="muted" style="margin-top:10px;color:var(--red);">Gak nemu metode bayar. Cek formatnya: nama (opsional), nama bank, nomor.</p>`;
+      return;
+    }
+    box.innerHTML = `
+      <div class="card" style="background:var(--surface-2);border:none;margin-top:10px;">
+        <div class="label-sm" style="margin-bottom:6px;">Ketemu ${parsed.length} metode</div>
+        ${parsed.map((p, i) => `
+          <div class="account-row">
+            ${brandChipHtml(p.brand)}
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:13px;">${esc(p.brand)}</div>
+              <div class="muted" style="font-size:12px;">${esc(p.account_no)}${p.holder_name ? " · " + esc(p.holder_name) : ""}</div>
+            </div>
+            <button class="btn-sm paste-rm" data-i="${i}" style="background:var(--red-bg);color:var(--red);flex-shrink:0;">✕</button>
+          </div>`).join("")}
+        <button class="btn-green btn-sm" id="save-parsed" style="width:100%;margin-top:8px;">Tambah Semua</button>
+      </div>`;
+    $$(".paste-rm", box).forEach(btn => btn.addEventListener("click", () => {
+      const idx = +btn.dataset.i;
+      parsed.splice(idx, 1);
+      btn.closest(".card").remove();
+      if (!parsed.length) box.innerHTML = `<p class="muted" style="margin-top:10px;">Semua dihapus. Tempel teks lain kalau mau.</p>`;
+    }));
+    $("#save-parsed", box).addEventListener("click", async () => {
+      try {
+        for (const p of parsed) {
+          await apiJson(`/api/identities/${identityId}/accounts`, "POST", {
+            brand: p.brand, account_no: p.account_no, holder_name: p.holder_name,
+          });
+        }
+        sheet.remove();
+        toast(`Ditambah ${parsed.length} metode ✓`);
+        if (onAdded) onAdded();
+      } catch (e) { toast(e.message); }
+    });
   });
 }
 
@@ -332,6 +441,7 @@ function renderCreate() {
         <div class="muted">Biar gak ribet ngetik manual</div>
       </div>
       <input type="file" id="file-input" accept="image/*" class="hidden">
+      <button class="btn-outline" id="manual-btn" style="width:100%;margin-top:12px;">✍️ Bikin Manual (tanpa foto)</button>
     </div>`;
   $("#back-btn").addEventListener("click", () => location.hash = "#/");
 
@@ -367,6 +477,12 @@ function renderCreate() {
     if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
     await uploadAndOcr(f);
   });
+  $("#manual-btn").addEventListener("click", () => {
+    renderVerify({
+      items: [], subtotal: 0, tax: 0, service: 0, total: 0,
+      photo_path: null, merchant: "", date: "",
+    }, true);
+  });
 }
 
 async function uploadAndOcr(file) {
@@ -388,9 +504,9 @@ async function uploadAndOcr(file) {
 }
 
 // ---------- Verify OCR result ----------
-let verifyState = { items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null, title: "", merchant: "", transacted_at: "" };
+let verifyState = { items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null, title: "", merchant: "", transacted_at: "", manual: false };
 
-function renderVerify(ocr) {
+function renderVerify(ocr, manual = false) {
   verifyState = {
     items: ocr.items || [],
     subtotal: ocr.subtotal || 0,
@@ -401,12 +517,13 @@ function renderVerify(ocr) {
     title: ocr.merchant || "",
     merchant: ocr.merchant || "",
     transacted_at: ocr.date || "",
+    manual,
   };
   const app = $("div#app");
   app.innerHTML = `
     <div class="topbar">
       <button class="btn-icon" id="back-btn">←</button>
-      <div class="brand" style="font-size:16px;">Periksa Hasil</div>
+      <div class="brand" style="font-size:16px;">${manual ? "Bikin Manual" : "Periksa Hasil"}</div>
       <div style="width:44px;"></div>
     </div>
     ${verifyState.photo_path ? `
@@ -417,7 +534,7 @@ function renderVerify(ocr) {
     <div class="card" style="margin-bottom:12px;">
       <div class="label-sm">Judul bill</div>
       <input id="title-input" placeholder="Contoh: Makan Sushi" value="${esc(verifyState.title)}" maxlength="60" style="margin-top:4px;">
-      ${verifyState.merchant ? `<div class="muted" style="font-size:13px;margin-top:4px;">Dibaca dari struk: ${esc(verifyState.merchant)}</div>` : ""}
+      ${!manual && verifyState.merchant ? `<div class="muted" style="font-size:13px;margin-top:4px;">Dibaca dari struk: ${esc(verifyState.merchant)}</div>` : ""}
       <div class="field-row" style="margin-top:10px;">
         <div style="flex:1;">
           <label>Tanggal transaksi</label>
@@ -426,7 +543,7 @@ function renderVerify(ocr) {
       </div>
     </div>
     <div class="card" id="items-card">
-      <div class="card-title">Item <span class="muted">(cek ulang, edit kalau salah)</span></div>
+      <div class="card-title">Item <span class="muted">(${manual ? "ketik item & harganya" : "cek ulang, edit kalau salah"})</span></div>
       <div id="items-list"></div>
       <button class="btn-outline btn-sm" id="add-item-btn" style="width:100%;margin-top:8px;">＋ Tambah item</button>
     </div>
@@ -460,7 +577,7 @@ function renderVerify(ocr) {
   });
   $("#title-input").addEventListener("input", (e) => verifyState.title = e.target.value);
   $("#date-input").addEventListener("input", (e) => verifyState.transacted_at = e.target.value);
-  bindRupiahInput($("#subtotal-input"), () => updateVerifyTotal());
+  bindRupiahInput($("#subtotal-input"), () => { verifyState.subtotalTouched = true; updateVerifyTotal(); });
   bindRupiahInput($("#tax-input"), () => updateVerifyTotal());
   bindRupiahInput($("#service-input"), () => updateVerifyTotal());
   $("#create-bill-btn").addEventListener("click", createBillFinal);
@@ -493,17 +610,23 @@ function renderVerifyItems() {
 }
 
 function updateVerifyTotal() {
-  const subtotal = rupiahParse($("#subtotal-input").value);
+  const sumItems = verifyState.items.reduce((s, i) => s + (i.price || 0), 0);
+  // manual mode: subtotal auto-follows items unless user typed their own value
+  let subtotal = rupiahParse($("#subtotal-input").value);
+  if (verifyState.manual && !verifyState.subtotalTouched) {
+    subtotal = sumItems;
+    const si = $("#subtotal-input");
+    if (si) si.value = rupiahFmt(subtotal);
+  }
   const tax = rupiahParse($("#tax-input").value);
   const service = rupiahParse($("#service-input").value);
   const total = subtotal + tax + service;
   verifyState.subtotal = subtotal; verifyState.tax = tax; verifyState.service = service;
   const td = $("#total-display");
   if (td) td.textContent = fmt(total);
-  const sumItems = verifyState.items.reduce((s, i) => s + (i.price || 0), 0);
   const warn = $("#sum-warn");
   if (warn) {
-    if (sumItems !== subtotal) {
+    if (!verifyState.manual && sumItems !== subtotal) {
       warn.classList.remove("hidden");
       warn.textContent = `Total item (${fmt(sumItems)}) beda dari subtotal (${fmt(subtotal)}). Kemungkinan ada diskon.`;
     } else warn.classList.add("hidden");
