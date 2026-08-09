@@ -105,8 +105,13 @@ async function loadHomeHistory() {
           </div>
         </div>
         <div style="font-weight:700;" class="money">${fmt(b.total_idr)}</div>
+        ${b.creator_identity_id === state.identity.id ? `<button class="btn-sm delete-bill" data-id="${b.id}" data-title="${esc(b.title)}" title="Hapus bill" style="background:var(--red-bg);color:var(--red);flex-shrink:0;">🗑️</button>` : ""}
       </div>`).join("");
     $$(".history-row", box).forEach(r => r.addEventListener("click", () => location.hash = "#/b/" + r.dataset.id));
+    $$(".delete-bill", box).forEach(btn => btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openDeleteBillConfirm(btn.dataset.id, btn.dataset.title);
+    }));
   } catch (e) {
     box.innerHTML = `<div class="muted" style="text-align:center;padding:12px;">${esc(e.message)}</div>`;
   }

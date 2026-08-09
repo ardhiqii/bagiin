@@ -231,96 +231,69 @@ function computeMyTotal(data, selected, myIdentityId) {
   return computeMyBreakdown(data, selected).total;
 }
 
-// ---------- Pay sheet (2 steps: confirm items -> choose method + mark paid) ----------
+// ---------- Pay sheet (confirm items -> mark paid) ----------
 function openPaySheet(data, me, totalMine, alreadyPaid) {
-  const bd = computeMyBreakdown(data, state.selected);
-  const myItems = data.items.filter(it => state.selected.has(it.id));
-  const taxService = (data.bill.tax_idr || 0) + (data.bill.service_idr || 0);
   const sheet = el(`
     <div class="sheet-overlay" id="pay-sheet">
       <div class="sheet">
         <div class="sheet-handle"></div>
         <div class="sheet-title">Konfirmasi item</div>
-        ${myItems.length ? `
-        <div class="card" style="background:var(--surface-2);border:none;margin-bottom:12px;">
-          <div class="label-sm" style="margin-bottom:8px;">Item kamu (${myItems.length})</div>
-          ${myItems.map(it => {
-            const n = (data.sel_by_item[it.id] || []).length;
-            const share = (() => {
-              if (n <= 1) return "";
-              const others = n;
-              return ` <span class="muted">· dibagi ${others}</span>`;
-            })();
-            return `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:14px;">
-              <div style="flex:1;min-width:0;">${esc(it.name)}${share}</div>
-              <div class="money">${fmt(it.price_idr)}</div>
-            </div>`;
-          }).join("")}
-          <div class="break-row" style="margin-top:8px;">
-            <span class="muted">Subtotal item</span>
-            <span class="money">${fmt(bd.sub)}</span>
-          </div>
-          ${taxService > 0 ? `
-          <div class="break-row">
-            <span class="muted">Pajak & service <span class="label-sm" style="text-transform:none;">(PPN ${fmt(data.bill.tax_idr || 0)} + SC ${fmt(data.bill.service_idr || 0)})</span></span>
-            <span class="money">${fmt(bd.tax)}</span>
-          </div>` : ""}
-        </div>` : ""}
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-          <span class="label">Total kamu</span>
-          <span class="money" style="font-size:32px;font-weight:800;">${fmt(bd.total)}</span>
-        </div>
-        <button class="btn-primary" id="confirm-items">Lanjut, pilih metode bayar</button>
+        <p class="muted" style="margin-bottom:10px;">Ini item yang kamu pilih. Ketuk item buat batalkan.</p>
+        <div id="pay-items"></div>
+        <div id="pay-total"></div>
+        <button class="${alreadyPaid ? "btn-green" : "btn-primary"}" id="confirm-pay">
+          ${alreadyPaid ? "✓ Sudah bayar" : "Tandai sudah bayar"}
+        </button>
         <button class="btn-outline" id="close-sheet" style="width:100%;margin-top:8px;">Batal</button>
       </div>
     </div>`);
   document.body.appendChild(sheet);
   $("#close-sheet", sheet).addEventListener("click", () => sheet.remove());
   sheet.addEventListener("click", (e) => { if (e.target === sheet) sheet.remove(); });
-  $("#confirm-items", sheet).addEventListener("click", () => renderPayStep2(data, me, alreadyPaid, bd.total, sheet));
-}
 
-function renderPayStep2(data, me, alreadyPaid, totalMine, sheet) {
-  sheet.querySelector(".sheet").innerHTML = `
-    <div class="sheet-handle"></div>
-    <div class="sheet-title">Bayar ke ${esc(data.creator_name)}</div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-      <span class="label">Total kamu</span>
-      <span class="money" style="font-size:24px;font-weight:800;">${fmt(totalMine)}</span>
-    </div>
-    <div class="card" style="background:var(--surface-2);border:none;margin-bottom:16px;">
-      <div class="label-sm" style="margin-bottom:8px;">Kirim lewat</div>
-      ${(data.creator_accounts || []).length ? `
-        <div class="pay-methods">${data.creator_accounts.map((a, i) => `
-          <div class="account-row pay-method ${i === 0 ? "selected" : ""}" data-acc="${esc(a.id)}">
-            <span class="pay-radio"></span>
-            ${brandChipHtml(a.brand)}
-            <div style="flex:1;min-width:0;">
-              <div style="font-weight:600;font-size:13px;">${esc(a.brand)}</div>
-              <div class="muted" style="font-size:12px;">${esc(a.account_no)}${a.holder_name ? " · " + esc(a.holder_name) : ""}</div>
-            </div>
-            <button class="btn-sm copy-acct" data-no="${esc(a.account_no)}" style="flex-shrink:0;">📋</button>
-          </div>`).join("")}
-        </div>`
-        : `<div class="muted">Minta nomor rekening/e-money ke ${esc(data.creator_name)} ya</div>`}
-    </div>
-    <button class="${alreadyPaid ? "btn-green" : "btn-primary"}" id="confirm-pay">
-      ${alreadyPaid ? "✓ Sudah bayar" : "Tandai sudah bayar"}
-    </button>
-    <button class="btn-outline" id="close-sheet" style="width:100%;margin-top:8px;">Batal</button>`;
-  let selectedAcc = (data.creator_accounts || [])[0] || null;
-  $$(".pay-method", sheet).forEach(row => row.addEventListener("click", (e) => {
-    if (e.target.closest(".copy-acct")) return;
-    $$(".pay-method", sheet).forEach(r => r.classList.remove("selected"));
-    row.classList.add("selected");
-    selectedAcc = data.creator_accounts.find(a => String(a.id) === row.dataset.acc) || null;
-  }));
-  $$(".copy-acct", sheet).forEach(b => b.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(b.dataset.no); toast("Nomor disalin 📋"); }
-    catch (e) { toast("Gagal salin"); }
-  }));
-  $("#close-sheet", sheet).addEventListener("click", () => sheet.remove());
-  sheet.addEventListener("click", (e) => { if (e.target === sheet) sheet.remove(); });
+  const renderItems = () => {
+    const items = data.items.filter(it => state.selected.has(it.id));
+    const bd = computeMyBreakdown(data, state.selected);
+    const taxService = (data.bill.tax_idr || 0) + (data.bill.service_idr || 0);
+    const itemsBox = $("#pay-items", sheet);
+    itemsBox.innerHTML = items.length ? `
+      <div class="card" style="background:var(--surface-2);border:none;margin-bottom:12px;">
+        <div class="label-sm" style="margin-bottom:4px;">Item kamu (${items.length})</div>
+        ${items.map(it => {
+          const n = (data.sel_by_item[it.id] || []).length;
+          return `
+          <div class="pay-item" data-item="${it.id}">
+            <div style="flex:1;min-width:0;">${esc(it.name)}${n > 1 ? ` <span class="muted">· dibagi ${n}</span>` : ""}</div>
+            <div class="money">${fmt(it.price_idr)}</div>
+            <span class="pay-item-x">✕</span>
+          </div>`;
+        }).join("")}
+        <div class="break-row" style="margin-top:8px;">
+          <span class="muted">Subtotal item</span>
+          <span class="money">${fmt(bd.sub)}</span>
+        </div>
+        ${taxService > 0 ? `
+        <div class="break-row">
+          <span class="muted">Pajak & service <span class="label-sm" style="text-transform:none;">(PPN ${fmt(data.bill.tax_idr || 0)} + SC ${fmt(data.bill.service_idr || 0)})</span></span>
+          <span class="money">${fmt(bd.tax)}</span>
+        </div>` : ""}
+      </div>` : `<div class="card" style="background:var(--surface-2);border:none;margin-bottom:12px;text-align:center;color:var(--text-3);font-size:14px;">Belum ada item dipilih</div>`;
+    $("#pay-total", sheet).innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <span class="label">Total kamu</span>
+        <span class="money" style="font-size:32px;font-weight:800;">${fmt(bd.total)}</span>
+      </div>`;
+    $$(".pay-item", itemsBox).forEach(row => row.addEventListener("click", () => {
+      const id = parseInt(row.dataset.item, 10);
+      if (state.selected.has(id)) state.selected.delete(id);
+      else state.selected.add(id);
+      updateGuestSelection(data, me);
+      renderItems();
+    }));
+    $("#confirm-pay", sheet).disabled = items.length === 0;
+  };
+
+  renderItems();
   $("#confirm-pay", sheet).addEventListener("click", async () => {
     try {
       await api(`/api/bills/${data.bill.id}/payments/${me.id}/paid`, { method: "POST" });
