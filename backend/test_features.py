@@ -94,8 +94,103 @@ def test_rename_and_code():
     print("PASS rename + code regenerate kills old code")
 
 
+def test_claim_participant():
+    """Guest "amel" should claim the creator-typed slot "Amel" (normalized match)."""
+    creator = db.new_identity("Aufa", role="creator")
+    bill = db.create_bill(
+        creator_id=creator["id"], title="Makan", tax_mode="proportional",
+        subtotal=30000, tax=0, service=0, total=30000,
+        items=[{"name": "A", "price": 10000}, {"name": "B", "price": 20000}],
+        participants=["Aufa", "Amel"],
+    )
+    bid = bill["id"]
+
+    # before claim: participant exists unclaimed
+    data = db.get_bill(bid)
+    part = next(p for p in data["participants"] if p["name"] == "Amel")
+    assert part["identity_id"] is None, part
+
+    # guest with different casing claims it on selection
+    amel = db.new_identity("amel")
+    db.claim_participant(bid, amel["id"], amel["name"])
+    data = db.get_bill(bid)
+    part = next(p for p in data["participants"] if p["name"] == "Amel")
+    assert part["identity_id"] == amel["id"], part
+
+    # a second "amel" can't steal the claim
+    amel2 = db.new_identity("AMEL")
+    db.claim_participant(bid, amel2["id"], amel2["name"])
+    data = db.get_bill(bid)
+    part = next(p for p in data["participants"] if p["name"] == "Amel")
+    assert part["identity_id"] == amel["id"], part
+
+    # claim survives update_bill (same name keeps its identity link)
+    db.update_bill(bid, title="Makan Bareng", merchant=None, transacted_at=None,
+                   participants=["Aufa", "Amel"], items=[{"name": "A", "price": 10000}],
+                   subtotal=10000, tax=0, service=0, total=10000)
+    data = db.get_bill(bid)
+    part = next(p for p in data["participants"] if p["name"] == "Amel")
+    assert part["identity_id"] == amel["id"], part
+
+    # response payload: participants include identity_id, claimed person shows canonical name
+    from main import _compute_response
+    resp = _compute_response(db.get_bill(bid))
+    part = next(p for p in resp["participants"] if p["name"] == "Amel")
+    assert part["identity_id"] == amel["id"], resp["participants"]
+    db.set_selections(bid, amel["id"], [data["items"][0]["id"]])
+    resp = _compute_response(db.get_bill(bid))
+    amel_person = next(p for p in resp["people"] if p["identity_id"] == amel["id"])
+    assert amel_person["name"] == "Amel", resp["people"]
+    print("PASS claim participant: normalized matching, no double identity, survives edit")
+
+
+def test_join_and_remove_person():
+    """Join-based roster: creator declares count, guests join, creator can delete."""
+    creator = db.new_identity("Aufa", role="creator")
+    bill = db.create_bill(
+        creator_id=creator["id"], title="Makan", tax_mode="proportional",
+        subtotal=30000, tax=0, service=0, total=30000,
+        items=[{"name": "A", "price": 10000}, {"name": "B", "price": 20000}],
+        participants=[], participant_count=3,
+    )
+    bid = bill["id"]
+    data = db.get_bill(bid)
+    assert data["bill"]["participant_count"] == 3
+
+    # two guests join (no selections yet)
+    amel = db.new_identity("amel")
+    budi = db.new_identity("Budi")
+    db.join_bill(bid, amel["id"], "amel")
+    db.join_bill(bid, budi["id"], "Budi")
+
+    # roster includes joined-but-unselected people
+    from main import _compute_response
+    resp = _compute_response(db.get_bill(bid))
+    names = {p["identity_id"]: p["name"] for p in resp["people"]}
+    assert names[amel["id"]] == "amel", names
+    assert names[budi["id"]] == "Budi", names
+    joined = [p for p in resp["people"] if p["total_idr"] == 0]
+    assert len(joined) == 2, resp["people"]
+
+    # creator removes a wrong/double join -> gone from roster + selections
+    amel_id = amel["id"]
+    db.set_selections(bid, amel_id, [data["items"][0]["id"]])
+    assert len(db.get_bill(bid)["selections"]) == 1
+    db.remove_person(bid, amel_id)
+    data = db.get_bill(bid)
+    assert len(data["selections"]) == 0, data["selections"]
+    assert all(p["identity_id"] != amel_id for p in data["payments"]), data["payments"]
+    resp = _compute_response(data)
+    assert all(p["identity_id"] != amel_id for p in resp["people"]), resp["people"]
+    # budi still there
+    assert any(p["identity_id"] == budi["id"] for p in resp["people"])
+    print("PASS join roster + creator removes wrong/double join")
+
+
 if __name__ == "__main__":
     test_update_bill_diff()
     test_payment_accounts()
     test_rename_and_code()
+    test_claim_participant()
+    test_join_and_remove_person()
     print("\nALL PASS")

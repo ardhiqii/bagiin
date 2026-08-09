@@ -433,7 +433,20 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
   Yang belum: Splid screenshots, Reddit/UX articles. Data inti (3 app) sudah lengkap.
 - Subagent teknis: 44 tool calls, semua fakta kunci diverifikasi dari dokumen resmi.
 
-## 15. Changelog
+## Changelog
+
+### v13 (2026-08-09) — join-based roster
+- Creator no longer types participant names — just declares headcount (`Berapa orang ikut?`).
+- Guests appear in the bill the moment they join (name prompt → join), even before picking items.
+- No name cross-check: roster = who actually joined. Legacy typed-name claim kept for old bills.
+- Creator can remove a wrong/double join (✕ per person, confirm sheet) — drops their items, payment, claim.
+- Fixed "kamu" label showing on other people's items (guest side now shows real selector name).
+- Guest pay sheet shows item confirmation list before marking paid + standalone "Metode bayar" sheet.
+- Fix: "Total kamu" preview now mirrors backend tax calc (proportional to selected subtotal).
+
+### v12 (2026-08-09) — participant claiming
+- Guest with matching name (case-insensitive) claims the creator-typed slot — "Amel" vs "amel" = same person.
+- (Superseded by v13's join model; claim still runs for legacy bills.)
 
 ### 2026-08-09 (v7) — feedback user dari test langsung
 - **Foto struk asli di screen Periksa Hasil**: `/api/ocr` sudah nyimpen foto ke

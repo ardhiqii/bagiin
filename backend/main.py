@@ -94,10 +94,22 @@ def _compute_response(bill_data: dict):
         creator_id=bill["creator_identity_id"],
     )
     # attach names
+    # merge joined-but-unselected people (payment rows) into the roster, so the
+    # creator sees everyone who joined even before they pick items
+    joined_ids = {p["identity_id"] for p in bill_data["payments"]}
+    known_ids = {p["identity_id"] for p in result["people"]}
+    for jid in joined_ids - known_ids:
+        result["people"].append({
+            "identity_id": jid, "subtotal_idr": 0, "tax_idr": 0, "total_idr": 0,
+        })
+    result["people"].sort(key=lambda p: -p["total_idr"])
     all_ids = [p["identity_id"] for p in result["people"]]
     names = _names_for_identities(all_ids)
+    # claimed participants -> canonical display name (creator-typed casing, e.g. "Amel")
+    claimed = {p["identity_id"]: p["name"] for p in bill_data["participants"]
+               if p.get("identity_id")}
     for p in result["people"]:
-        p["name"] = names.get(p["identity_id"], "?")
+        p["name"] = claimed.get(p["identity_id"]) or names.get(p["identity_id"], "?")
     # creator name
     creator = db.get_identity(bill["creator_identity_id"])
     creator_name = creator["name"] if creator else "?"
@@ -114,7 +126,7 @@ def _compute_response(bill_data: dict):
         "creator_name": creator_name,
         "creator_accounts": db.get_accounts(bill["creator_identity_id"]),
         "items": bill_data["items"],
-        "participants": [p["name"] for p in bill_data["participants"]],
+        "participants": [{"name": p["name"], "identity_id": p["identity_id"]} for p in bill_data["participants"]],
         "people": result["people"],
         "sel_by_item": sel_by_item,
         "warnings": result["warnings"],
@@ -240,12 +252,15 @@ async def create_bill(request: Request):
     if not items:
         raise HTTPException(400, "Minimal 1 item")
     participants = [p.strip() for p in (data.get("participants") or []) if p.strip()]
+    pc = data.get("participant_count")
+    participant_count = int(pc) if pc not in (None, "") else None
     created = db.create_bill(
         creator_id=ident["id"],
         title=title,
         merchant=merchant,
         transacted_at=transacted_at,
         tax_mode=data.get("tax_mode", "proportional"),
+        participant_count=participant_count,
         subtotal=int(data.get("subtotal", 0)),
         tax=int(data.get("tax", 0)),
         service=int(data.get("service", 0)),
@@ -276,12 +291,15 @@ async def update_bill(bill_id: str, request: Request):
     if not items:
         raise HTTPException(400, "Minimal 1 item")
     participants = [p.strip() for p in (data.get("participants") or []) if p.strip()]
+    pc = data.get("participant_count")
+    participant_count = int(pc) if pc not in (None, "") else None
     db.update_bill(
         bill_id,
         title=(data.get("title") or "").strip() or bill_data["bill"]["title"],
         merchant=(data.get("merchant") or "").strip() or None,
         transacted_at=(data.get("transacted_at") or "").strip() or None,
         participants=participants,
+        participant_count=participant_count,
         items=[{"id": i.get("id"), "name": i["name"], "price": int(i["price"])} for i in items],
         subtotal=int(data.get("subtotal", 0)),
         tax=int(data.get("tax", 0)),
@@ -301,6 +319,30 @@ def close_bill(bill_id: str, request: Request):
     return {"ok": True}
 
 
+@app.post("/api/bills/{bill_id}/join")
+def join_bill(bill_id: str, request: Request):
+    bill_data = _bill_or_404(bill_id)
+    if bill_data["bill"]["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup")
+    ident = _identity_from_request(request)
+    db.join_bill(bill_id, ident["id"], ident["name"])
+    return _compute_response(db.get_bill(bill_id))
+
+
+@app.delete("/api/bills/{bill_id}/people/{identity_id}")
+def remove_person(bill_id: str, identity_id: str, request: Request):
+    bill_data = _bill_or_404(bill_id)
+    ident = _identity_from_request(request)
+    if bill_data["bill"]["creator_identity_id"] != ident["id"]:
+        raise HTTPException(403, "Hanya pembuat bill")
+    if bill_data["bill"]["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup")
+    if identity_id == ident["id"]:
+        raise HTTPException(400, "Gak bisa hapus diri sendiri (pembuat bill)")
+    db.remove_person(bill_id, identity_id)
+    return _compute_response(db.get_bill(bill_id))
+
+
 @app.post("/api/bills/{bill_id}/selections")
 async def set_selections(bill_id: str, request: Request):
     data = await _read_json(request)
@@ -313,6 +355,7 @@ async def set_selections(bill_id: str, request: Request):
     valid = {i["id"] for i in bill_data["items"]}
     if any(i not in valid for i in item_ids):
         raise HTTPException(400, "Item invalid")
+    db.claim_participant(bill_id, ident["id"], ident["name"])
     db.set_selections(bill_id, ident["id"], item_ids)
     return _compute_response(db.get_bill(bill_id))
 
@@ -320,6 +363,8 @@ async def set_selections(bill_id: str, request: Request):
 @app.post("/api/bills/{bill_id}/payments/{identity_id}/paid")
 def mark_paid(bill_id: str, identity_id: str, request: Request):
     _bill_or_404(bill_id)
+    ident = _identity_from_request(request)
+    db.claim_participant(bill_id, ident["id"], ident["name"])
     db.mark_paid(bill_id, identity_id)
     return {"ok": True}
 

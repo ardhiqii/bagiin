@@ -366,7 +366,7 @@ async function uploadAndOcr(file) {
 }
 
 // ---------- Verify OCR result ----------
-let verifyState = { items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null, participants: [], title: "", merchant: "", transacted_at: "" };
+let verifyState = { items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null, participant_count: null, title: "", merchant: "", transacted_at: "" };
 
 function renderVerify(ocr) {
   verifyState = {
@@ -376,7 +376,7 @@ function renderVerify(ocr) {
     service: ocr.service || 0,
     total: ocr.total || 0,
     photo_path: ocr.photo_path || null,
-    participants: [],
+    participant_count: null,
     title: ocr.merchant || "",
     merchant: ocr.merchant || "",
     transacted_at: ocr.date || "",
@@ -423,9 +423,9 @@ function renderVerify(ocr) {
       <div id="sum-warn" class="error-text hidden" style="margin-top:6px;"></div>
     </div>
     <div class="card">
-      <div class="card-title">Siapa yang ikut?</div>
-      <div id="participants-input"></div>
-      <button class="btn-outline btn-sm" id="add-person-btn" style="width:100%;margin-top:8px;">＋ Tambah orang</button>
+      <div class="card-title">Berapa orang ikut?</div>
+      <p class="muted" style="font-size:13px;margin-bottom:8px;">Gak usah tulis nama — yang join nanti kelihatan sendiri. Kalau kosong, gak ada target jumlah.</p>
+      <input type="text" inputmode="numeric" id="count-input" placeholder="cth: 4" value="${verifyState.participant_count || ""}" maxlength="2" style="max-width:120px;">
     </div>
     <div style="height:12px;"></div>
     <div class="sticky-bar"><div class="sticky-inner">
@@ -436,16 +436,16 @@ function renderVerify(ocr) {
   const photo = $("#receipt-photo");
   if (photo) photo.addEventListener("click", () => photo.classList.toggle("expanded"));
   renderVerifyItems();
-  renderVerifyParticipants();
   bindVerifyInputs();
 
   $("#add-item-btn").addEventListener("click", () => {
     verifyState.items.push({ name: "", price: 0 });
     renderVerifyItems();
   });
-  $("#add-person-btn").addEventListener("click", () => {
-    verifyState.participants.push("");
-    renderVerifyParticipants();
+  $("#count-input").addEventListener("input", (e) => {
+    const d = e.target.value.replace(/\D/g, "").slice(0, 2);
+    verifyState.participant_count = d ? parseInt(d, 10) : null;
+    e.target.value = d;
   });
   $("#title-input").addEventListener("input", (e) => verifyState.title = e.target.value);
   $("#date-input").addEventListener("input", (e) => verifyState.transacted_at = e.target.value);
@@ -481,23 +481,6 @@ function renderVerifyItems() {
   }));
 }
 
-function renderVerifyParticipants() {
-  const box = $("#participants-input");
-  if (!box) return;
-  box.innerHTML = verifyState.participants.map((p, idx) => `
-    <div style="display:flex;gap:8px;margin-bottom:8px;">
-      <input data-idx="${idx}" value="${esc(p)}" placeholder="Nama orang" style="flex:1;">
-      <button data-role="delp" data-idx="${idx}" class="btn-sm" style="background:var(--red-bg);color:var(--red);">✕</button>
-    </div>`).join("");
-  $$("#participants-input input").forEach(inp => inp.addEventListener("input", (e) => {
-    verifyState.participants[+e.target.dataset.idx] = e.target.value;
-  }));
-  $$("#participants-input [data-role=delp]").forEach(btn => btn.addEventListener("click", (e) => {
-    verifyState.participants.splice(+e.target.dataset.idx, 1);
-    renderVerifyParticipants();
-  }));
-}
-
 function updateVerifyTotal() {
   const subtotal = rupiahParse($("#subtotal-input").value);
   const tax = rupiahParse($("#tax-input").value);
@@ -524,9 +507,6 @@ async function createBillFinal() {
   btn.textContent = "Membuat...";
   const items = verifyState.items.filter(i => i.name && i.price > 0);
   if (!items.length) { toast("Minimal 1 item"); btn.disabled = false; btn.textContent = "Bikin Bill & Bagikan"; return; }
-  const participants = verifyState.participants.map(p => p.trim()).filter(Boolean);
-  const me = state.identity.name;
-  if (!participants.includes(me)) participants.unshift(me);
   try {
     const bill = await apiJson("/api/bills", "POST", {
       title: verifyState.title || verifyState.merchant || "Bill",
@@ -538,7 +518,7 @@ async function createBillFinal() {
       service: verifyState.service,
       total: verifyState.subtotal + verifyState.tax + verifyState.service,
       items,
-      participants,
+      participant_count: verifyState.participant_count,
       photo_path: verifyState.photo_path,
     });
     location.hash = "#/b/" + bill.id;

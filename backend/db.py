@@ -38,6 +38,7 @@ def init_db():
             service_idr INTEGER NOT NULL DEFAULT 0,
             total_idr INTEGER NOT NULL DEFAULT 0,
             tax_mode TEXT NOT NULL DEFAULT 'proportional',
+            participant_count INTEGER,   -- creator-declared headcount (nullable)
             status TEXT NOT NULL DEFAULT 'open',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             closed_at TEXT
@@ -46,6 +47,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS bill_participant (
             bill_id TEXT NOT NULL REFERENCES bill(id),
             name TEXT NOT NULL,
+            identity_id TEXT,           -- claimed by a real identity (nullable)
             sort_order INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (bill_id, name)
         );
@@ -104,6 +106,14 @@ def init_db():
         conn.execute("ALTER TABLE bill ADD COLUMN merchant TEXT")
     if "transacted_at" not in cols:
         conn.execute("ALTER TABLE bill ADD COLUMN transacted_at TEXT")
+    # migration: participant claiming (identity_id on bill_participant)
+    pcols = {r[1] for r in conn.execute("PRAGMA table_info(bill_participant)").fetchall()}
+    if "identity_id" not in pcols:
+        conn.execute("ALTER TABLE bill_participant ADD COLUMN identity_id TEXT")
+    # migration: participant_count on bill
+    bcols = {r[1] for r in conn.execute("PRAGMA table_info(bill)").fetchall()}
+    if "participant_count" not in bcols:
+        conn.execute("ALTER TABLE bill ADD COLUMN participant_count INTEGER")
     conn.commit()
     conn.close()
 
@@ -204,6 +214,7 @@ def delete_account(account_id: int, identity_id: str) -> bool:
 def create_bill(creator_id: str, title: str, tax_mode: str,
                 subtotal: int, tax: int, service: int, total: int,
                 items: list[dict], participants: list[str],
+                participant_count: int | None = None,
                 photo_path: str | None = None,
                 merchant: str | None = None,
                 transacted_at: str | None = None) -> dict:
@@ -211,10 +222,10 @@ def create_bill(creator_id: str, title: str, tax_mode: str,
     bill_id = new_id()
     conn.execute(
         """INSERT INTO bill (id, creator_identity_id, title, merchant, transacted_at,
-           photo_path, subtotal_idr, tax_idr, service_idr, total_idr, tax_mode)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           photo_path, subtotal_idr, tax_idr, service_idr, total_idr, tax_mode, participant_count)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (bill_id, creator_id, title, merchant, transacted_at, photo_path,
-         subtotal, tax, service, total, tax_mode),
+         subtotal, tax, service, total, tax_mode, participant_count),
     )
     for i, p in enumerate(participants):
         conn.execute(
@@ -241,7 +252,7 @@ def get_bill(bill_id: str):
         "SELECT * FROM item WHERE bill_id = ? ORDER BY sort_order, id", (bill_id,)
     ).fetchall()
     participants = conn.execute(
-        "SELECT name FROM bill_participant WHERE bill_id = ? ORDER BY sort_order",
+        "SELECT name, identity_id FROM bill_participant WHERE bill_id = ? ORDER BY sort_order",
         (bill_id,),
     ).fetchall()
     selections = conn.execute(
@@ -268,7 +279,8 @@ def get_bill(bill_id: str):
 
 def update_bill(bill_id: str, title: str, merchant: str | None,
                 transacted_at: str | None, participants: list[str],
-                items: list[dict], subtotal: int, tax: int, service: int, total: int):
+                items: list[dict], subtotal: int, tax: int, service: int, total: int,
+                participant_count: int | None = None):
     """Full bill update with item diffing.
 
     - Items that keep their id -> updated in place, selections preserved.
@@ -278,16 +290,20 @@ def update_bill(bill_id: str, title: str, merchant: str | None,
     conn = get_db()
     conn.execute(
         """UPDATE bill SET title = ?, merchant = ?, transacted_at = ?,
-           subtotal_idr = ?, tax_idr = ?, service_idr = ?, total_idr = ?
+           subtotal_idr = ?, tax_idr = ?, service_idr = ?, total_idr = ?, participant_count = ?
            WHERE id = ?""",
-        (title, merchant, transacted_at, subtotal, tax, service, total, bill_id),
+        (title, merchant, transacted_at, subtotal, tax, service, total, participant_count, bill_id),
     )
-    # participants (simple replace)
+    # participants (simple replace, but keep identity_id claims for same names)
+    claims = {r["name"]: r["identity_id"] for r in conn.execute(
+        "SELECT name, identity_id FROM bill_participant WHERE bill_id = ? AND identity_id IS NOT NULL",
+        (bill_id,)).fetchall()}
     conn.execute("DELETE FROM bill_participant WHERE bill_id = ?", (bill_id,))
     for i, p in enumerate(participants):
+        name = p.strip()
         conn.execute(
-            "INSERT INTO bill_participant (bill_id, name, sort_order) VALUES (?, ?, ?)",
-            (bill_id, p.strip(), i),
+            "INSERT INTO bill_participant (bill_id, name, identity_id, sort_order) VALUES (?, ?, ?, ?)",
+            (bill_id, name, claims.get(name), i),
         )
     # items diff
     existing = {r["id"] for r in conn.execute(
@@ -316,6 +332,64 @@ def update_bill(bill_id: str, title: str, merchant: str | None,
     conn.close()
 
 
+def claim_participant(bill_id: str, identity_id: str, name: str):
+    """Link a real identity to a creator-typed participant slot.
+
+    Matching is normalized (trimmed + case-insensitive) so "Amel" typed by the
+    creator and "amel" typed by the guest resolve to the same person. Only
+    unclaimed slots are taken; claiming is idempotent.
+    """
+    if not name or not name.strip():
+        return
+    conn = get_db()
+    conn.execute(
+        """UPDATE bill_participant SET identity_id = ?
+           WHERE bill_id = ? AND identity_id IS NULL
+             AND LOWER(TRIM(name)) = LOWER(TRIM(?))""",
+        (identity_id, bill_id, name),
+    )
+    conn.commit()
+    conn.close()
+
+
+def ensure_payment(bill_id: str, identity_id: str):
+    """Record that an identity is part of a bill (join). Idempotent."""
+    conn = get_db()
+    conn.execute(
+        "INSERT OR IGNORE INTO payment (bill_id, identity_id, amount_idr) VALUES (?, ?, 0)",
+        (bill_id, identity_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def join_bill(bill_id: str, identity_id: str, name: str):
+    """Guest joins a bill: recorded as a participant (roster = who joined)."""
+    ensure_payment(bill_id, identity_id)
+    claim_participant(bill_id, identity_id, name)  # legacy typed-name claim, harmless
+
+
+def remove_person(bill_id: str, identity_id: str):
+    """Creator removes a person from a bill: drops their selections, payment
+    record, and any legacy participant claim."""
+    conn = get_db()
+    conn.execute(
+        """DELETE FROM selection WHERE identity_id = ? AND item_id IN
+           (SELECT id FROM item WHERE bill_id = ?)""",
+        (identity_id, bill_id),
+    )
+    conn.execute(
+        "DELETE FROM payment WHERE bill_id = ? AND identity_id = ?",
+        (bill_id, identity_id),
+    )
+    conn.execute(
+        "UPDATE bill_participant SET identity_id = NULL WHERE bill_id = ? AND identity_id = ?",
+        (bill_id, identity_id),
+    )
+    conn.commit()
+    conn.close()
+
+
 def set_selections(bill_id: str, identity_id: str, item_ids: list[int]):
     """Replace a person's selections for a bill. Auto-ensure identity in payments."""
     conn = get_db()
@@ -329,7 +403,6 @@ def set_selections(bill_id: str, identity_id: str, item_ids: list[int]):
             "INSERT OR IGNORE INTO selection (item_id, identity_id) VALUES (?, ?)",
             (item_id, identity_id),
         )
-    # ensure payment row exists for this identity (amount computed later)
     conn.execute(
         "INSERT OR IGNORE INTO payment (bill_id, identity_id, amount_idr) VALUES (?, ?, 0)",
         (bill_id, identity_id),

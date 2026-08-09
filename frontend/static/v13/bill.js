@@ -1,5 +1,8 @@
 /* Bagiin frontend - bill view (guest picker + creator summary) */
-console.log("BAGIIN_BILLVIEW_V3_LOADED");
+console.log("BAGIIN_BILLVIEW_V4_LOADED");
+
+// normalized name compare: "Amel" == "amel" == " AMEL "
+const normName = (s) => String(s || "").trim().toLowerCase();
 
 // ---------- Bill view ----------
 async function loadBillView(billId) {
@@ -55,7 +58,8 @@ function renderGuestNamePrompt(billId, data) {
     if (!name) { toast("Isi nama dulu"); return; }
     try {
       await ensureIdentity(name);
-      renderGuestView(data, state.identity);
+      const fresh = await apiJson("/api/bills/" + billId + "/join", "POST", {});
+      renderGuestView(fresh, state.identity);
     } catch (e) { toast(e.message); }
   };
   $("#guest-go").addEventListener("click", go);
@@ -79,7 +83,7 @@ function renderGuestView(data, me) {
   // simpler: fetch my selections from selections list - we store only in sel_by_item with names
   // backend returns sel_by_item item_id -> [identity_name]. We match by name.
   Object.entries(data.sel_by_item || {}).forEach(([itemId, names]) => {
-    if (names.includes(me.name)) selected.add(parseInt(itemId, 10));
+    if (names.some(n => normName(n) === normName(me.name))) selected.add(parseInt(itemId, 10));
   });
   state.selected = selected;
 
@@ -104,6 +108,7 @@ function renderGuestView(data, me) {
       ${data.bill.transacted_at ? `<p class="muted" style="font-size:13px;">${esc(shortDate(data.bill.transacted_at))}</p>` : ""}
       <p class="muted" style="margin-top:6px;">dibuat oleh ${esc(data.creator_name)}</p>
     </div>
+    <button class="btn-outline" id="pay-methods-btn" style="width:100%;margin-bottom:12px;">💳 Metode bayar ${esc(data.creator_name)}</button>
     ${data.bill.status === "closed" ? `<div class="warn-box">Bill ini sudah ditutup. Pembagian sudah final.</div>` : ""}
     <div class="card">
       <div class="card-title">Centang yang kamu tanggung</div>
@@ -119,6 +124,7 @@ function renderGuestView(data, me) {
     </div></div>` : ""}`;
 
   $("#back-btn").addEventListener("click", () => location.hash = "#/");
+  $("#pay-methods-btn").addEventListener("click", () => openAccountsSheet(data));
   bindItemRows(data, me);
   $("#pay-btn").addEventListener("click", () => {
     const freshTotal = computeMyTotal(data, state.selected, me.id);
@@ -129,9 +135,12 @@ function renderGuestView(data, me) {
 function itemRowHtml(it, data, selected, myName) {
   const isSel = selected.has(it.id);
   const selectors = (data.sel_by_item[it.id] || []);
-  const shareText = selectors.length > 1
-    ? `dishare ${selectors.length} orang: ${selectors.map(esc).join(", ")}`
-    : (selectors.length === 1 ? `kamu` : `belum dipilih`);
+  const mine = selectors.some(n => normName(n) === normName(myName));
+  let shareText;
+  if (selectors.length === 0) shareText = "belum dipilih";
+  else if (selectors.length === 1) shareText = mine ? "kamu" : selectors[0];
+  else if (mine && selectors.length > 1) shareText = `dishare ${selectors.length} orang (termasuk kamu): ${selectors.map(esc).join(", ")}`;
+  else shareText = `dishare ${selectors.length} orang: ${selectors.map(esc).join(", ")}`;
   return `
     <div class="item-row ${isSel ? "selected" : ""}" data-item="${it.id}">
       <div class="item-check">${isSel ? "✓" : ""}</div>
@@ -169,6 +178,14 @@ async function updateGuestSelection(data, me) {
     row.classList.toggle("selected", sel);
     const check = $(".item-check", row);
     if (check) check.textContent = sel ? "✓" : "";
+    // optimistic share label (server will confirm on next full load)
+    const share = $(".item-share", row);
+    if (share) {
+      const others = (data.sel_by_item[id] || []).filter(n => normName(n) !== normName(me.name)).length;
+      share.textContent = sel
+        ? (others > 0 ? `dishare ${others + 1} orang (termasuk kamu)` : "kamu")
+        : (others > 0 ? data.sel_by_item[id].join(", ") : "belum dipilih");
+    }
   });
   // persist — serialize saves so rapid taps can't reorder POSTs (last tap wins)
   const ids = Array.from(state.selected);
@@ -179,36 +196,51 @@ async function updateGuestSelection(data, me) {
 }
 
 function computeMyTotal(data, selected, myIdentityId) {
-  // items shared among selectors - simulate backend calc for display
-  // count selectors per item from sel_by_item (names), but my selection may be stale;
-  // estimate using current selected set + existing selectors
+  // Mirror backend calc: item price split among selectors, tax proportional to
+  // the TOTAL SELECTED subtotal (not the whole bill), remainder rounds away.
   let sub = 0;
+  let totalSel = 0;
   const myName = state.identity ? state.identity.name : "";
   data.items.forEach(it => {
     if (!selected.has(it.id)) return;
     const existing = (data.sel_by_item[it.id] || []);
     // selectors count: existing selectors that aren't me, +1 if I just selected
-    let count = existing.filter(n => n !== myName).length;
+    let count = existing.filter(n => normName(n) !== normName(myName)).length;
     if (selected.has(it.id)) count += 1;
-    if (count <= 0) count = 1;
+    if (count <= 0) return;
     sub += Math.round(it.price_idr / count);
+    totalSel += it.price_idr;
   });
   // tax proportional
-  const totalSub = data.items.reduce((s, i) => s + i.price_idr, 0);
   const taxService = (data.bill.tax_idr || 0) + (data.bill.service_idr || 0);
   let tax = 0;
-  if (totalSub > 0) tax = Math.round(sub * taxService / totalSub);
+  if (totalSel > 0) tax = Math.round(sub * taxService / totalSel);
   return sub + tax;
 }
 
 // ---------- Pay sheet ----------
 function openPaySheet(data, me, totalMine, alreadyPaid) {
+  const myItems = data.items.filter(it => state.selected.has(it.id));
   const sheet = el(`
     <div class="sheet-overlay" id="pay-sheet">
       <div class="sheet">
         <div class="sheet-handle"></div>
-        <div class="sheet-title">Total kamu</div>
-        <div class="money" style="font-size:32px;font-weight:800;margin-bottom:16px;">${fmt(totalMine)}</div>
+        <div class="sheet-title">Konfirmasi & bayar</div>
+        ${myItems.length ? `
+        <div class="card" style="background:var(--surface-2);border:none;margin-bottom:12px;">
+          <div class="label-sm" style="margin-bottom:8px;">Item kamu (${myItems.length})</div>
+          ${myItems.map(it => {
+            const n = (data.sel_by_item[it.id] || []).length;
+            return `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:14px;">
+              <div style="flex:1;min-width:0;">${esc(it.name)}${n > 1 ? ` <span class="muted">· dibagi ${n}</span>` : ""}</div>
+              <div class="money">${fmt(it.price_idr)}</div>
+            </div>`;
+          }).join("")}
+        </div>` : ""}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <span class="label">Total kamu</span>
+          <span class="money" style="font-size:32px;font-weight:800;">${fmt(totalMine)}</span>
+        </div>
         <div class="card" style="background:var(--surface-2);border:none;margin-bottom:16px;">
           <div class="label-sm" style="margin-bottom:8px;">Kirim ke (pembuat bill)</div>
           <div style="font-size:15px;font-weight:600;">${esc(data.creator_name)}</div>
@@ -247,6 +279,36 @@ function openPaySheet(data, me, totalMine, alreadyPaid) {
   });
 }
 
+// ---------- Accounts sheet (standalone payment methods) ----------
+function openAccountsSheet(data) {
+  const sheet = el(`
+    <div class="sheet-overlay" id="accounts-sheet">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">Metode bayar ${esc(data.creator_name)}</div>
+        <div class="muted" style="margin-bottom:12px;">Bayar langsung ke ${esc(data.creator_name)} lewat:</div>
+        ${(data.creator_accounts || []).length ? `<div>${data.creator_accounts.map(a => `
+          <div class="account-row">
+            ${brandChipHtml(a.brand)}
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:14px;">${esc(a.brand)}</div>
+              <div class="muted" style="font-size:13px;">${esc(a.account_no)}${a.holder_name ? " · " + esc(a.holder_name) : ""}</div>
+            </div>
+            <button class="btn-sm copy-acct" data-no="${esc(a.account_no)}" style="flex-shrink:0;">📋 Salin</button>
+          </div>`).join("")}</div>`
+          : `<div class="card" style="background:var(--surface-2);border:none;"><div class="muted">${esc(data.creator_name)} belum nambah metode bayar. Minta nomor rekening/e-money-nya langsung ya.</div></div>`}
+        <button class="btn-outline" id="close-sheet" style="width:100%;margin-top:16px;">Tutup</button>
+      </div>
+    </div>`);
+  document.body.appendChild(sheet);
+  $$(".copy-acct", sheet).forEach(b => b.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(b.dataset.no); toast("Nomor disalin 📋"); }
+    catch (e) { toast("Gagal salin"); }
+  }));
+  $("#close-sheet", sheet).addEventListener("click", () => sheet.remove());
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) sheet.remove(); });
+}
+
 // ---------- Creator view: summary ----------
 function renderCreatorView(data) {
   const app = $("#app");
@@ -254,7 +316,8 @@ function renderCreatorView(data) {
   const totalPaid = data.people.filter(p => p.paid === "paid").reduce((s, p) => s + p.total_idr, 0);
   const totalUnpaid = data.people.filter(p => p.paid !== "paid").reduce((s, p) => s + p.total_idr, 0);
   const hasAssignments = data.people.some(p => p.total_idr > 0);
-  const missing = data.participants.filter(p => !data.people.some(pp => pp.name === p));
+  const notJoined = data.bill.participant_count && data.people.length < data.bill.participant_count;
+  const notPicked = data.people.filter(p => !p.subtotal_idr && p.identity_id !== me.id);
 
   app.innerHTML = `
     <div class="topbar">
@@ -277,7 +340,8 @@ function renderCreatorView(data) {
       </div>
     </div>
     ${data.warnings.length ? `<div class="warn-box"><strong>Perhatian:</strong><ul>${data.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>` : ""}
-    ${missing.length ? `<div class="warn-box"><strong>Belum pilih:</strong><ul>${missing.map(m => `<li>${esc(m)}</li>`).join("")}</ul></div>` : ""}
+    ${notJoined ? `<div class="warn-box"><strong>Belum join:</strong> baru ${data.people.length} dari ${data.bill.participant_count} orang. Share link-nya ya 🔗</div>` : ""}
+    ${notPicked.length ? `<div class="warn-box"><strong>Belum pilih item:</strong><ul>${notPicked.map(m => `<li>${esc(m.name)}</li>`).join("")}</ul></div>` : ""}
     <div class="card">
       <div class="card-title">Pembagian</div>
       <div id="people-list">
@@ -291,6 +355,7 @@ function renderCreatorView(data) {
             <div style="text-align:right;">
               <div class="money person-total">${fmt(p.total_idr)}</div>
               <span class="chip ${p.paid === "paid" ? "chip-green" : "chip-red"}">${p.paid === "paid" ? "✓ bayar" : "belum"}</span>
+              ${data.bill.status === "open" && p.identity_id !== me.id ? `<button class="btn-sm remove-person" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}" style="background:var(--red-bg);color:var(--red);margin-top:6px;display:block;margin-left:auto;">✕</button>` : ""}
             </div>
           </div>`).join("")}
       </div>
@@ -323,6 +388,33 @@ function renderCreatorView(data) {
   if (editBtn) editBtn.addEventListener("click", () => renderEditBill(data));
   const closeBtn = $("#close-bill-btn");
   if (closeBtn) closeBtn.addEventListener("click", () => openCloseConfirm(data));
+  $$(".remove-person").forEach(b => b.addEventListener("click", () =>
+    openRemovePersonConfirm(data, b.dataset.id, b.dataset.name)));
+}
+
+// ---------- Remove person confirm ----------
+function openRemovePersonConfirm(data, identityId, name) {
+  const sheet = el(`
+    <div class="sheet-overlay" id="remove-person-sheet">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">Hapus ${esc(name)}?</div>
+        <p class="muted" style="margin-bottom:16px;">Item yang dia pilih, status bayar, dan catatannya di bill ini ikut kehapus. Cocok buat yang salah join atau dobel.</p>
+        <button class="btn-primary" id="confirm-remove" style="width:100%;background:var(--red);border-color:var(--red);">Hapus</button>
+        <button class="btn-outline" id="cancel-remove" style="width:100%;margin-top:8px;">Batal</button>
+      </div>
+    </div>`);
+  document.body.appendChild(sheet);
+  $("#cancel-remove", sheet).addEventListener("click", () => sheet.remove());
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) sheet.remove(); });
+  $("#confirm-remove", sheet).addEventListener("click", async () => {
+    try {
+      const fresh = await apiJson(`/api/bills/${data.bill.id}/people/${identityId}`, "DELETE", {});
+      sheet.remove();
+      toast(`${name} dihapus dari bill 🗑️`);
+      loadBillView(data.bill.id);
+    } catch (e) { toast(e.message); }
+  });
 }
 
 // ---------- Creator pick mode: pick your own items ----------
@@ -333,7 +425,7 @@ function renderCreatorPick(data) {
   // build selected set for creator (match by name like guest view)
   const selected = new Set();
   Object.entries(data.sel_by_item || {}).forEach(([itemId, names]) => {
-    if (names.includes(me.name)) selected.add(parseInt(itemId, 10));
+    if (names.some(n => normName(n) === normName(me.name))) selected.add(parseInt(itemId, 10));
   });
   state.selected = selected;
   const totalMine = computeMyTotal(data, selected, me.id);
@@ -373,7 +465,7 @@ function renderCreatorPick(data) {
 }
 
 // ---------- Creator edit bill ----------
-let editState = { items: [], subtotal: 0, tax: 0, service: 0, total: 0, title: "", transacted_at: "", participants: [], merchant: "" };
+let editState = { items: [], subtotal: 0, tax: 0, service: 0, total: 0, title: "", transacted_at: "", participant_count: null, merchant: "" };
 
 function renderEditBill(data) {
   const app = $("#app");
@@ -386,7 +478,7 @@ function renderEditBill(data) {
     title: data.bill.title || "",
     merchant: data.bill.merchant || "",
     transacted_at: data.bill.transacted_at || "",
-    participants: (data.participants || []).slice(),
+    participant_count: data.bill.participant_count ?? ((data.participants || []).length || null),
   };
   app.innerHTML = `
     <div class="topbar">
@@ -424,9 +516,9 @@ function renderEditBill(data) {
       <div id="sum-warn" class="error-text hidden" style="margin-top:6px;"></div>
     </div>
     <div class="card">
-      <div class="card-title">Siapa yang ikut?</div>
-      <div id="participants-input"></div>
-      <button class="btn-outline btn-sm" id="add-person-btn" style="width:100%;margin-top:8px;">＋ Tambah orang</button>
+      <div class="card-title">Berapa orang ikut?</div>
+      <p class="muted" style="font-size:13px;margin-bottom:8px;">Yang join kelihatan di halaman bill — gak usah tulis nama.</p>
+      <input type="text" inputmode="numeric" id="count-input" placeholder="cth: 4" value="${editState.participant_count || ""}" maxlength="2" style="max-width:120px;">
     </div>
     <div style="height:12px;"></div>
     <div class="sticky-bar"><div class="sticky-inner">
@@ -435,13 +527,16 @@ function renderEditBill(data) {
 
   $("#back-btn").addEventListener("click", () => loadBillView(data.bill.id));
   renderEditItems();
-  renderEditParticipants();
   updateEditTotal();
   bindRupiahInput($("#subtotal-input"), () => updateEditTotal());
   bindRupiahInput($("#tax-input"), () => updateEditTotal());
   bindRupiahInput($("#service-input"), () => updateEditTotal());
   $("#add-item-btn").addEventListener("click", () => { editState.items.push({ id: null, name: "", price: 0 }); renderEditItems(); });
-  $("#add-person-btn").addEventListener("click", () => { editState.participants.push(""); renderEditParticipants(); });
+  $("#count-input").addEventListener("input", (e) => {
+    const d = e.target.value.replace(/\D/g, "").slice(0, 2);
+    editState.participant_count = d ? parseInt(d, 10) : null;
+    e.target.value = d;
+  });
   $("#title-input").addEventListener("input", (e) => editState.title = e.target.value);
   $("#date-input").addEventListener("input", (e) => editState.transacted_at = e.target.value);
   $("#save-bill-btn").addEventListener("click", () => saveEditBill(data.bill.id));
@@ -471,23 +566,6 @@ function renderEditItems() {
     editState.items.splice(+e.target.dataset.idx, 1);
     renderEditItems();
     updateEditTotal();
-  }));
-}
-
-function renderEditParticipants() {
-  const box = $("#participants-input");
-  if (!box) return;
-  box.innerHTML = editState.participants.map((p, idx) => `
-    <div style="display:flex;gap:8px;margin-bottom:8px;">
-      <input data-idx="${idx}" value="${esc(p)}" placeholder="Nama orang" style="flex:1;">
-      <button data-role="delp" data-idx="${idx}" class="btn-sm" style="background:var(--red-bg);color:var(--red);">✕</button>
-    </div>`).join("");
-  $$("#participants-input input").forEach(inp => inp.addEventListener("input", (e) => {
-    editState.participants[+e.target.dataset.idx] = e.target.value;
-  }));
-  $$("#participants-input [data-role=delp]").forEach(btn => btn.addEventListener("click", (e) => {
-    editState.participants.splice(+e.target.dataset.idx, 1);
-    renderEditParticipants();
   }));
 }
 
@@ -524,7 +602,7 @@ async function saveEditBill(billId) {
       service: editState.service,
       total: editState.subtotal + editState.tax + editState.service,
       items,
-      participants: editState.participants.map(p => p.trim()).filter(Boolean),
+      participant_count: editState.participant_count,
     });
     toast("Bill diupdate ✓");
     loadBillView(billId);
@@ -550,7 +628,7 @@ async function shareBill(billId, title) {
 }
 
 function openCloseConfirm(data) {
-  const missing = data.participants.filter(p => !data.people.some(pp => pp.name === p));
+  const notPicked = data.people.filter(p => !p.subtotal_idr && p.identity_id !== data.bill.creator_identity_id);
   const singles = (data.sel_by_item ? Object.entries(data.sel_by_item).filter(([id, names]) => names.length === 1) : []);
   const sheet = el(`
     <div class="sheet-overlay" id="close-sheet">
@@ -558,7 +636,7 @@ function openCloseConfirm(data) {
         <div class="sheet-handle"></div>
         <div class="sheet-title">Tutup Bill?</div>
         <p class="muted" style="margin-bottom:16px;">Setelah ditutup, pembagian jadi final dan gak bisa diubah.</p>
-        ${missing.length ? `<div class="warn-box"><strong>Belum pilih:</strong><ul>${missing.map(m => `<li>${esc(m)}</li>`).join("")}</ul></div>` : ""}
+        ${notPicked.length ? `<div class="warn-box"><strong>Belum pilih item:</strong><ul>${notPicked.map(m => `<li>${esc(m.name)}</li>`).join("")}</ul></div>` : ""}
         ${singles.length ? `<div class="warn-box"><strong>Item cuma dicentang 1 orang (mungkin mau dishare?):</strong><ul>
           ${singles.map(([id, names]) => { const it = data.items.find(i => i.id === +id); return it ? `<li>${esc(it.name)} - ${esc(names[0])} aja</li>` : ""; }).join("")}
         </ul></div>` : ""}
