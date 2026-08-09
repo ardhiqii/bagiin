@@ -426,6 +426,7 @@ async def upload_photo(bill_id: str, request: Request, file: UploadFile = File(.
     filename = secrets.token_hex(8) + ".jpg"
     path = UPLOAD_DIR / filename
     path.write_bytes(raw)
+    db.update_bill_photo(bill_id, str(path))
     return {"photo_path": str(path), "filename": filename}
 
 

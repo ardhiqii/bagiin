@@ -11,6 +11,68 @@ function statusChipHtml(data) {
   return `<span class="chip chip-green">Aktif</span>`;
 }
 
+// ---------- Receipt photo: view / upload ----------
+function photoBtnHtml(data, me) {
+  const isCreator = data.bill.creator_identity_id === me.id;
+  if (data.bill.photo_path) {
+    return `<button class="btn-outline btn-sm" id="view-photo-btn" style="width:100%;margin-top:10px;">🧾 Liat struk asli</button>`;
+  }
+  if (isCreator && data.bill.status === "open") {
+    return `<button class="btn-outline btn-sm" id="add-photo-btn" style="width:100%;margin-top:10px;">📷 Tambah foto struk</button>`;
+  }
+  return "";
+}
+
+function openPhotoSheet(bill) {
+  const fn = bill.photo_path.split("/").pop();
+  const sheet = el(`
+    <div class="sheet-overlay" id="photo-sheet">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">Struk asli</div>
+        <img src="/uploads/${encodeURIComponent(fn)}" alt="Struk asli" style="width:100%;border-radius:var(--r-md);" loading="lazy">
+        <button class="btn-outline" id="photo-close" style="width:100%;margin-top:10px;">Tutup</button>
+      </div>
+    </div>`);
+  document.body.appendChild(sheet);
+  $("#photo-close", sheet).addEventListener("click", () => sheet.remove());
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) sheet.remove(); });
+}
+
+function bindPhotoActions(data) {
+  const vb = $("#view-photo-btn");
+  if (vb) vb.addEventListener("click", () => openPhotoSheet(data.bill));
+  const ab = $("#add-photo-btn");
+  if (ab) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.style.display = "none";
+    document.body.appendChild(input);
+    ab.addEventListener("click", () => input.click());
+    input.addEventListener("change", async () => {
+      const f = input.files[0];
+      if (!f) return;
+      const fd = new FormData();
+      fd.append("file", f);
+      try {
+        const res = await fetch(`/api/bills/${data.bill.id}/photo`, {
+          method: "POST",
+          headers: { "X-Identity-Id": state.identity.id },
+          body: fd,
+        });
+        if (!res.ok) {
+          let m = "Gagal upload";
+          try { const d = await res.json(); m = d.detail || m; } catch (e) {}
+          throw new Error(m);
+        }
+        toast("Struk ditambahkan ✓");
+        loadBillView(data.bill.id);
+      } catch (e) { toast(e.message); }
+    });
+  }
+}
+
 // ---------- Bill view ----------
 async function loadBillView(billId) {
   const app = $("#app");
@@ -114,6 +176,7 @@ function renderGuestView(data, me) {
       ${data.bill.merchant ? `<p class="muted" style="margin-top:6px;">${esc(data.bill.merchant)}</p>` : ""}
       ${data.bill.transacted_at ? `<p class="muted" style="font-size:13px;">${esc(shortDate(data.bill.transacted_at))}</p>` : ""}
       <p class="muted" style="margin-top:6px;">dibuat oleh ${esc(data.creator_name)}</p>
+      ${photoBtnHtml(data, me)}
       ${data.settled && data.bill.status === "open" ? `<p class="muted" style="margin-top:6px;">Semua yang milih item udah bayar 🎉</p>` : ""}
     </div>
     <button class="btn-outline" id="pay-methods-btn" style="width:100%;margin-bottom:12px;">💳 Metode bayar ${esc(data.creator_name)}</button>
@@ -133,6 +196,7 @@ function renderGuestView(data, me) {
 
   $("#back-btn").addEventListener("click", () => location.hash = "#/");
   $("#pay-methods-btn").addEventListener("click", () => openAccountsSheet(data));
+  bindPhotoActions(data);
   bindItemRows(data, me);
   $("#pay-btn").addEventListener("click", () => {
     const freshTotal = computeMyTotal(data, state.selected, me.id);
@@ -402,6 +466,7 @@ function renderCreatorView(data) {
             ? `<span class="chip chip-red">${fmt(totalUnpaid)} belum</span>`
             : `<span class="chip chip-green">semua lunas</span>`)}</div>
       </div>
+      ${photoBtnHtml(data, me)}
     </div>
     ${warnHtml}
     <div class="card">
@@ -445,6 +510,7 @@ function renderCreatorView(data) {
 
   $("#back-btn").addEventListener("click", () => location.hash = "#/");
   $("#share-btn").addEventListener("click", () => shareBill(data.bill.id, data.bill.title));
+  bindPhotoActions(data);
   const pickBtn = $("#pick-mine-btn");
   if (pickBtn) pickBtn.addEventListener("click", () => renderCreatorPick(data));
   const editBtn = $("#edit-bill-btn");

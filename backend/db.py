@@ -293,6 +293,13 @@ def get_bill(bill_id: str):
     }
 
 
+def update_bill_photo(bill_id: str, photo_path: str | None):
+    conn = get_db()
+    conn.execute("UPDATE bill SET photo_path = ? WHERE id = ?", (photo_path, bill_id))
+    conn.commit()
+    conn.close()
+
+
 def update_bill(bill_id: str, title: str, merchant: str | None,
                 transacted_at: str | None, participants: list[str],
                 items: list[dict], subtotal: int, tax: int, service: int, total: int,
