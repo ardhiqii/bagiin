@@ -477,3 +477,24 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
   verified (creator pick + guest), race fix verified, bill test dibersihkan.
   CATATAN: ada 3 bill "Kitchen & Dimsum" di prod — 1 punya selections/payments
   asli dari user, JANGAN dibersihin.
+
+### 2026-08-10 (v10) — edit bill, akun/settings, transfer code, metode bayar
+- **Edit bill**: tombol "✏️ Edit" di creator view (bill open) → editor lengkap
+  (judul, tanggal, item, subtotal/PPN/service, peserta) → PUT /api/bills/{id}.
+  Backend `update_bill` baru: item diff — item yang id-nya dipertahankan →
+  centangan orang KEPE; item dihapus → centangannya ikut hapus; item baru →
+  insert. PUT sekarang cek status open (bill closed gak bisa diedit).
+- **Screen Akun**: tombol 👤 (dulu langsung logout, bikin bingung) → screen
+  settings: ganti nama, kode pemulihan, metode bayar, keluar (di bawah + konfirmasi).
+- **Transfer code (auto-generate)**: 12 karakter 3 grup (XXXX-XXXX-XXXX, alphabet
+  tanpa 0/O/1/I/L). Generate/regenerate via POST /code/generate — regenerate
+  langsung matiin kode lama (hash di-overwrite). Restore: link "Punya kode
+  pemulihan?" di onboarding.
+- **Metode bayar**: tabel `payment_account` + CRUD. 33 brand (bank, bank digital,
+  e-wallet) — warna diverifikasi subagent dari SVG asli (bukan logo file, chip
+  warna → aman lisensi). Pay sheet guest nampilin akun creator + tombol copy.
+- Endpoint baru: POST /api/identities/{id}/name, POST /code/generate,
+  GET/POST accounts, DELETE /api/accounts/{id}; bill response + `creator_accounts`.
+- Test: `test_features.py` (update_bill diff, accounts CRUD+ownership, rename,
+  code regenerate) + E2E browser (settings UI, edit flow, pay sheet, restore).
+- 2026-08-10: push ke GitHub — github.com/ardhiqii/bagiin (public, main).
