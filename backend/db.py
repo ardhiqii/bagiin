@@ -33,6 +33,8 @@ def init_db():
             merchant TEXT,
             transacted_at TEXT,
             photo_path TEXT,
+            paid_by_name TEXT,              -- display name of who paid (null = creator pays)
+            paid_by_identity_id TEXT REFERENCES identity(id),  -- resolved once that person joins
             subtotal_idr INTEGER NOT NULL DEFAULT 0,
             tax_idr INTEGER NOT NULL DEFAULT 0,
             service_idr INTEGER NOT NULL DEFAULT 0,
@@ -114,6 +116,11 @@ def init_db():
     bcols = {r[1] for r in conn.execute("PRAGMA table_info(bill)").fetchall()}
     if "participant_count" not in bcols:
         conn.execute("ALTER TABLE bill ADD COLUMN participant_count INTEGER")
+    # migration: paid_by (who paid the bill — null means creator pays)
+    if "paid_by_name" not in bcols:
+        conn.execute("ALTER TABLE bill ADD COLUMN paid_by_name TEXT")
+    if "paid_by_identity_id" not in bcols:
+        conn.execute("ALTER TABLE bill ADD COLUMN paid_by_identity_id TEXT")
     conn.commit()
     conn.close()
 
@@ -233,15 +240,16 @@ def create_bill(creator_id: str, title: str, tax_mode: str,
                 participant_count: int | None = None,
                 photo_path: str | None = None,
                 merchant: str | None = None,
-                transacted_at: str | None = None) -> dict:
+                transacted_at: str | None = None,
+                paid_by_name: str | None = None) -> dict:
     conn = get_db()
     bill_id = new_id()
     conn.execute(
         """INSERT INTO bill (id, creator_identity_id, title, merchant, transacted_at,
-           photo_path, subtotal_idr, tax_idr, service_idr, total_idr, tax_mode, participant_count)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           photo_path, paid_by_name, subtotal_idr, tax_idr, service_idr, total_idr, tax_mode, participant_count)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (bill_id, creator_id, title, merchant, transacted_at, photo_path,
-         subtotal, tax, service, total, tax_mode, participant_count),
+         paid_by_name, subtotal, tax, service, total, tax_mode, participant_count),
     )
     for i, p in enumerate(participants):
         conn.execute(
@@ -370,6 +378,34 @@ def claim_participant(bill_id: str, identity_id: str, name: str):
            WHERE bill_id = ? AND identity_id IS NULL
              AND LOWER(TRIM(name)) = LOWER(TRIM(?))""",
         (identity_id, bill_id, name),
+    )
+    # resolve paid_by: if the bill says "paid by <name>" and this person just
+    # claimed that slot, link them as the payer (unambiguous identity wins)
+    row = conn.execute(
+        "SELECT paid_by_identity_id, paid_by_name FROM bill WHERE id = ?", (bill_id,)
+    ).fetchone()
+    if (
+        row and row["paid_by_identity_id"] is None and row["paid_by_name"]
+        and row["paid_by_name"].strip().lower() == name.strip().lower()
+    ):
+        conn.execute(
+            "UPDATE bill SET paid_by_identity_id = ? WHERE id = ?",
+            (identity_id, bill_id),
+        )
+    conn.commit()
+    conn.close()
+
+
+def set_paid_by(bill_id: str, identity_id: str | None, name: str | None = None):
+    """Assign who paid the bill (null identity + null name = creator pays).
+
+    identity_id is preferred (unambiguous); name is kept as a display/resolve
+    fallback for people who haven't joined yet.
+    """
+    conn = get_db()
+    conn.execute(
+        "UPDATE bill SET paid_by_identity_id = ?, paid_by_name = ? WHERE id = ?",
+        (identity_id, name, bill_id),
     )
     conn.commit()
     conn.close()

@@ -177,7 +177,9 @@ def test_join_and_remove_person():
     assert names[amel["id"]] == "amel", names
     assert names[budi["id"]] == "Budi", names
     joined = [p for p in resp["people"] if p["total_idr"] == 0]
-    assert len(joined) == 2, resp["people"]
+    # creator is always in the roster now (paid, 0 total) + 2 joined guests
+    assert len(joined) == 3, resp["people"]
+    assert len(resp["people"]) == 3, resp["people"]
 
     # creator removes a wrong/double join -> gone from roster + selections
     amel_id = amel["id"]
@@ -267,6 +269,61 @@ def test_mark_unpaid():
     print("PASS mark_unpaid: undo flips settled back, clears paid_at")
 
 
+def test_paid_by():
+    """Who paid the bill: default creator, resolve on join, auto-paid, accounts."""
+    from main import _compute_response
+    creator = db.new_identity("Aufa", role="creator")
+    guest = db.new_identity("Budi")
+
+    # default: creator pays -> creator auto-paid even with no payment row
+    bill = db.create_bill(
+        creator_id=creator["id"], title="Makan", tax_mode="proportional",
+        subtotal=20000, tax=0, service=0, total=20000,
+        items=[{"name": "A", "price": 20000}], participants=["Aufa", "Budi"],
+    )
+    bid = bill["id"]
+    data = db.get_bill(bid)
+    db.set_selections(bid, guest["id"], [data["items"][0]["id"]])
+    resp = _compute_response(db.get_bill(bid))
+    assert resp["paid_by_id"] == creator["id"]
+    assert resp["paid_by_name"] == "Aufa"
+    assert next(p for p in resp["people"] if p["identity_id"] == creator["id"])["paid"] == "paid"
+    assert next(p for p in resp["people"] if p["identity_id"] == guest["id"])["paid"] == "unpaid"
+    assert resp["settled"] is False  # guest hasn't paid
+
+    # creator marks themselves paid via normal flow? not needed — auto
+    db.mark_paid(bid, guest["id"])
+    assert _compute_response(db.get_bill(bid))["settled"] is True
+
+    # paid_by = guest by name: placeholder resolved once they join
+    bill2 = db.create_bill(
+        creator_id=creator["id"], title="Makan2", tax_mode="proportional",
+        subtotal=20000, tax=0, service=0, total=20000,
+        items=[{"name": "A", "price": 20000}], participants=["Aufa", "Budi"],
+        paid_by_name="Budi",
+    )
+    bid2 = bill2["id"]
+    resp = _compute_response(db.get_bill(bid2))
+    assert resp["paid_by_name"] == "Budi"
+    assert resp["paid_by_id"] == creator["id"]  # fallback: creator until Budi joins
+    # Budi joins + claims slot -> resolves to his identity
+    db.join_bill(bid2, guest["id"], "Budi")
+    resp = _compute_response(db.get_bill(bid2))
+    assert resp["paid_by_id"] == guest["id"]
+    assert resp["paid_by_name"] == "Budi"
+    assert next(p for p in resp["people"] if p["identity_id"] == guest["id"])["paid"] == "paid"
+    # settled immediately if only payer selected items
+    data2 = db.get_bill(bid2)
+    db.set_selections(bid2, guest["id"], [data2["items"][0]["id"]])
+    assert _compute_response(db.get_bill(bid2))["settled"] is True
+
+    # set_paid_by: creator re-assigns payer by identity (must be in roster)
+    assert db.set_paid_by(bid2, creator["id"]) is None  # creator pays again
+    resp = _compute_response(db.get_bill(bid2))
+    assert resp["paid_by_id"] == creator["id"]
+    print("PASS paid_by: default creator, resolve on join, auto-paid, re-assign")
+
+
 if __name__ == "__main__":
     test_update_bill_diff()
     test_payment_accounts()
@@ -275,4 +332,5 @@ if __name__ == "__main__":
     test_join_and_remove_person()
     test_delete_bill_and_settled()
     test_mark_unpaid()
+    test_paid_by()
     print("\nALL PASS")

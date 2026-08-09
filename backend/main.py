@@ -102,6 +102,11 @@ def _compute_response(bill_data: dict):
         result["people"].append({
             "identity_id": jid, "subtotal_idr": 0, "tax_idr": 0, "total_idr": 0,
         })
+    # creator is always part of the bill (visible in the split even before picking)
+    if bill["creator_identity_id"] not in {p["identity_id"] for p in result["people"]}:
+        result["people"].append({
+            "identity_id": bill["creator_identity_id"], "subtotal_idr": 0, "tax_idr": 0, "total_idr": 0,
+        })
     result["people"].sort(key=lambda p: -p["total_idr"])
     all_ids = [p["identity_id"] for p in result["people"]]
     names = _names_for_identities(all_ids)
@@ -113,22 +118,47 @@ def _compute_response(bill_data: dict):
     # creator name
     creator = db.get_identity(bill["creator_identity_id"])
     creator_name = creator["name"] if creator else "?"
+    # who paid? default = creator. paid_by_identity_id wins (unambiguous);
+    # otherwise fall back to matching paid_by_name against joined identities.
+    paid_by_id = bill.get("paid_by_identity_id")
+    paid_by_name = bill.get("paid_by_name") or ""
+    if not paid_by_id and paid_by_name:
+        for p in bill_data["payments"]:
+            ident = db.get_identity(p["identity_id"])
+            if ident and ident["name"].strip().lower() == paid_by_name.strip().lower():
+                paid_by_id = p["identity_id"]
+                break
+    if not paid_by_id:
+        paid_by_id = bill["creator_identity_id"]
+        if not paid_by_name:
+            paid_by_name = creator_name
+    else:
+        pb = db.get_identity(paid_by_id)
+        if pb:
+            paid_by_name = pb["name"]
     # payment status
     pay_status = {p["identity_id"]: p["status"] for p in bill_data["payments"]}
     for p in result["people"]:
         p["paid"] = pay_status.get(p["identity_id"], "unpaid")
+        # payer already paid (they fronted the bill) -> always settled
+        if p["identity_id"] == paid_by_id:
+            p["paid"] = "paid"
     # item -> selectors for UI
     sel_by_item = {}
     for s in bill_data["selections"]:
         sel_by_item.setdefault(s["item_id"], []).append(s["identity_name"])
-    # settled: closed OR everyone with selections has paid
+    # settled: closed OR everyone with selections has paid (payer counts as paid)
     sel_ids = {s["identity_id"] for s in bill_data["selections"]}
     paid_ids = {p["identity_id"] for p in bill_data["payments"] if p["status"] == "paid"}
+    paid_ids.add(paid_by_id)
     settled = bill["status"] == "closed" or (bool(sel_ids) and sel_ids <= paid_ids)
     return {
         "bill": bill,
         "creator_name": creator_name,
         "creator_accounts": db.get_accounts(bill["creator_identity_id"]),
+        "paid_by_id": paid_by_id,
+        "paid_by_name": paid_by_name,
+        "paid_by_accounts": db.get_accounts(paid_by_id),
         "items": bill_data["items"],
         "participants": [{"name": p["name"], "identity_id": p["identity_id"]} for p in bill_data["participants"]],
         "people": result["people"],
@@ -276,6 +306,7 @@ async def create_bill(request: Request):
     participants = [p.strip() for p in (data.get("participants") or []) if p.strip()]
     pc = data.get("participant_count")
     participant_count = int(pc) if pc not in (None, "") else None
+    paid_by_name = (data.get("paid_by_name") or "").strip() or None
     created = db.create_bill(
         creator_id=ident["id"],
         title=title,
@@ -290,6 +321,7 @@ async def create_bill(request: Request):
         items=[{"name": i["name"], "price": int(i["price"])} for i in items],
         participants=participants,
         photo_path=data.get("photo_path"),
+        paid_by_name=paid_by_name,
     )
     return created
 
@@ -328,6 +360,34 @@ async def update_bill(bill_id: str, request: Request):
         service=int(data.get("service", 0)),
         total=int(data.get("total", 0)),
     )
+    return _compute_response(db.get_bill(bill_id))
+
+
+@app.put("/api/bills/{bill_id}/paid_by")
+async def set_paid_by(bill_id: str, request: Request):
+    """Creator assigns who paid the bill. Body: {identity_id} or {name}.
+    identity_id is preferred (unambiguous); name works as a placeholder for
+    someone who hasn't joined yet (resolved on join)."""
+    data = await _read_json(request)
+    bill_data = _bill_or_404(bill_id)
+    ident = _identity_from_request(request)
+    if bill_data["bill"]["creator_identity_id"] != ident["id"]:
+        raise HTTPException(403, "Hanya pembuat bill")
+    if bill_data["bill"]["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup, gak bisa diubah")
+    identity_id = data.get("identity_id")
+    name = (data.get("name") or "").strip() or None
+    if identity_id:
+        # validate identity exists & is part of this bill (roster)
+        target = db.get_identity(identity_id)
+        if not target:
+            raise HTTPException(404, "Orang gak ditemukan")
+        roster_ids = {p["identity_id"] for p in bill_data["payments"]}
+        roster_ids.add(bill_data["bill"]["creator_identity_id"])
+        if identity_id not in roster_ids:
+            raise HTTPException(400, "Orang itu belum join bill ini")
+        name = target["name"]
+    db.set_paid_by(bill_id, identity_id, name)
     return _compute_response(db.get_bill(bill_id))
 
 
