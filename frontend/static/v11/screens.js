@@ -61,7 +61,7 @@ function renderHome() {
       <div class="brand">Bagiin<span class="dot">.</span></div>
       <div class="right">
         <button class="btn-icon" id="history-btn" title="Riwayat">📋</button>
-        <button class="btn-icon" id="logout-btn" title="Ganti nama">👤</button>
+        <button class="btn-icon" id="settings-btn" title="Akun">👤</button>
       </div>
     </div>
     <div style="margin-bottom:20px;">
@@ -74,9 +74,7 @@ function renderHome() {
 
   $("#create-btn").addEventListener("click", () => location.hash = "#/create");
   $("#history-btn").addEventListener("click", () => location.hash = "#/history");
-  $("#logout-btn").addEventListener("click", () => {
-    if (confirm("Keluar dari identitas ini? Nama akan dihapus dari device ini.")) logout();
-  });
+  $("#settings-btn").addEventListener("click", () => location.hash = "#/settings");
 
   loadHomeHistory();
 }
