@@ -432,17 +432,63 @@ def close_bill(bill_id: str):
     conn.close()
 
 
+def delete_bill(bill_id: str, creator_id: str) -> bool:
+    """Creator deletes a bill (and everything attached to it)."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT creator_identity_id FROM bill WHERE id = ?", (bill_id,)
+    ).fetchone()
+    if not row or row["creator_identity_id"] != creator_id:
+        conn.close()
+        return False
+    conn.execute(
+        "DELETE FROM selection WHERE item_id IN (SELECT id FROM item WHERE bill_id = ?)",
+        (bill_id,),
+    )
+    conn.execute("DELETE FROM item WHERE bill_id = ?", (bill_id,))
+    conn.execute("DELETE FROM payment WHERE bill_id = ?", (bill_id,))
+    conn.execute("DELETE FROM bill_participant WHERE bill_id = ?", (bill_id,))
+    conn.execute("DELETE FROM bill WHERE id = ?", (bill_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+
+def _bill_settled(conn, bill_id: str, status: str) -> bool:
+    """True when the bill is closed OR everyone with selections has paid."""
+    if status == "closed":
+        return True
+    sel_ids = [r["identity_id"] for r in conn.execute(
+        "SELECT DISTINCT identity_id FROM selection "
+        "WHERE item_id IN (SELECT id FROM item WHERE bill_id = ?)",
+        (bill_id,),
+    ).fetchall()]
+    if not sel_ids:
+        return False
+    paid = {r["identity_id"] for r in conn.execute(
+        "SELECT identity_id FROM payment WHERE bill_id = ? AND status = 'paid'",
+        (bill_id,),
+    ).fetchall()}
+    return all(s in paid for s in sel_ids)
+
+
 def get_bills_for_identity(identity_id: str):
     """Bills where identity is creator OR has selections/payments."""
     conn = get_db()
     rows = conn.execute(
         """SELECT DISTINCT b.id, b.title, b.merchant, b.transacted_at,
-                  b.total_idr, b.status, b.created_at, b.closed_at
+                  b.total_idr, b.status, b.created_at, b.closed_at,
+                  b.creator_identity_id
           FROM bill b
           LEFT JOIN payment p ON p.bill_id = b.id AND p.identity_id = ?
           WHERE b.creator_identity_id = ? OR p.id IS NOT NULL
           ORDER BY b.created_at DESC""",
         (identity_id, identity_id),
     ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["settled"] = _bill_settled(conn, d["id"], d["status"])
+        out.append(d)
     conn.close()
-    return [dict(r) for r in rows]
+    return out

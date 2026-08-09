@@ -187,10 +187,55 @@ def test_join_and_remove_person():
     print("PASS join roster + creator removes wrong/double join")
 
 
+def test_delete_bill_and_settled():
+    """Creator deletes bill (cascades), settled reflects paid status."""
+    creator = db.new_identity("Aufa", role="creator")
+    bill = db.create_bill(
+        creator_id=creator["id"], title="Makan", tax_mode="proportional",
+        subtotal=30000, tax=3000, service=2000, total=35000,
+        items=[{"name": "A", "price": 10000}, {"name": "B", "price": 20000}],
+        participants=[], participant_count=2,
+    )
+    bid = bill["id"]
+    guest = db.new_identity("Rina")
+    data = db.get_bill(bid)
+    db.join_bill(bid, guest["id"], "Rina")
+    db.set_selections(bid, guest["id"], [data["items"][0]["id"]])
+
+    # not settled yet (guest has selections, unpaid)
+    from main import _compute_response
+    resp = _compute_response(db.get_bill(bid))
+    assert resp["settled"] is False, resp["settled"]
+
+    db.mark_paid(bid, guest["id"])
+    resp = _compute_response(db.get_bill(bid))
+    assert resp["settled"] is True, resp["settled"]
+
+    # creator delete cascades everything
+    assert db.delete_bill(bid, creator["id"]) is True
+    assert db.get_bill(bid) is None
+    assert db.delete_bill(bid, creator["id"]) is False  # already gone
+    # non-creator can't delete
+    bill2 = db.create_bill(
+        creator_id=creator["id"], title="Lain", tax_mode="proportional",
+        subtotal=10000, tax=0, service=0, total=10000,
+        items=[{"name": "A", "price": 10000}], participants=[],
+    )
+    assert db.delete_bill(bill2["id"], guest["id"]) is False
+    assert db.get_bill(bill2["id"]) is not None
+
+    # bills list includes creator + settled flags
+    bills = db.get_bills_for_identity(creator["id"])
+    assert all("creator_identity_id" in b and "settled" in b for b in bills), bills
+    assert any(b["id"] == bill2["id"] and b["creator_identity_id"] == creator["id"] and b["settled"] is False for b in bills), bills
+    print("PASS delete bill cascade + settled status + bills list flags")
+
+
 if __name__ == "__main__":
     test_update_bill_diff()
     test_payment_accounts()
     test_rename_and_code()
     test_claim_participant()
     test_join_and_remove_person()
+    test_delete_bill_and_settled()
     print("\nALL PASS")

@@ -79,6 +79,12 @@ function renderHome() {
   loadHomeHistory();
 }
 
+function billListStatusChip(b) {
+  if (b.status === "closed") return `<span class="chip chip-grey">Selesai</span>`;
+  if (b.settled) return `<span class="chip chip-green">Lunas</span>`;
+  return `<span class="chip chip-red">Belum lunas</span>`;
+}
+
 async function loadHomeHistory() {
   const box = $("#home-history");
   if (!box) return;
@@ -93,7 +99,10 @@ async function loadHomeHistory() {
       <div class="history-row" data-id="${b.id}">
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;font-size:15px;">${esc(b.title)}</div>
-          <div class="muted">${b.transacted_at ? esc(shortDate(b.transacted_at)) : esc(shortDate(b.created_at))} · ${fmt(b.total_idr)} · ${b.status === "closed" ? "Selesai" : "Aktif"}</div>
+          <div class="muted" style="display:flex;align-items:center;gap:8px;margin-top:2px;">
+            ${billListStatusChip(b)}
+            <span>${b.transacted_at ? esc(shortDate(b.transacted_at)) : esc(shortDate(b.created_at))}</span>
+          </div>
         </div>
         <div style="font-weight:700;" class="money">${fmt(b.total_idr)}</div>
       </div>`).join("");
@@ -126,11 +135,19 @@ function renderHistory() {
         <div class="history-row" data-id="${b.id}">
           <div style="flex:1;min-width:0;">
             <div style="font-weight:600;font-size:15px;">${esc(b.title)}</div>
-            <div class="muted">${b.transacted_at ? esc(shortDate(b.transacted_at)) : esc(shortDate(b.created_at))} · ${b.status === "closed" ? "Selesai" : "Aktif"}</div>
+            <div class="muted" style="display:flex;align-items:center;gap:8px;margin-top:2px;">
+              ${billListStatusChip(b)}
+              <span>${b.transacted_at ? esc(shortDate(b.transacted_at)) : esc(shortDate(b.created_at))}</span>
+            </div>
           </div>
           <div class="money" style="font-weight:700;">${fmt(b.total_idr)}</div>
+          ${b.creator_identity_id === state.identity.id ? `<button class="btn-sm delete-bill" data-id="${b.id}" data-title="${esc(b.title)}" title="Hapus bill" style="background:var(--red-bg);color:var(--red);flex-shrink:0;">🗑️</button>` : ""}
         </div>`).join("");
       $$(".history-row", box).forEach(r => r.addEventListener("click", () => location.hash = "#/b/" + r.dataset.id));
+      $$(".delete-bill", box).forEach(btn => btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openDeleteBillConfirm(btn.dataset.id, btn.dataset.title);
+      }));
     } catch (e) { toast(e.message); }
   })();
 }

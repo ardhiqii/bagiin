@@ -121,6 +121,10 @@ def _compute_response(bill_data: dict):
     sel_by_item = {}
     for s in bill_data["selections"]:
         sel_by_item.setdefault(s["item_id"], []).append(s["identity_name"])
+    # settled: closed OR everyone with selections has paid
+    sel_ids = {s["identity_id"] for s in bill_data["selections"]}
+    paid_ids = {p["identity_id"] for p in bill_data["payments"] if p["status"] == "paid"}
+    settled = bill["status"] == "closed" or (bool(sel_ids) and sel_ids <= paid_ids)
     return {
         "bill": bill,
         "creator_name": creator_name,
@@ -133,6 +137,7 @@ def _compute_response(bill_data: dict):
         "total_ok": result["total_ok"],
         "remaining_to_creator": result["remaining_to_creator"],
         "unassigned_items": result["unassigned_items"],
+        "settled": settled,
     }
 
 
@@ -307,6 +312,17 @@ async def update_bill(bill_id: str, request: Request):
         total=int(data.get("total", 0)),
     )
     return _compute_response(db.get_bill(bill_id))
+
+
+@app.delete("/api/bills/{bill_id}")
+def delete_bill(bill_id: str, request: Request):
+    bill_data = _bill_or_404(bill_id)
+    ident = _identity_from_request(request)
+    if bill_data["bill"]["creator_identity_id"] != ident["id"]:
+        raise HTTPException(403, "Hanya pembuat bill")
+    if not db.delete_bill(bill_id, ident["id"]):
+        raise HTTPException(404, "Bill tidak ditemukan")
+    return {"ok": True}
 
 
 @app.post("/api/bills/{bill_id}/close")
