@@ -385,6 +385,17 @@ def mark_paid(bill_id: str, identity_id: str, request: Request):
     return {"ok": True}
 
 
+@app.post("/api/bills/{bill_id}/payments/{identity_id}/unpaid")
+def mark_unpaid(bill_id: str, identity_id: str, request: Request):
+    """Undo 'sudah bayar'. Only the payer or the bill creator can undo."""
+    bill_data = _bill_or_404(bill_id)
+    ident = _identity_from_request(request)
+    if ident["id"] != identity_id and bill_data["bill"]["creator_identity_id"] != ident["id"]:
+        raise HTTPException(403, "Gak bisa ubah status bayar orang lain")
+    db.mark_unpaid(bill_id, identity_id)
+    return {"ok": True}
+
+
 @app.post("/api/bills/{bill_id}/photo")
 @limiter.limit("10/minute")
 async def upload_photo(bill_id: str, request: Request, file: UploadFile = File(...)):

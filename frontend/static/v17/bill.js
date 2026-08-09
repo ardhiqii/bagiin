@@ -204,26 +204,31 @@ async function updateGuestSelection(data, me) {
 }
 
 function computeMyBreakdown(data, selected) {
-  // Mirror backend calc: item price split among selectors, tax proportional to
-  // the TOTAL SELECTED subtotal (not the whole bill), remainder rounds away.
-  // Returns { sub, tax, total } where tax = pajak + service share.
+  // Mirror backend calc exactly:
+  // - sub = my share of selected item prices (price / selectors)
+  // - tax proportional to the TOTAL subtotal across ALL people (sum of prices
+  //   of items that have at least one selector), rounded DOWN like the backend,
+  //   so the UI total matches the backend total to the rupiah.
   let sub = 0;
-  let totalSel = 0;
+  let totalSelAll = 0;
   const myName = state.identity ? state.identity.name : "";
   data.items.forEach(it => {
+    const selectors = (data.sel_by_item[it.id] || []);
     if (!selected.has(it.id)) return;
-    const existing = (data.sel_by_item[it.id] || []);
     // selectors count: existing selectors that aren't me, +1 if I just selected
-    let count = existing.filter(n => normName(n) !== normName(myName)).length;
+    let count = selectors.filter(n => normName(n) !== normName(myName)).length;
     if (selected.has(it.id)) count += 1;
     if (count <= 0) return;
     sub += Math.round(it.price_idr / count);
-    totalSel += it.price_idr;
   });
-  // tax proportional
+  // backend total_subtotal = sum of prices of items with >= 1 selector
+  data.items.forEach(it => {
+    if ((data.sel_by_item[it.id] || []).length > 0) totalSelAll += it.price_idr;
+  });
+  // tax proportional, rounded down (backend uses Decimal + int())
   const taxService = (data.bill.tax_idr || 0) + (data.bill.service_idr || 0);
   let tax = 0;
-  if (totalSel > 0) tax = Math.round(sub * taxService / totalSel);
+  if (totalSelAll > 0) tax = Math.floor(sub * taxService / totalSelAll);
   return { sub, tax, total: sub + tax };
 }
 
@@ -244,6 +249,7 @@ function openPaySheet(data, me, totalMine, alreadyPaid) {
         <button class="${alreadyPaid ? "btn-green" : "btn-primary"}" id="confirm-pay">
           ${alreadyPaid ? "✓ Sudah bayar" : "Tandai sudah bayar"}
         </button>
+        ${alreadyPaid ? `<button class="btn-outline" id="undo-pay" style="width:100%;margin-top:8px;color:var(--red);border-color:var(--red);">↩️ Batalkan sudah bayar</button>` : ""}
         <button class="btn-outline" id="close-sheet" style="width:100%;margin-top:8px;">Batal</button>
       </div>
     </div>`);
@@ -261,10 +267,15 @@ function openPaySheet(data, me, totalMine, alreadyPaid) {
         <div class="label-sm" style="margin-bottom:4px;">Item kamu (${items.length})</div>
         ${items.map(it => {
           const n = (data.sel_by_item[it.id] || []).length;
+          // what I actually pay if shared: full price / n selectors
+          const myPrice = n > 1 ? Math.round(it.price_idr / n) : it.price_idr;
           return `
           <div class="pay-item" data-item="${it.id}">
             <div style="flex:1;min-width:0;">${esc(it.name)}${n > 1 ? ` <span class="muted">· dibagi ${n}</span>` : ""}</div>
-            <div class="money">${fmt(it.price_idr)}</div>
+            <div style="text-align:right;flex-shrink:0;">
+              <div class="money">${fmt(myPrice)}</div>
+              ${n > 1 ? `<div class="muted" style="font-size:11px;">dari ${fmt(it.price_idr)}</div>` : ""}
+            </div>
             <span class="pay-item-x">✕</span>
           </div>`;
         }).join("")}
@@ -300,6 +311,16 @@ function openPaySheet(data, me, totalMine, alreadyPaid) {
       buzz(20);
       sheet.remove();
       toast("Udah dicatat! 🎉");
+      loadBillView(data.bill.id);
+    } catch (e) { toast(e.message); }
+  });
+  const undoBtn = $("#undo-pay", sheet);
+  if (undoBtn) undoBtn.addEventListener("click", async () => {
+    try {
+      await api(`/api/bills/${data.bill.id}/payments/${me.id}/unpaid`, { method: "POST" });
+      buzz(10);
+      sheet.remove();
+      toast("Status bayar dibatalkan ↩️");
       loadBillView(data.bill.id);
     } catch (e) { toast(e.message); }
   });
@@ -342,16 +363,12 @@ function renderCreatorView(data) {
   const totalPaid = data.people.filter(p => p.paid === "paid").reduce((s, p) => s + p.total_idr, 0);
   const totalUnpaid = data.people.filter(p => p.paid !== "paid").reduce((s, p) => s + p.total_idr, 0);
   const hasAssignments = data.people.some(p => p.total_idr > 0);
-  const notJoined = data.bill.participant_count && data.people.length < data.bill.participant_count;
   const notPicked = data.people.filter(p => !p.subtotal_idr && p.identity_id !== me.id);
 
   // consolidated "perhatian" rows (single card, one row each)
   const warnRows = [];
   if (data.warnings.length) {
     warnRows.push({ icon: "🧾", text: data.warnings.join(" · ") });
-  }
-  if (notJoined) {
-    warnRows.push({ icon: "👥", text: `Baru ${data.people.length} dari ${data.bill.participant_count} orang join. Share link-nya 🔗` });
   }
   if (notPicked.length) {
     warnRows.push({ icon: "✏️", text: `Belum pilih item: ${notPicked.map(m => esc(m.name)).join(", ")}` });
@@ -388,7 +405,7 @@ function renderCreatorView(data) {
     </div>
     ${warnHtml}
     <div class="card">
-      <div class="card-title">Pembagian <span class="muted">(${data.people.length}${data.bill.participant_count ? "/" + data.bill.participant_count : ""} orang)</span></div>
+      <div class="card-title">Pembagian <span class="muted">(${data.people.length} orang)</span></div>
       <div id="people-list">
         ${data.people.map(p => `
           <div class="person-row">
@@ -538,7 +555,7 @@ function renderCreatorPick(data) {
 }
 
 // ---------- Creator edit bill ----------
-let editState = { items: [], subtotal: 0, tax: 0, service: 0, total: 0, title: "", transacted_at: "", participant_count: null, merchant: "" };
+let editState = { items: [], subtotal: 0, tax: 0, service: 0, total: 0, title: "", transacted_at: "", merchant: "" };
 
 function renderEditBill(data) {
   const app = $("#app");
@@ -551,7 +568,6 @@ function renderEditBill(data) {
     title: data.bill.title || "",
     merchant: data.bill.merchant || "",
     transacted_at: data.bill.transacted_at || "",
-    participant_count: data.bill.participant_count ?? ((data.participants || []).length || null),
   };
   app.innerHTML = `
     <div class="topbar">
@@ -588,11 +604,6 @@ function renderEditBill(data) {
       </div>
       <div id="sum-warn" class="error-text hidden" style="margin-top:6px;"></div>
     </div>
-    <div class="card">
-      <div class="card-title">Berapa orang ikut?</div>
-      <p class="muted" style="font-size:13px;margin-bottom:8px;">Yang join kelihatan di halaman bill — gak usah tulis nama.</p>
-      <input type="text" inputmode="numeric" id="count-input" placeholder="cth: 4" value="${editState.participant_count || ""}" maxlength="2" style="max-width:120px;">
-    </div>
     <div style="height:12px;"></div>
     <div class="sticky-bar"><div class="sticky-inner">
       <button class="btn-primary" id="save-bill-btn">Simpan Perubahan</button>
@@ -605,11 +616,6 @@ function renderEditBill(data) {
   bindRupiahInput($("#tax-input"), () => updateEditTotal());
   bindRupiahInput($("#service-input"), () => updateEditTotal());
   $("#add-item-btn").addEventListener("click", () => { editState.items.push({ id: null, name: "", price: 0 }); renderEditItems(); });
-  $("#count-input").addEventListener("input", (e) => {
-    const d = e.target.value.replace(/\D/g, "").slice(0, 2);
-    editState.participant_count = d ? parseInt(d, 10) : null;
-    e.target.value = d;
-  });
   $("#title-input").addEventListener("input", (e) => editState.title = e.target.value);
   $("#date-input").addEventListener("input", (e) => editState.transacted_at = e.target.value);
   $("#save-bill-btn").addEventListener("click", () => saveEditBill(data.bill.id));
@@ -675,7 +681,6 @@ async function saveEditBill(billId) {
       service: editState.service,
       total: editState.subtotal + editState.tax + editState.service,
       items,
-      participant_count: editState.participant_count,
     });
     toast("Bill diupdate ✓");
     loadBillView(billId);

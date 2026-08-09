@@ -388,7 +388,7 @@ async function uploadAndOcr(file) {
 }
 
 // ---------- Verify OCR result ----------
-let verifyState = { items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null, participant_count: null, title: "", merchant: "", transacted_at: "" };
+let verifyState = { items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null, title: "", merchant: "", transacted_at: "" };
 
 function renderVerify(ocr) {
   verifyState = {
@@ -398,7 +398,6 @@ function renderVerify(ocr) {
     service: ocr.service || 0,
     total: ocr.total || 0,
     photo_path: ocr.photo_path || null,
-    participant_count: null,
     title: ocr.merchant || "",
     merchant: ocr.merchant || "",
     transacted_at: ocr.date || "",
@@ -444,11 +443,6 @@ function renderVerify(ocr) {
       </div>
       <div id="sum-warn" class="error-text hidden" style="margin-top:6px;"></div>
     </div>
-    <div class="card">
-      <div class="card-title">Berapa orang ikut?</div>
-      <p class="muted" style="font-size:13px;margin-bottom:8px;">Gak usah tulis nama — yang join nanti kelihatan sendiri. Kalau kosong, gak ada target jumlah.</p>
-      <input type="text" inputmode="numeric" id="count-input" placeholder="cth: 4" value="${verifyState.participant_count || ""}" maxlength="2" style="max-width:120px;">
-    </div>
     <div style="height:12px;"></div>
     <div class="sticky-bar"><div class="sticky-inner">
       <button class="btn-primary" id="create-bill-btn">Bikin Bill & Bagikan</button>
@@ -463,11 +457,6 @@ function renderVerify(ocr) {
   $("#add-item-btn").addEventListener("click", () => {
     verifyState.items.push({ name: "", price: 0 });
     renderVerifyItems();
-  });
-  $("#count-input").addEventListener("input", (e) => {
-    const d = e.target.value.replace(/\D/g, "").slice(0, 2);
-    verifyState.participant_count = d ? parseInt(d, 10) : null;
-    e.target.value = d;
   });
   $("#title-input").addEventListener("input", (e) => verifyState.title = e.target.value);
   $("#date-input").addEventListener("input", (e) => verifyState.transacted_at = e.target.value);
@@ -540,7 +529,6 @@ async function createBillFinal() {
       service: verifyState.service,
       total: verifyState.subtotal + verifyState.tax + verifyState.service,
       items,
-      participant_count: verifyState.participant_count,
       photo_path: verifyState.photo_path,
     });
     location.hash = "#/b/" + bill.id;

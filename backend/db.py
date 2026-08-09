@@ -422,6 +422,18 @@ def mark_paid(bill_id: str, identity_id: str):
     conn.close()
 
 
+def mark_unpaid(bill_id: str, identity_id: str):
+    """Undo a 'sudah bayar' (e.g. mis-tap). Also clears paid_at."""
+    conn = get_db()
+    conn.execute(
+        """UPDATE payment SET status = 'unpaid', paid_at = NULL
+           WHERE bill_id = ? AND identity_id = ?""",
+        (bill_id, identity_id),
+    )
+    conn.commit()
+    conn.close()
+
+
 def close_bill(bill_id: str):
     conn = get_db()
     conn.execute(

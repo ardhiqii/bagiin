@@ -231,6 +231,35 @@ def test_delete_bill_and_settled():
     print("PASS delete bill cascade + settled status + bills list flags")
 
 
+def test_mark_unpaid():
+    """Undo 'sudah bayar' flips settled back to False and clears paid_at."""
+    creator = db.new_identity("Aufa", role="creator")
+    bill = db.create_bill(
+        creator_id=creator["id"], title="Makan", tax_mode="proportional",
+        subtotal=30000, tax=0, service=0, total=30000,
+        items=[{"name": "A", "price": 30000}], participants=[],
+    )
+    bid = bill["id"]
+    guest = db.new_identity("Rina")
+    data = db.get_bill(bid)
+    db.join_bill(bid, guest["id"], "Rina")
+    db.set_selections(bid, guest["id"], [data["items"][0]["id"]])
+
+    from main import _compute_response
+    assert _compute_response(db.get_bill(bid))["settled"] is False
+
+    db.mark_paid(bid, guest["id"])
+    assert _compute_response(db.get_bill(bid))["settled"] is True
+    paid = db.get_bill(bid)["payments"][0]
+    assert paid["status"] == "paid" and paid["paid_at"] is not None
+
+    db.mark_unpaid(bid, guest["id"])
+    assert _compute_response(db.get_bill(bid))["settled"] is False
+    unpaid = db.get_bill(bid)["payments"][0]
+    assert unpaid["status"] == "unpaid" and unpaid["paid_at"] is None
+    print("PASS mark_unpaid: undo flips settled back, clears paid_at")
+
+
 if __name__ == "__main__":
     test_update_bill_diff()
     test_payment_accounts()
@@ -238,4 +267,5 @@ if __name__ == "__main__":
     test_claim_participant()
     test_join_and_remove_person()
     test_delete_bill_and_settled()
+    test_mark_unpaid()
     print("\nALL PASS")
