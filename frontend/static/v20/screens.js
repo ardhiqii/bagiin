@@ -321,10 +321,56 @@ function renderSettings() {
 }
 
 // ---------- Paste-text account parser ----------
+const BRAND_ALIASES = {
+  "gopay": "GoPay", "go pay": "GoPay", "go-pay": "GoPay",
+  "shopeepay": "ShopeePay", "shopee": "ShopeePay", "shopee pay": "ShopeePay",
+  "seabank": "SeaBank", "sea bank": "SeaBank",
+  "linkaja": "LinkAja", "link aja": "LinkAja",
+  "jenius": "Jenius",
+};
+function _normBrandToken(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]/g, ""); }
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++)
+    dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return dp[m][n];
+}
+function matchBrand(line) {
+  const lower = String(line || "").toLowerCase();
+  // 1) token exact (word boundary), longest first — "Bowo" gak jadi OVO
+  const sorted = BRANDS.slice().sort((x, y) => y.c.length - x.c.length);
+  for (const b of sorted) {
+    const tok = b.c.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (tok && new RegExp(`\\b${tok}\\b`).test(lower)) return b.c;
+  }
+  // 2) alias: go pay, shopee, sea bank, link aja
+  const norm = _normBrandToken(line);
+  for (const [alias, brand] of Object.entries(BRAND_ALIASES)) {
+    if (norm === _normBrandToken(alias)) return brand;
+    if (new RegExp(`\\b${alias.replace(/[^a-z0-9]+/g, "\\s+")}\\b`).test(lower)) return brand;
+  }
+  // 3) fuzzy typo: "goapy" -> GoPay, "shopeepy" -> ShopeePay
+  if (norm.length >= 3 && norm.length <= 12 && /^[a-z]+$/.test(norm)) {
+    let best = null, bestD = 99, tie = false;
+    for (const b of BRANDS) {
+      const bt = _normBrandToken(b.c);
+      if (!bt) continue;
+      const d = levenshtein(norm, bt);
+      if (d < bestD) { bestD = d; best = b.c; tie = false; }
+      else if (d === bestD) tie = true;
+    }
+    const maxD = norm.length >= 5 ? 2 : 1;
+    if (best && bestD <= maxD && !tie) return best;
+  }
+  return null;
+}
 function parseAccountsText(text) {
   // Accepts lines like:
   //   AUFA FAUQI ARDHIQI          <- holder (applies to following methods)
-  //   Bank Mandiri                <- brand
+  //   Bank Mandiri                <- brand (bare "mandiri" juga jalan)
   //   1630004111673               <- account number
   //   Bank Jago 104276913799      <- brand + number on one line
   //   GoPay 08990821878           <- e-money brand + number
@@ -332,36 +378,27 @@ function parseAccountsText(text) {
   const lines = String(text || "").split("\n").map(l => l.trim()).filter(Boolean);
   const out = [];
   let holder = "";
-  pendingBrand = null;
+  let pendingBrand = null;
   for (const line of lines) {
-    // brand on this line? (match longest brand name first)
-    const brand = BRANDS
-      .slice()
-      .sort((a, b) => b.c.length - a.c.length)
-      .find(b => line.toLowerCase().includes(b.c.toLowerCase()));
+    const brand = matchBrand(line);
     // number-like chunk on this line: digits, optionally grouped with spaces/dashes
     const numMatch = line.match(/(?:^|\s)([0-9][0-9\s\-]{5,})/);
     const number = numMatch ? numMatch[1].replace(/[\s\-]/g, "") : null;
-
     if (brand && number) {
-      out.push({ brand: brand.c, account_no: number, holder_name: holder || null });
+      out.push({ brand, account_no: number, holder_name: holder || null });
+      pendingBrand = null;
     } else if (brand) {
-      // brand line only; next number line will attach to it
-      // (remember brand for the next numeric line)
-      pendingBrand = brand.c;
+      pendingBrand = brand;
     } else if (number) {
       out.push({ brand: pendingBrand || "Lainnya", account_no: number, holder_name: holder || null });
       pendingBrand = null;
     } else {
-      // assume it's a holder name
       holder = line;
       pendingBrand = null;
     }
   }
   return out;
 }
-
-let pendingBrand = null;
 
 function openPasteAccountsSheet(identityId, onAdded) {
   const sheet = el(`
@@ -371,7 +408,7 @@ function openPasteAccountsSheet(identityId, onAdded) {
         <div class="sheet-title">Tempel teks metode bayar</div>
         <p class="muted" style="margin-bottom:10px;">Copy dari notes/m-banking, contoh:</p>
         <div class="card" style="background:var(--surface-2);border:none;margin-bottom:10px;padding:10px 12px;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6;">
-          AUFA FAUQI ARDHIQI<br>Bank Mandiri<br>1630004111673<br>Bank Jago<br>104276913799
+          BUDI SANTOSO<br>Bank BCA<br>1234567890<br>OVO<br>081234567890
         </div>
         <textarea id="paste-input" rows="6" placeholder="Tempel teks di sini..." style="width:100%;resize:vertical;margin-bottom:10px;"></textarea>
         <button class="btn-primary" id="parse-acct-btn" style="width:100%;">Parse</button>
@@ -385,43 +422,54 @@ function openPasteAccountsSheet(identityId, onAdded) {
 
   $("#parse-acct-btn", sheet).addEventListener("click", () => {
     const parsed = parseAccountsText($("#paste-input", sheet).value);
-    const box = $("#paste-result", sheet);
-    if (!parsed.length) {
-      box.innerHTML = `<p class="muted" style="margin-top:10px;color:var(--red);">Gak nemu metode bayar. Cek formatnya: nama (opsional), nama bank, nomor.</p>`;
-      return;
-    }
-    box.innerHTML = `
-      <div class="card" style="background:var(--surface-2);border:none;margin-top:10px;">
-        <div class="label-sm" style="margin-bottom:6px;">Ketemu ${parsed.length} metode</div>
-        ${parsed.map((p, i) => `
-          <div class="account-row">
-            ${brandChipHtml(p.brand)}
-            <div style="flex:1;min-width:0;">
-              <div style="font-weight:600;font-size:13px;">${esc(p.brand)}</div>
-              <div class="muted" style="font-size:12px;">${esc(p.account_no)}${p.holder_name ? " · " + esc(p.holder_name) : ""}</div>
-            </div>
-            <button class="btn-sm paste-rm" data-i="${i}" style="background:var(--red-bg);color:var(--red);flex-shrink:0;">✕</button>
-          </div>`).join("")}
-        <button class="btn-green btn-sm" id="save-parsed" style="width:100%;margin-top:8px;">Tambah Semua</button>
-      </div>`;
-    $$(".paste-rm", box).forEach(btn => btn.addEventListener("click", () => {
-      const idx = +btn.dataset.i;
-      parsed.splice(idx, 1);
-      btn.closest(".card").remove();
-      if (!parsed.length) box.innerHTML = `<p class="muted" style="margin-top:10px;">Semua dihapus. Tempel teks lain kalau mau.</p>`;
-    }));
-    $("#save-parsed", box).addEventListener("click", async () => {
-      try {
-        for (const p of parsed) {
-          await apiJson(`/api/identities/${identityId}/accounts`, "POST", {
-            brand: p.brand, account_no: p.account_no, holder_name: p.holder_name,
-          });
-        }
-        sheet.remove();
-        toast(`Ditambah ${parsed.length} metode ✓`);
-        if (onAdded) onAdded();
-      } catch (e) { toast(e.message); }
-    });
+    renderParsedResult(sheet, parsed, identityId, onAdded);
+  });
+}
+
+function renderParsedResult(sheet, parsed, identityId, onAdded) {
+  const box = $("#paste-result", sheet);
+  if (!parsed.length) {
+    box.innerHTML = `<p class="muted" style="margin-top:10px;color:var(--red);">Gak nemu metode bayar. Cek formatnya: nama (opsional), nama bank, nomor.</p>`;
+    return;
+  }
+  box.innerHTML = `
+    <div class="card" style="background:var(--surface-2);border:none;margin-top:10px;">
+      <div class="label-sm" style="margin-bottom:6px;">Ketemu ${parsed.length} metode</div>
+      ${parsed.map((p, i) => `
+        <div class="account-row">
+          <span class="paste-chip-wrap" data-i="${i}">${brandChipHtml(p.brand)}</span>
+          <div style="flex:1;min-width:0;">
+            <select class="paste-brand-sel" data-i="${i}" style="width:100%;font-size:13px;font-weight:600;">
+              ${BRANDS.map(b => `<option value="${b.c}" ${b.c === p.brand ? "selected" : ""}>${b.c}</option>`).join("")}
+            </select>
+            <div class="muted" style="font-size:12px;">${esc(p.account_no)}${p.holder_name ? " · " + esc(p.holder_name) : ""}</div>
+          </div>
+          <button class="btn-sm paste-rm" data-i="${i}" style="background:var(--red-bg);color:var(--red);flex-shrink:0;">✕</button>
+        </div>`).join("")}
+      <button class="btn-green btn-sm" id="save-parsed" style="width:100%;margin-top:8px;">Tambah Semua</button>
+    </div>`;
+  $$(".paste-brand-sel", box).forEach(sel => sel.addEventListener("change", () => {
+    parsed[+sel.dataset.i].brand = sel.value;
+    const chip = box.querySelector(`.paste-chip-wrap[data-i="${sel.dataset.i}"]`);
+    if (chip) chip.innerHTML = brandChipHtml(sel.value);
+  }));
+  $$(".paste-rm", box).forEach(btn => btn.addEventListener("click", () => {
+    const idx = +btn.dataset.i;
+    parsed.splice(idx, 1);
+    btn.closest(".card").remove();
+    if (!parsed.length) box.innerHTML = `<p class="muted" style="margin-top:10px;">Semua dihapus. Tempel teks lain kalau mau.</p>`;
+  }));
+  $("#save-parsed", box).addEventListener("click", async () => {
+    try {
+      for (const p of parsed) {
+        await apiJson(`/api/identities/${identityId}/accounts`, "POST", {
+          brand: p.brand, account_no: p.account_no, holder_name: p.holder_name,
+        });
+      }
+      sheet.remove();
+      toast(`Ditambah ${parsed.length} metode ✓`);
+      if (onAdded) onAdded();
+    } catch (e) { toast(e.message); }
   });
 }
 
