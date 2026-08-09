@@ -76,6 +76,13 @@ def test_payment_accounts():
     other = db.new_identity("Lain")
     assert db.delete_account(a1["id"], other["id"]) is False
     assert len(db.get_accounts(ident["id"])) == 1
+    # update
+    upd = db.update_account(a1["id"], ident["id"], "Mandiri", "9876543210", "Vera Baru")
+    assert upd and upd["brand"] == "Mandiri" and upd["account_no"] == "9876543210" and upd["holder_name"] == "Vera Baru"
+    upd2 = db.update_account(a1["id"], ident["id"], "Mandiri", "9876543210", None)
+    assert upd2 and upd2["holder_name"] is None
+    # can't update someone else's
+    assert db.update_account(a1["id"], other["id"], "BCA", "1", None) is None
     print("PASS payment accounts CRUD + ownership guard")
 
 

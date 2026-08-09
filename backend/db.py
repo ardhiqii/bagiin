@@ -200,6 +200,22 @@ def add_account(identity_id: str, brand: str, account_no: str,
     return dict(row)
 
 
+def update_account(account_id: int, identity_id: str, brand: str, account_no: str,
+                   holder_name: str | None = None) -> dict | None:
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE payment_account SET brand = ?, account_no = ?, holder_name = ? WHERE id = ? AND identity_id = ?",
+        (brand, account_no, holder_name, account_id, identity_id),
+    )
+    conn.commit()
+    if cur.rowcount == 0:
+        conn.close()
+        return None
+    row = conn.execute("SELECT * FROM payment_account WHERE id = ?", (account_id,)).fetchone()
+    conn.close()
+    return dict(row)
+
+
 def delete_account(account_id: int, identity_id: str) -> bool:
     conn = get_db()
     cur = conn.execute(

@@ -277,8 +277,13 @@ function renderSettings() {
             <div style="font-weight:600;font-size:14px;">${esc(a.brand)}</div>
             <div class="muted">${esc(a.account_no)}${a.holder_name ? " · " + esc(a.holder_name) : ""}</div>
           </div>
+          <button class="btn-sm" data-edit="${a.id}" style="background:var(--surface-2);flex-shrink:0;">✏️</button>
           <button class="btn-sm" data-del="${a.id}" style="background:var(--red-bg);color:var(--red);flex-shrink:0;">✕</button>
         </div>`).join("");
+      $$("[data-edit]", box).forEach(b => b.addEventListener("click", () => {
+        const acc = accts.find(x => x.id == b.dataset.edit);
+        if (acc) openEditAccountSheet(acc, loadAccounts);
+      }));
       $$("[data-del]", box).forEach(b => b.addEventListener("click", async () => {
         if (!confirm("Hapus metode bayar ini?")) return;
         try { await api("/api/accounts/" + b.dataset.del, { method: "DELETE" }); loadAccounts(); }
@@ -469,6 +474,47 @@ function renderParsedResult(sheet, parsed, identityId, onAdded) {
       sheet.remove();
       toast(`Ditambah ${parsed.length} metode ✓`);
       if (onAdded) onAdded();
+    } catch (e) { toast(e.message); }
+  });
+}
+
+// ---------- Edit payment account ----------
+function openEditAccountSheet(acct, onDone) {
+  const sheet = el(`
+    <div class="sheet-overlay" id="edit-acct-sheet">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">Edit metode bayar</div>
+        <select id="edit-acct-brand"></select>
+        <input id="edit-acct-no" placeholder="Nomor rekening / e-money" maxlength="40" style="margin-top:8px;">
+        <input id="edit-acct-holder" placeholder="Atas nama (opsional)" maxlength="40" style="margin-top:8px;">
+        <p class="muted" style="font-size:12px;margin-top:6px;">Nama pemilik gak wajib — bisa dikosongin kalau emang gak ada / mau anonim.</p>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="btn-primary btn-sm" id="edit-save" style="flex:1;">Simpan</button>
+          <button class="btn-outline btn-sm" id="edit-close" style="flex:1;">Batal</button>
+        </div>
+      </div>
+    </div>`);
+  document.body.appendChild(sheet);
+  const brandSel = $("#edit-acct-brand", sheet);
+  brandSel.innerHTML = BRANDS.map(b => `<option value="${b.c}" ${b.c === acct.brand ? "selected" : ""}>${b.c}</option>`).join("");
+  $("#edit-acct-no", sheet).value = acct.account_no || "";
+  $("#edit-acct-holder", sheet).value = acct.holder_name || "";
+  $("#edit-close", sheet).addEventListener("click", () => sheet.remove());
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) sheet.remove(); });
+  $("#edit-save", sheet).addEventListener("click", async () => {
+    const brand = brandSel.value;
+    const account_no = $("#edit-acct-no", sheet).value.trim();
+    const holder = $("#edit-acct-holder", sheet).value.trim() || null;
+    if (!account_no) { toast("Nomor rekening wajib diisi"); return; }
+    try {
+      await api(`/api/accounts/${acct.id}`, {
+        method: "PUT",
+        json: { brand, account_no, holder_name: holder },
+      });
+      sheet.remove();
+      toast("Metode bayar diupdate ✓");
+      if (onDone) onDone();
     } catch (e) { toast(e.message); }
   });
 }

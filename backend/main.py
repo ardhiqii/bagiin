@@ -229,6 +229,23 @@ async def add_account(identity_id: str, request: Request):
     return db.add_account(identity_id, brand, account_no, holder)
 
 
+@app.put("/api/accounts/{account_id}")
+@limiter.limit("30/minute")
+async def update_account(account_id: int, request: Request):
+    ident = _identity_from_request(request)
+    body = await request.json()
+    brand = str(body.get("brand") or "").strip()
+    account_no = str(body.get("account_no") or "").strip()
+    holder_name = body.get("holder_name")
+    holder_name = str(holder_name).strip() if holder_name else None
+    if not brand or not account_no:
+        raise HTTPException(400, "brand dan account_no wajib")
+    acc = db.update_account(account_id, ident["id"], brand, account_no, holder_name)
+    if not acc:
+        raise HTTPException(404, "Akun tidak ditemukan")
+    return acc
+
+
 @app.delete("/api/accounts/{account_id}")
 def delete_account(account_id: int, request: Request):
     ident = _identity_from_request(request)
