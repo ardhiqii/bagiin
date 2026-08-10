@@ -313,6 +313,9 @@ async def create_bill(request: Request):
     items = data.get("items") or []
     if not items:
         raise HTTPException(400, "Minimal 1 item")
+    for i in items:
+        if int(i.get("discount", 0) or 0) > int(i["price"]):
+            raise HTTPException(400, f"Diskon {i['name']} gak bisa lebih besar dari harga")
     participants = [p.strip() for p in (data.get("participants") or []) if p.strip()]
     pc = data.get("participant_count")
     participant_count = int(pc) if pc not in (None, "") else None
@@ -333,6 +336,7 @@ async def create_bill(request: Request):
             "price": int(i["price"]),
             "mode": i.get("mode", "free"),
             "slot_count": i.get("slot_count"),
+            "discount": int(i.get("discount", 0) or 0),
         } for i in items],
         participants=participants,
         photo_path=data.get("photo_path"),
@@ -359,6 +363,9 @@ async def update_bill(bill_id: str, request: Request):
     items = data.get("items") or []
     if not items:
         raise HTTPException(400, "Minimal 1 item")
+    for i in items:
+        if int(i.get("discount", 0) or 0) > int(i["price"]):
+            raise HTTPException(400, f"Diskon {i['name']} gak bisa lebih besar dari harga")
     # slot-mode guards for edited items: slot_count >= taken, and switching a
     # slot item to free clamps everyone's qty to 1
     cur_items = {i["id"]: i for i in bill_data["items"]}
@@ -401,6 +408,7 @@ async def update_bill(bill_id: str, request: Request):
             "price": int(i["price"]),
             "mode": i.get("mode", "free"),
             "slot_count": i.get("slot_count"),
+            "discount": int(i.get("discount", 0) or 0),
         } for i in items],
         subtotal=int(data.get("subtotal", 0)),
         tax=int(data.get("tax", 0)),

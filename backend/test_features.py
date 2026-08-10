@@ -471,6 +471,46 @@ def test_free_qty_portions():
     print("PASS free qty: proportional portions + rounding")
 
 
+def test_item_discount():
+    """v32 per-item discount: effective price (price - discount) drives math."""
+    from main import _compute_response
+    creator = db.new_identity("Aufa", role="creator")
+    amel = db.new_identity("Amel")
+
+    bill = db.create_bill(
+        creator_id=creator["id"], title="Diskon", tax_mode="proportional",
+        subtotal=23000, tax=0, service=0, total=23000,
+        items=[
+            {"name": "Krispy", "price": 23500, "discount": 5500},
+            {"name": "Es Teh", "price": 15000, "discount": 3000, "mode": "slot", "slot_count": 3},
+        ],
+        participants=["Aufa", "Amel"],
+    )
+    bid = bill["id"]
+    data = db.get_bill(bid)
+    krispy = next(i for i in data["items"] if i["name"] == "Krispy")
+    teh = next(i for i in data["items"] if i["name"] == "Es Teh")
+    assert krispy["discount_idr"] == 5500
+    assert teh["discount_idr"] == 3000
+
+    # free item: Amel takes Krispy -> pays effective 23500-5500 = 18000
+    db.set_selections(bid, amel["id"], [{"item_id": krispy["id"], "qty": 1}])
+    resp = _compute_response(db.get_bill(bid))
+    amel_p = next(p for p in resp["people"] if p["identity_id"] == amel["id"])
+    assert amel_p["subtotal_idr"] == 18000, amel_p
+    assert resp["total_ok"] is False  # Es Teh not picked yet
+
+    # slot item: per-slot = (15000-3000)/3 = 4000; 1 taken -> 2 empty = 8000
+    db.set_selections(bid, amel["id"], [
+        {"item_id": krispy["id"], "qty": 1},
+        {"item_id": teh["id"], "qty": 1},
+    ])
+    resp = _compute_response(db.get_bill(bid))
+    assert resp["uncovered_idr"] == 8000, resp["uncovered_idr"]
+    assert resp["uncovered_slots"][0]["per_slot"] == 4000
+    print("PASS item discount: effective price in free + slot math")
+
+
 
 def test_creator_toggle_paid():
     """Creator can mark someone paid/unpaid; others can't touch someone else's

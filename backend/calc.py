@@ -46,23 +46,24 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
 
     for it in items:
         selectors = sel_by_item.get(it["id"], [])
+        eff = max(0, it["price_idr"] - int(it.get("discount_idr", 0) or 0))
         if it.get("mode") == "slot" and it.get("slot_count"):
             slot_count = max(1, int(it["slot_count"]))
-            per_slot = it["price_idr"] // slot_count
+            per_slot = eff // slot_count
             taken = sum(q for _, q in selectors)
             for ident, qty in selectors:
                 subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + per_slot * qty
             if taken >= slot_count:
-                # all slots taken: distribute rounding remainder (price % slot_count)
+                # all slots taken: distribute rounding remainder (eff % slot_count)
                 # among holders in order, first gets extra rupiah (like free mode)
-                rem = it["price_idr"] - per_slot * slot_count
+                rem = eff - per_slot * slot_count
                 for idx, (ident, _q) in enumerate(selectors):
                     if idx >= rem:
                         break
                     subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + 1
             else:
                 empty = slot_count - taken
-                amount = it["price_idr"] - per_slot * taken
+                amount = eff - per_slot * taken
                 uncovered_idr += amount
                 uncovered_slots.append({
                     "item_id": it["id"],
@@ -73,13 +74,13 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
                 })
             continue
         # free mode: split proportionally by servings taken (qty = how many
-        # portions this person takes, default 1). price // total_qty per serving,
+        # portions this person takes, default 1). eff // total_qty per serving,
         # rounding remainder round-robin across servings.
         if not selectors:
             continue
         total_qty = sum(q for _, q in selectors)
-        share = it["price_idr"] // total_qty
-        rem = it["price_idr"] - share * total_qty
+        share = eff // total_qty
+        rem = eff - share * total_qty
         for ident, qty in selectors:
             subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + share * qty
         for i in range(rem):
@@ -136,7 +137,8 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     # warnings
     warnings = []
     for it in unassigned:
-        warnings.append(f"Item tidak dipilih siapa pun: {it['name']} Rp {it['price_idr']:,} -> masuk ke pembuat bill")
+        eff = max(0, it["price_idr"] - int(it.get("discount_idr", 0) or 0))
+        warnings.append(f"Item tidak dipilih siapa pun: {it['name']} Rp {eff:,} -> masuk ke pembuat bill")
     for u in uncovered_slots:
         warnings.append(
             f"Bagian kosong: {u['name']} {u['empty']} bagian belum keambil "

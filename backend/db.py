@@ -130,6 +130,8 @@ def init_db():
         conn.execute("ALTER TABLE item ADD COLUMN mode TEXT NOT NULL DEFAULT 'free'")
     if "slot_count" not in icols:
         conn.execute("ALTER TABLE item ADD COLUMN slot_count INTEGER")
+    if "discount_idr" not in icols:
+        conn.execute("ALTER TABLE item ADD COLUMN discount_idr INTEGER NOT NULL DEFAULT 0")
     # migration: selection qty (v27) — how many slots a person took
     scols = {r[1] for r in conn.execute("PRAGMA table_info(selection)").fetchall()}
     if "qty" not in scols:
@@ -277,8 +279,9 @@ def create_bill(creator_id: str, title: str, tax_mode: str,
         else:
             slot_count = None
         conn.execute(
-            "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count) VALUES (?, ?, ?, ?, ?, ?)",
-            (bill_id, item["name"], int(item["price"]), i, mode, slot_count),
+            "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count, discount_idr) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (bill_id, item["name"], int(item["price"]), i, mode, slot_count,
+             int(item.get("discount", 0) or 0)),
         )
     conn.commit()
     conn.close()
@@ -377,14 +380,16 @@ def update_bill(bill_id: str, title: str, merchant: str | None,
                     "UPDATE selection SET qty = 1 WHERE item_id = ? AND qty > 1", (iid,)
                 )
             conn.execute(
-                "UPDATE item SET name = ?, price_idr = ?, sort_order = ?, mode = ?, slot_count = ? WHERE id = ? AND bill_id = ?",
-                (item["name"], int(item["price"]), i, mode, slot_count, iid, bill_id),
+                "UPDATE item SET name = ?, price_idr = ?, sort_order = ?, mode = ?, slot_count = ?, discount_idr = ? WHERE id = ? AND bill_id = ?",
+                (item["name"], int(item["price"]), i, mode, slot_count,
+                 int(item.get("discount", 0) or 0), iid, bill_id),
             )
             kept.add(int(iid))
         else:
             cur = conn.execute(
-                "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count) VALUES (?, ?, ?, ?, ?, ?)",
-                (bill_id, item["name"], int(item["price"]), i, mode, slot_count),
+                "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count, discount_idr) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (bill_id, item["name"], int(item["price"]), i, mode, slot_count,
+                 int(item.get("discount", 0) or 0)),
             )
             kept.add(cur.lastrowid)
     removed = existing - kept
