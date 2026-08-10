@@ -132,6 +132,10 @@ def init_db():
         conn.execute("ALTER TABLE item ADD COLUMN slot_count INTEGER")
     if "discount_idr" not in icols:
         conn.execute("ALTER TABLE item ADD COLUMN discount_idr INTEGER NOT NULL DEFAULT 0")
+    # migration: bill tax-included flag (v33) — item prices already include tax
+    bcols = {r[1] for r in conn.execute("PRAGMA table_info(bill)").fetchall()}
+    if "tax_included" not in bcols:
+        conn.execute("ALTER TABLE bill ADD COLUMN tax_included INTEGER NOT NULL DEFAULT 0")
     # migration: selection qty (v27) — how many slots a person took
     scols = {r[1] for r in conn.execute("PRAGMA table_info(selection)").fetchall()}
     if "qty" not in scols:
@@ -256,15 +260,17 @@ def create_bill(creator_id: str, title: str, tax_mode: str,
                 photo_path: str | None = None,
                 merchant: str | None = None,
                 transacted_at: str | None = None,
-                paid_by_name: str | None = None) -> dict:
+                paid_by_name: str | None = None,
+                tax_included: int = 0) -> dict:
     conn = get_db()
     bill_id = new_id()
     conn.execute(
         """INSERT INTO bill (id, creator_identity_id, title, merchant, transacted_at,
-           photo_path, paid_by_name, subtotal_idr, tax_idr, service_idr, total_idr, tax_mode, participant_count)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           photo_path, paid_by_name, subtotal_idr, tax_idr, service_idr, total_idr, tax_mode, participant_count, tax_included)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (bill_id, creator_id, title, merchant, transacted_at, photo_path,
-         paid_by_name, subtotal, tax, service, total, tax_mode, participant_count),
+         paid_by_name, subtotal, tax, service, total, tax_mode, participant_count,
+         1 if tax_included else 0),
     )
     for i, p in enumerate(participants):
         conn.execute(
@@ -333,7 +339,8 @@ def update_bill_photo(bill_id: str, photo_path: str | None):
 def update_bill(bill_id: str, title: str, merchant: str | None,
                 transacted_at: str | None, participants: list[str],
                 items: list[dict], subtotal: int, tax: int, service: int, total: int,
-                participant_count: int | None = None):
+                participant_count: int | None = None,
+                tax_included: int = 0):
     """Full bill update with item diffing.
 
     - Items that keep their id -> updated in place, selections preserved.
@@ -343,9 +350,10 @@ def update_bill(bill_id: str, title: str, merchant: str | None,
     conn = get_db()
     conn.execute(
         """UPDATE bill SET title = ?, merchant = ?, transacted_at = ?,
-           subtotal_idr = ?, tax_idr = ?, service_idr = ?, total_idr = ?, participant_count = ?
+           subtotal_idr = ?, tax_idr = ?, service_idr = ?, total_idr = ?, participant_count = ?, tax_included = ?
            WHERE id = ?""",
-        (title, merchant, transacted_at, subtotal, tax, service, total, participant_count, bill_id),
+        (title, merchant, transacted_at, subtotal, tax, service, total, participant_count,
+         1 if tax_included else 0, bill_id),
     )
     # participants (simple replace, but keep identity_id claims for same names)
     claims = {r["name"]: r["identity_id"] for r in conn.execute(

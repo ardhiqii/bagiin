@@ -327,6 +327,7 @@ async def create_bill(request: Request):
         transacted_at=transacted_at,
         tax_mode=data.get("tax_mode", "proportional"),
         participant_count=participant_count,
+        tax_included=1 if data.get("tax_included") else 0,
         subtotal=int(data.get("subtotal", 0)),
         tax=int(data.get("tax", 0)),
         service=int(data.get("service", 0)),
@@ -414,6 +415,7 @@ async def update_bill(bill_id: str, request: Request):
         tax=int(data.get("tax", 0)),
         service=int(data.get("service", 0)),
         total=int(data.get("total", 0)),
+        tax_included=1 if data.get("tax_included") else 0,
     )
     return _compute_response(db.get_bill(bill_id))
 

@@ -89,6 +89,9 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
 
     # Tax/service split
     tax_service = bill["tax_idr"] + bill["service_idr"]
+    if bill.get("tax_included"):
+        # prices already include tax -> nothing to add on top
+        tax_service = 0
     mode = bill.get("tax_mode", "proportional")
     total_subtotal = sum(subtotal_by_ident.values()) or 0
 

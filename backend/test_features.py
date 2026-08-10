@@ -511,6 +511,42 @@ def test_item_discount():
     print("PASS item discount: effective price in free + slot math")
 
 
+def test_tax_included():
+    """v33 tax_included bill: prices already include tax -> no tax added on top."""
+    from main import _compute_response
+    creator = db.new_identity("Aufa", role="creator")
+    amel = db.new_identity("Amel")
+
+    bill = db.create_bill(
+        creator_id=creator["id"], title="McD", tax_mode="proportional",
+        subtotal=25000, tax=0, service=0, total=25000,
+        tax_included=1,
+        items=[
+            {"name": "Krispy", "price": 23500, "discount": 5500},
+            {"name": "Rice", "price": 10000, "discount": 3000},
+        ],
+        participants=["Aufa", "Amel"],
+    )
+    bid = bill["id"]
+    data = db.get_bill(bid)
+    assert data["bill"]["tax_included"] == 1
+    krispy = next(i for i in data["items"] if i["name"] == "Krispy")
+    rice = next(i for i in data["items"] if i["name"] == "Rice")
+
+    # Amel takes Krispy (18000 eff), Aufa takes Rice (7000 eff) -> no tax
+    db.set_selections(bid, amel["id"], [{"item_id": krispy["id"], "qty": 1}])
+    db.set_selections(bid, creator["id"], [{"item_id": rice["id"], "qty": 1}])
+    resp = _compute_response(db.get_bill(bid))
+    for p in resp["people"]:
+        assert p["tax_idr"] == 0, p
+        assert p["total_idr"] == p["subtotal_idr"], p
+    by_name = {p["name"]: p for p in resp["people"]}
+    assert by_name["Amel"]["total_idr"] == 18000, by_name
+    assert by_name["Aufa"]["total_idr"] == 7000, by_name
+    assert resp["total_ok"] is True, resp["total_ok"]
+    print("PASS tax_included: no tax added, totals = effective items")
+
+
 
 def test_creator_toggle_paid():
     """Creator can mark someone paid/unpaid; others can't touch someone else's
