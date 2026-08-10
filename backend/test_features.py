@@ -424,6 +424,54 @@ def test_slot_mode():
     print("PASS slot mode: locked per-slot, uncovered, N change, release, clamp")
 
 
+def test_free_qty_portions():
+    """v31 free items: pickers can take 1+ portions; price splits
+    proportionally per portion taken (2 portions = 2x a single portion)."""
+    from main import _compute_response
+    creator = db.new_identity("Aufa", role="creator")
+    amel = db.new_identity("Amel")
+    budi = db.new_identity("Budi")
+
+    bill = db.create_bill(
+        creator_id=creator["id"], title="Es Teh bareng", tax_mode="proportional",
+        subtotal=30000, tax=3000, service=0, total=33000,
+        items=[{"name": "Es Teh", "price": 30000}],
+        participants=["Aufa", "Amel", "Budi"],
+    )
+    bid = bill["id"]
+    data = db.get_bill(bid)
+    teh = next(i for i in data["items"])
+    assert teh["mode"] == "free"
+
+    # Amel takes 2 portions, Budi 1 -> 3 portions total, 10000/portion
+    db.set_selections(bid, amel["id"], [{"item_id": teh["id"], "qty": 2}])
+    db.set_selections(bid, budi["id"], [{"item_id": teh["id"], "qty": 1}])
+    resp = _compute_response(db.get_bill(bid))
+    by_id = {p["identity_id"]: p for p in resp["people"]}
+    assert by_id[amel["id"]]["subtotal_idr"] == 20000, by_id
+    assert by_id[budi["id"]]["subtotal_idr"] == 10000, by_id
+    assert resp["total_ok"] is True, resp["total_ok"]
+    # no empty-slot concept for free items
+    assert resp["uncovered_idr"] == 0
+
+    # rounding: price 10000, 3 portions -> 3333 x3 = 9999, rem 1 to first picker
+    bill2 = db.create_bill(
+        creator_id=creator["id"], title="Rounding", tax_mode="proportional",
+        subtotal=10000, tax=0, service=0, total=10000,
+        items=[{"name": "Snack", "price": 10000}],
+        participants=["Aufa", "Amel", "Budi"],
+    )
+    data2 = db.get_bill(bill2["id"])
+    snack = next(i for i in data2["items"])
+    db.set_selections(bill2["id"], amel["id"], [{"item_id": snack["id"], "qty": 2}])
+    db.set_selections(bill2["id"], budi["id"], [{"item_id": snack["id"], "qty": 1}])
+    resp2 = _compute_response(db.get_bill(bill2["id"]))
+    total_sub = sum(p["subtotal_idr"] for p in resp2["people"])
+    assert total_sub == 10000, total_sub
+    print("PASS free qty: proportional portions + rounding")
+
+
+
 def test_creator_toggle_paid():
     """Creator can mark someone paid/unpaid; others can't touch someone else's
     status. mark_paid endpoint guards both directions."""

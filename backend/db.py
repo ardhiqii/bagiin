@@ -485,8 +485,9 @@ def remove_person(bill_id: str, identity_id: str):
 def set_selections(bill_id: str, identity_id: str, picks) -> None:
     """Replace a person's selections for a bill. Auto-ensure identity in payments.
 
-    picks: list of {item_id, qty} (qty = how many slots, default 1).
-    For free-mode items qty is always 1; slot-mode items allow qty > 1.
+    picks: list of {item_id, qty} (qty = how many portions/slots, default 1).
+    Both free-mode and slot-mode items allow qty > 1 (free = portions,
+    slot = slots).
     """
     # normalize: accept legacy bare item_ids list too
     norm = []

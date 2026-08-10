@@ -1,6 +1,7 @@
 """Bagiin - split calculation engine.
 
-Free items: split equally among whoever picked the item (existing behavior).
+Free items: split proportionally by servings taken (each picker takes 1+
+portions; price // total_qty per portion).
 Slot items: creator declares N slots; each slot costs price // N; people take
 1+ slots; empty slots stay uncovered (shown to the creator, not auto-assigned).
 
@@ -71,13 +72,19 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
                     "amount_idr": amount,
                 })
             continue
-        # free mode (existing)
+        # free mode: split proportionally by servings taken (qty = how many
+        # portions this person takes, default 1). price // total_qty per serving,
+        # rounding remainder round-robin across servings.
         if not selectors:
             continue
-        share = it["price_idr"] // len(selectors)
-        rem = it["price_idr"] - share * len(selectors)
-        for idx, (ident, _q) in enumerate(selectors):
-            subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + share + (1 if idx < rem else 0)
+        total_qty = sum(q for _, q in selectors)
+        share = it["price_idr"] // total_qty
+        rem = it["price_idr"] - share * total_qty
+        for ident, qty in selectors:
+            subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + share * qty
+        for i in range(rem):
+            ident = selectors[i % len(selectors)][0]
+            subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + 1
 
     # Tax/service split
     tax_service = bill["tax_idr"] + bill["service_idr"]

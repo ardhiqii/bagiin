@@ -522,8 +522,8 @@ async def set_selections(bill_id: str, request: Request):
             if others.get(p["item_id"], 0) + p["qty"] > it["slot_count"]:
                 left = it["slot_count"] - others.get(p["item_id"], 0)
                 raise HTTPException(400, f"Slot {it['name']} tinggal {left}")
-        elif p["qty"] > 1:
-            raise HTTPException(400, f"{it['name']} bukan item slot, gak bisa ambil lebih dari 1")
+        elif p["qty"] > 99:
+            raise HTTPException(400, f"{it['name']} maksimal 99 porsi")
     db.claim_participant(bill_id, ident["id"], ident["name"])
     db.set_selections(bill_id, ident["id"], picks)
     return _compute_response(db.get_bill(bill_id))
