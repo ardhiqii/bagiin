@@ -3,8 +3,9 @@ import io
 import json
 import os
 import secrets
-import string
-import tempfile
+import time
+import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 # load .env from backend dir (GEMINI_API_KEY etc.)
@@ -29,6 +30,8 @@ import calc
 from ocr import ocr_receipt
 
 app = FastAPI(title="Bagiin")
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s: %(message)s")
 
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter

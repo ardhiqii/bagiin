@@ -1,12 +1,18 @@
 """Bagiin - Gemini OCR service (free tier, gemini-3.5-flash)."""
 import base64
 import json
+import logging
 import os
+import time
 import urllib.error
 import urllib.request
 
+log = logging.getLogger("bagiin.ocr")
+
 MODEL = os.environ.get("BAGIIN_OCR_MODEL", "gemini-3.5-flash")
 API_KEY = os.environ.get("GEMINI_API_KEY", "")
+MAX_ATTEMPTS = 3
+RETRY_CODES = (429, 500, 502, 503, 504)
 
 SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Output JSON EXACTLY:
 {"merchant":"nama tempat makan/toko","date":"YYYY-MM-DD","items":[{"name":"nama item","price":harga,"discount":diskon}],"subtotal":N,"tax":N,"service":N,"total":N,"tax_included":true/false}
@@ -50,13 +56,33 @@ def ocr_receipt(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"},
     )
-    try:
-        resp = urllib.request.urlopen(req, timeout=60)
-        data = json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Gemini HTTP {e.code}: {e.read().decode()[:300]}")
-    except Exception as e:
-        raise RuntimeError(f"Gemini request failed: {e}")
+    data = None
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            resp = urllib.request.urlopen(req, timeout=60)
+            data = json.loads(resp.read())
+            break
+        except urllib.error.HTTPError as e:
+            code = e.code
+            body = e.read().decode()[:300]
+            log.warning("Gemini HTTP %d (attempt %d/%d): %s", code, attempt + 1, MAX_ATTEMPTS, body)
+            if code == 429 and "quota" in body.lower():
+                raise RuntimeError(
+                    "Kuota harian AI gratis (Gemini) habis. Reset tengah malam, "
+                    "atau isi manual aja sekarang."
+                )
+            if code in RETRY_CODES and attempt < MAX_ATTEMPTS - 1:
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise RuntimeError(f"Gemini HTTP {code}: {body}")
+        except Exception as e:
+            log.warning("Gemini request gagal (attempt %d/%d): %s", attempt + 1, MAX_ATTEMPTS, e)
+            if attempt < MAX_ATTEMPTS - 1:
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise RuntimeError(f"Gemini request gagal: {e}")
+    if data is None:
+        raise RuntimeError("Gemini gagal setelah beberapa percobaan")
 
     try:
         text = data["candidates"][0]["content"]["parts"][0]["text"]
