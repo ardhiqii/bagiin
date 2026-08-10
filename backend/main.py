@@ -579,11 +579,15 @@ async def release_selection(bill_id: str, item_id: int, identity_id: str, reques
 
 @app.post("/api/bills/{bill_id}/payments/{identity_id}/paid")
 def mark_paid(bill_id: str, identity_id: str, request: Request):
-    _bill_or_404(bill_id)
+    """Mark a person as paid. Only the person themselves or the bill creator
+    can do it (e.g. someone transferred money but won't open the app)."""
+    bill_data = _bill_or_404(bill_id)
     ident = _identity_from_request(request)
+    if ident["id"] != identity_id and bill_data["bill"]["creator_identity_id"] != ident["id"]:
+        raise HTTPException(403, "Gak bisa ubah status bayar orang lain")
     db.claim_participant(bill_id, ident["id"], ident["name"])
     db.mark_paid(bill_id, identity_id)
-    return {"ok": True}
+    return _compute_response(db.get_bill(bill_id))
 
 
 @app.post("/api/bills/{bill_id}/payments/{identity_id}/unpaid")
@@ -594,7 +598,7 @@ def mark_unpaid(bill_id: str, identity_id: str, request: Request):
     if ident["id"] != identity_id and bill_data["bill"]["creator_identity_id"] != ident["id"]:
         raise HTTPException(403, "Gak bisa ubah status bayar orang lain")
     db.mark_unpaid(bill_id, identity_id)
-    return {"ok": True}
+    return _compute_response(db.get_bill(bill_id))
 
 
 @app.post("/api/bills/{bill_id}/photo")

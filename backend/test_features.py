@@ -424,6 +424,50 @@ def test_slot_mode():
     print("PASS slot mode: locked per-slot, uncovered, N change, release, clamp")
 
 
+def test_creator_toggle_paid():
+    """Creator can mark someone paid/unpaid; others can't touch someone else's
+    status. mark_paid endpoint guards both directions."""
+    from fastapi.testclient import TestClient
+    from main import app, _compute_response
+    creator = db.new_identity("Aufa", role="creator")
+    amel = db.new_identity("Amel")
+    budi = db.new_identity("Budi")
+
+    bill = db.create_bill(
+        creator_id=creator["id"], title="Makan", tax_mode="proportional",
+        subtotal=20000, tax=0, service=0, total=20000,
+        items=[{"name": "A", "price": 20000}], participants=["Aufa", "Amel"],
+    )
+    bid = bill["id"]
+    data = db.get_bill(bid)
+    db.join_bill(bid, amel["id"], "Amel")
+    db.set_selections(bid, amel["id"], [data["items"][0]["id"]])
+
+    c = TestClient(app)
+    H = {"X-Identity-Id": creator["id"]}
+    Ha = {"X-Identity-Id": amel["id"]}
+    Hb = {"X-Identity-Id": budi["id"]}
+
+    # stranger can't mark Amel paid
+    r = c.post(f"/api/bills/{bid}/payments/{amel['id']}/paid", headers=Hb)
+    assert r.status_code == 403, (r.status_code, r.text)
+    # Amel can mark herself
+    r = c.post(f"/api/bills/{bid}/payments/{amel['id']}/paid", headers=Ha)
+    assert r.status_code == 200, (r.status_code, r.text)
+    assert r.json()["settled"] is True
+    # creator can unmark her
+    r = c.post(f"/api/bills/{bid}/payments/{amel['id']}/unpaid", headers=H)
+    assert r.status_code == 200, (r.status_code, r.text)
+    assert r.json()["settled"] is False
+    # creator can mark her paid again
+    r = c.post(f"/api/bills/{bid}/payments/{amel['id']}/paid", headers=H)
+    assert r.status_code == 200 and r.json()["settled"] is True
+    # stranger still can't unmark
+    r = c.post(f"/api/bills/{bid}/payments/{amel['id']}/unpaid", headers=Hb)
+    assert r.status_code == 403, (r.status_code, r.text)
+    print("PASS creator toggles paid/unpaid, others blocked")
+
+
 if __name__ == "__main__":
     test_update_bill_diff()
     test_payment_accounts()
@@ -434,4 +478,5 @@ if __name__ == "__main__":
     test_mark_unpaid()
     test_paid_by()
     test_slot_mode()
+    test_creator_toggle_paid()
     print("\nALL PASS")
