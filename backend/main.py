@@ -644,7 +644,8 @@ async def ocr_upload(request: Request, file: UploadFile = File(...)):
     try:
         result = ocr_receipt(raw, mime_type=mime)
     except RuntimeError as e:
-        raise HTTPException(502, str(e))
+        # 4xx supaya Cloudflare gak nelen body-nya (5xx diubah CF jadi HTML error page)
+        raise HTTPException(422, str(e))
     # keep photo for bill creation
     filename = secrets.token_hex(8) + ".jpg"
     path = UPLOAD_DIR / filename
