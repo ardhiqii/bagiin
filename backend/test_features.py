@@ -398,7 +398,7 @@ def test_slot_mode():
     assert db.set_item_slots(bid, teh["id"], 4) is True
     resp = _compute_response(db.get_bill(bid))
     assert resp["uncovered_idr"] == 3750, resp["uncovered_idr"]  # 15000 - 3750*3
-    assert any("Slot kosong" in w and "Es Teh" in w for w in resp["warnings"]), resp["warnings"]
+    assert any("Bagian kosong" in w and "Es Teh" in w for w in resp["warnings"]), resp["warnings"]
     # can't go below taken (2 taken: Amel 2 + Budi 1 = 3)
     # (set_item_slots doesn't validate; the endpoint does — test endpoint guard)
     # release Budi's slot via db helper (taken drops to 2: Amel x2)

@@ -132,8 +132,8 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
         warnings.append(f"Item tidak dipilih siapa pun: {it['name']} Rp {it['price_idr']:,} -> masuk ke pembuat bill")
     for u in uncovered_slots:
         warnings.append(
-            f"Slot kosong: {u['name']} {u['empty']} slot belum keambil "
-            f"(Rp {u['per_slot']:,}/slot, total Rp {u['amount_idr']:,})"
+            f"Bagian kosong: {u['name']} {u['empty']} bagian belum keambil "
+            f"(Rp {u['per_slot']:,}/bagian, total Rp {u['amount_idr']:,})"
         )
 
     assigned = sum(p["total_idr"] for p in people)
