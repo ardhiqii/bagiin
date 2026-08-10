@@ -1,9 +1,13 @@
 """Bagiin - split calculation engine.
 
-Invariant: sum(total_per_person) == bill.total_idr, always.
+Free items: split equally among whoever picked the item (existing behavior).
+Slot items: creator declares N slots; each slot costs price // N; people take
+1+ slots; empty slots stay uncovered (shown to the creator, not auto-assigned).
+
+Invariant: sum(total_per_person) + uncovered_idr + remaining_to_creator == bill.total.
 Rounding leftovers go to the creator (the one who fronted the money).
 """
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal
 
 
 def compute(bill: dict, items: list[dict], selections: list[dict],
@@ -11,37 +15,68 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     """Compute per-identity totals.
 
     bill: dict with subtotal_idr, tax_idr, service_idr, total_idr, tax_mode
-    items: list of item dicts (id, name, price_idr)
-    selections: list of {item_id, identity_id}
+    items: list of item dicts (id, name, price_idr, mode, slot_count)
+    selections: list of {item_id, identity_id, qty}
     participants: list of {name} (creator-declared names, for warnings)
     Returns:
       {
         "people": [{identity_id, name, subtotal_idr, tax_idr, total_idr}],
         "by_identity": {identity_id: {...}},
-        "unassigned_items": [item dicts with no selection],
+        "unassigned_items": [free item dicts with no selection],
+        "uncovered_slots": [{item_id, name, per_slot, empty, amount_idr}],
+        "uncovered_idr": int (total rupiah of empty slots),
         "warnings": [...],
         "total_ok": bool
       }
     """
-    # Map identity -> selections, then invert to item -> selectors
-    sel_map: dict[str, set[int]] = {}
+    # Map identity -> {item_id: qty}, then invert to item -> [(identity, qty)]
+    sel_map: dict[str, dict[int, int]] = {}
     for s in selections:
-        sel_map.setdefault(s["identity_id"], set()).add(s["item_id"])
+        sel_map.setdefault(s["identity_id"], {})[s["item_id"]] = int(s.get("qty", 1))
 
-    sel_by_item: dict[int, list[str]] = {}
-    for ident_id, item_ids in sel_map.items():
-        for iid in item_ids:
-            sel_by_item.setdefault(iid, []).append(ident_id)
+    sel_by_item: dict[int, list[tuple[str, int]]] = {}
+    for ident_id, item_qty in sel_map.items():
+        for iid, qty in item_qty.items():
+            sel_by_item.setdefault(iid, []).append((ident_id, qty))
 
     subtotal_by_ident: dict[str, int] = {}
+    uncovered_slots: list[dict] = []
+    uncovered_idr = 0
+
     for it in items:
         selectors = sel_by_item.get(it["id"], [])
+        if it.get("mode") == "slot" and it.get("slot_count"):
+            slot_count = max(1, int(it["slot_count"]))
+            per_slot = it["price_idr"] // slot_count
+            taken = sum(q for _, q in selectors)
+            for ident, qty in selectors:
+                subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + per_slot * qty
+            if taken >= slot_count:
+                # all slots taken: distribute rounding remainder (price % slot_count)
+                # among holders in order, first gets extra rupiah (like free mode)
+                rem = it["price_idr"] - per_slot * slot_count
+                for idx, (ident, _q) in enumerate(selectors):
+                    if idx >= rem:
+                        break
+                    subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + 1
+            else:
+                empty = slot_count - taken
+                amount = it["price_idr"] - per_slot * taken
+                uncovered_idr += amount
+                uncovered_slots.append({
+                    "item_id": it["id"],
+                    "name": it["name"],
+                    "per_slot": per_slot,
+                    "empty": empty,
+                    "amount_idr": amount,
+                })
+            continue
+        # free mode (existing)
         if not selectors:
             continue
         share = it["price_idr"] // len(selectors)
-        # distribute remainder among selectors in order (first gets extra rupiah)
         rem = it["price_idr"] - share * len(selectors)
-        for idx, ident in enumerate(selectors):
+        for idx, (ident, _q) in enumerate(selectors):
             subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + share + (1 if idx < rem else 0)
 
     # Tax/service split
@@ -51,7 +86,6 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
 
     tax_by_ident: dict[str, int] = {}
     if mode == "equal":
-        # equal among people who have subtotal > 0
         payers = [k for k, v in subtotal_by_ident.items() if v > 0]
         if payers:
             per = tax_service // len(payers)
@@ -63,11 +97,8 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     else:  # proportional
         for ident, sub in subtotal_by_ident.items():
             if total_subtotal > 0:
-                # proportional share, rounded down, remainder to creator
                 share = int(Decimal(sub) * Decimal(tax_service) / Decimal(total_subtotal))
                 tax_by_ident[ident] = share
-        # remainder to creator (only when someone actually has subtotal;
-        # with zero selections the whole tax would otherwise dump on the creator)
         paid = sum(tax_by_ident.values())
         diff = tax_service - paid
         if diff != 0 and subtotal_by_ident:
@@ -87,23 +118,34 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
         })
     people.sort(key=lambda p: -p["total_idr"])
 
-    # names for identities (from selections join we don't have; caller fills names)
     by_identity = {p["identity_id"]: p for p in people}
 
-    # unassigned items
-    unassigned = [it for it in items if not sel_by_item.get(it["id"])]
+    # unassigned items (free items nobody picked -> creator; slot items with no
+    # picks are uncovered, NOT assigned to the creator — design B)
+    unassigned = [it for it in items if not sel_by_item.get(it["id"]) and not (
+        it.get("mode") == "slot" and it.get("slot_count")
+    )]
 
     # warnings
     warnings = []
     for it in unassigned:
         warnings.append(f"Item tidak dipilih siapa pun: {it['name']} Rp {it['price_idr']:,} -> masuk ke pembuat bill")
-    total_ok = sum(p["total_idr"] for p in people) == bill["total_idr"]
+    for u in uncovered_slots:
+        warnings.append(
+            f"Slot kosong: {u['name']} {u['empty']} slot belum keambil "
+            f"(Rp {u['per_slot']:,}/slot, total Rp {u['amount_idr']:,})"
+        )
+
+    assigned = sum(p["total_idr"] for p in people)
+    total_ok = (assigned + uncovered_idr) == bill["total_idr"]
 
     return {
         "people": people,
         "by_identity": by_identity,
         "unassigned_items": unassigned,
+        "uncovered_slots": uncovered_slots,
+        "uncovered_idr": uncovered_idr,
         "warnings": warnings,
         "total_ok": total_ok,
-        "remaining_to_creator": bill["total_idr"] - sum(p["total_idr"] for p in people),
+        "remaining_to_creator": bill["total_idr"] - assigned - uncovered_idr,
     }

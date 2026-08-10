@@ -143,15 +143,23 @@ def _compute_response(bill_data: dict):
         # payer already paid (they fronted the bill) -> always settled
         if p["identity_id"] == paid_by_id:
             p["paid"] = "paid"
-    # item -> selectors for UI
+    # item -> selectors for UI (list of {name, qty, id})
     sel_by_item = {}
     for s in bill_data["selections"]:
-        sel_by_item.setdefault(s["item_id"], []).append(s["identity_name"])
-    # settled: closed OR everyone with selections has paid (payer counts as paid)
+        sel_by_item.setdefault(s["item_id"], []).append({
+            "name": s["identity_name"],
+            "qty": int(s.get("qty", 1)),
+            "id": s["identity_id"],
+        })
+    # settled: closed OR everyone with selections has paid (payer counts as
+    # paid) AND no empty slots remain (uncovered_idr == 0)
     sel_ids = {s["identity_id"] for s in bill_data["selections"]}
     paid_ids = {p["identity_id"] for p in bill_data["payments"] if p["status"] == "paid"}
     paid_ids.add(paid_by_id)
-    settled = bill["status"] == "closed" or (bool(sel_ids) and sel_ids <= paid_ids)
+    settled = (
+        bill["status"] == "closed"
+        or (bool(sel_ids) and sel_ids <= paid_ids and result["uncovered_idr"] == 0)
+    )
     return {
         "bill": bill,
         "creator_name": creator_name,
@@ -167,6 +175,8 @@ def _compute_response(bill_data: dict):
         "total_ok": result["total_ok"],
         "remaining_to_creator": result["remaining_to_creator"],
         "unassigned_items": result["unassigned_items"],
+        "uncovered_slots": result["uncovered_slots"],
+        "uncovered_idr": result["uncovered_idr"],
         "settled": settled,
     }
 
@@ -318,7 +328,12 @@ async def create_bill(request: Request):
         tax=int(data.get("tax", 0)),
         service=int(data.get("service", 0)),
         total=int(data.get("total", 0)),
-        items=[{"name": i["name"], "price": int(i["price"])} for i in items],
+        items=[{
+            "name": i["name"],
+            "price": int(i["price"]),
+            "mode": i.get("mode", "free"),
+            "slot_count": i.get("slot_count"),
+        } for i in items],
         participants=participants,
         photo_path=data.get("photo_path"),
         paid_by_name=paid_by_name,
@@ -344,6 +359,32 @@ async def update_bill(bill_id: str, request: Request):
     items = data.get("items") or []
     if not items:
         raise HTTPException(400, "Minimal 1 item")
+    # slot-mode guards for edited items: slot_count >= taken, and switching a
+    # slot item to free clamps everyone's qty to 1
+    cur_items = {i["id"]: i for i in bill_data["items"]}
+    taken_by_item: dict[int, int] = {}
+    for s in bill_data["selections"]:
+        taken_by_item[s["item_id"]] = taken_by_item.get(s["item_id"], 0) + int(s.get("qty", 1))
+    for it in items:
+        iid = it.get("id")
+        mode = it.get("mode", "free")
+        if not iid:
+            continue
+        cur = cur_items.get(int(iid))
+        if not cur:
+            continue
+        if mode == "slot":
+            sc = it.get("slot_count")
+            try:
+                sc = max(1, int(sc or 1))
+            except (TypeError, ValueError):
+                sc = 1
+            taken = taken_by_item.get(int(iid), 0)
+            if sc < taken:
+                raise HTTPException(400, f"Slot {it['name']} minimal {taken} (sudah keambil {taken})")
+        elif cur["mode"] == "slot":
+            # switching to free: clamp qty to 1 (people stay selected once)
+            db.clamp_selection_qty(bill_id, int(iid))
     participants = [p.strip() for p in (data.get("participants") or []) if p.strip()]
     pc = data.get("participant_count")
     participant_count = int(pc) if pc not in (None, "") else None
@@ -354,7 +395,13 @@ async def update_bill(bill_id: str, request: Request):
         transacted_at=(data.get("transacted_at") or "").strip() or None,
         participants=participants,
         participant_count=participant_count,
-        items=[{"id": i.get("id"), "name": i["name"], "price": int(i["price"])} for i in items],
+        items=[{
+            "id": i.get("id"),
+            "name": i["name"],
+            "price": int(i["price"]),
+            "mode": i.get("mode", "free"),
+            "slot_count": i.get("slot_count"),
+        } for i in items],
         subtotal=int(data.get("subtotal", 0)),
         tax=int(data.get("tax", 0)),
         service=int(data.get("service", 0)),
@@ -443,13 +490,90 @@ async def set_selections(bill_id: str, request: Request):
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
     ident = _identity_from_request(request)
-    item_ids = [int(x) for x in (data.get("item_ids") or [])]
-    # validate items belong to bill
-    valid = {i["id"] for i in bill_data["items"]}
-    if any(i not in valid for i in item_ids):
+    raw_picks = data.get("picks") or []
+    # legacy: bare item_ids list (qty 1 each)
+    if not raw_picks and data.get("item_ids"):
+        raw_picks = [{"item_id": i} for i in data.get("item_ids")]
+    picks = []
+    for p in raw_picks:
+        if isinstance(p, dict):
+            picks.append({"item_id": int(p["item_id"]), "qty": max(1, int(p.get("qty", 1)))})
+        else:
+            picks.append({"item_id": int(p), "qty": 1})
+    valid = {i["id"]: i for i in bill_data["items"]}
+    if any(p["item_id"] not in valid for p in picks):
         raise HTTPException(400, "Item invalid")
+    # merge duplicate item ids
+    merged: dict[int, int] = {}
+    for p in picks:
+        merged[p["item_id"]] = merged.get(p["item_id"], 0) + p["qty"]
+    picks = [{"item_id": k, "qty": v} for k, v in merged.items()]
+    # slot capacity check: per item, sum of other people's qty + mine <= slot_count
+    others: dict[int, int] = {}
+    for s in bill_data["selections"]:
+        if s["identity_id"] == ident["id"]:
+            continue
+        others[s["item_id"]] = others.get(s["item_id"], 0) + int(s.get("qty", 1))
+    for p in picks:
+        it = valid[p["item_id"]]
+        if it["mode"] == "slot" and it["slot_count"]:
+            if p["qty"] > it["slot_count"]:
+                raise HTTPException(400, f"Slot {it['name']} cuma {it['slot_count']}")
+            if others.get(p["item_id"], 0) + p["qty"] > it["slot_count"]:
+                left = it["slot_count"] - others.get(p["item_id"], 0)
+                raise HTTPException(400, f"Slot {it['name']} tinggal {left}")
+        elif p["qty"] > 1:
+            raise HTTPException(400, f"{it['name']} bukan item slot, gak bisa ambil lebih dari 1")
     db.claim_participant(bill_id, ident["id"], ident["name"])
-    db.set_selections(bill_id, ident["id"], item_ids)
+    db.set_selections(bill_id, ident["id"], picks)
+    return _compute_response(db.get_bill(bill_id))
+
+
+@app.put("/api/bills/{bill_id}/items/{item_id}/slots")
+async def set_item_slots(bill_id: str, item_id: int, request: Request):
+    """Creator changes an item's slot count (must be >= slots already taken)."""
+    data = await _read_json(request)
+    bill_data = _bill_or_404(bill_id)
+    ident = _identity_from_request(request)
+    if bill_data["bill"]["creator_identity_id"] != ident["id"]:
+        raise HTTPException(403, "Hanya pembuat bill")
+    if bill_data["bill"]["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup, gak bisa diubah")
+    item = next((i for i in bill_data["items"] if i["id"] == item_id), None)
+    if not item:
+        raise HTTPException(404, "Item tidak ditemukan")
+    if item["mode"] != "slot":
+        raise HTTPException(400, "Item ini bukan mode slot")
+    try:
+        slot_count = int(data.get("slot_count") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "slot_count invalid")
+    if slot_count < 1:
+        raise HTTPException(400, "Slot minimal 1")
+    taken = sum(int(s.get("qty", 1)) for s in bill_data["selections"] if s["item_id"] == item_id)
+    if slot_count < taken:
+        raise HTTPException(400, f"Slot minimal {taken} (sudah keambil {taken})")
+    if not db.set_item_slots(bill_id, item_id, slot_count):
+        raise HTTPException(404, "Item tidak ditemukan")
+    return _compute_response(db.get_bill(bill_id))
+
+
+@app.delete("/api/bills/{bill_id}/items/{item_id}/selections/{identity_id}")
+async def release_selection(bill_id: str, item_id: int, identity_id: str, request: Request):
+    """Release a person's slot(s) on one item. Owner or creator can do it
+    (e.g. mis-tap, or someone bailed and the creator frees their slots)."""
+    bill_data = _bill_or_404(bill_id)
+    ident = _identity_from_request(request)
+    if bill_data["bill"]["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup")
+    if ident["id"] != identity_id and bill_data["bill"]["creator_identity_id"] != ident["id"]:
+        raise HTTPException(403, "Cuma pemilik slot atau pembuat bill yang bisa lepas")
+    item = next((i for i in bill_data["items"] if i["id"] == item_id), None)
+    if not item:
+        raise HTTPException(404, "Item tidak ditemukan")
+    if not db.get_selection(bill_id, item_id, identity_id):
+        raise HTTPException(404, "Orang itu gak punya slot di item ini")
+    db.set_selection_qty(bill_id, identity_id, item_id, 0)
     return _compute_response(db.get_bill(bill_id))
 
 

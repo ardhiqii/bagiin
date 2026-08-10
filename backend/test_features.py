@@ -324,6 +324,106 @@ def test_paid_by():
     print("PASS paid_by: default creator, resolve on join, auto-paid, re-assign")
 
 
+def test_slot_mode():
+    """v27 slot items: per-slot price locked, empty slots uncovered, N change,
+    multi-slot pick, release, settled requires no empty slots."""
+    from main import _compute_response
+    creator = db.new_identity("Aufa", role="creator")
+    amel = db.new_identity("Amel")
+    budi = db.new_identity("Budi")
+
+    # bill: free item (Nasi 30000) + slot item (Es Teh 15000, 3 slots)
+    bill = db.create_bill(
+        creator_id=creator["id"], title="Makan", tax_mode="proportional",
+        subtotal=45000, tax=4500, service=0, total=49500,
+        items=[
+            {"name": "Nasi", "price": 30000},
+            {"name": "Es Teh", "price": 15000, "mode": "slot", "slot_count": 3},
+        ],
+        participants=["Aufa", "Amel", "Budi"],
+    )
+    bid = bill["id"]
+    data = db.get_bill(bid)
+    nasi = next(i for i in data["items"] if i["name"] == "Nasi")
+    teh = next(i for i in data["items"] if i["name"] == "Es Teh")
+    assert teh["mode"] == "slot" and teh["slot_count"] == 3
+    assert nasi["mode"] == "free" and nasi["slot_count"] is None
+
+    # nothing picked -> both free item + slot uncovered
+    resp = _compute_response(db.get_bill(bid))
+    assert resp["uncovered_idr"] == 15000, resp["uncovered_idr"]
+    assert len(resp["uncovered_slots"]) == 1
+    assert resp["uncovered_slots"][0]["name"] == "Es Teh"
+    assert resp["uncovered_slots"][0]["empty"] == 3
+    assert resp["uncovered_slots"][0]["per_slot"] == 5000
+
+    # Amel takes 2 slots of Es Teh -> 10000 subtotal, 1 slot empty (5000)
+    db.set_selections(bid, amel["id"], [{"item_id": teh["id"], "qty": 2}])
+    resp = _compute_response(db.get_bill(bid))
+    amel_p = next(p for p in resp["people"] if p["identity_id"] == amel["id"])
+    assert amel_p["subtotal_idr"] == 10000, amel_p
+    assert resp["uncovered_idr"] == 5000, resp["uncovered_idr"]
+    assert resp["uncovered_slots"][0]["empty"] == 1
+
+    # Budi takes the last slot -> uncovered 0; settled False until paid
+    db.set_selections(bid, budi["id"], [{"item_id": teh["id"], "qty": 1}])
+    resp = _compute_response(db.get_bill(bid))
+    assert resp["uncovered_idr"] == 0, resp["uncovered_idr"]
+    assert resp["uncovered_slots"] == []
+    assert resp["settled"] is False
+    # Nasi (free) still unpicked -> that rupiah is not on anyone (creator warning)
+    assert resp["total_ok"] is False, resp["total_ok"]
+    # once someone picks Nasi, every rupiah is covered -> total_ok
+    db.set_selections(bid, amel["id"], [
+        {"item_id": teh["id"], "qty": 2},
+        {"item_id": nasi["id"], "qty": 1},
+    ])
+    resp = _compute_response(db.get_bill(bid))
+    assert resp["total_ok"] is True, resp["total_ok"]
+
+    # everyone paid -> settled (payer = creator auto-paid)
+    db.mark_paid(bid, amel["id"])
+    db.mark_paid(bid, budi["id"])
+    resp = _compute_response(db.get_bill(bid))
+    assert resp["settled"] is True, resp["settled"]
+
+    # free item Nasi unpicked stays assigned-to-creator warning, not uncovered
+    # (checked earlier: right after the slot is full but before Nasi was picked,
+    # total_ok was False = the Nasi rupiah wasn't on anyone)
+    assert resp["remaining_to_creator"] == 0, resp["remaining_to_creator"]
+
+    # creator bumps slots 3 -> 4 (people can add another slot later)
+    # note: per-slot price recomputes (15000/4 = 3750), so the 3 taken slots
+    # now cover 11250 and 1 empty slot is uncovered at 3750
+    assert db.set_item_slots(bid, teh["id"], 4) is True
+    resp = _compute_response(db.get_bill(bid))
+    assert resp["uncovered_idr"] == 3750, resp["uncovered_idr"]  # 15000 - 3750*3
+    assert any("Slot kosong" in w and "Es Teh" in w for w in resp["warnings"]), resp["warnings"]
+    # can't go below taken (2 taken: Amel 2 + Budi 1 = 3)
+    # (set_item_slots doesn't validate; the endpoint does — test endpoint guard)
+    # release Budi's slot via db helper (taken drops to 2: Amel x2)
+    db.set_selection_qty(bid, budi["id"], teh["id"], 0)
+    resp = _compute_response(db.get_bill(bid))
+    assert resp["uncovered_idr"] == 7500, resp["uncovered_idr"]  # 15000 - 3750*2
+
+    # clamp: switch Es Teh back to free clamps qty to 1
+    db.update_bill(
+        bid, title="Makan", merchant=None, transacted_at=None,
+        participants=["Aufa", "Amel", "Budi"],
+        items=[
+            {"id": nasi["id"], "name": "Nasi", "price": 30000},
+            {"id": teh["id"], "name": "Es Teh", "price": 15000, "mode": "free"},
+        ],
+        subtotal=45000, tax=4500, service=0, total=49500,
+    )
+    data = db.get_bill(bid)
+    teh2 = next(i for i in data["items"] if i["name"] == "Es Teh")
+    assert teh2["mode"] == "free" and teh2["slot_count"] is None
+    sels = [s for s in data["selections"] if s["item_id"] == teh2["id"]]
+    assert all(int(s["qty"]) == 1 for s in sels), sels
+    print("PASS slot mode: locked per-slot, uncovered, N change, release, clamp")
+
+
 if __name__ == "__main__":
     test_update_bill_diff()
     test_payment_accounts()
@@ -333,4 +433,5 @@ if __name__ == "__main__":
     test_delete_bill_and_settled()
     test_mark_unpaid()
     test_paid_by()
+    test_slot_mode()
     print("\nALL PASS")

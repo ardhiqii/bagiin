@@ -59,13 +59,16 @@ def init_db():
             bill_id TEXT NOT NULL REFERENCES bill(id),
             name TEXT NOT NULL,
             price_idr INTEGER NOT NULL,
-            sort_order INTEGER NOT NULL DEFAULT 0
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            mode TEXT NOT NULL DEFAULT 'free',      -- 'free' (bagi yang milih) | 'slot' (bagi N slot)
+            slot_count INTEGER                       -- creator-set slot count (slot mode only)
         );
 
         CREATE TABLE IF NOT EXISTS selection (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             item_id INTEGER NOT NULL REFERENCES item(id),
             identity_id TEXT NOT NULL REFERENCES identity(id),
+            qty INTEGER NOT NULL DEFAULT 1,
             UNIQUE (item_id, identity_id)
         );
 
@@ -121,6 +124,16 @@ def init_db():
         conn.execute("ALTER TABLE bill ADD COLUMN paid_by_name TEXT")
     if "paid_by_identity_id" not in bcols:
         conn.execute("ALTER TABLE bill ADD COLUMN paid_by_identity_id TEXT")
+    # migration: item slot mode (v27) — 'free' vs 'slot N' splitting
+    icols = {r[1] for r in conn.execute("PRAGMA table_info(item)").fetchall()}
+    if "mode" not in icols:
+        conn.execute("ALTER TABLE item ADD COLUMN mode TEXT NOT NULL DEFAULT 'free'")
+    if "slot_count" not in icols:
+        conn.execute("ALTER TABLE item ADD COLUMN slot_count INTEGER")
+    # migration: selection qty (v27) — how many slots a person took
+    scols = {r[1] for r in conn.execute("PRAGMA table_info(selection)").fetchall()}
+    if "qty" not in scols:
+        conn.execute("ALTER TABLE selection ADD COLUMN qty INTEGER NOT NULL DEFAULT 1")
     conn.commit()
     conn.close()
 
@@ -257,9 +270,15 @@ def create_bill(creator_id: str, title: str, tax_mode: str,
             (bill_id, p.strip(), i),
         )
     for i, item in enumerate(items):
+        mode = item.get("mode", "free")
+        slot_count = item.get("slot_count")
+        if mode == "slot":
+            slot_count = max(1, int(slot_count or 1))
+        else:
+            slot_count = None
         conn.execute(
-            "INSERT INTO item (bill_id, name, price_idr, sort_order) VALUES (?, ?, ?, ?)",
-            (bill_id, item["name"], int(item["price"]), i),
+            "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count) VALUES (?, ?, ?, ?, ?, ?)",
+            (bill_id, item["name"], int(item["price"]), i, mode, slot_count),
         )
     conn.commit()
     conn.close()
@@ -280,7 +299,7 @@ def get_bill(bill_id: str):
         (bill_id,),
     ).fetchall()
     selections = conn.execute(
-        """SELECT s.item_id, s.identity_id, i.name AS item_name, i.price_idr,
+        """SELECT s.item_id, s.identity_id, s.qty, i.name AS item_name, i.price_idr,
                   idn.name AS identity_name
            FROM selection s
            JOIN item i ON i.id = s.item_id
@@ -342,16 +361,30 @@ def update_bill(bill_id: str, title: str, merchant: str | None,
     kept = set()
     for i, item in enumerate(items):
         iid = item.get("id")
+        mode = item.get("mode", "free")
+        slot_count = item.get("slot_count")
+        if mode == "slot":
+            slot_count = max(1, int(slot_count or 1))
+        else:
+            slot_count = None
         if iid:
+            # if this item is switching from slot -> free, drop multi-slot qty
+            cur_mode = conn.execute(
+                "SELECT mode FROM item WHERE id = ? AND bill_id = ?", (iid, bill_id)
+            ).fetchone()
+            if cur_mode and cur_mode["mode"] == "slot" and mode != "slot":
+                conn.execute(
+                    "UPDATE selection SET qty = 1 WHERE item_id = ? AND qty > 1", (iid,)
+                )
             conn.execute(
-                "UPDATE item SET name = ?, price_idr = ?, sort_order = ? WHERE id = ? AND bill_id = ?",
-                (item["name"], int(item["price"]), i, iid, bill_id),
+                "UPDATE item SET name = ?, price_idr = ?, sort_order = ?, mode = ?, slot_count = ? WHERE id = ? AND bill_id = ?",
+                (item["name"], int(item["price"]), i, mode, slot_count, iid, bill_id),
             )
             kept.add(int(iid))
         else:
             cur = conn.execute(
-                "INSERT INTO item (bill_id, name, price_idr, sort_order) VALUES (?, ?, ?, ?)",
-                (bill_id, item["name"], int(item["price"]), i),
+                "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count) VALUES (?, ?, ?, ?, ?, ?)",
+                (bill_id, item["name"], int(item["price"]), i, mode, slot_count),
             )
             kept.add(cur.lastrowid)
     removed = existing - kept
@@ -449,22 +482,88 @@ def remove_person(bill_id: str, identity_id: str):
     conn.close()
 
 
-def set_selections(bill_id: str, identity_id: str, item_ids: list[int]):
-    """Replace a person's selections for a bill. Auto-ensure identity in payments."""
+def set_selections(bill_id: str, identity_id: str, picks) -> None:
+    """Replace a person's selections for a bill. Auto-ensure identity in payments.
+
+    picks: list of {item_id, qty} (qty = how many slots, default 1).
+    For free-mode items qty is always 1; slot-mode items allow qty > 1.
+    """
+    # normalize: accept legacy bare item_ids list too
+    norm = []
+    for p in picks:
+        if isinstance(p, dict):
+            norm.append((int(p["item_id"]), int(p.get("qty", 1))))
+        else:
+            norm.append((int(p), 1))
     conn = get_db()
     conn.execute(
         """DELETE FROM selection WHERE identity_id = ? AND item_id IN
            (SELECT id FROM item WHERE bill_id = ?)""",
         (identity_id, bill_id),
     )
-    for item_id in item_ids:
+    for item_id, qty in norm:
         conn.execute(
-            "INSERT OR IGNORE INTO selection (item_id, identity_id) VALUES (?, ?)",
-            (item_id, identity_id),
+            "INSERT OR IGNORE INTO selection (item_id, identity_id, qty) VALUES (?, ?, ?)",
+            (item_id, identity_id, qty),
         )
     conn.execute(
         "INSERT OR IGNORE INTO payment (bill_id, identity_id, amount_idr) VALUES (?, ?, 0)",
         (bill_id, identity_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_selection_qty(bill_id: str, identity_id: str, item_id: int, qty: int) -> bool:
+    """Set a single person's slot qty on one item (0/absent = remove)."""
+    conn = get_db()
+    conn.execute(
+        "DELETE FROM selection WHERE item_id = ? AND identity_id = ?",
+        (item_id, identity_id),
+    )
+    if qty > 0:
+        conn.execute(
+            "INSERT OR IGNORE INTO selection (item_id, identity_id, qty) VALUES (?, ?, ?)",
+            (item_id, identity_id, qty),
+        )
+    conn.execute(
+        "INSERT OR IGNORE INTO payment (bill_id, identity_id, amount_idr) VALUES (?, ?, 0)",
+        (bill_id, identity_id),
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_selection(bill_id: str, item_id: int, identity_id: str) -> dict | None:
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM selection WHERE item_id = ? AND identity_id = ?",
+        (item_id, identity_id),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def set_item_slots(bill_id: str, item_id: int, slot_count: int) -> bool:
+    """Creator updates an item's slot count. slot_count must be >= taken slots
+    (validated by caller); items that are free stay free (slot_count NULL)."""
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE item SET slot_count = ? WHERE id = ? AND bill_id = ? AND mode = 'slot'",
+        (slot_count, item_id, bill_id),
+    )
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
+
+
+def clamp_selection_qty(bill_id: str, item_id: int) -> None:
+    """After an item switches from slot to free, clamp everyone's qty to 1."""
+    conn = get_db()
+    conn.execute(
+        "UPDATE selection SET qty = 1 WHERE item_id = ? AND qty > 1",
+        (item_id,),
     )
     conn.commit()
     conn.close()
@@ -526,7 +625,8 @@ def delete_bill(bill_id: str, creator_id: str) -> bool:
 
 
 def _bill_settled(conn, bill_id: str, status: str) -> bool:
-    """True when the bill is closed OR everyone with selections has paid."""
+    """True when the bill is closed OR everyone with selections has paid AND
+    all slot items are fully taken (no empty slots)."""
     if status == "closed":
         return True
     sel_ids = [r["identity_id"] for r in conn.execute(
@@ -540,7 +640,19 @@ def _bill_settled(conn, bill_id: str, status: str) -> bool:
         "SELECT identity_id FROM payment WHERE bill_id = ? AND status = 'paid'",
         (bill_id,),
     ).fetchall()}
-    return all(s in paid for s in sel_ids)
+    if not all(s in paid for s in sel_ids):
+        return False
+    # empty slots on slot-mode items mean the bill is not fully covered
+    empty = conn.execute(
+        """SELECT i.id FROM item i
+           LEFT JOIN (SELECT item_id, SUM(qty) AS t FROM selection
+                      WHERE item_id IN (SELECT id FROM item WHERE bill_id = ?)
+                      GROUP BY item_id) s ON s.item_id = i.id
+           WHERE i.bill_id = ? AND i.mode = 'slot' AND i.slot_count IS NOT NULL
+             AND COALESCE(s.t, 0) < i.slot_count""",
+        (bill_id, bill_id),
+    ).fetchall()
+    return len(empty) == 0
 
 
 def get_bills_for_identity(identity_id: str):
