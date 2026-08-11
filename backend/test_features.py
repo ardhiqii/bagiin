@@ -177,8 +177,10 @@ def test_join_and_remove_person():
     assert names[amel["id"]] == "amel", names
     assert names[budi["id"]] == "Budi", names
     joined = [p for p in resp["people"] if p["total_idr"] == 0]
-    # creator is always in the roster now (paid, 0 total) + 2 joined guests
-    assert len(joined) == 3, resp["people"]
+    # creator is always in the roster; unpicked items default to the creator,
+    # so the creator's total here is 30000 (items A+B) — only the 2 joined
+    # guests show 0
+    assert len(joined) == 2, resp["people"]
     assert len(resp["people"]) == 3, resp["people"]
 
     # creator removes a wrong/double join -> gone from roster + selections
@@ -305,7 +307,10 @@ def test_paid_by():
     bid2 = bill2["id"]
     resp = _compute_response(db.get_bill(bid2))
     assert resp["paid_by_name"] == "Budi"
-    assert resp["paid_by_id"] == creator["id"]  # fallback: creator until Budi joins
+    # placeholder not resolved yet -> NOBODY is auto-marked paid (no bogus
+    # fallback to creator); paid_by_id stays None until Budi joins
+    assert resp["paid_by_id"] is None, resp["paid_by_id"]
+    assert all(p["paid"] == "unpaid" for p in resp["people"]), resp["people"]
     # Budi joins + claims slot -> resolves to his identity
     db.join_bill(bid2, guest["id"], "Budi")
     resp = _compute_response(db.get_bill(bid2))
@@ -371,8 +376,9 @@ def test_slot_mode():
     assert resp["uncovered_idr"] == 0, resp["uncovered_idr"]
     assert resp["uncovered_slots"] == []
     assert resp["settled"] is False
-    # Nasi (free) still unpicked -> that rupiah is not on anyone (creator warning)
-    assert resp["total_ok"] is False, resp["total_ok"]
+    # Nasi (free) still unpicked -> defaults to the creator's share, so every
+    # rupiah is covered even before someone picks it
+    assert resp["total_ok"] is True, resp["total_ok"]
     # once someone picks Nasi, every rupiah is covered -> total_ok
     db.set_selections(bid, amel["id"], [
         {"item_id": teh["id"], "qty": 2},

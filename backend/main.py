@@ -122,20 +122,31 @@ def _compute_response(bill_data: dict):
     creator = db.get_identity(bill["creator_identity_id"])
     creator_name = creator["name"] if creator else "?"
     # who paid? default = creator. paid_by_identity_id wins (unambiguous);
-    # otherwise fall back to matching paid_by_name against joined identities.
+    # otherwise try matching paid_by_name against joined identities / claimed
+    # participants. If still unresolved (placeholder name, person hasn't
+    # joined), paid_by_id stays None -> nobody is auto-marked paid and the
+    # bill can't be "settled" until the real payer joins and is resolved.
     paid_by_id = bill.get("paid_by_identity_id")
     paid_by_name = bill.get("paid_by_name") or ""
     if not paid_by_id and paid_by_name:
+        target = paid_by_name.strip().lower()
         for p in bill_data["payments"]:
             ident = db.get_identity(p["identity_id"])
-            if ident and ident["name"].strip().lower() == paid_by_name.strip().lower():
+            if ident and ident["name"].strip().lower() == target:
                 paid_by_id = p["identity_id"]
                 break
-    if not paid_by_id:
+        if not paid_by_id:
+            for p in bill_data["participants"]:
+                pid = p.get("identity_id")
+                if pid:
+                    ident = db.get_identity(pid)
+                    if ident and ident["name"].strip().lower() == target:
+                        paid_by_id = pid
+                        break
+    if not paid_by_id and not paid_by_name:
         paid_by_id = bill["creator_identity_id"]
-        if not paid_by_name:
-            paid_by_name = creator_name
-    else:
+        paid_by_name = creator_name
+    elif paid_by_id:
         pb = db.get_identity(paid_by_id)
         if pb:
             paid_by_name = pb["name"]
@@ -154,14 +165,18 @@ def _compute_response(bill_data: dict):
             "qty": int(s.get("qty", 1)),
             "id": s["identity_id"],
         })
-    # settled: closed OR everyone with selections has paid (payer counts as
-    # paid) AND no empty slots remain (uncovered_idr == 0)
+    # settled: closed OR at least one item was actually picked AND everyone
+    # with a share (total > 0) has paid, AND no empty slots remain. The
+    # resolved payer counts as paid automatically. (A fresh bill with nothing
+    # picked is NOT settled, even though unpicked items default to the creator.)
     sel_ids = {s["identity_id"] for s in bill_data["selections"]}
+    owed_ids = {p["identity_id"] for p in result["people"] if p["total_idr"] > 0}
     paid_ids = {p["identity_id"] for p in bill_data["payments"] if p["status"] == "paid"}
-    paid_ids.add(paid_by_id)
+    if paid_by_id:
+        paid_ids.add(paid_by_id)
     settled = (
         bill["status"] == "closed"
-        or (bool(sel_ids) and sel_ids <= paid_ids and result["uncovered_idr"] == 0)
+        or (bool(sel_ids) and owed_ids <= paid_ids and result["uncovered_idr"] == 0)
     )
     return {
         "bill": bill,
@@ -538,7 +553,10 @@ async def set_selections(bill_id: str, request: Request):
         elif p["qty"] > 99:
             raise HTTPException(400, f"{it['name']} maksimal 99 porsi")
     db.claim_participant(bill_id, ident["id"], ident["name"])
-    db.set_selections(bill_id, ident["id"], picks)
+    try:
+        db.set_selections(bill_id, ident["id"], picks)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return _compute_response(db.get_bill(bill_id))
 
 
@@ -595,6 +613,8 @@ def mark_paid(bill_id: str, identity_id: str, request: Request):
     """Mark a person as paid. Only the person themselves or the bill creator
     can do it (e.g. someone transferred money but won't open the app)."""
     bill_data = _bill_or_404(bill_id)
+    if bill_data["bill"]["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup, gak bisa ubah status bayar")
     ident = _identity_from_request(request)
     if ident["id"] != identity_id and bill_data["bill"]["creator_identity_id"] != ident["id"]:
         raise HTTPException(403, "Gak bisa ubah status bayar orang lain")
@@ -607,10 +627,25 @@ def mark_paid(bill_id: str, identity_id: str, request: Request):
 def mark_unpaid(bill_id: str, identity_id: str, request: Request):
     """Undo 'sudah bayar'. Only the payer or the bill creator can undo."""
     bill_data = _bill_or_404(bill_id)
+    if bill_data["bill"]["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup, gak bisa ubah status bayar")
     ident = _identity_from_request(request)
     if ident["id"] != identity_id and bill_data["bill"]["creator_identity_id"] != ident["id"]:
         raise HTTPException(403, "Gak bisa ubah status bayar orang lain")
     db.mark_unpaid(bill_id, identity_id)
+    return _compute_response(db.get_bill(bill_id))
+
+
+@app.post("/api/bills/{bill_id}/reopen")
+def reopen_bill(bill_id: str, request: Request):
+    """Creator reopens a closed bill (mis-close / someone still needs to pay)."""
+    bill_data = _bill_or_404(bill_id)
+    ident = _identity_from_request(request)
+    if bill_data["bill"]["creator_identity_id"] != ident["id"]:
+        raise HTTPException(403, "Hanya pembuat bill")
+    if bill_data["bill"]["status"] != "closed":
+        raise HTTPException(400, "Bill belum ditutup")
+    db.reopen_bill(bill_id)
     return _compute_response(db.get_bill(bill_id))
 
 

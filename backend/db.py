@@ -379,27 +379,35 @@ def update_bill(bill_id: str, title: str, merchant: str | None,
         else:
             slot_count = None
         if iid:
-            # if this item is switching from slot -> free, drop multi-slot qty
-            cur_mode = conn.execute(
-                "SELECT mode FROM item WHERE id = ? AND bill_id = ?", (iid, bill_id)
+            # verify the id belongs to THIS bill before updating; a stale or
+            # foreign id must never clobber/delete a real item (data-loss bug)
+            owns = conn.execute(
+                "SELECT id FROM item WHERE id = ? AND bill_id = ?", (iid, bill_id)
             ).fetchone()
-            if cur_mode and cur_mode["mode"] == "slot" and mode != "slot":
+            if owns:
+                # if this item is switching from slot -> free, drop multi-slot qty
+                cur_mode = conn.execute(
+                    "SELECT mode FROM item WHERE id = ? AND bill_id = ?", (iid, bill_id)
+                ).fetchone()
+                if cur_mode and cur_mode["mode"] == "slot" and mode != "slot":
+                    conn.execute(
+                        "UPDATE selection SET qty = 1 WHERE item_id = ? AND qty > 1", (iid,)
+                    )
                 conn.execute(
-                    "UPDATE selection SET qty = 1 WHERE item_id = ? AND qty > 1", (iid,)
+                    "UPDATE item SET name = ?, price_idr = ?, sort_order = ?, mode = ?, slot_count = ?, discount_idr = ? WHERE id = ? AND bill_id = ?",
+                    (item["name"], int(item["price"]), i, mode, slot_count,
+                     int(item.get("discount", 0) or 0), iid, bill_id),
                 )
-            conn.execute(
-                "UPDATE item SET name = ?, price_idr = ?, sort_order = ?, mode = ?, slot_count = ?, discount_idr = ? WHERE id = ? AND bill_id = ?",
-                (item["name"], int(item["price"]), i, mode, slot_count,
-                 int(item.get("discount", 0) or 0), iid, bill_id),
-            )
-            kept.add(int(iid))
-        else:
-            cur = conn.execute(
-                "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count, discount_idr) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (bill_id, item["name"], int(item["price"]), i, mode, slot_count,
-                 int(item.get("discount", 0) or 0)),
-            )
-            kept.add(cur.lastrowid)
+                kept.add(int(iid))
+                continue
+        # no id, or a stale/foreign id -> insert as a brand-new item (never
+        # delete a real item because of an id we don't own)
+        cur = conn.execute(
+            "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count, discount_idr) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (bill_id, item["name"], int(item["price"]), i, mode, slot_count,
+             int(item.get("discount", 0) or 0)),
+        )
+        kept.add(cur.lastrowid)
     removed = existing - kept
     if removed:
         ph = ",".join("?" * len(removed))
@@ -476,7 +484,8 @@ def join_bill(bill_id: str, identity_id: str, name: str):
 
 def remove_person(bill_id: str, identity_id: str):
     """Creator removes a person from a bill: drops their selections, payment
-    record, and any legacy participant claim."""
+    record, and any legacy participant claim. If the removed person was the
+    assigned payer, the payer falls back to the creator."""
     conn = get_db()
     conn.execute(
         """DELETE FROM selection WHERE identity_id = ? AND item_id IN
@@ -491,6 +500,11 @@ def remove_person(bill_id: str, identity_id: str):
         "UPDATE bill_participant SET identity_id = NULL WHERE bill_id = ? AND identity_id = ?",
         (bill_id, identity_id),
     )
+    conn.execute(
+        "UPDATE bill SET paid_by_identity_id = NULL, paid_by_name = NULL "
+        "WHERE id = ? AND paid_by_identity_id = ?",
+        (bill_id, identity_id),
+    )
     conn.commit()
     conn.close()
 
@@ -501,6 +515,11 @@ def set_selections(bill_id: str, identity_id: str, picks) -> None:
     picks: list of {item_id, qty} (qty = how many portions/slots, default 1).
     Both free-mode and slot-mode items allow qty > 1 (free = portions,
     slot = slots).
+
+    Slot capacity is enforced INSIDE the write transaction (BEGIN IMMEDIATE)
+    so two guests tapping the same slot at once can't oversubscribe an item.
+    Raises ValueError with a friendly message when a slot item would be
+    overbooked.
     """
     # normalize: accept legacy bare item_ids list too
     norm = []
@@ -510,22 +529,45 @@ def set_selections(bill_id: str, identity_id: str, picks) -> None:
         else:
             norm.append((int(p), 1))
     conn = get_db()
-    conn.execute(
-        """DELETE FROM selection WHERE identity_id = ? AND item_id IN
-           (SELECT id FROM item WHERE bill_id = ?)""",
-        (identity_id, bill_id),
-    )
-    for item_id, qty in norm:
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        # authoritative re-check against the live DB (not a stale snapshot)
+        for item_id, qty in norm:
+            it = conn.execute(
+                "SELECT id, mode, slot_count FROM item WHERE id = ? AND bill_id = ?",
+                (item_id, bill_id),
+            ).fetchone()
+            if not it:
+                raise ValueError("Item invalid")
+            if it["mode"] == "slot" and it["slot_count"]:
+                taken = conn.execute(
+                    "SELECT COALESCE(SUM(qty), 0) AS t FROM selection "
+                    "WHERE item_id = ? AND identity_id != ?",
+                    (item_id, identity_id),
+                ).fetchone()["t"]
+                if taken + qty > it["slot_count"]:
+                    left = it["slot_count"] - taken
+                    raise ValueError(f"Slot tinggal {left}")
         conn.execute(
-            "INSERT OR IGNORE INTO selection (item_id, identity_id, qty) VALUES (?, ?, ?)",
-            (item_id, identity_id, qty),
+            """DELETE FROM selection WHERE identity_id = ? AND item_id IN
+               (SELECT id FROM item WHERE bill_id = ?)""",
+            (identity_id, bill_id),
         )
-    conn.execute(
-        "INSERT OR IGNORE INTO payment (bill_id, identity_id, amount_idr) VALUES (?, ?, 0)",
-        (bill_id, identity_id),
-    )
-    conn.commit()
-    conn.close()
+        for item_id, qty in norm:
+            conn.execute(
+                "INSERT OR IGNORE INTO selection (item_id, identity_id, qty) VALUES (?, ?, ?)",
+                (item_id, identity_id, qty),
+            )
+        conn.execute(
+            "INSERT OR IGNORE INTO payment (bill_id, identity_id, amount_idr) VALUES (?, ?, 0)",
+            (bill_id, identity_id),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def set_selection_qty(bill_id: str, identity_id: str, item_id: int, qty: int) -> bool:
@@ -616,6 +658,17 @@ def close_bill(bill_id: str):
     conn.close()
 
 
+def reopen_bill(bill_id: str):
+    """Reopen a closed bill (creator mis-close / someone still needs to pay)."""
+    conn = get_db()
+    conn.execute(
+        "UPDATE bill SET status = 'open', closed_at = NULL WHERE id = ?",
+        (bill_id,),
+    )
+    conn.commit()
+    conn.close()
+
+
 def delete_bill(bill_id: str, creator_id: str) -> bool:
     """Creator deletes a bill (and everything attached to it)."""
     conn = get_db()
@@ -640,9 +693,18 @@ def delete_bill(bill_id: str, creator_id: str) -> bool:
 
 def _bill_settled(conn, bill_id: str, status: str) -> bool:
     """True when the bill is closed OR everyone with selections has paid AND
-    all slot items are fully taken (no empty slots)."""
+    all slot items are fully taken (no empty slots). Mirrors the detail-view
+    logic: the resolved payer counts as paid, and unpicked free items default
+    to the creator (owed unless the creator is the payer or has paid)."""
     if status == "closed":
         return True
+    bill = conn.execute(
+        "SELECT paid_by_identity_id, paid_by_name, creator_identity_id FROM bill WHERE id = ?",
+        (bill_id,),
+    ).fetchone()
+    paid_by_id = bill["paid_by_identity_id"] if bill else None
+    paid_by_name = (bill["paid_by_name"] or "") if bill else ""
+    creator_id = bill["creator_identity_id"] if bill else None
     sel_ids = [r["identity_id"] for r in conn.execute(
         "SELECT DISTINCT identity_id FROM selection "
         "WHERE item_id IN (SELECT id FROM item WHERE bill_id = ?)",
@@ -654,8 +716,27 @@ def _bill_settled(conn, bill_id: str, status: str) -> bool:
         "SELECT identity_id FROM payment WHERE bill_id = ? AND status = 'paid'",
         (bill_id,),
     ).fetchall()}
+    if paid_by_id:
+        paid.add(paid_by_id)
     if not all(s in paid for s in sel_ids):
         return False
+    # unpicked free items -> creator's share; if the creator isn't the payer
+    # (or payer is an unresolved placeholder), they're still owed
+    is_creator_payer = paid_by_id == creator_id or (not paid_by_id and not paid_by_name)
+    if not is_creator_payer:
+        unpicked = conn.execute(
+            """SELECT COUNT(*) AS c FROM item i
+               WHERE i.bill_id = ? AND i.mode != 'slot'
+                 AND NOT EXISTS (SELECT 1 FROM selection s WHERE s.item_id = i.id)""",
+            (bill_id,),
+        ).fetchone()
+        if unpicked and unpicked["c"] > 0:
+            creator_paid = conn.execute(
+                "SELECT 1 FROM payment WHERE bill_id = ? AND identity_id = ? AND status = 'paid'",
+                (bill_id, creator_id),
+            ).fetchone()
+            if not creator_paid:
+                return False
     # empty slots on slot-mode items mean the bill is not fully covered
     empty = conn.execute(
         """SELECT i.id FROM item i

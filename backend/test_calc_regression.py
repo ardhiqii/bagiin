@@ -26,11 +26,18 @@ CREATOR = "c1"
 
 
 def test_no_selections_no_tax_dump():
+    # zero selections: unpicked free items default to the creator (the warning
+    # says "masuk ke pembuat bill"), so the split stays complete and no rupiah
+    # is dumped/left unassigned
     r = calc.compute(bill=BILL, items=ITEMS, selections=[], participants=["Aufa"], creator_id=CREATOR)
-    assert r["people"] == [], f"people should be empty, got {r['people']}"
-    assert r["total_ok"] is False  # 0 != 317619, normal before close
-    assert r["remaining_to_creator"] == 317619
-    print("PASS 1: zero selections -> no tax dumped on creator")
+    by = {p["identity_id"]: p for p in r["people"]}
+    assert set(by) == {CREATOR}, r["people"]
+    assert by[CREATOR]["subtotal_idr"] == 272400, by[CREATOR]
+    assert by[CREATOR]["tax_idr"] == 45219, by[CREATOR]
+    assert by[CREATOR]["total_idr"] == 317619, by[CREATOR]
+    assert r["total_ok"] is True
+    assert r["remaining_to_creator"] == 0
+    print("PASS 1: zero selections -> unpicked items default to creator, no tax dump")
 
 
 def test_creator_selects_all():
@@ -55,12 +62,14 @@ def test_rounding_remainder_to_creator():
     ]
     r = calc.compute(bill=BILL, items=ITEMS, selections=sel, participants=["a", "b"], creator_id="a")
     total = sum(p["total_idr"] for p in r["people"])
-    # items 3-6 unselected -> not assigned to anyone pre-close; invariant is total + remaining == bill
-    assert total + r["remaining_to_creator"] == BILL["total_idr"], \
-        f"invariant broken: {total} + {r['remaining_to_creator']} != {BILL['total_idr']}"
-    assert r["remaining_to_creator"] == 317619 - 195019, r["remaining_to_creator"]
+    # items 3-6 unselected -> default to the creator (a), so the split is
+    # complete: sum(people) == bill.total, no leftover
+    assert total == BILL["total_idr"], \
+        f"invariant broken: {total} != {BILL['total_idr']}"
+    assert r["remaining_to_creator"] == 0, r["remaining_to_creator"]
     by = {p["identity_id"]: p for p in r["people"]}
-    assert by["a"]["subtotal_idr"] == 46950, by["a"]
+    # a: shared item 1 half (46950) + unpicked items 3-6 (36900+27900+29900+27900)
+    assert by["a"]["subtotal_idr"] == 46950 + 122600, by["a"]
     assert by["b"]["subtotal_idr"] == 46950 + 55900, by["b"]
     # tax must sum to 45219 with remainder on creator (a)
     assert by["a"]["tax_idr"] + by["b"]["tax_idr"] == 45219, (by["a"], by["b"])

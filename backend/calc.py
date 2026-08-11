@@ -77,6 +77,10 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
         # portions this person takes, default 1). eff // total_qty per serving,
         # rounding remainder round-robin across servings.
         if not selectors:
+            # nobody picked this free item -> the creator takes it (matches the
+            # warning "masuk ke pembuat bill"). This keeps the split complete:
+            # sum(people) + uncovered_idr == bill.total.
+            subtotal_by_ident[creator_id] = subtotal_by_ident.get(creator_id, 0) + eff
             continue
         total_qty = sum(q for _, q in selectors)
         share = eff // total_qty
@@ -87,11 +91,11 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
             ident = selectors[i % len(selectors)][0]
             subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + 1
 
-    # Tax/service split
+    # Tax/service split. tax_included means item prices already include PPN —
+    # only that portion is dropped; a separate service charge is still split.
     tax_service = bill["tax_idr"] + bill["service_idr"]
     if bill.get("tax_included"):
-        # prices already include tax -> nothing to add on top
-        tax_service = 0
+        tax_service = bill["service_idr"]
     mode = bill.get("tax_mode", "proportional")
     total_subtotal = sum(subtotal_by_ident.values()) or 0
 
