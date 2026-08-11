@@ -512,6 +512,129 @@ def test_creator_keeps_owner_until_payer_resolves():
     print("PASS creator keeps owner until payer resolves")
 
 
+# ---------- bug-hunt fixes (v41) ----------
+
+def test_name_handoff_to_joined_person_deleteable():
+    """Hand-off payer by NAME to someone already joined resolves the identity
+    immediately -> owner can delete the bill (bug: paid_by_identity_id stayed
+    NULL -> _owner_id saw Budi but db.delete_bill saw creator -> undeletable)."""
+    creator = db.new_identity("Aufa30", role="creator")
+    budi = db.new_identity("Budi30")
+    bid = _mk_bill(creator)
+    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": budi["id"]})
+    r = c.put(f"/api/bills/{bid}/paid_by", headers={"X-Identity-Id": creator["id"]},
+              json={"name": "Budi30"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["paid_by_id"] == budi["id"], data["paid_by_id"]  # resolved now
+    assert data["owner_id"] == budi["id"]
+    r = c.delete(f"/api/bills/{bid}", headers={"X-Identity-Id": budi["id"]})
+    assert r.status_code == 200, (r.status_code, r.text)
+    print("PASS name hand-off resolves identity -> owner can delete")
+
+
+def test_creator_cannot_be_removed():
+    """Creator always has a share (unpicked items default to them) -> removing
+    them strands the bill unpaid. Must be blocked."""
+    creator = db.new_identity("Aufa31", role="creator")
+    budi = db.new_identity("Budi31")
+    bid = _mk_bill(creator, items=[{"name": "A", "price": 30000}, {"name": "B", "price": 30000}],
+                   subtotal=60000, tax=0, total=60000)
+    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": budi["id"]})
+    c.put(f"/api/bills/{bid}/paid_by", headers={"X-Identity-Id": creator["id"]},
+          json={"identity_id": budi["id"]})
+    r = c.delete(f"/api/bills/{bid}/people/{creator['id']}", headers={"X-Identity-Id": budi["id"]})
+    assert r.status_code == 400, (r.status_code, r.text)
+    # removing a regular guest still works
+    amel = db.new_identity("Amel31")
+    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": amel["id"]})
+    r = c.delete(f"/api/bills/{bid}/people/{amel['id']}", headers={"X-Identity-Id": budi["id"]})
+    assert r.status_code == 200
+    print("PASS creator removal blocked; guest removal ok")
+
+
+def test_slot_remainder_distributed_per_slot():
+    """One person holding qty>1 slots must get the full rounding remainder
+    (old loop capped at number of distinct holders -> lost rupiah)."""
+    creator = db.new_identity("Aufa32", role="creator")
+    bid = _mk_bill(creator, items=[{"name": "S", "price": 10004, "mode": "slot", "slot_count": 5}],
+                   subtotal=10004, tax=0, total=10004, participants=["Aufa", "Budi"])
+    ids = _ids(bid)
+    c.post(f"/api/bills/{bid}/selections", headers={"X-Identity-Id": creator["id"]},
+           json={"picks": [{"item_id": ids["S"], "qty": 5}]})
+    data = _compute_response(db.get_bill(bid))
+    sub = sum(p["subtotal_idr"] for p in data["people"])
+    assert sub == 10004, sub
+    assert data["total_ok"] is True
+    print("PASS slot remainder distributed per slot")
+
+
+def test_tax_not_lost_when_no_one_has_share():
+    """Bill with only slot items nobody picked: tax must still land somewhere
+    (creator), keeping the invariant sum+uncovered == total."""
+    creator = db.new_identity("Aufa33", role="creator")
+    bid = _mk_bill(creator, items=[{"name": "Teh", "price": 30000, "mode": "slot", "slot_count": 1}],
+                   subtotal=30000, tax=3000, total=33000, participants=["Aufa", "Budi"])
+    data = _compute_response(db.get_bill(bid))
+    assert data["total_ok"] is True, (data["total_ok"], data["warnings"])
+    assert data["remaining_to_creator"] == 0, data["remaining_to_creator"]
+    creator_p = next(p for p in data["people"] if p["identity_id"] == creator["id"])
+    assert creator_p["tax_idr"] == 3000, creator_p
+    print("PASS tax lands on creator when nobody has a share yet")
+
+
+def test_malformed_inputs_return_400():
+    """Malformed create/update/selections payloads must be 400, not 500."""
+    creator = db.new_identity("Aufa34", role="creator")
+    Hc = {"X-Identity-Id": creator["id"]}
+    cases = [
+        ("/api/bills", {"title": "X", "items": [{"name": "A", "price": "abc"}], "subtotal": 0, "tax": 0, "service": 0, "total": 0}),
+        ("/api/bills", {"title": "X", "items": [{"price": 1000}], "subtotal": 0, "tax": 0, "service": 0, "total": 0}),
+        ("/api/bills", {"title": "X", "items": [{"name": "A", "price": 1000}], "participant_count": "abc", "subtotal": 0, "tax": 0, "service": 0, "total": 0}),
+        ("/api/bills", {"title": "X", "items": [{"name": "A", "price": 1000}], "subtotal": "abc", "tax": 0, "service": 0, "total": 0}),
+        ("/api/bills", {"title": "X", "items": "nope", "subtotal": 0, "tax": 0, "service": 0, "total": 0}),
+    ]
+    for url, body in cases:
+        r = c.post(url, headers=Hc, json=body)
+        assert r.status_code == 400, (url, body, r.status_code, r.text)
+    # qty 0 / negative -> 400 (was silently clamped to 1 portion)
+    bid = _mk_bill(creator, items=[{"name": "A", "price": 10000}], subtotal=10000, tax=0, total=10000)
+    ids = _ids(bid)
+    r = c.post(f"/api/bills/{bid}/selections", headers=Hc,
+               json={"picks": [{"item_id": ids["A"], "qty": 0}]})
+    assert r.status_code == 400, (r.status_code, r.text)
+    r = c.post(f"/api/bills/{bid}/selections", headers=Hc,
+               json={"picks": [{"item_id": ids["A"], "qty": -3}]})
+    assert r.status_code == 400, (r.status_code, r.text)
+    # qty > 99 -> 400
+    r = c.post(f"/api/bills/{bid}/selections", headers=Hc,
+               json={"picks": [{"item_id": ids["A"], "qty": 100}]})
+    assert r.status_code == 400, (r.status_code, r.text)
+    print("PASS malformed inputs -> 400, qty bounds enforced")
+
+
+def test_settled_creator_default_payer_list_matches():
+    """Creator is the default payer when no payer declared: list settled flag
+    must match detail (both True once everyone with a share has paid)."""
+    creator = db.new_identity("Aufa35", role="creator")
+    budi = db.new_identity("Budi35")
+    bid = _mk_bill(creator, items=[{"name": "A", "price": 30000}, {"name": "B", "price": 30000}],
+                   subtotal=60000, tax=0, total=60000)
+    ids = _ids(bid)
+    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": budi["id"]})
+    c.post(f"/api/bills/{bid}/selections", headers={"X-Identity-Id": creator["id"]},
+           json={"picks": [ids["A"]]})
+    c.post(f"/api/bills/{bid}/selections", headers={"X-Identity-Id": budi["id"]},
+           json={"picks": [ids["B"]]})
+    c.post(f"/api/bills/{bid}/payments/{budi['id']}/paid", headers={"X-Identity-Id": budi["id"]})
+    detail = _compute_response(db.get_bill(bid))
+    rows = db.get_bills_for_identity(creator["id"])
+    row = next(b for b in rows if b["id"] == bid)
+    assert detail["settled"] is True, detail["settled"]
+    assert row["settled"] is True, row
+    print("PASS creator-default-payer settled flag consistent list vs detail")
+
+
 if __name__ == "__main__":
     test_full_lifecycle_happy_path()
     test_reopen_permissions()
@@ -531,4 +654,10 @@ if __name__ == "__main__":
     test_payer_is_owner_privileges()
     test_owner_id_in_list_and_detail()
     test_creator_keeps_owner_until_payer_resolves()
+    test_name_handoff_to_joined_person_deleteable()
+    test_creator_cannot_be_removed()
+    test_slot_remainder_distributed_per_slot()
+    test_tax_not_lost_when_no_one_has_share()
+    test_malformed_inputs_return_400()
+    test_settled_creator_default_payer_list_matches()
     print("\nALL PASS")

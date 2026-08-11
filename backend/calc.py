@@ -55,12 +55,18 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
                 subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + per_slot * qty
             if taken >= slot_count:
                 # all slots taken: distribute rounding remainder (eff % slot_count)
-                # among holders in order, first gets extra rupiah (like free mode)
+                # across SLOTS, not people — one person holding qty>1 slots must
+                # get +1 per slot (old loop capped at len(selectors) and lost
+                # rupiah when rem > number of distinct holders)
                 rem = eff - per_slot * slot_count
-                for idx, (ident, _q) in enumerate(selectors):
-                    if idx >= rem:
+                for ident, qty in selectors:
+                    for _ in range(qty):
+                        if rem <= 0:
+                            break
+                        subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + 1
+                        rem -= 1
+                    if rem <= 0:
                         break
-                    subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + 1
             else:
                 empty = slot_count - taken
                 amount = eff - per_slot * taken
@@ -100,7 +106,13 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     total_subtotal = sum(subtotal_by_ident.values()) or 0
 
     tax_by_ident: dict[str, int] = {}
-    if mode == "equal":
+    if not subtotal_by_ident:
+        # nobody has a share yet (e.g. a fresh bill with only slot items that
+        # nobody picked): the tax still has to land somewhere or it vanishes
+        # from the split (total_ok False). Default it to the creator, who is
+        # the fallback owner of uncovered amounts.
+        tax_by_ident[creator_id] = tax_service
+    elif mode == "equal":
         payers = [k for k, v in subtotal_by_ident.items() if v > 0]
         if payers:
             per = tax_service // len(payers)

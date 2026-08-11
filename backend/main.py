@@ -106,6 +106,23 @@ def _names_for_identities(ident_ids: list[str]) -> dict[str, str]:
     return out
 
 
+def _to_int(value, field: str, default=None, *, minv=None, maxv=None):
+    """Parse an int from user input; 400 on malformed values instead of 500."""
+    if value is None or value == "":
+        if default is not None:
+            return default
+        raise HTTPException(400, f"{field} wajib angka")
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        raise HTTPException(400, f"{field} wajib angka")
+    if minv is not None and n < minv:
+        raise HTTPException(400, f"{field} minimal {minv}")
+    if maxv is not None and n > maxv:
+        raise HTTPException(400, f"{field} maksimal {maxv}")
+    return n
+
+
 def generate_readable_code() -> str:
     """12-char code in 3 groups of 4, unambiguous alphabet (no 0/O/1/I/L)."""
     alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -343,7 +360,14 @@ def delete_account(account_id: int, request: Request):
 @app.get("/api/identities/{identity_id}/bills")
 def my_bills(identity_id: str, request: Request):
     _identity_from_request(request)
-    return db.get_bills_for_identity(identity_id)
+    rows = db.get_bills_for_identity(identity_id)
+    # expose the effective owner (resolved payer, else creator) so the UI can
+    # show owner-only actions (delete) — mirrors _owner_id, including the
+    # placeholder-name resolution that paid_by_identity_id alone misses
+    for row in rows:
+        bill_data = db.get_bill(row["id"])
+        row["owner_id"] = _owner_id(bill_data) if bill_data else (row["paid_by_identity_id"] or row["creator_identity_id"])
+    return rows
 
 
 # ---------- bills ----------
@@ -357,15 +381,23 @@ async def create_bill(request: Request):
     transacted_at = (data.get("transacted_at") or "").strip() or None
     title = (data.get("title") or "").strip() or merchant or "Bill"
     items = data.get("items") or []
-    if not items:
+    if not isinstance(items, list) or not items:
         raise HTTPException(400, "Minimal 1 item")
     for i in items:
-        if int(i.get("discount", 0) or 0) > int(i["price"]):
+        if not isinstance(i, dict) or not str(i.get("name") or "").strip():
+            raise HTTPException(400, "Nama item wajib diisi")
+        price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0)
+        discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0)
+        if discount > price:
             raise HTTPException(400, f"Diskon {i['name']} gak bisa lebih besar dari harga")
-    participants = [p.strip() for p in (data.get("participants") or []) if p.strip()]
+    participants = [p.strip() for p in (data.get("participants") or []) if isinstance(p, str) and p.strip()]
     pc = data.get("participant_count")
-    participant_count = int(pc) if pc not in (None, "") else None
+    participant_count = _to_int(pc, "Jumlah orang") if pc not in (None, "") else None
     paid_by_name = (data.get("paid_by_name") or "").strip() or None
+    subtotal = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0)
+    tax = _to_int(data.get("tax"), "Pajak", 0, minv=0)
+    service = _to_int(data.get("service"), "Service", 0, minv=0)
+    total = _to_int(data.get("total"), "Total", 0, minv=0)
     created = db.create_bill(
         creator_id=ident["id"],
         title=title,
@@ -374,16 +406,16 @@ async def create_bill(request: Request):
         tax_mode=data.get("tax_mode", "proportional"),
         participant_count=participant_count,
         tax_included=1 if data.get("tax_included") else 0,
-        subtotal=int(data.get("subtotal", 0)),
-        tax=int(data.get("tax", 0)),
-        service=int(data.get("service", 0)),
-        total=int(data.get("total", 0)),
+        subtotal=subtotal,
+        tax=tax,
+        service=service,
+        total=total,
         items=[{
             "name": i["name"],
-            "price": int(i["price"]),
+            "price": _to_int(i["price"], f"Harga {i['name']}", minv=0),
             "mode": i.get("mode", "free"),
-            "slot_count": i.get("slot_count"),
-            "discount": int(i.get("discount", 0) or 0),
+            "slot_count": _to_int(i.get("slot_count"), f"Slot {i['name']}", 1, minv=1) if i.get("mode") == "slot" else None,
+            "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0),
         } for i in items],
         participants=participants,
         photo_path=data.get("photo_path"),
@@ -408,10 +440,14 @@ async def update_bill(bill_id: str, request: Request):
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup, gak bisa diedit")
     items = data.get("items") or []
-    if not items:
+    if not isinstance(items, list) or not items:
         raise HTTPException(400, "Minimal 1 item")
     for i in items:
-        if int(i.get("discount", 0) or 0) > int(i["price"]):
+        if not isinstance(i, dict) or not str(i.get("name") or "").strip():
+            raise HTTPException(400, "Nama item wajib diisi")
+        price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0)
+        discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0)
+        if discount > price:
             raise HTTPException(400, f"Diskon {i['name']} gak bisa lebih besar dari harga")
     # slot-mode guards for edited items: slot_count >= taken, and switching a
     # slot item to free clamps everyone's qty to 1
@@ -439,9 +475,9 @@ async def update_bill(bill_id: str, request: Request):
         elif cur["mode"] == "slot":
             # switching to free: clamp qty to 1 (people stay selected once)
             db.clamp_selection_qty(bill_id, int(iid))
-    participants = [p.strip() for p in (data.get("participants") or []) if p.strip()]
+    participants = [p.strip() for p in (data.get("participants") or []) if isinstance(p, str) and p.strip()]
     pc = data.get("participant_count")
-    participant_count = int(pc) if pc not in (None, "") else None
+    participant_count = _to_int(pc, "Jumlah orang") if pc not in (None, "") else None
     db.update_bill(
         bill_id,
         title=(data.get("title") or "").strip() or bill_data["bill"]["title"],
@@ -452,15 +488,15 @@ async def update_bill(bill_id: str, request: Request):
         items=[{
             "id": i.get("id"),
             "name": i["name"],
-            "price": int(i["price"]),
+            "price": _to_int(i["price"], f"Harga {i['name']}", minv=0),
             "mode": i.get("mode", "free"),
-            "slot_count": i.get("slot_count"),
-            "discount": int(i.get("discount", 0) or 0),
+            "slot_count": _to_int(i.get("slot_count"), f"Slot {i['name']}", 1, minv=1) if i.get("mode") == "slot" else None,
+            "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0),
         } for i in items],
-        subtotal=int(data.get("subtotal", 0)),
-        tax=int(data.get("tax", 0)),
-        service=int(data.get("service", 0)),
-        total=int(data.get("total", 0)),
+        subtotal=_to_int(data.get("subtotal"), "Subtotal", 0, minv=0),
+        tax=_to_int(data.get("tax"), "Pajak", 0, minv=0),
+        service=_to_int(data.get("service"), "Service", 0, minv=0),
+        total=_to_int(data.get("total"), "Total", 0, minv=0),
         tax_included=1 if data.get("tax_included") else 0,
     )
     return _compute_response(db.get_bill(bill_id))
@@ -490,6 +526,27 @@ async def set_paid_by(bill_id: str, request: Request):
         if identity_id not in roster_ids:
             raise HTTPException(400, "Orang itu belum join bill ini")
         name = target["name"]
+    elif name:
+        # name placeholder: resolve immediately against people already joined /
+        # claimed, so paid_by_identity_id is set and owner checks stay
+        # consistent (bug: hand-off by name to someone already joined left the
+        # column NULL -> owner mismatch -> bill undeletable by anyone)
+        target_l = name.strip().lower()
+        for p in bill_data["payments"]:
+            ident = db.get_identity(p["identity_id"])
+            if ident and ident["name"].strip().lower() == target_l:
+                identity_id = ident["id"]
+                name = ident["name"]
+                break
+        if not identity_id:
+            for p in bill_data["participants"]:
+                pid = p.get("identity_id")
+                if pid:
+                    ident = db.get_identity(pid)
+                    if ident and ident["name"].strip().lower() == target_l:
+                        identity_id = ident["id"]
+                        name = ident["name"]
+                        break
     db.set_paid_by(bill_id, identity_id, name)
     return _compute_response(db.get_bill(bill_id))
 
@@ -535,6 +592,8 @@ def remove_person(bill_id: str, identity_id: str, request: Request):
         raise HTTPException(403, "Bill sudah ditutup")
     if identity_id == ident["id"]:
         raise HTTPException(400, "Gak bisa hapus diri sendiri (owner bill)")
+    if identity_id == bill_data["bill"]["creator_identity_id"]:
+        raise HTTPException(400, "Pembuat bill gak bisa dihapus")
     db.remove_person(bill_id, identity_id)
     return _compute_response(db.get_bill(bill_id))
 
@@ -553,9 +612,12 @@ async def set_selections(bill_id: str, request: Request):
     picks = []
     for p in raw_picks:
         if isinstance(p, dict):
-            picks.append({"item_id": int(p["item_id"]), "qty": max(1, int(p.get("qty", 1)))})
+            iid = _to_int(p.get("item_id"), "Item", minv=1)
+            qty = _to_int(p.get("qty"), "Jumlah", 1, minv=1, maxv=99)
+            picks.append({"item_id": iid, "qty": qty})
         else:
-            picks.append({"item_id": int(p), "qty": 1})
+            # legacy bare item_id (qty 1)
+            picks.append({"item_id": _to_int(p, "Item", minv=1), "qty": 1})
     valid = {i["id"]: i for i in bill_data["items"]}
     if any(p["item_id"] not in valid for p in picks):
         raise HTTPException(400, "Item invalid")

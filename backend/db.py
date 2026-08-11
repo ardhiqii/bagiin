@@ -263,35 +263,37 @@ def create_bill(creator_id: str, title: str, tax_mode: str,
                 paid_by_name: str | None = None,
                 tax_included: int = 0) -> dict:
     conn = get_db()
-    bill_id = new_id()
-    conn.execute(
-        """INSERT INTO bill (id, creator_identity_id, title, merchant, transacted_at,
-           photo_path, paid_by_name, subtotal_idr, tax_idr, service_idr, total_idr, tax_mode, participant_count, tax_included)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (bill_id, creator_id, title, merchant, transacted_at, photo_path,
-         paid_by_name, subtotal, tax, service, total, tax_mode, participant_count,
-         1 if tax_included else 0),
-    )
-    for i, p in enumerate(participants):
+    try:
+        bill_id = new_id()
         conn.execute(
-            "INSERT INTO bill_participant (bill_id, name, sort_order) VALUES (?, ?, ?)",
-            (bill_id, p.strip(), i),
+            """INSERT INTO bill (id, creator_identity_id, title, merchant, transacted_at,
+               photo_path, paid_by_name, subtotal_idr, tax_idr, service_idr, total_idr, tax_mode, participant_count, tax_included)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (bill_id, creator_id, title, merchant, transacted_at, photo_path,
+             paid_by_name, subtotal, tax, service, total, tax_mode, participant_count,
+             1 if tax_included else 0),
         )
-    for i, item in enumerate(items):
-        mode = item.get("mode", "free")
-        slot_count = item.get("slot_count")
-        if mode == "slot":
-            slot_count = max(1, int(slot_count or 1))
-        else:
-            slot_count = None
-        conn.execute(
-            "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count, discount_idr) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (bill_id, item["name"], int(item["price"]), i, mode, slot_count,
-             int(item.get("discount", 0) or 0)),
-        )
-    conn.commit()
-    conn.close()
-    return {"id": bill_id}
+        for i, p in enumerate(participants):
+            conn.execute(
+                "INSERT INTO bill_participant (bill_id, name, sort_order) VALUES (?, ?, ?)",
+                (bill_id, p.strip(), i),
+            )
+        for i, item in enumerate(items):
+            mode = item.get("mode", "free")
+            slot_count = item.get("slot_count")
+            if mode == "slot":
+                slot_count = max(1, int(slot_count or 1))
+            else:
+                slot_count = None
+            conn.execute(
+                "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count, discount_idr) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (bill_id, item["name"], int(item["price"]), i, mode, slot_count,
+                 int(item.get("discount", 0) or 0)),
+            )
+        conn.commit()
+        return {"id": bill_id}
+    finally:
+        conn.close()
 
 
 def get_bill(bill_id: str):
@@ -627,6 +629,13 @@ def clamp_selection_qty(bill_id: str, item_id: int) -> None:
 
 def mark_paid(bill_id: str, identity_id: str):
     conn = get_db()
+    # ensure a payment row exists (owner marking someone whose row was dropped
+    # by remove_person — otherwise the UPDATE is a silent no-op and the bill
+    # can never settle)
+    conn.execute(
+        "INSERT OR IGNORE INTO payment (bill_id, identity_id, amount_idr) VALUES (?, ?, 0)",
+        (bill_id, identity_id),
+    )
     conn.execute(
         """UPDATE payment SET status = 'paid', paid_at = datetime('now')
            WHERE bill_id = ? AND identity_id = ?""",
@@ -670,15 +679,38 @@ def reopen_bill(bill_id: str):
 
 
 def delete_bill(bill_id: str, owner_id: str) -> bool:
-    """Owner (resolved payer, else creator) deletes a bill + everything."""
+    """Owner (resolved payer, else creator) deletes a bill + everything.
+
+    Mirrors _owner_id in main.py: the payer may be a placeholder name that
+    resolves against joined identities (hand-off by name before this fix left
+    paid_by_identity_id NULL -> bill undeletable by anyone).
+    """
     conn = get_db()
     row = conn.execute(
-        "SELECT creator_identity_id, paid_by_identity_id FROM bill WHERE id = ?", (bill_id,)
+        "SELECT creator_identity_id, paid_by_identity_id, paid_by_name FROM bill WHERE id = ?", (bill_id,)
     ).fetchone()
     if not row:
         conn.close()
         return False
     owner = row["paid_by_identity_id"] or row["creator_identity_id"]
+    if not row["paid_by_identity_id"] and row["paid_by_name"]:
+        target = row["paid_by_name"].strip().lower()
+        hit = conn.execute(
+            """SELECT p.identity_id FROM payment p
+               JOIN identity idn ON idn.id = p.identity_id
+               WHERE p.bill_id = ? AND LOWER(TRIM(idn.name)) = ? LIMIT 1""",
+            (bill_id, target),
+        ).fetchone()
+        if not hit:
+            hit = conn.execute(
+                """SELECT bp.identity_id FROM bill_participant bp
+                   JOIN identity idn ON idn.id = bp.identity_id
+                   WHERE bp.bill_id = ? AND bp.identity_id IS NOT NULL
+                     AND LOWER(TRIM(idn.name)) = ? LIMIT 1""",
+                (bill_id, target),
+            ).fetchone()
+        if hit and hit["identity_id"]:
+            owner = hit["identity_id"]
     if owner != owner_id:
         conn.close()
         return False
@@ -696,22 +728,35 @@ def delete_bill(bill_id: str, owner_id: str) -> bool:
 
 
 def _bill_settled(conn, bill_id: str, status: str) -> bool:
-    """True when the bill is closed OR everyone with selections has paid AND
-    all slot items are fully taken (no empty slots). Mirrors the detail-view
-    logic: the resolved payer counts as paid, and unpicked free items default
-    to the creator (owed unless the creator is the payer or has paid)."""
+    """True when the bill is closed OR everyone with a share has paid AND
+    all slot items are fully taken. Mirrors the detail-view logic:
+
+    - no payer set -> creator is the default payer (auto-paid)
+    - resolved payer counts as paid
+    - only items with price > 0 create an obligation (price-0 picks don't)
+    - unpicked free items default to the creator (owed unless creator is
+      the payer or already paid)
+    - tax_mode='creator' puts the whole tax/service on the creator too
+    """
     if status == "closed":
         return True
     bill = conn.execute(
-        "SELECT paid_by_identity_id, paid_by_name, creator_identity_id FROM bill WHERE id = ?",
+        """SELECT paid_by_identity_id, paid_by_name, creator_identity_id,
+                  tax_mode, tax_idr, service_idr, tax_included
+           FROM bill WHERE id = ?""",
         (bill_id,),
     ).fetchone()
+    if not bill:
+        return False
     paid_by_id = bill["paid_by_identity_id"] if bill else None
     paid_by_name = (bill["paid_by_name"] or "") if bill else ""
     creator_id = bill["creator_identity_id"] if bill else None
+    tax_mode = bill["tax_mode"] if bill else "proportional"
+    # people with a real share: selectors on items with price > 0
     sel_ids = [r["identity_id"] for r in conn.execute(
-        "SELECT DISTINCT identity_id FROM selection "
-        "WHERE item_id IN (SELECT id FROM item WHERE bill_id = ?)",
+        """SELECT DISTINCT s.identity_id FROM selection s
+           JOIN item i ON i.id = s.item_id
+           WHERE i.bill_id = ? AND i.price_idr > 0""",
         (bill_id,),
     ).fetchall()]
     if not sel_ids:
@@ -722,6 +767,9 @@ def _bill_settled(conn, bill_id: str, status: str) -> bool:
     ).fetchall()}
     if paid_by_id:
         paid.add(paid_by_id)
+    elif not paid_by_name:
+        # no payer declared -> creator is the default payer (mirrors detail)
+        paid.add(creator_id)
     if not all(s in paid for s in sel_ids):
         return False
     # unpicked free items -> creator's share; if the creator isn't the payer
@@ -730,11 +778,24 @@ def _bill_settled(conn, bill_id: str, status: str) -> bool:
     if not is_creator_payer:
         unpicked = conn.execute(
             """SELECT COUNT(*) AS c FROM item i
-               WHERE i.bill_id = ? AND i.mode != 'slot'
+               WHERE i.bill_id = ? AND i.mode != 'slot' AND i.price_idr > 0
                  AND NOT EXISTS (SELECT 1 FROM selection s WHERE s.item_id = i.id)""",
             (bill_id,),
         ).fetchone()
         if unpicked and unpicked["c"] > 0:
+            creator_paid = conn.execute(
+                "SELECT 1 FROM payment WHERE bill_id = ? AND identity_id = ? AND status = 'paid'",
+                (bill_id, creator_id),
+            ).fetchone()
+            if not creator_paid:
+                return False
+    # tax_mode='creator' puts the whole tax/service on the creator: they owe
+    # even if they never picked an item (mirrors calc.py)
+    if not is_creator_payer and tax_mode == "creator":
+        tax_service = bill["tax_idr"] + bill["service_idr"]
+        if bill["tax_included"]:
+            tax_service = bill["service_idr"]
+        if tax_service > 0:
             creator_paid = conn.execute(
                 "SELECT 1 FROM payment WHERE bill_id = ? AND identity_id = ? AND status = 'paid'",
                 (bill_id, creator_id),
