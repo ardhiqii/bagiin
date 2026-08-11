@@ -669,13 +669,17 @@ def reopen_bill(bill_id: str):
     conn.close()
 
 
-def delete_bill(bill_id: str, creator_id: str) -> bool:
-    """Creator deletes a bill (and everything attached to it)."""
+def delete_bill(bill_id: str, owner_id: str) -> bool:
+    """Owner (resolved payer, else creator) deletes a bill + everything."""
     conn = get_db()
     row = conn.execute(
-        "SELECT creator_identity_id FROM bill WHERE id = ?", (bill_id,)
+        "SELECT creator_identity_id, paid_by_identity_id FROM bill WHERE id = ?", (bill_id,)
     ).fetchone()
-    if not row or row["creator_identity_id"] != creator_id:
+    if not row:
+        conn.close()
+        return False
+    owner = row["paid_by_identity_id"] or row["creator_identity_id"]
+    if owner != owner_id:
         conn.close()
         return False
     conn.execute(
@@ -756,7 +760,7 @@ def get_bills_for_identity(identity_id: str):
     rows = conn.execute(
         """SELECT DISTINCT b.id, b.title, b.merchant, b.transacted_at,
                   b.total_idr, b.status, b.created_at, b.closed_at,
-                  b.creator_identity_id
+                  b.creator_identity_id, b.paid_by_identity_id
           FROM bill b
           LEFT JOIN payment p ON p.bill_id = b.id AND p.identity_id = ?
           WHERE b.creator_identity_id = ? OR p.id IS NOT NULL

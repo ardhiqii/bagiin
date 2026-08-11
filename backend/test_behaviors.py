@@ -165,7 +165,9 @@ def test_payer_placeholder_resolves_on_join():
 
 
 def test_remove_person_clears_stale_payer():
-    """Regression: removing the assigned payer must reset paid_by, not leave a ghost."""
+    """Payer = owner. Once Budi is the payer, only HE can manage; creator can't
+    remove him. Budi can hand the payer role back, then the creator (now owner
+    again) can remove him and paid_by falls back to the creator."""
     creator = db.new_identity("Aufa5", role="creator")
     budi = db.new_identity("Budi5")
     bid = _mk_bill(creator)
@@ -174,12 +176,20 @@ def test_remove_person_clears_stale_payer():
           json={"identity_id": budi["id"]})
     r = c.get(f"/api/bills/{bid}", headers={"X-Identity-Id": creator["id"]})
     assert r.json()["paid_by_id"] == budi["id"]
+    # creator is no longer owner once the payer resolved -> can't remove Budi
+    r = c.delete(f"/api/bills/{bid}/people/{budi['id']}", headers={"X-Identity-Id": creator["id"]})
+    assert r.status_code == 403
+    # Budi (owner) hands the payer role back to the creator
+    r = c.put(f"/api/bills/{bid}/paid_by", headers={"X-Identity-Id": budi["id"]},
+              json={"identity_id": creator["id"]})
+    assert r.status_code == 200
+    # creator is owner again -> can remove Budi; paid_by falls back to creator
     r = c.delete(f"/api/bills/{bid}/people/{budi['id']}", headers={"X-Identity-Id": creator["id"]})
     assert r.status_code == 200
     data = r.json()
     assert data["paid_by_id"] == creator["id"]  # falls back to creator
     assert all(p["identity_id"] != budi["id"] for p in data["people"])
-    print("PASS remove_person clears stale payer")
+    print("PASS remove_person clears stale payer (owner = payer model)")
 
 
 # ---------- permissions ----------
@@ -419,6 +429,89 @@ def test_settled_list_matches_detail():
     print("PASS settled detail == list")
 
 
+# ---------- owner = payer model ----------
+
+def test_payer_is_owner_privileges():
+    """Payer (resolved) gets the owner powers: close, edit, mark others paid,
+    reopen, delete, set payer, remove person, set slots. Creator loses them."""
+    creator = db.new_identity("Aufa20", role="creator")
+    amel = db.new_identity("Amel20")
+    stranger = db.new_identity("Stranger20")
+    bid = _mk_bill(creator, items=[
+        {"name": "Nasi", "price": 30000},
+        {"name": "Ayam", "price": 30000},
+    ], subtotal=60000, tax=0, total=60000, participants=["Aufa", "Amel"])
+    ids = _ids(bid)
+    # Amel joins, becomes payer (resolved via identity)
+    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": amel["id"]})
+    r = c.put(f"/api/bills/{bid}/paid_by", headers={"X-Identity-Id": creator["id"]},
+              json={"identity_id": amel["id"]})
+    assert r.status_code == 200
+    assert r.json()["owner_id"] == amel["id"]
+    Hc = {"X-Identity-Id": creator["id"]}
+    Ha = {"X-Identity-Id": amel["id"]}
+    Hs = {"X-Identity-Id": stranger["id"]}
+
+    # payer can close
+    r = c.post(f"/api/bills/{bid}/close", headers=Ha)
+    assert r.status_code == 200
+    # creator CANNOT close/reopen/edit/delete anymore
+    assert c.post(f"/api/bills/{bid}/close", headers=Hc).status_code == 403
+    assert c.post(f"/api/bills/{bid}/reopen", headers=Hc).status_code == 403
+    assert c.put(f"/api/bills/{bid}", headers=Hc, json={
+        "title": "X", "items": [{"name": "A", "price": 1}],
+        "participants": ["Aufa", "Amel"], "subtotal": 1, "tax": 0, "service": 0, "total": 1}).status_code == 403
+    assert c.delete(f"/api/bills/{bid}", headers=Hc).status_code == 403
+    # stranger can't either
+    assert c.post(f"/api/bills/{bid}/reopen", headers=Hs).status_code == 403
+    # payer can reopen
+    assert c.post(f"/api/bills/{bid}/reopen", headers=Ha).status_code == 200
+    # payer can mark creator paid (confirming receipt of transfer)
+    r = c.post(f"/api/bills/{bid}/payments/{creator['id']}/paid", headers=Ha)
+    assert r.status_code == 200
+    # creator can still mark THEMSELVES paid, but not others
+    assert c.post(f"/api/bills/{bid}/payments/{amel['id']}/paid", headers=Hc).status_code == 403
+    # payer can edit
+    r = c.put(f"/api/bills/{bid}", headers=Ha, json={
+        "title": "Makan Edit", "items": [{"name": "Nasi", "price": 31000}, {"name": "Ayam", "price": 30000}],
+        "participants": ["Aufa", "Amel"], "subtotal": 61000, "tax": 0, "service": 0, "total": 61000})
+    assert r.status_code == 200, r.text
+    # payer can set payer (hand off) and remove person
+    r = c.put(f"/api/bills/{bid}/paid_by", headers=Ha, json={"identity_id": creator["id"]})
+    assert r.status_code == 200
+    assert r.json()["owner_id"] == creator["id"]
+    print("PASS payer = owner: close/edit/mark-paid/reopen/delete + creator loses powers")
+
+
+def test_owner_id_in_list_and_detail():
+    """List + detail both expose the owner (payer when resolved)."""
+    creator = db.new_identity("Aufa21", role="creator")
+    amel = db.new_identity("Amel21")
+    bid = _mk_bill(creator, paid_by_name="Amel21", items=[{"name": "A", "price": 30000}],
+                   subtotal=30000, tax=0, total=30000)
+    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": amel["id"]})
+    detail = _compute_response(db.get_bill(bid))
+    assert detail["owner_id"] == amel["id"], detail["owner_id"]
+    rows = db.get_bills_for_identity(creator["id"])
+    row = next(b for b in rows if b["id"] == bid)
+    assert row["paid_by_identity_id"] == amel["id"], row
+    print("PASS owner_id exposed in detail + list")
+
+
+def test_creator_keeps_owner_until_payer_resolves():
+    """Placeholder payer (name, hasn't joined) -> creator stays owner."""
+    creator = db.new_identity("Aufa22", role="creator")
+    bid = _mk_bill(creator, paid_by_name="Budi22", items=[{"name": "A", "price": 30000}],
+                   subtotal=30000, tax=0, total=30000)
+    Hc = {"X-Identity-Id": creator["id"]}
+    data = c.get(f"/api/bills/{bid}", headers=Hc).json()
+    assert data["owner_id"] == creator["id"], data["owner_id"]
+    assert data["paid_by_id"] is None
+    # creator can still close while payer unresolved
+    assert c.post(f"/api/bills/{bid}/close", headers=Hc).status_code == 200
+    print("PASS creator keeps owner until payer resolves")
+
+
 if __name__ == "__main__":
     test_full_lifecycle_happy_path()
     test_reopen_permissions()
@@ -435,4 +528,7 @@ if __name__ == "__main__":
     test_duplicate_picks_merged()
     test_invalid_inputs()
     test_settled_list_matches_detail()
+    test_payer_is_owner_privileges()
+    test_owner_id_in_list_and_detail()
+    test_creator_keeps_owner_until_payer_resolves()
     print("\nALL PASS")

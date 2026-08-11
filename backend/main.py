@@ -71,6 +71,33 @@ def _bill_or_404(bill_id: str):
     return data
 
 
+def _owner_id(bill_data: dict) -> str:
+    """Effective bill owner: the resolved payer, else the creator.
+
+    The person who paid fronted the money, so they get the owner powers
+    (edit, close, mark paid, delete...). Until a payer is resolved (either
+    paid_by_identity_id set, or the placeholder name matches someone who
+    joined/claimed), the creator stays in control.
+    """
+    bill = bill_data["bill"]
+    pid = bill.get("paid_by_identity_id")
+    if pid:
+        return pid
+    pname = (bill.get("paid_by_name") or "").strip().lower()
+    if pname:
+        for p in bill_data.get("payments", []):
+            ident = db.get_identity(p["identity_id"])
+            if ident and ident["name"].strip().lower() == pname:
+                return ident["id"]
+        for p in bill_data.get("participants", []):
+            pident = p.get("identity_id")
+            if pident:
+                ident = db.get_identity(pident)
+                if ident and ident["name"].strip().lower() == pname:
+                    return ident["id"]
+    return bill["creator_identity_id"]
+
+
 def _names_for_identities(ident_ids: list[str]) -> dict[str, str]:
     out = {}
     for iid in ident_ids:
@@ -180,6 +207,7 @@ def _compute_response(bill_data: dict):
     )
     return {
         "bill": bill,
+        "owner_id": _owner_id(bill_data),
         "creator_name": creator_name,
         "creator_accounts": db.get_accounts(bill["creator_identity_id"]),
         "paid_by_id": paid_by_id,
@@ -375,8 +403,8 @@ async def update_bill(bill_id: str, request: Request):
     data = await _read_json(request)
     bill_data = _bill_or_404(bill_id)
     ident = _identity_from_request(request)
-    if bill_data["bill"]["creator_identity_id"] != ident["id"]:
-        raise HTTPException(403, "Hanya pembuat bill")
+    if _owner_id(bill_data) != ident["id"]:
+        raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup, gak bisa diedit")
     items = data.get("items") or []
@@ -446,8 +474,8 @@ async def set_paid_by(bill_id: str, request: Request):
     data = await _read_json(request)
     bill_data = _bill_or_404(bill_id)
     ident = _identity_from_request(request)
-    if bill_data["bill"]["creator_identity_id"] != ident["id"]:
-        raise HTTPException(403, "Hanya pembuat bill")
+    if _owner_id(bill_data) != ident["id"]:
+        raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup, gak bisa diubah")
     identity_id = data.get("identity_id")
@@ -470,8 +498,8 @@ async def set_paid_by(bill_id: str, request: Request):
 def delete_bill(bill_id: str, request: Request):
     bill_data = _bill_or_404(bill_id)
     ident = _identity_from_request(request)
-    if bill_data["bill"]["creator_identity_id"] != ident["id"]:
-        raise HTTPException(403, "Hanya pembuat bill")
+    if _owner_id(bill_data) != ident["id"]:
+        raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if not db.delete_bill(bill_id, ident["id"]):
         raise HTTPException(404, "Bill tidak ditemukan")
     return {"ok": True}
@@ -481,8 +509,8 @@ def delete_bill(bill_id: str, request: Request):
 def close_bill(bill_id: str, request: Request):
     bill_data = _bill_or_404(bill_id)
     ident = _identity_from_request(request)
-    if bill_data["bill"]["creator_identity_id"] != ident["id"]:
-        raise HTTPException(403, "Hanya pembuat bill")
+    if _owner_id(bill_data) != ident["id"]:
+        raise HTTPException(403, "Hanya owner bill (yang bayar)")
     db.close_bill(bill_id)
     return {"ok": True}
 
@@ -501,12 +529,12 @@ def join_bill(bill_id: str, request: Request):
 def remove_person(bill_id: str, identity_id: str, request: Request):
     bill_data = _bill_or_404(bill_id)
     ident = _identity_from_request(request)
-    if bill_data["bill"]["creator_identity_id"] != ident["id"]:
-        raise HTTPException(403, "Hanya pembuat bill")
+    if _owner_id(bill_data) != ident["id"]:
+        raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
     if identity_id == ident["id"]:
-        raise HTTPException(400, "Gak bisa hapus diri sendiri (pembuat bill)")
+        raise HTTPException(400, "Gak bisa hapus diri sendiri (owner bill)")
     db.remove_person(bill_id, identity_id)
     return _compute_response(db.get_bill(bill_id))
 
@@ -566,8 +594,8 @@ async def set_item_slots(bill_id: str, item_id: int, request: Request):
     data = await _read_json(request)
     bill_data = _bill_or_404(bill_id)
     ident = _identity_from_request(request)
-    if bill_data["bill"]["creator_identity_id"] != ident["id"]:
-        raise HTTPException(403, "Hanya pembuat bill")
+    if _owner_id(bill_data) != ident["id"]:
+        raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup, gak bisa diubah")
     item = next((i for i in bill_data["items"] if i["id"] == item_id), None)
@@ -597,7 +625,7 @@ async def release_selection(bill_id: str, item_id: int, identity_id: str, reques
     ident = _identity_from_request(request)
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
-    if ident["id"] != identity_id and bill_data["bill"]["creator_identity_id"] != ident["id"]:
+    if ident["id"] != identity_id and _owner_id(bill_data) != ident["id"]:
         raise HTTPException(403, "Cuma pemilik slot atau pembuat bill yang bisa lepas")
     item = next((i for i in bill_data["items"] if i["id"] == item_id), None)
     if not item:
@@ -616,7 +644,7 @@ def mark_paid(bill_id: str, identity_id: str, request: Request):
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup, gak bisa ubah status bayar")
     ident = _identity_from_request(request)
-    if ident["id"] != identity_id and bill_data["bill"]["creator_identity_id"] != ident["id"]:
+    if ident["id"] != identity_id and _owner_id(bill_data) != ident["id"]:
         raise HTTPException(403, "Gak bisa ubah status bayar orang lain")
     db.claim_participant(bill_id, ident["id"], ident["name"])
     db.mark_paid(bill_id, identity_id)
@@ -630,7 +658,7 @@ def mark_unpaid(bill_id: str, identity_id: str, request: Request):
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup, gak bisa ubah status bayar")
     ident = _identity_from_request(request)
-    if ident["id"] != identity_id and bill_data["bill"]["creator_identity_id"] != ident["id"]:
+    if ident["id"] != identity_id and _owner_id(bill_data) != ident["id"]:
         raise HTTPException(403, "Gak bisa ubah status bayar orang lain")
     db.mark_unpaid(bill_id, identity_id)
     return _compute_response(db.get_bill(bill_id))
@@ -641,8 +669,8 @@ def reopen_bill(bill_id: str, request: Request):
     """Creator reopens a closed bill (mis-close / someone still needs to pay)."""
     bill_data = _bill_or_404(bill_id)
     ident = _identity_from_request(request)
-    if bill_data["bill"]["creator_identity_id"] != ident["id"]:
-        raise HTTPException(403, "Hanya pembuat bill")
+    if _owner_id(bill_data) != ident["id"]:
+        raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "closed":
         raise HTTPException(400, "Bill belum ditutup")
     db.reopen_bill(bill_id)
@@ -654,8 +682,8 @@ def reopen_bill(bill_id: str, request: Request):
 async def upload_photo(bill_id: str, request: Request, file: UploadFile = File(...)):
     bill_data = _bill_or_404(bill_id)
     ident = _identity_from_request(request)
-    if bill_data["bill"]["creator_identity_id"] != ident["id"]:
-        raise HTTPException(403, "Hanya pembuat bill")
+    if _owner_id(bill_data) != ident["id"]:
+        raise HTTPException(403, "Hanya owner bill (yang bayar)")
     raw = await file.read()
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(400, "Foto maksimal 5MB")
