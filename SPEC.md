@@ -435,6 +435,24 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Changelog
 
+### 2026-08-12 (lanjutan 3) — layar gabung tamu & editor lebih ringkas
+
+- **Layar gabung tamu dibenerin.** Ini layar yang dilewatin *setiap* tamu dari link
+  WhatsApp, dan isinya cuma total sama kotak nama di halaman tanpa brand — gak ada
+  petunjuk ini app apa, siapa yang ngajak, atau habis ini ngapain. Sekarang ada logo,
+  isi bill (jumlah item, berapa orang udah gabung), ke siapa nanti bayarnya, dan
+  keterangan "tanpa akun".
+- Bug white screen di layar yang sama: kalau pembuatan identity gagal (offline), blok
+  `catch` ngasih identity `null` ke `renderGuestView` yang langsung baca `me.id`.
+- **Editor**: teks penjelasan "Pilih bebas: ..." dicetak di bawah *tiap* item — di bill
+  5 item, paragraf yang sama muncul 4 kali. Sekarang cuma sekali di atas daftar; yang
+  per-item tinggal item slot, karena cuma itu yang angkanya beda-beda.
+- **Harga per-bagian di Edit Bill salah**: dibagi dari harga sebelum diskon, jadi item
+  slot yang didiskon nunjukin angka beda antara editor dan layar bill. Bug yang sama
+  udah pernah dibenerin di editor buat-bill — ini salinan keduanya.
+- Kalimat pakai sentence case ("Mau bagi bill apa hari ini?", "Aku yang bayar"); label
+  dan tombol tetap Title Case. Empty state gak teriak lagi.
+
 ### 2026-08-12 (lanjutan 2) — status kebaca sekilas & bill baru mulai dari share
 
 - **Warna status di daftar bill.** Dulu semua baris kelihatan sama, harus dibaca
