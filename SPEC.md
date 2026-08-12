@@ -506,6 +506,14 @@ Sekarang:
 
 Tes: `backend/test_regressions_v51.py` (12 tes) + seluruh suite jadi 80 tes.
 
+### v52 (2026-08-12) — re-deploy: bust cache Cloudflare
+
+Kode sama persis dengan v51. Folder `static/v51` di-serve ulang sebagai `static/v52`
+karena Cloudflare nyimpen draft partial yang sempat ke-request lewat domain live pas
+pengembangan (app.js cuma 3,5KB, screens/bill.js juga versi lama). File bener ada di
+git; CF tetap nyajian versi rusak sampai path-nya ganti. Bump versi folder = mekanisme
+cache-busting resmi project (lihat CLAUDE.md).
+
 ### v13 (2026-08-09) — join-based roster
 - Creator no longer types participant names — just declares headcount (`Berapa orang ikut?`).
 - Guests appear in the bill the moment they join (name prompt → join), even before picking items.

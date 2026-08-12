@@ -42,8 +42,10 @@ Env (`backend/.env`, gitignored, loaded manually at the top of `main.py`):
 path and normalizes query strings, so **every frontend change requires copying the current
 version folder to `vNN+1` and updating all `/static/vNN/` references in `index.html`**
 (scripts, favicons, apple-touch-icon, manifest, `og:image`). Old folders are kept in git. The
-current version is whatever `index.html` points at (v51 at the time of writing) — always
-check, don't assume.
+The current version is whatever `index.html` points at (v52 at the time of writing) — always
+check, don't assume. Never hit the live domain with partial files: Cloudflare caches
+`/static/vNN/*` for 24h on first request, and a half-written file served once will be
+served to everyone (this happened at v51; it was re-shipped as v52).
 
 No build step, no framework, no npm. Vanilla JS with global functions loaded via three
 `<script>` tags; all CSS is inline in `index.html`. JS budget: < 50KB gz.
