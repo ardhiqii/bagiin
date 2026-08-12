@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#FAFAFA">
 <meta name="color-scheme" content="light dark">
-<link rel="icon" href="/static/v47/favicon.svg" type="image/svg+xml">
-<link rel="icon" href="/static/v47/favicon.ico" sizes="48x48">
-<link rel="apple-touch-icon" href="/static/v47/icon-180.png">
+<link rel="icon" href="/static/v49/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/v49/favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="/static/v49/icon-180.png">
 <title>Bagiin</title>
 <style>
 :root {
@@ -171,8 +171,9 @@ input:focus, select:focus { outline:2px solid var(--accent); outline-offset:-1px
 .account-row:last-child { border-bottom:none; }
 .code-display { font-size:20px; font-weight:800; letter-spacing:.06em; text-align:center; padding:14px 10px; background:var(--surface-2); border-radius:var(--r-md); font-variant-numeric:tabular-nums; }
 .dropzone { border:2px dashed var(--border-strong); border-radius:var(--r-md); padding:24px; text-align:center;
-            color:var(--text-2); cursor:pointer; margin-bottom:12px; }
+            color:var(--text-2); cursor:pointer; margin-bottom:12px; transition:background .15s, border-color .15s; }
 .dropzone:active { background:var(--surface-2); }
+.dropzone.dragover { background:var(--surface-2); border-color:var(--accent); color:var(--text); }
 
 /* misc */
 .muted { color:var(--text-3); font-size:13px; }
@@ -192,9 +193,9 @@ input:focus, select:focus { outline:2px solid var(--accent); outline-offset:-1px
 <body>
 <div id="app"></div>
 <div id="toast"></div>
-<script src="/static/v47/app.js"></script>
-<script src="/static/v47/screens.js"></script>
-<script src="/static/v47/bill.js"></script>
+<script src="/static/v49/app.js"></script>
+<script src="/static/v49/screens.js"></script>
+<script src="/static/v49/bill.js"></script>
 <script>render();</script>
 </body>
 </html>

@@ -708,6 +708,12 @@ function renderVerify(ocr, manual = false) {
     paid_by_name: null,
     tax_included: !!(ocr.tax_included),
   };
+  // subtotal auto-follows the item sum UNLESS the user explicitly typed their
+  // own subtotal. For OCR: when the receipt's subtotal differs from the items
+  // (LLM missed an item line), keep the receipt value & show the warning —
+  // otherwise let it follow the items so editing a price updates the total.
+  const _sumItems = (verifyState.items || []).reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)), 0);
+  verifyState.subtotalTouched = !manual && _sumItems !== (verifyState.subtotal || 0);
   const app = $("div#app");
   app.innerHTML = `
     <div class="topbar">
@@ -910,9 +916,11 @@ function renderVerifyItems() {
 
 function updateVerifyTotal() {
   const sumItems = verifyState.items.reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)), 0);
-  // manual mode: subtotal auto-follows items unless user typed their own value
+  // subtotal auto-follows items unless the user typed their own value
+  // (bug: manual-mode-only check meant OCR bills never updated the total when
+  // item prices were edited)
   let subtotal = rupiahParse($("#subtotal-input").value);
-  if (verifyState.manual && !verifyState.subtotalTouched) {
+  if (!verifyState.subtotalTouched) {
     subtotal = sumItems;
     const si = $("#subtotal-input");
     if (si) si.value = rupiahFmt(subtotal);

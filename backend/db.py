@@ -740,7 +740,7 @@ def delete_bill(bill_id: str, owner_id: str) -> bool:
             ).fetchone()
         if hit and hit["identity_id"]:
             owner = hit["identity_id"]
-    if owner != owner_id:
+    if owner != owner_id and row["creator_identity_id"] != owner_id:
         conn.close()
         return False
     photo_path = conn.execute(
