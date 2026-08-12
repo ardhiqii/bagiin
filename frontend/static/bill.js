@@ -279,7 +279,7 @@ function renderGuestView(data, me) {
 
   const main = `
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
         <div style="min-width:0;">
           <div class="label-sm">Total bill</div>
           <div class="money hero-total">${fmt(data.bill.total_idr)}</div>
@@ -938,7 +938,16 @@ function renderCreatorView(data) {
   // bill with unpaid people right below it)
   let statusChip;
   const allSettled = data.all_paid && data.uncovered_idr === 0;
-  if (data.all_paid && data.uncovered_idr === 0) {
+  // Nobody but the creator is on the bill yet. This is the moment right after
+  // "Bikin Bill", and the whole product depends on the link being sent — so the
+  // screen leads with sharing instead of with warnings about a bill that has
+  // not started (bug: a 3-second-old bill opened on "Belum lunas", a Rp 0 chip,
+  // and a red-ish card listing every item as "tidak dipilih siapa pun", while
+  // the only primary button offered was "Tutup Bill").
+  const soloSoFar = data.people.length <= 1 && !closed;
+  if (soloSoFar) {
+    statusChip = `<span class="chip chip-grey">Belum ada yang gabung</span>`;
+  } else if (data.all_paid && data.uncovered_idr === 0) {
     statusChip = `<span class="chip chip-green">${ic("check")} Semua Lunas</span>`;
   } else if (totalUnpaid > 0) {
     // "belum dibayar" (orang) vs "belum keambil" (bagian kosong) vs "belum
@@ -965,7 +974,10 @@ function renderCreatorView(data) {
       red: true,
     });
   }
-  if (data.warnings.length) {
+  // "Item tidak dipilih siapa pun -> masuk ke pembuat bill" is true of every
+  // item on a brand-new bill. Listing them all before anyone has even joined
+  // reads as an error report, so hold it until there is someone to warn about.
+  if (data.warnings.length && !soloSoFar) {
     // esc() the whole joined string: warnings embed user-typed item names.
     // Skip "Bagian kosong: ..." — already shown as its own slot row above.
     // Backend formats with Python's US comma ("Rp 45,000") — normalize to
@@ -986,22 +998,39 @@ function renderCreatorView(data) {
       ${warnRows.map(w => `<div class="warn-row${w.red ? " is-red" : ""}"${w.red ? ` style="color:var(--red);"` : ""}>${ic(w.icon)}<span>${w.text}</span></div>`).join("")}
     </div>` : "";
 
+  const inviteHtml = soloSoFar ? `
+    <div class="card invite-card">
+      <div class="invite-head">${ic("share")}<div>
+        <div class="invite-title">Share linknya sekarang</div>
+        <div class="muted">Temen kamu tinggal buka link, tulis nama, terus centang item yang dia makan. Gak usah bikin akun.</div>
+      </div></div>
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn-primary" id="invite-share-btn">${ic("share")} Bagikan Link</button>
+        <button class="btn-outline btn-auto" id="invite-copy-btn">${ic("copy")} Salin</button>
+      </div>
+    </div>` : "";
+
   const main = `
+    ${inviteHtml}
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
         <div style="min-width:0;">
           <div class="label-sm">Total bill</div>
           <div class="money hero-total">${fmt(data.bill.total_idr)}</div>
         </div>
-        <span>${statusChipHtml(data)}</span>
+        <!-- one status per card: while nobody has joined, "Belum ada yang
+             gabung" IS the status, and the generic "Belum lunas" underneath it
+             only contradicted it -->
+        <span>${soloSoFar ? statusChip : statusChipHtml(data)}</span>
       </div>
       ${data.bill.merchant ? `<div class="muted" style="margin-top:4px;">${esc(data.bill.merchant)}</div>` : ""}
       ${data.bill.transacted_at ? `<div class="muted">${esc(shortDate(data.bill.transacted_at))}</div>` : ""}
       ${data.bill.tax_included ? `<div class="muted" style="margin-top:4px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — gak ada PPN tambahan</div>` : ""}
+      ${soloSoFar ? "" : `
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
         <span class="chip ${totalPaid > 0 ? "chip-green" : "chip-grey"}">${totalPaid > 0 ? ic("check") : ""}${fmt(totalPaid)} udah masuk</span>
         ${statusChip}
-      </div>
+      </div>`}
       ${closedNotSettled ? `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} Bill udah ditutup tapi ${totalUnpaid > 0 ? `masih ada ${fmt(totalUnpaid)} yang belum dibayar` : `masih ada ${fmt(data.uncovered_idr)} bagian yang gak keambil`}. Buka lagi kalau mau dibenerin.</p>` : ""}
       ${photoBtnHtml(data)}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;">
@@ -1089,11 +1118,16 @@ function renderCreatorView(data) {
 
   const side = `
     <div class="dock"><div class="dock-inner">
+      ${soloSoFar ? `
+      <!-- "Belum beres Rp 0" says nothing on a bill nobody has joined -->
+      <div class="dock-total">
+        <span class="label">Nunggu temen kamu gabung</span>
+      </div>` : `
       <div class="dock-total">
         <span class="label">${allSettled ? "Semua" : "Belum beres"}</span>
         <span class="money" id="my-total">${allSettled ? "Lunas" : fmt(totalUnpaid + data.uncovered_idr)}</span>
-      </div>
-      ${allSettled ? `
+      </div>`}
+      ${soloSoFar ? "" : allSettled ? `
       <div class="dock-split" style="flex-wrap:wrap;">
         <span>Udah masuk <b class="money-sm">${fmt(totalPaid)}</b></span>
         <span>${data.people.length} orang</span>
@@ -1103,9 +1137,13 @@ function renderCreatorView(data) {
         ${data.uncovered_idr > 0 ? `<span style="display:flex;justify-content:space-between;gap:8px;">Bagian kosong <b class="money-sm">${fmt(data.uncovered_idr)}</b></span>` : ""}
         <span style="display:flex;justify-content:space-between;gap:8px;color:var(--text-3);">Udah masuk <b class="money-sm">${fmt(totalPaid)}</b></span>
       </div>`}
-      ${!closed
-        ? `<button class="btn-primary" id="close-bill-btn">Tutup Bill</button>`
-        : `<button class="btn-outline" id="reopen-bill-btn" style="color:var(--accent);border-color:var(--accent);">${ic("refresh")} Buka Bill Lagi</button>`}
+      ${closed
+        ? `<button class="btn-outline" id="reopen-bill-btn" style="color:var(--accent);border-color:var(--accent);">${ic("refresh")} Buka Bill Lagi</button>`
+        : soloSoFar
+          // closing a bill nobody has joined is never the next thing you want
+          ? `<button class="btn-primary" id="dock-share-btn">${ic("share")} Bagikan Link</button>
+             <button class="btn-ghost btn-sm" id="close-bill-btn" style="width:100%;">Tutup Bill</button>`
+          : `<button class="btn-primary" id="close-bill-btn">Tutup Bill</button>`}
     </div></div>`;
 
   app.innerHTML = `
@@ -1121,6 +1159,19 @@ function renderCreatorView(data) {
   $("#back-btn").addEventListener("click", () => location.hash = "#/");
   $("#share-btn").addEventListener("click", () => shareBill(data.bill.id, data.bill.title));
   bindPhotoActions(data);
+  // the invite card and the dock both lead to the same share sheet
+  [$("#invite-share-btn"), $("#dock-share-btn")].forEach(b =>
+    b && b.addEventListener("click", () => shareBill(data.bill.id, data.bill.title)));
+  const copyBtn = $("#invite-copy-btn");
+  if (copyBtn) copyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(location.origin + "/#/b/" + data.bill.id);
+      toast("Link disalin");
+    } catch (e) {
+      // clipboard needs a secure context / permission — fall back to the sheet
+      shareBill(data.bill.id, data.bill.title);
+    }
+  });
   const pickBtn = $("#pick-mine-btn");
   if (pickBtn) pickBtn.addEventListener("click", () => renderCreatorPick(data));
   const setPayerBtn = $("#set-payer-btn");
@@ -1351,7 +1402,7 @@ function renderCreatorPick(data) {
 
   const main = `
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
         <div style="min-width:0;">
           <div class="label-sm">Total bill</div>
           <div class="money hero-total">${fmt(data.bill.total_idr)}</div>

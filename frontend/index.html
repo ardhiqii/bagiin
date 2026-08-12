@@ -89,7 +89,9 @@ body {
 /* money is the hero: tabular so columns line up, tight so it reads as one unit */
 .money,.money-sm { font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; letter-spacing:-.015em; }
 .money-sm { font-weight:600; color:var(--text-2); }
-.hero-total { font-size:34px; font-weight:800; letter-spacing:-.03em; line-height:1.05; }
+/* the headline amount never breaks — a long status chip beside it used to push
+   "Rp 63.270" onto two lines; the chip wraps to its own line instead */
+.hero-total { font-size:34px; font-weight:800; letter-spacing:-.03em; line-height:1.05; white-space:nowrap; }
 .label-sm { font-size:12px; color:var(--text-3); letter-spacing:.02em; font-weight:600; }
 .label { font-size:13px; color:var(--text-2); font-weight:500; }
 .muted { color:var(--text-3); font-size:13.5px; }
@@ -182,7 +184,10 @@ button:not(:disabled):active { transform:scale(.98); }
 .icon-btn.ghost { background:transparent; border-color:transparent; }
 .icon-btn svg { width:20px; height:20px; }
 .btn-row { display:flex; gap:8px; }
-.btn-row > * { flex:1; }
+.btn-row > * { flex:1; min-width:0; }
+/* a secondary action shouldn't claim half the row and wrap the primary CTA's
+   label onto two lines */
+.btn-row > .btn-auto { flex:0 0 auto; }
 svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 
 /* ---------- chips ---------- */
@@ -266,6 +271,12 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .warn-box ul { margin:8px 0 0 18px; }
 .info-box { background:var(--surface-2); border-radius:var(--r-md); padding:12px 14px; font-size:13.5px;
             color:var(--text-2); margin-bottom:12px; }
+/* first thing a creator sees on a bill nobody has joined yet */
+.invite-card { background:var(--accent-soft); border-color:var(--accent-line); }
+.invite-head { display:flex; gap:12px; align-items:flex-start; }
+.invite-head > svg { width:22px; height:22px; color:var(--accent); flex-shrink:0; margin-top:2px; }
+.invite-title { font-weight:700; font-size:16px; letter-spacing:-.01em; margin-bottom:2px; }
+.invite-card .btn-outline { background:var(--surface); }
 
 /* ---------- forms ---------- */
 label { font-size:13px; color:var(--text-2); display:block; margin-bottom:5px; font-weight:500; }
