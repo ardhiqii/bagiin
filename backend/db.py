@@ -1,10 +1,30 @@
 """Bagiin - SQLite database layer."""
 import os
+import re
 import sqlite3
 import secrets
 from pathlib import Path
 
+import calc
+
 DB_PATH = Path(os.environ.get("BAGIIN_DB", Path(__file__).parent / "bagiin.db"))
+
+# uploads are named secrets.token_hex(8)+'.jpg' — only ever unlink those
+_PHOTO_NAME_RE = re.compile(r"^[0-9a-f]{16}\.jpg$")
+
+
+def _unlink_photo(photo_path):
+    """Remove an uploaded photo file if it's one of ours (hex.jpg). Safe-guard:
+    never unlink arbitrary paths — the URL is public, so a hostile photo_path
+    value must not be able to delete server files."""
+    if not photo_path:
+        return
+    try:
+        p = Path(photo_path)
+        if _PHOTO_NAME_RE.match(p.name):
+            p.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 def get_db():
@@ -333,9 +353,13 @@ def get_bill(bill_id: str):
 
 def update_bill_photo(bill_id: str, photo_path: str | None):
     conn = get_db()
+    old = conn.execute("SELECT photo_path FROM bill WHERE id = ?", (bill_id,)).fetchone()
     conn.execute("UPDATE bill SET photo_path = ? WHERE id = ?", (photo_path, bill_id))
     conn.commit()
     conn.close()
+    # orphaned by the overwrite — clean up (bug: re-upload leaked files forever)
+    if old and old["photo_path"] != photo_path:
+        _unlink_photo(old["photo_path"])
 
 
 def update_bill(bill_id: str, title: str, merchant: str | None,
@@ -629,20 +653,25 @@ def clamp_selection_qty(bill_id: str, item_id: int) -> None:
 
 def mark_paid(bill_id: str, identity_id: str):
     conn = get_db()
-    # ensure a payment row exists (owner marking someone whose row was dropped
-    # by remove_person — otherwise the UPDATE is a silent no-op and the bill
-    # can never settle)
-    conn.execute(
-        "INSERT OR IGNORE INTO payment (bill_id, identity_id, amount_idr) VALUES (?, ?, 0)",
-        (bill_id, identity_id),
-    )
-    conn.execute(
-        """UPDATE payment SET status = 'paid', paid_at = datetime('now')
-           WHERE bill_id = ? AND identity_id = ?""",
-        (bill_id, identity_id),
-    )
-    conn.commit()
-    conn.close()
+    try:
+        # ensure a payment row exists (owner marking someone whose row was dropped
+        # by remove_person — otherwise the UPDATE is a silent no-op and the bill
+        # can never settle)
+        conn.execute(
+            "INSERT OR IGNORE INTO payment (bill_id, identity_id, amount_idr) VALUES (?, ?, 0)",
+            (bill_id, identity_id),
+        )
+        conn.execute(
+            """UPDATE payment SET status = 'paid', paid_at = datetime('now')
+               WHERE bill_id = ? AND identity_id = ?""",
+            (bill_id, identity_id),
+        )
+        conn.commit()
+    finally:
+        # always release the write lock — an unhandled error here (e.g. FK
+        # violation on INSERT) used to leak the open transaction and wedge
+        # every concurrent writer with "database is locked" (bug)
+        conn.close()
 
 
 def mark_unpaid(bill_id: str, identity_id: str):
@@ -714,6 +743,9 @@ def delete_bill(bill_id: str, owner_id: str) -> bool:
     if owner != owner_id:
         conn.close()
         return False
+    photo_path = conn.execute(
+        "SELECT photo_path FROM bill WHERE id = ?", (bill_id,)
+    ).fetchone()
     conn.execute(
         "DELETE FROM selection WHERE item_id IN (SELECT id FROM item WHERE bill_id = ?)",
         (bill_id,),
@@ -724,99 +756,45 @@ def delete_bill(bill_id: str, owner_id: str) -> bool:
     conn.execute("DELETE FROM bill WHERE id = ?", (bill_id,))
     conn.commit()
     conn.close()
+    if photo_path:
+        _unlink_photo(photo_path["photo_path"])
     return True
 
 
 def _bill_settled(conn, bill_id: str, status: str) -> bool:
-    """True when the bill is closed OR everyone with a share has paid AND
-    all slot items are fully taken. Mirrors the detail-view logic:
+    """True when the bill is closed OR everyone with a real share has paid AND
+    no slot remains empty.
 
-    - no payer set -> creator is the default payer (auto-paid)
-    - resolved payer counts as paid
-    - only items with price > 0 create an obligation (price-0 picks don't)
-    - unpicked free items default to the creator (owed unless creator is
-      the payer or already paid)
-    - tax_mode='creator' puts the whole tax/service on the creator too
+    SINGLE SOURCE OF TRUTH: mirrors main._compute_response's settled logic
+    exactly (same calc.compute, same owed definition = total_idr > 0, same
+    auto-paid rules). The list endpoint used to re-implement this with SQL and
+    drifted from the detail view (price-0 picks, tax landing on the creator) —
+    bug: settled flag contradicted itself between endpoints.
     """
     if status == "closed":
         return True
-    bill = conn.execute(
-        """SELECT paid_by_identity_id, paid_by_name, creator_identity_id,
-                  tax_mode, tax_idr, service_idr, tax_included
-           FROM bill WHERE id = ?""",
-        (bill_id,),
-    ).fetchone()
-    if not bill:
+    data = get_bill(bill_id)
+    if not data:
         return False
-    paid_by_id = bill["paid_by_identity_id"] if bill else None
-    paid_by_name = (bill["paid_by_name"] or "") if bill else ""
-    creator_id = bill["creator_identity_id"] if bill else None
-    tax_mode = bill["tax_mode"] if bill else "proportional"
-    # people with a real share: selectors on ALL items. The detail view counts
-    # every selection (main.py settled: bool(sel_ids)), so the list must too —
-    # filtering by price_idr > 0 made price-0/discount==price picks settle in
-    # the detail but show as unpaid in the list (bug: settled flag contradicted
-    # itself between endpoints)
-    sel_ids = [r["identity_id"] for r in conn.execute(
-        """SELECT DISTINCT s.identity_id FROM selection s
-          JOIN item i ON i.id = s.item_id
-          WHERE i.bill_id = ?""",
-        (bill_id,),
-    ).fetchall()]
+    bill = data["bill"]
+    sel_ids = {s["identity_id"] for s in data["selections"]}
     if not sel_ids:
         return False
-    paid = {r["identity_id"] for r in conn.execute(
-        "SELECT identity_id FROM payment WHERE bill_id = ? AND status = 'paid'",
-        (bill_id,),
-    ).fetchall()}
+    paid_by_id = bill["paid_by_identity_id"]
+    paid_by_name = (bill["paid_by_name"] or "")
+    creator_id = bill["creator_identity_id"]
+    result = calc.compute(
+        bill, data["items"], data["selections"],
+        data["participants"], creator_id,
+    )
+    owed_ids = {p["identity_id"] for p in result["people"] if p["total_idr"] > 0}
+    paid_ids = {p["identity_id"] for p in data["payments"] if p["status"] == "paid"}
     if paid_by_id:
-        paid.add(paid_by_id)
+        paid_ids.add(paid_by_id)
     elif not paid_by_name:
         # no payer declared -> creator is the default payer (mirrors detail)
-        paid.add(creator_id)
-    if not all(s in paid for s in sel_ids):
-        return False
-    # unpicked free items -> creator's share; if the creator isn't the payer
-    # (or payer is an unresolved placeholder), they're still owed
-    is_creator_payer = paid_by_id == creator_id or (not paid_by_id and not paid_by_name)
-    if not is_creator_payer:
-        unpicked = conn.execute(
-            """SELECT COUNT(*) AS c FROM item i
-               WHERE i.bill_id = ? AND i.mode != 'slot' AND i.price_idr > 0
-                 AND NOT EXISTS (SELECT 1 FROM selection s WHERE s.item_id = i.id)""",
-            (bill_id,),
-        ).fetchone()
-        if unpicked and unpicked["c"] > 0:
-            creator_paid = conn.execute(
-                "SELECT 1 FROM payment WHERE bill_id = ? AND identity_id = ? AND status = 'paid'",
-                (bill_id, creator_id),
-            ).fetchone()
-            if not creator_paid:
-                return False
-    # tax_mode='creator' puts the whole tax/service on the creator: they owe
-    # even if they never picked an item (mirrors calc.py)
-    if not is_creator_payer and tax_mode == "creator":
-        tax_service = bill["tax_idr"] + bill["service_idr"]
-        if bill["tax_included"]:
-            tax_service = bill["service_idr"]
-        if tax_service > 0:
-            creator_paid = conn.execute(
-                "SELECT 1 FROM payment WHERE bill_id = ? AND identity_id = ? AND status = 'paid'",
-                (bill_id, creator_id),
-            ).fetchone()
-            if not creator_paid:
-                return False
-    # empty slots on slot-mode items mean the bill is not fully covered
-    empty = conn.execute(
-        """SELECT i.id FROM item i
-           LEFT JOIN (SELECT item_id, SUM(qty) AS t FROM selection
-                      WHERE item_id IN (SELECT id FROM item WHERE bill_id = ?)
-                      GROUP BY item_id) s ON s.item_id = i.id
-           WHERE i.bill_id = ? AND i.mode = 'slot' AND i.slot_count IS NOT NULL
-             AND COALESCE(s.t, 0) < i.slot_count""",
-        (bill_id, bill_id),
-    ).fetchall()
-    return len(empty) == 0
+        paid_ids.add(creator_id)
+    return owed_ids <= paid_ids and result["uncovered_idr"] == 0
 
 
 def get_bills_for_identity(identity_id: str):

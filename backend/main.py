@@ -283,7 +283,9 @@ async def restore_identity(request: Request):
 
 @app.post("/api/identities/{identity_id}/code")
 async def set_code(identity_id: str, request: Request):
-    _identity_from_request(request)
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas gak cocok")
     data = await _read_json(request)
     code = (data.get("code") or "").strip()
     if len(code) < 8:
@@ -296,7 +298,9 @@ async def set_code(identity_id: str, request: Request):
 @limiter.limit("5/minute")
 async def generate_code(identity_id: str, request: Request):
     """Auto-generate a recovery code. Regenerating replaces (kills) the old one."""
-    _identity_from_request(request)
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas gak cocok")
     code = generate_readable_code()
     db.set_identity_code(identity_id, code)
     return {"code": code}
@@ -304,7 +308,9 @@ async def generate_code(identity_id: str, request: Request):
 
 @app.post("/api/identities/{identity_id}/name")
 async def update_name(identity_id: str, request: Request):
-    _identity_from_request(request)
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas gak cocok")
     data = await _read_json(request)
     name = (data.get("name") or "").strip()
     if not name:
@@ -315,14 +321,18 @@ async def update_name(identity_id: str, request: Request):
 
 @app.get("/api/identities/{identity_id}/accounts")
 def list_accounts(identity_id: str, request: Request):
-    _identity_from_request(request)
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas gak cocok")
     return db.get_accounts(identity_id)
 
 
 @app.post("/api/identities/{identity_id}/accounts")
 @limiter.limit("30/minute")
 async def add_account(identity_id: str, request: Request):
-    _identity_from_request(request)
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas gak cocok")
     data = await _read_json(request)
     brand = (data.get("brand") or "").strip()
     account_no = (data.get("account_no") or "").strip()
@@ -359,7 +369,9 @@ def delete_account(account_id: int, request: Request):
 
 @app.get("/api/identities/{identity_id}/bills")
 def my_bills(identity_id: str, request: Request):
-    _identity_from_request(request)
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas gak cocok")
     rows = db.get_bills_for_identity(identity_id)
     # expose the effective owner (resolved payer, else creator) so the UI can
     # show owner-only actions (delete) — mirrors _owner_id, including the
@@ -383,6 +395,7 @@ async def create_bill(request: Request):
     items = data.get("items") or []
     if not isinstance(items, list) or not items:
         raise HTTPException(400, "Minimal 1 item")
+    eff_sum = 0
     for i in items:
         if not isinstance(i, dict) or not str(i.get("name") or "").strip():
             raise HTTPException(400, "Nama item wajib diisi")
@@ -390,9 +403,17 @@ async def create_bill(request: Request):
         discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0)
         if discount > price:
             raise HTTPException(400, f"Diskon {i['name']} gak bisa lebih besar dari harga")
-    participants = [p.strip() for p in (data.get("participants") or []) if isinstance(p, str) and p.strip()]
+        eff_sum += price - discount
+    participants = []
+    seen_participants = set()
+    for p in (data.get("participants") or []):
+        if isinstance(p, str) and p.strip():
+            key = p.strip().lower()
+            if key not in seen_participants:
+                seen_participants.add(key)
+                participants.append(p.strip())
     pc = data.get("participant_count")
-    participant_count = _to_int(pc, "Jumlah orang") if pc not in (None, "") else None
+    participant_count = _to_int(pc, "Jumlah orang", minv=0) if pc not in (None, "") else None
     paid_by_name = (data.get("paid_by_name") or "").strip() or None
     subtotal = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0)
     tax = _to_int(data.get("tax"), "Pajak", 0, minv=0)
@@ -406,6 +427,8 @@ async def create_bill(request: Request):
         raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
     if total != subtotal + tax + service:
         raise HTTPException(400, "Total gak cocok sama subtotal + pajak + service")
+    if subtotal != eff_sum:
+        raise HTTPException(400, f"Subtotal gak cocok sama isi item (harusnya Rp {eff_sum:,})")
     created = db.create_bill(
         creator_id=ident["id"],
         title=title,
@@ -450,6 +473,7 @@ async def update_bill(bill_id: str, request: Request):
     items = data.get("items") or []
     if not isinstance(items, list) or not items:
         raise HTTPException(400, "Minimal 1 item")
+    eff_sum = 0
     for i in items:
         if not isinstance(i, dict) or not str(i.get("name") or "").strip():
             raise HTTPException(400, "Nama item wajib diisi")
@@ -457,6 +481,7 @@ async def update_bill(bill_id: str, request: Request):
         discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0)
         if discount > price:
             raise HTTPException(400, f"Diskon {i['name']} gak bisa lebih besar dari harga")
+        eff_sum += price - discount
     # slot-mode guards for edited items: slot_count >= taken, and switching a
     # slot item to free clamps everyone's qty to 1
     cur_items = {i["id"]: i for i in bill_data["items"]}
@@ -483,9 +508,16 @@ async def update_bill(bill_id: str, request: Request):
         elif cur["mode"] == "slot":
             # switching to free: clamp qty to 1 (people stay selected once)
             db.clamp_selection_qty(bill_id, int(iid))
-    participants = [p.strip() for p in (data.get("participants") or []) if isinstance(p, str) and p.strip()]
+    participants = []
+    seen_participants = set()
+    for p in (data.get("participants") or []):
+        if isinstance(p, str) and p.strip():
+            key = p.strip().lower()
+            if key not in seen_participants:
+                seen_participants.add(key)
+                participants.append(p.strip())
     pc = data.get("participant_count")
-    participant_count = _to_int(pc, "Jumlah orang") if pc not in (None, "") else None
+    participant_count = _to_int(pc, "Jumlah orang", minv=0) if pc not in (None, "") else None
     subtotal_v = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0)
     tax_v = _to_int(data.get("tax"), "Pajak", 0, minv=0)
     service_v = _to_int(data.get("service"), "Service", 0, minv=0)
@@ -495,6 +527,8 @@ async def update_bill(bill_id: str, request: Request):
         raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
     if total_v != subtotal_v + tax_v + service_v:
         raise HTTPException(400, "Total gak cocok sama subtotal + pajak + service")
+    if subtotal_v != eff_sum:
+        raise HTTPException(400, f"Subtotal gak cocok sama isi item (harusnya Rp {eff_sum:,})")
     db.update_bill(
         bill_id,
         title=(data.get("title") or "").strip() or bill_data["bill"]["title"],
@@ -725,6 +759,11 @@ def mark_paid(bill_id: str, identity_id: str, request: Request):
     ident = _identity_from_request(request)
     if ident["id"] != identity_id and _owner_id(bill_data) != ident["id"]:
         raise HTTPException(403, "Gak bisa ubah status bayar orang lain")
+    # identity_id must exist — otherwise INSERT OR IGNORE violates the payment
+    # FK and leaves an open write transaction wedging the SQLite lock
+    # (bug: mark_paid of a random id -> 500, then every writer hung 5s -> 500)
+    if not db.get_identity(identity_id):
+        raise HTTPException(404, "Orang gak dikenal")
     db.claim_participant(bill_id, ident["id"], ident["name"])
     db.mark_paid(bill_id, identity_id)
     return _compute_response(db.get_bill(bill_id))
@@ -777,6 +816,7 @@ async def upload_photo(bill_id: str, request: Request, file: UploadFile = File(.
 @limiter.limit("10/minute")
 async def ocr_upload(request: Request, file: UploadFile = File(...)):
     """OCR a receipt photo -> structured items (draft, belum disimpan)."""
+    _identity_from_request(request)
     raw = await file.read()
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(400, "Foto maksimal 5MB")

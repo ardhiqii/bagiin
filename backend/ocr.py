@@ -206,14 +206,19 @@ def _parse_json_text(text: str) -> dict:
 
 
 def _normalize(parsed: dict) -> dict:
+    raw_items = parsed.get("items") or []
+    if not isinstance(raw_items, list):
+        raw_items = []
     items = []
-    for it in parsed.get("items", []):
+    for it in raw_items:
+        if not isinstance(it, dict):
+            continue
         try:
-            price = int(str(it.get("price", "0")).replace(".", "").replace("Rp", "").strip())
+            price = _to_int(it.get("price"))
         except Exception:
             price = 0
         try:
-            discount = int(str(it.get("discount", "0")).replace(".", "").replace("Rp", "").replace("-", "").strip())
+            discount = _to_int(it.get("discount"))
         except Exception:
             discount = 0
         if discount < 0 or discount > price:
@@ -222,11 +227,15 @@ def _normalize(parsed: dict) -> dict:
         if name and price >= 0:
             items.append({"name": name, "price": price, "discount": discount})
 
-    tax_included = bool(parsed.get("tax_included"))
-    subtotal = _to_int(parsed.get("subtotal"))
-    tax = _to_int(parsed.get("tax"))
-    service = _to_int(parsed.get("service"))
-    total = _to_int(parsed.get("total"))
+    # LLMs often emit tax_included as a STRING ("false"/"0") — bool("false")
+    # is True in Python, which silently flipped bills into tax-included mode
+    # (bug: tax zeroed, total rewritten). Only real true/1 count.
+    ti = parsed.get("tax_included")
+    tax_included = ti is True or (isinstance(ti, str) and ti.strip().lower() == "true")
+    subtotal = max(0, _to_int(parsed.get("subtotal")))
+    tax = max(0, _to_int(parsed.get("tax")))
+    service = max(0, _to_int(parsed.get("service")))
+    total = max(0, _to_int(parsed.get("total")))
     eff_sum = sum(i["price"] - i["discount"] for i in items)
 
     if tax_included:
@@ -236,7 +245,14 @@ def _normalize(parsed: dict) -> dict:
         service = 0
         total = eff_sum
     else:
+        # reconcile LLM-hallucinated numbers so bill-create's strict validation
+        # (subtotal == sum items, total == subtotal+tax+service) doesn't 400 on
+        # a receipt that OCR read almost-right
+        if items and eff_sum > 0 and subtotal != eff_sum:
+            subtotal = eff_sum
         if total <= 0:
+            total = subtotal + tax + service
+        elif total != subtotal + tax + service:
             total = subtotal + tax + service
     return {
         "merchant": str(parsed.get("merchant", "") or "").strip(),
@@ -251,7 +267,29 @@ def _normalize(parsed: dict) -> dict:
 
 
 def _to_int(v) -> int:
+    """Parse a Rupiah value into an int, tolerating LLM float output.
+
+    Handles: int, float (15000.5 -> 15000 via round, NOT 150005), 'Rp 15.000',
+    '15.000', '15,5' (comma decimal). Dots followed by exactly 3 digits are
+    thousands separators and are stripped; anything else is a decimal point.
+    """
+    if v is None:
+        return 0
+    if isinstance(v, bool):
+        return 1 if v else 0
+    if isinstance(v, (int, float)):
+        try:
+            return int(round(v))
+        except Exception:
+            return 0
+    s = str(v).strip().replace("Rp", "").replace(" ", "").strip()
+    if not s:
+        return 0
+    # thousands dots: "15.000" -> "15000" (only when followed by exactly 3 digits)
+    s = re.sub(r"\.(?=\d{3}(?:\D|$))", "", s)
+    # comma as decimal separator: "15,5" -> "15.5"
+    s = s.replace(",", ".")
     try:
-        return int(str(v).replace(".", "").replace("Rp", "").strip())
+        return int(round(float(s)))
     except Exception:
         return 0
