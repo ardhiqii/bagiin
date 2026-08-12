@@ -398,6 +398,14 @@ async def create_bill(request: Request):
     tax = _to_int(data.get("tax"), "Pajak", 0, minv=0)
     service = _to_int(data.get("service"), "Service", 0, minv=0)
     total = _to_int(data.get("total"), "Total", 0, minv=0)
+    tax_included = 1 if data.get("tax_included") else 0
+    # reject impossible combos instead of persisting a bill whose split can
+    # never reconcile (bug: tax_included + tax>0 made sum(people) != total,
+    # and an arbitrary total != subtotal+tax+service broke every invariant)
+    if tax_included and tax > 0:
+        raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
+    if total != subtotal + tax + service:
+        raise HTTPException(400, "Total gak cocok sama subtotal + pajak + service")
     created = db.create_bill(
         creator_id=ident["id"],
         title=title,
@@ -405,7 +413,7 @@ async def create_bill(request: Request):
         transacted_at=transacted_at,
         tax_mode=data.get("tax_mode", "proportional"),
         participant_count=participant_count,
-        tax_included=1 if data.get("tax_included") else 0,
+        tax_included=tax_included,
         subtotal=subtotal,
         tax=tax,
         service=service,
@@ -478,6 +486,15 @@ async def update_bill(bill_id: str, request: Request):
     participants = [p.strip() for p in (data.get("participants") or []) if isinstance(p, str) and p.strip()]
     pc = data.get("participant_count")
     participant_count = _to_int(pc, "Jumlah orang") if pc not in (None, "") else None
+    subtotal_v = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0)
+    tax_v = _to_int(data.get("tax"), "Pajak", 0, minv=0)
+    service_v = _to_int(data.get("service"), "Service", 0, minv=0)
+    total_v = _to_int(data.get("total"), "Total", 0, minv=0)
+    # same impossible-combo guards as create
+    if data.get("tax_included") and tax_v > 0:
+        raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
+    if total_v != subtotal_v + tax_v + service_v:
+        raise HTTPException(400, "Total gak cocok sama subtotal + pajak + service")
     db.update_bill(
         bill_id,
         title=(data.get("title") or "").strip() or bill_data["bill"]["title"],
@@ -493,10 +510,10 @@ async def update_bill(bill_id: str, request: Request):
             "slot_count": _to_int(i.get("slot_count"), f"Slot {i['name']}", 1, minv=1) if i.get("mode") == "slot" else None,
             "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0),
         } for i in items],
-        subtotal=_to_int(data.get("subtotal"), "Subtotal", 0, minv=0),
-        tax=_to_int(data.get("tax"), "Pajak", 0, minv=0),
-        service=_to_int(data.get("service"), "Service", 0, minv=0),
-        total=_to_int(data.get("total"), "Total", 0, minv=0),
+        subtotal=subtotal_v,
+        tax=tax_v,
+        service=service_v,
+        total=total_v,
         tax_included=1 if data.get("tax_included") else 0,
     )
     return _compute_response(db.get_bill(bill_id))

@@ -106,11 +106,14 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     total_subtotal = sum(subtotal_by_ident.values()) or 0
 
     tax_by_ident: dict[str, int] = {}
-    if not subtotal_by_ident:
-        # nobody has a share yet (e.g. a fresh bill with only slot items that
-        # nobody picked): the tax still has to land somewhere or it vanishes
-        # from the split (total_ok False). Default it to the creator, who is
-        # the fallback owner of uncovered amounts.
+    if not subtotal_by_ident or total_subtotal <= 0:
+        # nobody has a positive share yet (fresh bill, or items whose effective
+        # price is 0 — e.g. discount == price): the tax still has to land
+        # somewhere or it vanishes from the split (total_ok False). Default it
+        # to the creator, who is the fallback owner of uncovered amounts.
+        # (bug: `subtotal_by_ident` could be non-empty with all-zero values,
+        # e.g. {guest: 0}, so the old `not subtotal_by_ident` check missed it
+        # and equal-mode tax disappeared entirely)
         tax_by_ident[creator_id] = tax_service
     elif mode == "equal":
         payers = [k for k, v in subtotal_by_ident.items() if v > 0]

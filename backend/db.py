@@ -752,11 +752,15 @@ def _bill_settled(conn, bill_id: str, status: str) -> bool:
     paid_by_name = (bill["paid_by_name"] or "") if bill else ""
     creator_id = bill["creator_identity_id"] if bill else None
     tax_mode = bill["tax_mode"] if bill else "proportional"
-    # people with a real share: selectors on items with price > 0
+    # people with a real share: selectors on ALL items. The detail view counts
+    # every selection (main.py settled: bool(sel_ids)), so the list must too —
+    # filtering by price_idr > 0 made price-0/discount==price picks settle in
+    # the detail but show as unpaid in the list (bug: settled flag contradicted
+    # itself between endpoints)
     sel_ids = [r["identity_id"] for r in conn.execute(
         """SELECT DISTINCT s.identity_id FROM selection s
-           JOIN item i ON i.id = s.item_id
-           WHERE i.bill_id = ? AND i.price_idr > 0""",
+          JOIN item i ON i.id = s.item_id
+          WHERE i.bill_id = ?""",
         (bill_id,),
     ).fetchall()]
     if not sel_ids:
