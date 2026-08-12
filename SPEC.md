@@ -112,9 +112,11 @@ Alur guest (S4-S5) single-page penuh, fokus, tanpa tab.
   Jadi kalau Rina mager gak pernah centang, Nasi Goreng full ke orang yang centang,
   TAPI creator liat warning-nya dulu dan bisa putusin mau ping Rina atau terima.
 - Creator juga peserta biasa - dia centang item yang dia makan juga, flow sama.
-- Item yang TIDAK dicentang siapa pun (leftover): default ditanggung creator
-  (yang fronting uang). Tampilkan warning di summary creator: "Item ini gak ada
-  yang pilih: Nasi Goreng Rp 25.000 -> masuk ke kamu".
+- Item yang TIDAK dicentang siapa pun (leftover): default ditanggung **yang
+  fronting uang** — payer confirmed kalau ada, kalau belum ya creator (v58;
+  sebelumnya selalu creator, walaupun yang nombokin orang lain). Tampilkan
+  warning di summary: "Item ini gak ada yang pilih: Nasi Goreng Rp 25.000 ->
+  masuk ke kamu".
 
 ### Pajak & service
 - Struk Indonesia: Subtotal, PPN (11%), Service (5-10%), Total.
@@ -125,7 +127,8 @@ Alur guest (S4-S5) single-page penuh, fokus, tanpa tab.
 
 ### Pembulatan & konsistensi
 - Simpan semua nominal sebagai INTEGER rupiah, jangan float.
-- Sisa pembulatan (selisih 1-2 rupiah) -> ditanggung creator (yang fronting uang).
+- Sisa pembulatan (selisih 1-2 rupiah) -> ditanggung yang fronting uang (v58: owner
+  = payer confirmed, else creator).
 - Invariant: `sum(totalPerOrang) == totalBill` selalu. Ditampilin kalau ada selisih.
 
 ### Status bayar
@@ -434,6 +437,39 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Subagent teknis: 44 tool calls, semua fakta kunci diverifikasi dari dokumen resmi.
 
 ## Changelog
+
+### 2026-08-12 (lanjutan 4) — pembuat bill boleh keluar (v58)
+
+Nutup celah desain yang ketinggalan dari v57: sejak payer di-confirm, pembuat bill
+resmi jadi "peserta biasa" — tapi satu-satunya orang yang gak boleh keluar.
+
+- **Pembuat bill sekarang bisa keluar**, asal billnya udah dipegang payer confirmed
+  orang lain. Kalau belum ada payer confirmed (atau payernya dia sendiri), dia masih
+  owner dan tetap gak bisa keluar — owner mindahin payer atau hapus billnya, bukan
+  kabur dari billnya sendiri.
+- **Sisa duit pindah ke owner, bukan ke pembuat.** `calc.compute()` dulu selalu
+  numpuk item bebas yang gak dipilih siapa-siapa, pajak tanpa basis, dan sisa
+  pembulatan ke pembuat bill (`creator_id`) — sekarang ke `fallback_id`, yaitu
+  **yang nalangin** (payer confirmed, kalau gak ada ya pembuat). Ini bukan cuma
+  demi fitur keluar: selama ini kalau Amel yang nombokin, item yang gak keambil
+  malah ditagihin ke Aufa yang gak ngeluarin duit sepeser pun. Peringatannya ikut
+  diperbaiki: "masuk ke pembuat bill" → "masuk ke yang nalangin".
+- Estimasi lokal di HP ikut disamain (`iAmCreator` → `iAmOwner`) — kalau gak, angka
+  di dock beda sama angka server, persis kelas bug yang dijaga `e2e_smoke.mjs`.
+- **Keluar = keluar.** Billnya ilang dari daftar orang itu, sama kayak peserta lain
+  yang keluar. Bedanya, keanggotaan orang lain itu baris di tabel (payment/selection)
+  yang tinggal dihapus; pembuat bill gak punya baris apa-apa — dia masuk roster
+  lewat id — jadi keluarnya disimpen sebagai flag `bill.creator_left`. Gabung lagi
+  lewat link (atau billnya balik ke dia sebagai owner) otomatis batalin flag itu.
+- Owner sekarang juga boleh ngehapus pembuat bill dari daftar orang, konsisten sama
+  aturan di atas. Dulu diblok mentah-mentah karena "pembuat selalu kebagian item
+  sisa" — alasan yang udah gak berlaku.
+- Sheet konfirmasi keluarnya nyebut billnya tetap jalan dan sekarang dipegang siapa —
+  pembuat bill perlu denger itu, dia biasa nganggep ini billnya dia.
+- Di layar bill, "dibuat oleh X" + "Dikelola oleh Y" digabung jadi satu baris
+  "dibuat X · nalangin Y". "Dikelola" itu istilah manajemen di layar yang gak punya
+  satu pun aksi manajemen.
+- Tes: 98 lulus (7 baru di `test_regressions_v57.py`), plus `e2e_smoke.mjs`.
 
 ### 2026-08-12 (lanjutan 3) — layar gabung tamu & editor lebih ringkas
 

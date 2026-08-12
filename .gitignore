@@ -16,3 +16,6 @@ backend/.env
 # Logs
 *.log
 *.db.bak-*
+
+# agent scratch (handoff plans, not project source)
+.hermes/

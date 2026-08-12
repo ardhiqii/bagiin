@@ -327,7 +327,7 @@ def test_fully_discounted_empty_slots_not_reported():
               "tax_mode": "proportional"},
         items=[{"id": 1, "name": "Gratisan", "price_idr": 50000, "discount_idr": 50000,
                 "mode": "slot", "slot_count": 3}],
-        selections=[], participants=[], creator_id="c",
+        selections=[], participants=[], fallback_id="c",
     )
     assert result["uncovered_idr"] == 0
     assert result["uncovered_slots"] == [], "\"3 bagian kosong = Rp 0\" is not actionable"

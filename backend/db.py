@@ -178,6 +178,14 @@ def init_db():
         # existing bills: an id set by the creator was confirmed by definition
         conn.execute(
             "UPDATE bill SET paid_by_confirmed = 1 WHERE paid_by_identity_id IS NOT NULL")
+    # migration: creator left the bill (v58). Everyone else's membership is
+    # derived from their payment/selection rows, so leaving just deletes those.
+    # The creator has no such rows — they're added to the roster and to their
+    # own history by id — so their exit needs a flag to exist at all.
+    bcols = {r[1] for r in conn.execute("PRAGMA table_info(bill)").fetchall()}
+    if "creator_left" not in bcols:
+        conn.execute(
+            "ALTER TABLE bill ADD COLUMN creator_left INTEGER NOT NULL DEFAULT 0")
     conn.commit()
     conn.close()
 
@@ -571,6 +579,8 @@ def resolve_payer(bill_data: dict) -> tuple[str | None, str]:
         # declared but not joined yet: nobody is auto-paid, bill can't settle
         return None, paid_by_name
 
+    # nothing declared -> the creator fronted it. Safe even after v58's
+    # creator_left: leaving requires a confirmed payer, which is handled above.
     creator = get_identity(creator_id)
     return creator_id, (creator["name"] if creator else "?")
 
@@ -590,6 +600,16 @@ def set_paid_by(bill_id: str, identity_id: str | None, name: str | None = None,
         "WHERE id = ?",
         (identity_id, name, 1 if (identity_id and confirmed) else 0, bill_id),
     )
+    if identity_id is None or not confirmed:
+        # the bill falls back to the creator as owner — an owner who isn't in
+        # their own bill can't happen, so undo their exit (v58)
+        conn.execute(
+            "UPDATE bill SET creator_left = 0 WHERE id = ?", (bill_id,))
+    else:
+        conn.execute(
+            "UPDATE bill SET creator_left = 0 WHERE id = ? AND creator_identity_id = ?",
+            (bill_id, identity_id),
+        )
     conn.commit()
     conn.close()
 
@@ -609,6 +629,23 @@ def join_bill(bill_id: str, identity_id: str, name: str):
     """Guest joins a bill: recorded as a participant (roster = who joined)."""
     ensure_payment(bill_id, identity_id)
     claim_participant(bill_id, identity_id, name)  # legacy typed-name claim, harmless
+    set_creator_left(bill_id, identity_id, left=False)
+
+
+def set_creator_left(bill_id: str, identity_id: str, left: bool = True):
+    """Flag/unflag the creator as having walked out of their own bill (v58).
+
+    No-op unless identity_id really is the creator, so callers can hand it any
+    leaver/joiner. Leaving hides them from the roster and from their own bill
+    list; rejoining through the link puts them back.
+    """
+    conn = get_db()
+    conn.execute(
+        "UPDATE bill SET creator_left = ? WHERE id = ? AND creator_identity_id = ?",
+        (1 if left else 0, bill_id, identity_id),
+    )
+    conn.commit()
+    conn.close()
 
 
 def remove_person(bill_id: str, identity_id: str):
@@ -883,7 +920,12 @@ def _bill_settled(conn, bill_id: str, status: str) -> bool:
 
 
 def get_bills_for_identity(identity_id: str):
-    """Bills where identity is creator OR has selections/payments."""
+    """Bills where identity is creator OR has selections/payments.
+
+    A creator who left the bill (v58) drops out of it like anyone else: the
+    bill stops showing up here unless they rejoin (which gives them a payment
+    row, so the join below picks it up again).
+    """
     conn = get_db()
     rows = conn.execute(
         """SELECT DISTINCT b.id, b.title, b.merchant, b.transacted_at,
@@ -891,7 +933,7 @@ def get_bills_for_identity(identity_id: str):
                   b.creator_identity_id, b.paid_by_identity_id
           FROM bill b
           LEFT JOIN payment p ON p.bill_id = b.id AND p.identity_id = ?
-          WHERE b.creator_identity_id = ? OR p.id IS NOT NULL
+          WHERE (b.creator_identity_id = ? AND b.creator_left = 0) OR p.id IS NOT NULL
           ORDER BY COALESCE(b.transacted_at, b.created_at) DESC, b.created_at DESC""",
         (identity_id, identity_id),
     ).fetchall()

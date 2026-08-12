@@ -29,7 +29,7 @@ def test_no_selections_no_tax_dump():
     # zero selections: unpicked free items default to the creator (the warning
     # says "masuk ke pembuat bill"), so the split stays complete and no rupiah
     # is dumped/left unassigned
-    r = calc.compute(bill=BILL, items=ITEMS, selections=[], participants=["Aufa"], creator_id=CREATOR)
+    r = calc.compute(bill=BILL, items=ITEMS, selections=[], participants=["Aufa"], fallback_id=CREATOR)
     by = {p["identity_id"]: p for p in r["people"]}
     assert set(by) == {CREATOR}, r["people"]
     assert by[CREATOR]["subtotal_idr"] == 272400, by[CREATOR]
@@ -42,7 +42,7 @@ def test_no_selections_no_tax_dump():
 
 def test_creator_selects_all():
     sel = [{"item_id": it["id"], "identity_id": CREATOR} for it in ITEMS]
-    r = calc.compute(bill=BILL, items=ITEMS, selections=sel, participants=["Aufa"], creator_id=CREATOR)
+    r = calc.compute(bill=BILL, items=ITEMS, selections=sel, participants=["Aufa"], fallback_id=CREATOR)
     by = {p["identity_id"]: p for p in r["people"]}
     creator = by[CREATOR]
     assert creator["subtotal_idr"] == 272400, creator
@@ -60,7 +60,7 @@ def test_rounding_remainder_to_creator():
         {"item_id": 1, "identity_id": "b"},   # shared -> 46950 each
         {"item_id": 2, "identity_id": "b"},   # 55900 for b
     ]
-    r = calc.compute(bill=BILL, items=ITEMS, selections=sel, participants=["a", "b"], creator_id="a")
+    r = calc.compute(bill=BILL, items=ITEMS, selections=sel, participants=["a", "b"], fallback_id="a")
     total = sum(p["total_idr"] for p in r["people"])
     # items 3-6 unselected -> default to the creator (a), so the split is
     # complete: sum(people) == bill.total, no leftover

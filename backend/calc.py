@@ -6,19 +6,24 @@ Slot items: creator declares N slots; each slot costs price // N; people take
 1+ slots; empty slots stay uncovered (shown to the creator, not auto-assigned).
 
 Invariant: sum(total_per_person) + uncovered_idr + remaining_to_creator == bill.total.
-Rounding leftovers go to the creator (the one who fronted the money).
+Rounding leftovers go to the one who fronted the money (`fallback_id`).
 """
 from decimal import Decimal
 
 
 def compute(bill: dict, items: list[dict], selections: list[dict],
-            participants: list[str], creator_id: str) -> dict:
+            participants: list[str], fallback_id: str) -> dict:
     """Compute per-identity totals.
 
     bill: dict with subtotal_idr, tax_idr, service_idr, total_idr, tax_mode
     items: list of item dicts (id, name, price_idr, mode, slot_count)
     selections: list of {item_id, identity_id, qty}
     participants: list of {name} (creator-declared names, for warnings)
+    fallback_id: who absorbs money nobody claimed (unpicked free items, tax
+      with no base, rounding leftovers). That's the bill OWNER — the confirmed
+      payer if there is one, else the creator. It used to be the creator
+      unconditionally, which billed the wrong person once someone else was
+      confirmed as the payer, and billed a ghost once the creator left (v58).
     Returns:
       {
         "people": [{identity_id, name, subtotal_idr, tax_idr, total_idr}],
@@ -87,10 +92,10 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
         # portions this person takes, default 1). eff // total_qty per serving,
         # rounding remainder round-robin across servings.
         if not selectors:
-            # nobody picked this free item -> the creator takes it (matches the
-            # warning "masuk ke pembuat bill"). This keeps the split complete:
+            # nobody picked this free item -> the owner takes it (matches the
+            # warning "masuk ke yang nalangin"). This keeps the split complete:
             # sum(people) + uncovered_idr == bill.total.
-            subtotal_by_ident[creator_id] = subtotal_by_ident.get(creator_id, 0) + eff
+            subtotal_by_ident[fallback_id] = subtotal_by_ident.get(fallback_id, 0) + eff
             continue
         total_qty = sum(q for _, q in selectors)
         share = eff // total_qty
@@ -114,11 +119,11 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
         # nobody has a positive share yet (fresh bill, or items whose effective
         # price is 0 — e.g. discount == price): the tax still has to land
         # somewhere or it vanishes from the split (total_ok False). Default it
-        # to the creator, who is the fallback owner of uncovered amounts.
+        # to the owner, who absorbs every unclaimed amount.
         # (bug: `subtotal_by_ident` could be non-empty with all-zero values,
         # e.g. {guest: 0}, so the old `not subtotal_by_ident` check missed it
         # and equal-mode tax disappeared entirely)
-        tax_by_ident[creator_id] = tax_service
+        tax_by_ident[fallback_id] = tax_service
     elif mode == "equal":
         payers = [k for k, v in subtotal_by_ident.items() if v > 0]
         if payers:
@@ -127,7 +132,7 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
             for idx, ident in enumerate(payers):
                 tax_by_ident[ident] = per + (1 if idx < rem else 0)
     elif mode == "creator":
-        tax_by_ident[creator_id] = tax_service
+        tax_by_ident[fallback_id] = tax_service
     else:  # proportional
         for ident, sub in subtotal_by_ident.items():
             if total_subtotal > 0:
@@ -136,7 +141,7 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
         paid = sum(tax_by_ident.values())
         diff = tax_service - paid
         if diff != 0 and subtotal_by_ident:
-            tax_by_ident[creator_id] = tax_by_ident.get(creator_id, 0) + diff
+            tax_by_ident[fallback_id] = tax_by_ident.get(fallback_id, 0) + diff
 
     # totals
     people = []
@@ -154,8 +159,8 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
 
     by_identity = {p["identity_id"]: p for p in people}
 
-    # unassigned items (free items nobody picked -> creator; slot items with no
-    # picks are uncovered, NOT assigned to the creator — design B)
+    # unassigned items (free items nobody picked -> owner; slot items with no
+    # picks are uncovered, NOT assigned to anyone — design B)
     unassigned = [it for it in items if not sel_by_item.get(it["id"]) and not (
         it.get("mode") == "slot" and it.get("slot_count")
     )]
@@ -164,7 +169,7 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     warnings = []
     for it in unassigned:
         eff = max(0, it["price_idr"] - int(it.get("discount_idr", 0) or 0))
-        warnings.append(f"Item tidak dipilih siapa pun: {it['name']} Rp {eff:,} -> masuk ke pembuat bill")
+        warnings.append(f"Item tidak dipilih siapa pun: {it['name']} Rp {eff:,} -> masuk ke yang nalangin")
     for u in uncovered_slots:
         warnings.append(
             f"Bagian kosong: {u['name']} {u['empty']} bagian belum keambil "

@@ -20,7 +20,7 @@ cd backend
 source venv/bin/activate                 # venv is committed-adjacent but gitignored
 uvicorn main:app --reload --port 8082    # serves API + frontend at http://localhost:8082
 
-venv/bin/python -m pytest -q                       # full suite (68 tests, ~3s)
+venv/bin/python -m pytest -q                       # full suite (98 tests, ~4s)
 venv/bin/python -m pytest test_behaviors.py -q     # one file
 venv/bin/python -m pytest test_behaviors.py -q -k slot   # one test
 venv/bin/python test_calc_regression.py            # test files also run standalone (__main__)
@@ -113,21 +113,26 @@ the creator manages; once a manager explicitly confirms a payer (`paid_by`
 with an `identity_id`), power moves to them completely and the creator becomes
 a regular participant. A payer matched only by name is display-only and never
 manages (v51). `can_manage` is computed per viewer and returned in the payload;
-the frontend gates on that, never on `owner_id`. Participants (non-owner,
-non-creator) can leave an open bill via `POST /api/bills/{id}/leave`; the owner
-can't leave (they hold the bill) and the creator can't leave (structural).
+the frontend gates on that, never on `owner_id`. Anyone who isn't the owner can
+leave an open bill via `POST /api/bills/{id}/leave` — including the creator once
+a confirmed payer holds it (v58). The owner can't leave (they hold the bill).
+Everyone else's membership is derived from their payment/selection rows, so
+leaving just deletes those; the creator has no such rows, so their exit is the
+`bill.creator_left` flag (rejoining, or the bill falling back to them as owner,
+clears it).
 
 **Split rules** (`calc.py`) — per-person totals are never stored, always recomputed:
 
 - *free* items: split by servings taken across everyone who picked; unpicked free items fall
-  to the creator.
+  to the bill **owner** (`calc.compute(fallback_id=...)` — the confirmed payer, else the
+  creator), who is the one actually out of pocket.
 - *slot* items: creator declares N slots at `price // N`; unclaimed slots stay `uncovered_idr`
   and are surfaced as warnings rather than auto-assigned.
 - Tax/service: proportional to each person's subtotal by default (`equal` / `creator` modes
   exist); `tax_included` bills drop the tax portion but still split service. Unpicked free
-  items land on the creator and therefore stay in the tax base — a client that re-derives
+  items land on the owner and therefore stay in the tax base — a client that re-derives
   the split must include them or it overstates everyone else's tax.
-- All money is integer rupiah. Rounding leftovers go to the creator.
+- All money is integer rupiah. Rounding leftovers go to the owner.
 - **Invariant:** `sum(people totals) + uncovered_idr + remaining_to_creator == bill.total_idr`.
   Any change to `calc.py` must keep `total_ok` true — that's what the regression tests assert.
 - `settled` means *no money outstanding* (`all_paid` and no empty slots). Closing a bill does

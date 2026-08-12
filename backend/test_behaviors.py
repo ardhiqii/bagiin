@@ -289,7 +289,9 @@ def test_update_bill_foreign_id_no_data_loss():
 # ---------- split correctness ----------
 
 def test_unassigned_items_go_to_creator():
-    """Warning says unpicked items 'masuk ke pembuat bill' -> split must match."""
+    """Warning says unpicked items 'masuk ke yang nalangin' -> split must match.
+
+    No confirmed payer here, so the one who fronted it is the creator."""
     creator = db.new_identity("Aufa9", role="creator")
     budi = db.new_identity("Budi9")
     bid = _mk_bill(creator, items=[
@@ -305,7 +307,7 @@ def test_unassigned_items_go_to_creator():
     assert by[creator["id"]]["subtotal_idr"] == 30000  # Ayam unpicked -> creator
     assert data["total_ok"] is True
     assert data["remaining_to_creator"] == 0
-    assert any("masuk ke pembuat bill" in w for w in data["warnings"])
+    assert any("masuk ke yang nalangin" in w for w in data["warnings"])
     print("PASS unpicked items default to creator + warning matches split")
 
 
@@ -547,9 +549,10 @@ def test_name_handoff_to_joined_person_deleteable():
     print("PASS name hand-off resolves identity -> owner can delete")
 
 
-def test_creator_cannot_be_removed():
-    """Creator always has a share (unpicked items default to them) -> removing
-    them strands the bill unpaid. Must be blocked."""
+def test_creator_removable_once_a_payer_holds_the_bill():
+    """v58: unpicked items default to the OWNER, not the creator, so removing
+    a creator who no longer holds the bill can't strand any money. The split
+    must still reconcile afterwards."""
     creator = db.new_identity("Aufa31", role="creator")
     budi = db.new_identity("Budi31")
     bid = _mk_bill(creator, items=[{"name": "A", "price": 30000}, {"name": "B", "price": 30000}],
@@ -558,13 +561,16 @@ def test_creator_cannot_be_removed():
     c.put(f"/api/bills/{bid}/paid_by", headers=_H(creator["id"]),
           json={"identity_id": budi["id"]})
     r = c.delete(f"/api/bills/{bid}/people/{creator['id']}", headers=_H(budi["id"]))
-    assert r.status_code == 400, (r.status_code, r.text)
+    assert r.status_code == 200, (r.status_code, r.text)
+    data = r.json()
+    assert all(p["identity_id"] != creator["id"] for p in data["people"])
+    assert data["total_ok"] is True
     # removing a regular guest still works
     amel = db.new_identity("Amel31")
     c.post(f"/api/bills/{bid}/join", headers=_H(amel["id"]))
     r = c.delete(f"/api/bills/{bid}/people/{amel['id']}", headers=_H(budi["id"]))
     assert r.status_code == 200
-    print("PASS creator removal blocked; guest removal ok")
+    print("PASS creator removable once the payer holds it; guest removal ok")
 
 
 def test_slot_remainder_distributed_per_slot():
@@ -669,7 +675,7 @@ if __name__ == "__main__":
     test_owner_id_in_list_and_detail()
     test_creator_keeps_owner_until_payer_resolves()
     test_name_handoff_to_joined_person_deleteable()
-    test_creator_cannot_be_removed()
+    test_creator_removable_once_a_payer_holds_the_bill()
     test_slot_remainder_distributed_per_slot()
     test_tax_not_lost_when_no_one_has_share()
     test_malformed_inputs_return_400()

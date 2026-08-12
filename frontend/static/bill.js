@@ -306,8 +306,12 @@ function renderGuestView(data, me) {
       </div>
       ${data.bill.merchant ? `<p class="muted" style="margin-top:6px;">${esc(data.bill.merchant)}</p>` : ""}
       ${data.bill.transacted_at ? `<p class="muted">${esc(shortDate(data.bill.transacted_at))}</p>` : ""}
-      <p class="muted" style="margin-top:6px;">dibuat oleh ${esc(data.creator_name)}</p>
-      ${data.paid_by_name && data.paid_by_name !== data.creator_name ? `<p class="muted">Dikelola oleh ${esc(payerName)}</p>` : ""}
+      <p class="muted" style="margin-top:6px;">dibuat ${esc(data.creator_name)}${
+        data.paid_by_name && data.paid_by_name !== data.creator_name
+          // one line, and the fact a guest actually needs: who fronted the
+          // money. "Dikelola oleh" was manager jargon on a screen with no
+          // manager actions on it
+          ? ` · nalangin ${esc(payerName)}` : ""}</p>
       ${data.bill.tax_included ? `<p class="muted" style="margin-top:6px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — gak ada PPN tambahan</p>` : ""}
       ${photoBtnHtml(data)}
       ${uncoveredNoteHtml(data)}
@@ -343,7 +347,7 @@ function renderGuestView(data, me) {
       ${closed ? `<p class="muted" style="margin:-4px 0 8px;">Bill udah ditutup — daftar ini cuma buat dibaca.</p>` : ""}
       <div id="pick-items">${data.items.map(it => itemRowHtml(it, data, mySel, me.name, me, closed)).join("")}</div>
     </div>
-    ${!closed && data.bill.creator_identity_id !== me.id ? `
+    ${!closed && data.owner_id !== me.id ? `
     <button class="btn-danger-ghost" id="leave-bill-btn">
       ${ic("logout")} Keluar dari Bill
     </button>` : ""}`;
@@ -379,9 +383,14 @@ function renderGuestView(data, me) {
   $("#pay-methods-btn").addEventListener("click", () => openAccountsSheet(data));
   const leaveBtn = $("#leave-bill-btn");
   if (leaveBtn) leaveBtn.addEventListener("click", async () => {
+    // the creator leaving needs a different reassurance: they're used to this
+    // being *their* bill, so say out loud that it keeps running without them
+    const iMadeIt = data.bill.creator_identity_id === me.id;
     const ok = await confirmSheet({
       title: "Keluar dari bill ini?",
-      body: "Pilihan item kamu bakal dihapus dari bill. Kamu bisa join lagi lewat link kalau bill-nya masih buka.",
+      body: "Pilihan item kamu dihapus dan bill ini ilang dari daftar kamu. Masih bisa gabung lagi lewat link selama billnya belum ditutup."
+        // confirmSheet renders `body` as markup, so the typed name needs esc()
+        + (iMadeIt ? ` Billnya tetep jalan, sekarang dipegang ${esc(data.paid_by_name || "yang nalangin")}.` : ""),
       confirmText: "Keluar",
       danger: true,
     });
@@ -714,7 +723,9 @@ function computeMyBreakdown(data, selQty) {
   let totalSelAll = 0;
   const myName = state.identity ? state.identity.name : "";
   const myId = state.identity ? state.identity.id : "";
-  const iAmCreator = data.bill.creator_identity_id === myId;
+  // the owner (confirmed payer, else creator) absorbs items nobody picked —
+  // mirror calc.py's fallback_id, not the creator specifically
+  const iAmOwner = data.owner_id === myId;
   data.items.forEach(it => {
     const myQty = selQty.get(it.id) || 0;
     if (it.mode === "slot" && it.slot_count) {
@@ -747,11 +758,11 @@ function computeMyBreakdown(data, selQty) {
     const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
     if (myQty > 0 && totalQty > 0) sub += Math.floor(eff / totalQty) * myQty;
     // a free item NOBODY picked still belongs to someone — calc.py hands it to
-    // the creator, so it stays in the tax denominator (and in the creator's own
+    // the bill owner, so it stays in the tax denominator (and in the owner's own
     // subtotal). Dropping it inflated everyone else's tax share (bug: estimate
     // said Rp 145.000, the backend said Rp 122.500, and the number jumped the
     // moment the response landed)
-    else if (totalQty === 0 && iAmCreator) sub += eff;
+    else if (totalQty === 0 && iAmOwner) sub += eff;
     totalSelAll += eff;
   });
   let taxService = (data.bill.tax_idr || 0) + (data.bill.service_idr || 0);
@@ -992,7 +1003,7 @@ function renderCreatorView(data) {
       red: true,
     });
   }
-  // "Item tidak dipilih siapa pun -> masuk ke pembuat bill" is true of every
+  // "Item tidak dipilih siapa pun -> masuk ke yang nalangin" is true of every
   // item on a brand-new bill. Listing them all before anyone has even joined
   // reads as an error report, so hold it until there is someone to warn about.
   if (data.warnings.length && !soloSoFar) {

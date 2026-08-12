@@ -174,7 +174,9 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
         items=bill_data["items"],
         selections=bill_data["selections"],
         participants=bill_data["participants"],
-        creator_id=bill["creator_identity_id"],
+        # money nobody claimed lands on whoever fronted it — the confirmed
+        # payer if there is one, else the creator (v58)
+        fallback_id=_owner_id(bill_data),
     )
     # attach names
     # merge joined-but-unselected people (payment rows) into the roster, so the
@@ -185,10 +187,13 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
         result["people"].append({
             "identity_id": jid, "subtotal_idr": 0, "tax_idr": 0, "total_idr": 0,
         })
-    # creator is always part of the bill (visible in the split even before picking)
-    if bill["creator_identity_id"] not in {p["identity_id"] for p in result["people"]}:
+    # the creator is part of the bill while they're still in it: visible in the
+    # split even before picking. Once they walk out (v58 — only possible when a
+    # confirmed payer holds the bill) they stop being added back.
+    creator_id = bill["creator_identity_id"]
+    if not bill.get("creator_left") and creator_id not in {p["identity_id"] for p in result["people"]}:
         result["people"].append({
-            "identity_id": bill["creator_identity_id"], "subtotal_idr": 0, "tax_idr": 0, "total_idr": 0,
+            "identity_id": creator_id, "subtotal_idr": 0, "tax_idr": 0, "total_idr": 0,
         })
     result["people"].sort(key=lambda p: -p["total_idr"])
     all_ids = [p["identity_id"] for p in result["people"]]
@@ -738,9 +743,13 @@ def remove_person(bill_id: str, identity_id: str, request: Request):
         raise HTTPException(403, "Bill sudah ditutup")
     if identity_id == ident["id"]:
         raise HTTPException(400, "Gak bisa hapus diri sendiri (owner bill)")
-    if identity_id == bill_data["bill"]["creator_identity_id"]:
-        raise HTTPException(400, "Pembuat bill gak bisa dihapus")
+    # the creator used to be unremovable. Since v57 they're a regular
+    # participant once a confirmed payer holds the bill, and v58 lets them
+    # leave — so the manager can drop them too, same as anyone else. While no
+    # payer is confirmed the creator IS the owner, and the self-check above
+    # already covers that case (only the owner gets here).
     db.remove_person(bill_id, identity_id)
+    db.set_creator_left(bill_id, identity_id)
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
@@ -751,12 +760,15 @@ def leave_bill(bill_id: str, request: Request):
 
     Escape hatch for people who joined but don't owe anything they want to
     keep tracking. Drops their selections, payment record, and participant
-    claim — their share falls back to the creator / becomes uncovered slots
-    (same primitive as the manager's remove_person). The owner can't leave
-    (they hold the bill — delete or transfer the payer instead), and the
-    creator can't leave (they're structurally part of the bill: "dibuat
-    oleh" + free-item fallback target). Leaving is a clean exit: the bill
-    just doesn't track them anymore.
+    claim — their share falls back to the owner / becomes uncovered slots
+    (same primitive as the manager's remove_person). The owner can't leave:
+    they hold the bill, so they delete it or hand the payer over instead.
+
+    The creator can leave too (v58), but only while they are NOT the owner —
+    i.e. once a confirmed payer took the bill over, which per v57 makes the
+    creator a regular participant. Their exit is a flag on the bill
+    (`creator_left`), because unlike everyone else their membership isn't
+    stored as rows that leaving could delete.
     """
     bill_data = _bill_or_404(bill_id)
     bill = bill_data["bill"]
@@ -765,18 +777,20 @@ def leave_bill(bill_id: str, request: Request):
     ident = _identity_from_request(request)
     if _can_manage(bill_data, ident["id"]):
         raise HTTPException(400, "Owner bill gak bisa keluar — pindahin yang bayar atau hapus billnya")
-    if ident["id"] == bill["creator_identity_id"]:
-        raise HTTPException(400, "Pembuat bill gak bisa keluar")
-    # must actually be part of the bill (joined via payment row, or has picks)
+    # must actually be part of the bill (joined via payment row, or has picks).
+    # The creator is in it by construction until they leave.
+    is_creator = ident["id"] == bill["creator_identity_id"]
     joined_ids = {p["identity_id"] for p in bill_data["payments"]}
     picked = any(
         sel["identity_id"] == ident["id"]
         for it in bill_data["items"]
         for sel in (it.get("selections") or [])
     )
-    if ident["id"] not in joined_ids and not picked:
+    if not (is_creator and not bill.get("creator_left")) and ident["id"] not in joined_ids and not picked:
         raise HTTPException(404, "Kamu gak ada di bill ini")
     db.remove_person(bill_id, ident["id"])
+    if is_creator:
+        db.set_creator_left(bill_id, ident["id"])
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
