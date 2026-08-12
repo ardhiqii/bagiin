@@ -546,6 +546,31 @@ bump v54, lalu v55 (versi final). Ketiganya isinya sama di git; v55 yang dirujuk
   yang nalangin. Tombolnya di bawah baris "Yang nalangin: X", buka sheet yang sama
   (akun si pembayar; fallback akun creator cuma kalau creator yang bayar).
 
+### v57 (2026-08-12) — payer = pemegang power tunggal + fitur keluar dari bill
+
+Model kepemilikan diubah (keputusan Aufa): **payer yang di-confirm = satu-satunya
+manager.** Sebelum ada payer confirmed → creator yang pegang. Setelah creator
+confirm Amel sebagai payer → power pindah TOTAL ke Amel; creator jadi peserta
+biasa (bisa pilih item, tandai lunas diri, lihat metode — gak bisa edit/close/
+delete/set-payer/tandai lunas orang lain).
+
+- `_can_manage` = `_owner_id` (confirmed payer, else creator). Co-ownership
+  creator v49 dibuang — aman karena v51 memastikan name-match gak pernah
+  ngasih power (dulu v48 yang bikin creator ke-lock itu payer resolve by name
+  tanpa distinction; sekarang distinction-nya ada).
+- `db.delete_bill` ikut diketatin: cuma confirmed payer / creator (saat belum
+  ada payer confirmed) yang bisa delete — path name-resolution-as-owner dihapus.
+- **Fitur baru: `POST /api/bills/{id}/leave`** — peserta (bukan owner, bukan
+  creator) bisa keluar dari bill yang open: pilihan + payment record + roster
+  dihapus, bagiannya balik ke creator / jadi slot kosong. Owner gak bisa keluar
+  (dia pegang bill), creator gak bisa keluar (struktural: "dibuat oleh" +
+  fallback item bebas). Bisa join lagi lewat link.
+- **UI**: tombol "Keluar dari Bill" (btn-danger-ghost) di view tamu, ada hint
+  "Dikelola oleh <payer>" di kartu ringkasan. View creator/tamu otomatis
+  ngikut `can_manage` dari server.
+- Tes: 4 test lama di-update ke model baru + 7 test baru
+  (`test_regressions_v57.py`) → 87 total.
+
 ### v13 (2026-08-09) — join-based roster
 - Creator no longer types participant names — just declares headcount (`Berapa orang ikut?`).
 - Guests appear in the bill the moment they join (name prompt → join), even before picking items.

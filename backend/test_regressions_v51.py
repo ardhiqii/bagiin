@@ -180,9 +180,9 @@ def test_creator_confirming_payer_transfers_ownership():
     assert r.status_code == 200, r.text
     data = db.get_bill(bid)
     assert _owner_id(data) == budi["id"], "an explicit choice does transfer ownership"
-    assert _can_manage(data, alice["id"]), "creator keeps their powers"
-    # and the creator must still see the management UI on their own bill
-    assert c.get(f"/api/bills/{bid}", headers=_H(alice)).json()["can_manage"] is True
+    # v57: the confirmed payer is the SOLE manager — the creator is locked out
+    assert not _can_manage(data, alice["id"]), "creator loses powers once payer confirmed"
+    assert c.get(f"/api/bills/{bid}", headers=_H(alice)).json()["can_manage"] is False
 
 
 # ---------- 3. duplicate item ids ----------

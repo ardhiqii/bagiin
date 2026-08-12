@@ -119,13 +119,17 @@ def _owner_id(bill_data: dict) -> str:
 
 
 def _can_manage(bill_data: dict, ident_id: str) -> bool:
-    """Management powers: the resolved payer (owner) OR the bill creator.
+    """Management powers: the CONFIRMED payer is the sole manager (v57).
 
-    (bug: once a payer placeholder resolved to a joined identity, ownership
-    moved entirely to the payer and the creator — who made the bill and set
-    the payer — could no longer change the payer, delete, close or edit it.)
+    The person who fronted the money holds the bill. Before any payer is
+    confirmed the creator manages; once a manager explicitly confirms a
+    payer, power moves to them completely. A payer matched only by name
+    never manages (v51). (bug history: v48 made the payer sole owner and
+    the creator could no longer fix their own bill — v49 added the creator
+    as permanent co-owner; v57 removes that co-ownership again, now that
+    the confirmed-payer distinction means name-matching can't hijack it.)
     """
-    return ident_id == bill_data["bill"]["creator_identity_id"] or _owner_id(bill_data) == ident_id
+    return _owner_id(bill_data) == ident_id
 
 
 def _names_for_identities(ident_ids: list[str]) -> dict[str, str]:
@@ -232,9 +236,9 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
         "all_paid": all_paid,
         "bill": bill,
         "owner_id": _owner_id(bill_data),
-        # who may edit/close/delete: the creator keeps their powers even after
-        # handing the payer role to someone else (bug: the creator was dropped
-        # into the guest view with no share button on their own bill)
+        # who may edit/close/delete (v57): the CONFIRMED payer is the sole
+        # manager. Before any payer is confirmed the creator manages; after
+        # confirmation the creator is a regular participant like everyone else.
         "can_manage": bool(viewer_id) and _can_manage(bill_data, viewer_id),
         "creator_name": creator_name,
         "creator_accounts": db.get_accounts(bill["creator_identity_id"]),
@@ -436,8 +440,12 @@ def my_bills(identity_id: str, request: Request):
                 for p in bill_data["payments"]
             )
         else:
+            # defensive fallback (bill row exists but get_bill failed): mirror
+            # _owner_id as best we can — confirmed payer, else creator.
             row["owner_id"] = row["paid_by_identity_id"] or row["creator_identity_id"]
-            row["can_manage"] = row["creator_identity_id"] == identity_id
+            row["can_manage"] = (row["paid_by_identity_id"] == identity_id) or (
+                not row["paid_by_identity_id"] and row["creator_identity_id"] == identity_id
+            )
             row["my_paid"] = False
     return rows
 
@@ -724,6 +732,42 @@ def remove_person(bill_id: str, identity_id: str, request: Request):
     if identity_id == bill_data["bill"]["creator_identity_id"]:
         raise HTTPException(400, "Pembuat bill gak bisa dihapus")
     db.remove_person(bill_id, identity_id)
+    return _compute_response(db.get_bill(bill_id), ident["id"])
+
+
+@app.post("/api/bills/{bill_id}/leave")
+@limiter.limit("20/minute")
+def leave_bill(bill_id: str, request: Request):
+    """A participant removes themselves from an open bill (v57).
+
+    Escape hatch for people who joined but don't owe anything they want to
+    keep tracking. Drops their selections, payment record, and participant
+    claim — their share falls back to the creator / becomes uncovered slots
+    (same primitive as the manager's remove_person). The owner can't leave
+    (they hold the bill — delete or transfer the payer instead), and the
+    creator can't leave (they're structurally part of the bill: "dibuat
+    oleh" + free-item fallback target). Leaving is a clean exit: the bill
+    just doesn't track them anymore.
+    """
+    bill_data = _bill_or_404(bill_id)
+    bill = bill_data["bill"]
+    if bill["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup")
+    ident = _identity_from_request(request)
+    if _can_manage(bill_data, ident["id"]):
+        raise HTTPException(400, "Owner bill gak bisa keluar — pindahin yang bayar atau hapus billnya")
+    if ident["id"] == bill["creator_identity_id"]:
+        raise HTTPException(400, "Pembuat bill gak bisa keluar")
+    # must actually be part of the bill (joined via payment row, or has picks)
+    joined_ids = {p["identity_id"] for p in bill_data["payments"]}
+    picked = any(
+        sel["identity_id"] == ident["id"]
+        for it in bill_data["items"]
+        for sel in (it.get("selections") or [])
+    )
+    if ident["id"] not in joined_ids and not picked:
+        raise HTTPException(404, "Kamu gak ada di bill ini")
+    db.remove_person(bill_id, ident["id"])
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
 

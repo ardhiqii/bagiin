@@ -56,9 +56,11 @@ def _mk_bill(creator, title="Makan", subtotal=0, tax=0, service=0, total=0,
     return data["id"]
 
 
-def test_creator_keeps_control_after_payer_resolves():
-    """Placeholder payer joins -> ownership resolves to them, but the creator
-    must STILL be able to change the payer / close / delete (bug: 403)."""
+def test_creator_control_transfers_to_confirmed_payer():
+    """Placeholder payer joins -> ownership resolves to them, but only for
+    display (name match never grants powers). Once the creator CONFIRMS the
+    payer by identity, the payer is the sole manager and the creator loses
+    every manage action until the payer hands ownership back (v57)."""
     aufa = db.new_identity("Aufa48", role="creator")
     amel = db.new_identity("Amel48")
     bid = _mk_bill(aufa, subtotal=100000, total=100000,
@@ -78,21 +80,27 @@ def test_creator_keeps_control_after_payer_resolves():
     assert not _can_manage(data, amel["id"]), "name match must not grant powers"
     assert _can_manage(data, aufa["id"]), "creator must still manage"
 
-    # creator changes payer to Amel by identity (previously 403). THIS is what
-    # promotes her to owner — an explicit choice by someone who may manage.
+    # creator changes payer to Amel by identity. THIS is what promotes her to
+    # owner — an explicit choice by someone who may manage.
     r = c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": amel["id"]}, headers=HA)
     assert r.status_code == 200, r.text
     d = r.json()
     assert d["paid_by_id"] == amel["id"], d["paid_by_id"]
     assert _owner_id(db.get_bill(bid)) == amel["id"], "confirmed payer owns it"
-    assert _can_manage(db.get_bill(bid), aufa["id"]), "creator keeps powers too"
+    # v57: the confirmed payer is the SOLE manager — the creator is now a
+    # regular participant and loses every manage action (v48 co-ownership
+    # removed; name-matching can't hijack the bill anymore, so the creator
+    # lockout is safe again).
+    assert not _can_manage(db.get_bill(bid), aufa["id"]), "creator loses powers once payer confirmed"
 
-    # creator changes payer back to themselves
-    r = c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": aufa["id"]}, headers=HA)
-    assert r.status_code == 200, r.text
-    assert r.json()["paid_by_id"] == aufa["id"]
+    # creator can no longer change the payer back, close, or delete
+    assert c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": aufa["id"]}, headers=HA).status_code == 403
+    assert c.post(f"/api/bills/{bid}/close", headers=HA).status_code == 403
+    assert c.delete(f"/api/bills/{bid}", headers=HA).status_code == 403
 
-    # creator closes and deletes
+    # the payer (owner) can hand ownership back; creator regains powers
+    assert c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": aufa["id"]}, headers=HAa).status_code == 200
+    assert _can_manage(db.get_bill(bid), aufa["id"]), "creator manages again after hand-off"
     assert c.post(f"/api/bills/{bid}/close", headers=HA).status_code == 200
     assert c.delete(f"/api/bills/{bid}", headers=HA).status_code == 200
 

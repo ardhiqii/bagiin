@@ -178,24 +178,23 @@ def test_payer_placeholder_resolves_on_join():
 
 
 def test_remove_person_clears_stale_payer():
-    """Payer = owner, creator = co-owner (v48: creator keeps powers once the
-    payer resolves — bug was creator locked out of their own bill). Creator
-    can remove the payer; paid_by falls back to the creator."""
+    """Removing a name-matched payer (auto-resolved on join, never confirmed)
+    clears paid_by back to the creator. A CONFIRMED payer is the sole owner —
+    the creator can't remove them anymore (v57)."""
     creator = db.new_identity("Aufa5", role="creator")
     budi = db.new_identity("Budi5")
-    bid = _mk_bill(creator)
-    c.post(f"/api/bills/{bid}/join", headers=_H(budi["id"]))
-    c.put(f"/api/bills/{bid}/paid_by", headers=_H(creator["id"]),
-          json={"identity_id": budi["id"]})
+    bid = _mk_bill(creator, paid_by_name="Budi5")
+    c.post(f"/api/bills/{bid}/join", headers=_H(budi["id"]))  # auto-resolves by name, NOT confirmed
     r = c.get(f"/api/bills/{bid}", headers=_H(creator["id"]))
     assert r.json()["paid_by_id"] == budi["id"]
-    # creator is co-owner even after the payer resolved -> can remove Budi
+    assert r.json()["can_manage"] is True  # name-match is display-only, creator stays owner
+    # creator removes the display-only payer -> paid_by falls back to creator
     r = c.delete(f"/api/bills/{bid}/people/{budi['id']}", headers=_H(creator["id"]))
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["paid_by_id"] == creator["id"]  # falls back to creator
     assert all(p["identity_id"] != budi["id"] for p in data["people"])
-    print("PASS remove_person clears stale payer (owner = payer model, creator co-owner)")
+    print("PASS remove_person clears stale name-matched payer (v57)")
 
 
 # ---------- permissions ----------
@@ -438,9 +437,10 @@ def test_settled_list_matches_detail():
 # ---------- owner = payer model ----------
 
 def test_payer_is_owner_privileges():
-    """Payer (resolved) gets the owner powers: close, edit, mark others paid,
-    reopen, delete, set payer, remove person, set slots. Creator is a co-owner
-    (v48) and keeps the same powers — payer was locking the creator out."""
+    """Confirmed payer is the SOLE manager (v57): close, edit, mark others
+    paid, reopen, delete, set payer, remove person, set slots. Once the
+    creator confirms a payer, the creator is a regular participant — 403 on
+    everything. Handing the payer back restores creator powers."""
     creator = db.new_identity("Aufa20", role="creator")
     amel = db.new_identity("Amel20")
     stranger = db.new_identity("Stranger20")
@@ -449,7 +449,7 @@ def test_payer_is_owner_privileges():
         {"name": "Ayam", "price": 30000},
     ], subtotal=60000, tax=0, total=60000, participants=["Aufa", "Amel"])
     ids = _ids(bid)
-    # Amel joins, becomes payer (resolved via identity)
+    # Amel joins, creator confirms her as payer -> power moves to her
     c.post(f"/api/bills/{bid}/join", headers=_H(amel["id"]))
     r = c.put(f"/api/bills/{bid}/paid_by", headers=_H(creator["id"]),
               json={"identity_id": amel["id"]})
@@ -459,39 +459,36 @@ def test_payer_is_owner_privileges():
     Ha = _H(amel["id"])
     Hs = _H(stranger["id"])
 
-    # payer can close
-    r = c.post(f"/api/bills/{bid}/close", headers=Ha)
-    assert r.status_code == 200
-    # creator (co-owner) can ALSO close/reopen/edit/delete (v48 fix)
-    assert c.post(f"/api/bills/{bid}/close", headers=Hc).status_code == 200
-    # stranger can't reopen while it's closed
-    assert c.post(f"/api/bills/{bid}/reopen", headers=Hs).status_code == 403
-    # creator can reopen
-    assert c.post(f"/api/bills/{bid}/reopen", headers=Hc).status_code == 200
+    # creator is now a plain participant: 403 on every manage action (v57)
+    assert c.get(f"/api/bills/{bid}", headers=Hc).json()["can_manage"] is False
+    assert c.post(f"/api/bills/{bid}/close", headers=Hc).status_code == 403
     assert c.put(f"/api/bills/{bid}", headers=Hc, json={
         "title": "X", "items": [{"name": "A", "price": 1}],
-        "participants": ["Aufa", "Amel"], "subtotal": 1, "tax": 0, "service": 0, "total": 1}).status_code == 200
-    # payer can reopen too
+        "participants": ["Aufa", "Amel"], "subtotal": 1, "tax": 0, "service": 0, "total": 1}).status_code == 403
+    assert c.post(f"/api/bills/{bid}/payments/{amel['id']}/paid", headers=Hc).status_code == 403
+    assert c.put(f"/api/bills/{bid}/paid_by", headers=Hc,
+                 json={"identity_id": creator["id"]}).status_code == 403
+    assert c.delete(f"/api/bills/{bid}", headers=Hc).status_code == 403
+
+    # payer (owner) can do everything
     assert c.post(f"/api/bills/{bid}/close", headers=Ha).status_code == 200
     assert c.post(f"/api/bills/{bid}/reopen", headers=Ha).status_code == 200
-    # payer can mark creator paid (confirming receipt of transfer)
-    r = c.post(f"/api/bills/{bid}/payments/{creator['id']}/paid", headers=Ha)
-    assert r.status_code == 200
-    # creator (co-owner) can mark others paid too (v48)
-    assert c.post(f"/api/bills/{bid}/payments/{amel['id']}/paid", headers=Hc).status_code == 200
-    # payer can edit
     r = c.put(f"/api/bills/{bid}", headers=Ha, json={
         "title": "Makan Edit", "items": [{"name": "Nasi", "price": 31000}, {"name": "Ayam", "price": 30000}],
         "participants": ["Aufa", "Amel"], "subtotal": 61000, "tax": 0, "service": 0, "total": 61000})
     assert r.status_code == 200, r.text
-    # payer can set payer (hand off) and remove person
+    assert c.post(f"/api/bills/{bid}/payments/{creator['id']}/paid", headers=Ha).status_code == 200
+    # stranger can't
+    assert c.post(f"/api/bills/{bid}/reopen", headers=Hs).status_code == 403
+
+    # payer hands ownership back to creator -> creator regains full powers
     r = c.put(f"/api/bills/{bid}/paid_by", headers=Ha, json={"identity_id": creator["id"]})
     assert r.status_code == 200
     assert r.json()["owner_id"] == creator["id"]
-    # creator (owner again after hand-off) can close and delete
+    assert c.get(f"/api/bills/{bid}", headers=Hc).json()["can_manage"] is True
     assert c.post(f"/api/bills/{bid}/close", headers=Hc).status_code == 200
     assert c.delete(f"/api/bills/{bid}", headers=Hc).status_code == 200
-    print("PASS payer = owner: close/edit/mark-paid/reopen/delete + creator co-owner")
+    print("PASS payer = sole owner: full powers, creator locked out until hand-off back")
 
 
 def test_owner_id_in_list_and_detail():

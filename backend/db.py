@@ -811,39 +811,26 @@ def reopen_bill(bill_id: str):
 
 
 def delete_bill(bill_id: str, owner_id: str) -> bool:
-    """Owner (resolved payer, else creator) deletes a bill + everything.
+    """Owner (CONFIRMED payer, else creator) deletes a bill + everything.
 
-    Mirrors _owner_id in main.py: the payer may be a placeholder name that
-    resolves against joined identities (hand-off by name before this fix left
-    paid_by_identity_id NULL -> bill undeletable by anyone).
+    Mirrors _owner_id in main.py (v57): a payer matched only by name is
+    display-only and must NOT be able to delete; the creator keeps the key
+    only while no payer is confirmed.
     """
     conn = get_db()
     row = conn.execute(
-        "SELECT creator_identity_id, paid_by_identity_id, paid_by_name FROM bill WHERE id = ?", (bill_id,)
+        "SELECT creator_identity_id, paid_by_identity_id, paid_by_name, paid_by_confirmed FROM bill WHERE id = ?",
+        (bill_id,),
     ).fetchone()
     if not row:
         conn.close()
         return False
-    owner = row["paid_by_identity_id"] or row["creator_identity_id"]
-    if not row["paid_by_identity_id"] and row["paid_by_name"]:
-        target = row["paid_by_name"].strip().lower()
-        hit = conn.execute(
-            """SELECT p.identity_id FROM payment p
-               JOIN identity idn ON idn.id = p.identity_id
-               WHERE p.bill_id = ? AND LOWER(TRIM(idn.name)) = ? LIMIT 1""",
-            (bill_id, target),
-        ).fetchone()
-        if not hit:
-            hit = conn.execute(
-                """SELECT bp.identity_id FROM bill_participant bp
-                   JOIN identity idn ON idn.id = bp.identity_id
-                   WHERE bp.bill_id = ? AND bp.identity_id IS NOT NULL
-                     AND LOWER(TRIM(idn.name)) = ? LIMIT 1""",
-                (bill_id, target),
-            ).fetchone()
-        if hit and hit["identity_id"]:
-            owner = hit["identity_id"]
-    if owner != owner_id and row["creator_identity_id"] != owner_id:
+    owner = (
+        row["paid_by_identity_id"]
+        if (row["paid_by_identity_id"] and row["paid_by_confirmed"])
+        else row["creator_identity_id"]
+    )
+    if owner != owner_id:
         conn.close()
         return False
     photo_path = conn.execute(

@@ -90,13 +90,15 @@ never return a secret to anyone but the identity's own device. Pre-v51 identitie
 mints one (trust on first use). Bill id is a 22-char `token_urlsafe(16)`; possessing it
 grants read access. Rate limiting via slowapi per IP.
 
-**Ownership:** `_owner_id()` / `_can_manage()` in `main.py` encode a subtle rule — the person
-who fronted the money is the owner *and* the creator always retains management powers too.
-Both branches matter; collapsing them has broken bills before (`test_regressions_v48.py`).
-A payer is only the owner once `paid_by_confirmed` is set, i.e. a manager picked them by
-identity. A payer that merely *matched `paid_by_name`* is display-only — granting it
-ownership let anyone who joined under that name delete the bill. `can_manage` is computed
-per viewer and returned in the payload; the frontend gates on that, never on `owner_id`.
+**Ownership:** `_owner_id()` / `_can_manage()` in `main.py` encode the rule —
+the CONFIRMED payer is the sole manager (v57). Before any payer is confirmed
+the creator manages; once a manager explicitly confirms a payer (`paid_by`
+with an `identity_id`), power moves to them completely and the creator becomes
+a regular participant. A payer matched only by name is display-only and never
+manages (v51). `can_manage` is computed per viewer and returned in the payload;
+the frontend gates on that, never on `owner_id`. Participants (non-owner,
+non-creator) can leave an open bill via `POST /api/bills/{id}/leave`; the owner
+can't leave (they hold the bill) and the creator can't leave (structural).
 
 **Split rules** (`calc.py`) — per-person totals are never stored, always recomputed:
 
