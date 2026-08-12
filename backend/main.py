@@ -437,10 +437,15 @@ def my_bills(identity_id: str, request: Request):
             # it from _owner_id instead said "Kamu udah bayar" in history while
             # the bill itself showed the same person owing the full total.
             payer_id, _ = db.resolve_payer(bill_data)
+            row["i_am_payer"] = payer_id == identity_id
             row["my_paid"] = (payer_id == identity_id) or any(
                 p["identity_id"] == identity_id and p["status"] == "paid"
                 for p in bill_data["payments"]
             )
+            # a bill nobody has picked from is neither settled nor "unpaid" —
+            # without this the list showed a red "Belum lunas" next to a green
+            # "Kamu udah bayar" on a bill where nothing had happened yet
+            row["has_picks"] = bool(bill_data["selections"])
         else:
             # defensive fallback (bill row exists but get_bill failed): mirror
             # _owner_id as best we can — confirmed payer, else creator.
@@ -449,6 +454,8 @@ def my_bills(identity_id: str, request: Request):
                 not row["paid_by_identity_id"] and row["creator_identity_id"] == identity_id
             )
             row["my_paid"] = False
+            row["i_am_payer"] = False
+            row["has_picks"] = False
     return rows
 
 

@@ -142,13 +142,20 @@ function renderHome() {
 function billListStatusChip(b) {
   if (b.status === "closed") return `<span class="chip chip-grey">Selesai</span>`;
   if (b.settled) return `<span class="chip chip-green">${ic("check")}Lunas</span>`;
+  // a bill nobody has picked from isn't "belum lunas" — nobody owes anything
+  // yet. Saying so put a red chip next to a green "Kamu udah bayar" on a bill
+  // where literally nothing had happened (bug: chips contradicted each other).
+  if (!b.has_picks) return `<span class="chip chip-grey">Belum ada yang milih</span>`;
   return `<span class="chip chip-red">Belum lunas</span>`;
 }
 
-// personal payment line for the CURRENT viewer — only meaningful while the
-// bill is open and not fully settled; "Selesai"/"Lunas" already say enough
+// personal line for the CURRENT viewer — only meaningful while the bill is
+// open, has picks, and isn't fully settled ("Selesai"/"Lunas" say enough).
 function personalStatusHtml(b) {
-  if (b.status === "closed" || b.settled) return "";
+  if (b.status === "closed" || b.settled || !b.has_picks) return "";
+  // the payer never "paid" — they fronted the money. Calling that "udah bayar"
+  // is what made a fresh bill claim a payment that never happened.
+  if (b.i_am_payer) return `<div class="item-share">Kamu yang nalangin</div>`;
   return b.my_paid
     ? `<div class="item-share" style="color:var(--green);">Kamu udah bayar</div>`
     : `<div class="item-share" style="color:var(--red);">Kamu belum bayar</div>`;

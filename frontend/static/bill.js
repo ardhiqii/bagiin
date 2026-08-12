@@ -298,10 +298,6 @@ function renderGuestView(data, me) {
     <button class="btn-outline" id="pay-methods-btn" style="margin-bottom:12px;">
       ${ic("wallet")} Metode Bayar ${esc(payerName)}
     </button>
-    ${!closed && data.bill.creator_identity_id !== me.id ? `
-    <button class="btn-danger-ghost" id="leave-bill-btn" style="margin-bottom:12px;">
-      ${ic("logout")} Keluar dari Bill
-    </button>` : ""}
     ${closed ? `
     <div class="info-box">Bill ini udah ditutup. Pembagiannya final dan gak bisa diubah lagi.</div>
     <div class="card card-flat">
@@ -328,7 +324,11 @@ function renderGuestView(data, me) {
       <div class="card-title">${closed ? "Item yang kamu tanggung" : "Centang yang kamu tanggung"}</div>
       ${closed ? `<p class="muted" style="margin:-4px 0 8px;">Bill udah ditutup — daftar ini cuma buat dibaca.</p>` : ""}
       <div id="pick-items">${data.items.map(it => itemRowHtml(it, data, mySel, me.name, me, closed)).join("")}</div>
-    </div>`;
+    </div>
+    ${!closed && data.bill.creator_identity_id !== me.id ? `
+    <button class="btn-danger-ghost" id="leave-bill-btn">
+      ${ic("logout")} Keluar dari Bill
+    </button>` : ""}`;
 
   // the sticky bar lives in the rail on desktop and the bottom dock on phones
   const side = closed ? "" : `
@@ -930,10 +930,16 @@ function renderCreatorView(data) {
   // a closed bill is no longer settled by fiat (bug: "semua lunas" on a closed
   // bill with unpaid people right below it)
   let statusChip;
+  const allSettled = data.all_paid && data.uncovered_idr === 0;
   if (data.all_paid && data.uncovered_idr === 0) {
     statusChip = `<span class="chip chip-green">${ic("check")} Semua Lunas</span>`;
   } else if (totalUnpaid > 0) {
-    statusChip = `<span class="chip chip-red">${fmt(totalUnpaid)} belum lunas</span>`;
+    // "belum dibayar" (orang) vs "belum keambil" (bagian kosong) vs "belum
+    // beres" (jumlah dua-duanya, di rail). Tiga angka ini pernah sama-sama
+    // dilabelin "belum lunas", jadi header bilang Rp 35.280 sementara rail
+    // bilang Rp 53.280 buat hal yang kelihatannya sama (bug: angka saling
+    // bantah di satu layar).
+    statusChip = `<span class="chip chip-red">${fmt(totalUnpaid)} belum dibayar</span>`;
   } else if (data.uncovered_idr > 0) {
     statusChip = `<span class="chip chip-red">${fmt(data.uncovered_idr)} belum keambil</span>`;
   } else {
@@ -989,9 +995,8 @@ function renderCreatorView(data) {
         <span class="chip ${totalPaid > 0 ? "chip-green" : "chip-grey"}">${totalPaid > 0 ? ic("check") : ""}${fmt(totalPaid)} udah masuk</span>
         ${statusChip}
       </div>
-      ${closedNotSettled ? `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} Bill udah ditutup tapi ${totalUnpaid > 0 ? `masih ada ${fmt(totalUnpaid)} yang belum lunas` : `masih ada ${fmt(data.uncovered_idr)} bagian yang gak keambil`}. Buka lagi kalau mau dibenerin.</p>` : ""}
+      ${closedNotSettled ? `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} Bill udah ditutup tapi ${totalUnpaid > 0 ? `masih ada ${fmt(totalUnpaid)} yang belum dibayar` : `masih ada ${fmt(data.uncovered_idr)} bagian yang gak keambil`}. Buka lagi kalau mau dibenerin.</p>` : ""}
       ${photoBtnHtml(data)}
-      ${uncoveredNoteHtml(data)}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;">
         <span class="muted">Yang nalangin: <strong style="color:var(--text);">${esc(payerName)}</strong>${payerRow && payerRow.total_idr > 0 ? ` · bagian dia ${fmt(payerRow.total_idr)}` : ""}</span>
         ${!closed ? `<button class="btn-outline btn-sm" id="set-payer-btn" style="flex-shrink:0;">${ic("pencil")} Ubah</button>` : ""}
@@ -1078,13 +1083,19 @@ function renderCreatorView(data) {
   const side = `
     <div class="dock"><div class="dock-inner">
       <div class="dock-total">
-        <span class="label">${data.all_paid && data.uncovered_idr === 0 ? "Semua" : "Belum lunas"}</span>
-        <span class="money" id="my-total">${data.all_paid && data.uncovered_idr === 0 ? "Lunas" : fmt(totalUnpaid + data.uncovered_idr)}</span>
+        <span class="label">${allSettled ? "Semua" : "Belum beres"}</span>
+        <span class="money" id="my-total">${allSettled ? "Lunas" : fmt(totalUnpaid + data.uncovered_idr)}</span>
       </div>
+      ${allSettled ? `
       <div class="dock-split" style="flex-wrap:wrap;">
         <span>Udah masuk <b class="money-sm">${fmt(totalPaid)}</b></span>
         <span>${data.people.length} orang</span>
-      </div>
+      </div>`
+      : `<div class="dock-split" style="flex-direction:column;gap:4px;align-items:stretch;">
+        ${totalUnpaid > 0 ? `<span style="display:flex;justify-content:space-between;gap:8px;">Belum dibayar <b class="money-sm">${fmt(totalUnpaid)}</b></span>` : ""}
+        ${data.uncovered_idr > 0 ? `<span style="display:flex;justify-content:space-between;gap:8px;">Bagian kosong <b class="money-sm">${fmt(data.uncovered_idr)}</b></span>` : ""}
+        <span style="display:flex;justify-content:space-between;gap:8px;color:var(--text-3);">Udah masuk <b class="money-sm">${fmt(totalPaid)}</b></span>
+      </div>`}
       ${!closed
         ? `<button class="btn-primary" id="close-bill-btn">Tutup Bill</button>`
         : `<button class="btn-outline" id="reopen-bill-btn" style="color:var(--accent);border-color:var(--accent);">${ic("refresh")} Buka Bill Lagi</button>`}

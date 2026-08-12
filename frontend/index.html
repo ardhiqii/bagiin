@@ -118,9 +118,11 @@ body {
   font-size:16px; font-weight:700; letter-spacing:-.01em; text-align:center;
   flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
-.brand { font-size:19px; font-weight:800; letter-spacing:-.03em; display:flex; align-items:center; gap:8px; }
+/* the dot is punctuation, not a lockup element — a flex `gap` here pushed it
+   a visible 8px away from the wordmark ("Bagiin .") */
+.brand { font-size:19px; font-weight:800; letter-spacing:-.03em; display:inline-flex; align-items:baseline; }
 .brand .dot { color:var(--brand); }
-.brand-mark { width:26px; height:26px; border-radius:8px; flex-shrink:0; }
+.brand-mark { width:26px; height:26px; border-radius:8px; flex-shrink:0; margin-right:8px; align-self:center; }
 
 h1 { font-size:27px; font-weight:800; letter-spacing:-.03em; line-height:1.15; text-wrap:balance; }
 h2 { font-size:18px; font-weight:700; letter-spacing:-.02em; }
@@ -147,7 +149,10 @@ button:not(:disabled):active { transform:scale(.98); }
   outline:2px solid var(--accent); outline-offset:2px; border-radius:var(--r-xs);
 }
 
-.btn-primary,.btn-green,.btn-outline,.btn-ghost,.btn-danger {
+/* every variant must inherit the same box, or it renders as bare text with a
+   border wrapped around a collapsed inline box (bug: "Hapus Bill" / "Keluar
+   dari Bill" spilled out of their own outline) */
+.btn-primary,.btn-green,.btn-outline,.btn-ghost,.btn-danger,.btn-danger-ghost {
   display:inline-flex; align-items:center; justify-content:center; gap:8px;
   font-weight:600; font-size:15.5px; min-height:48px; padding:12px 18px; width:100%;
 }
@@ -220,9 +225,17 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .item-info { flex:1; min-width:0; }
 .item-name { font-size:15px; font-weight:600; letter-spacing:-.01em; }
 .item-share { font-size:12.5px; color:var(--text-3); margin-top:2px; }
-.item-price { font-size:15px; font-weight:700; flex-shrink:0; }
+.item-price { font-size:15px; font-weight:700; flex-shrink:0; text-align:right; }
 .price-was { opacity:.5; text-decoration:line-through; font-weight:500; }
 .price-now { color:var(--green); }
+/* on a narrow phone a discounted price ("Rp 38.000 Rp 30.000") side by side
+   squeezed the name column until the share line broke onto three lines —
+   stack the struck-through price above the real one instead */
+@media (max-width:430px) {
+  .item-row { gap:10px; }
+  .price-was { display:block; font-size:12px; line-height:1.2; }
+  .item-share { font-size:12px; }
+}
 
 /* ---------- people ---------- */
 .person-row { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border); }
@@ -314,7 +327,8 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
                 margin:-4px auto 14px; }
 .sheet-title { font-size:19px; font-weight:800; letter-spacing:-.02em; margin-bottom:6px; }
 .sheet-sub { color:var(--text-3); font-size:13.5px; margin-bottom:14px; line-height:1.5; }
-.sheet .btn-primary,.sheet .btn-outline,.sheet .btn-green,.sheet .btn-danger { margin-top:8px; }
+.sheet .btn-primary,.sheet .btn-outline,.sheet .btn-green,.sheet .btn-danger,
+.sheet .btn-danger-ghost { margin-top:8px; }
 @keyframes sheetUp { from { transform:translateY(28px); opacity:.5; } to { transform:none; opacity:1; } }
 @keyframes fade { from { opacity:0; } to { opacity:1; } }
 
