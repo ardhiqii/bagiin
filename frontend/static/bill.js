@@ -806,7 +806,10 @@ function openPaySheet(data, me, alreadyPaid) {
           }
           return `
           <div class="pay-item" data-item="${it.id}">
-            <div style="flex:1;min-width:0;">${esc(it.name)}${shareNote ? ` <span class="muted">· ${shareNote}</span>` : ""}</div>
+            <div style="flex:1;min-width:0;">
+              <div class="item-name" style="font-size:14px;">${esc(it.name)}</div>
+              ${shareNote ? `<div class="item-share">${esc(shareNote)}</div>` : ""}
+            </div>
             <div style="text-align:right;flex-shrink:0;">
               <div class="money">${fmt(myPrice)}</div>
               ${it.discount_idr > 0 ? `<div class="muted" style="font-size:11px;">diskon ${fmt(it.discount_idr)} · dari ${fmt(it.price_idr)}</div>` : (it.mode !== "slot" && (data.sel_by_item[it.id] || []).length > 1 ? `<div class="muted" style="font-size:11px;">dari ${fmt(eff)}</div>` : "")}
@@ -820,7 +823,11 @@ function openPaySheet(data, me, alreadyPaid) {
         </div>
         ${taxServiceShow > 0 ? `
         <div class="break-row">
-          <span class="muted">Pajak &amp; service <span class="label-sm" style="text-transform:none;">(PPN ${fmt(data.bill.tax_idr || 0)} + SC ${fmt(data.bill.service_idr || 0)})</span></span>
+          <!-- the bill's own PPN + SC used to be printed right next to the
+               viewer's share, so two different numbers sat side by side and
+               the row wrapped onto three lines. Their share is the only
+               number that belongs in a personal confirmation. -->
+          <span class="muted">Pajak &amp; service</span>
           <span class="money">${fmt(bd.tax)}</span>
         </div>` : ""}
       </div>`

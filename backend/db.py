@@ -892,7 +892,7 @@ def get_bills_for_identity(identity_id: str):
           FROM bill b
           LEFT JOIN payment p ON p.bill_id = b.id AND p.identity_id = ?
           WHERE b.creator_identity_id = ? OR p.id IS NOT NULL
-          ORDER BY b.created_at DESC""",
+          ORDER BY COALESCE(b.transacted_at, b.created_at) DESC, b.created_at DESC""",
         (identity_id, identity_id),
     ).fetchall()
     out = []

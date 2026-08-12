@@ -435,6 +435,33 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Changelog
 
+### 2026-08-12 (lanjutan) — kosakata status & perapian UI
+
+Pass lanjutan setelah audit visual di browser (desktop 1440 + HP 390, terang & gelap).
+
+- **Satu angka, satu label.** Tiga angka berbeda sama-sama dilabelin "belum lunas":
+  header bilang Rp 35.280 sementara rail bilang Rp 53.280 buat hal yang keliatannya
+  sama. Sekarang dipisah tegas — *belum dibayar* (orang), *belum keambil* (bagian
+  slot kosong), *belum beres* (jumlah dua-duanya, cuma di rail, dengan rinciannya).
+- **Tombol jebol.** `.btn-danger-ghost` gak ikut aturan kotak tombol bersama, jadi
+  "Hapus Bill" dan "Keluar dari Bill" ke-render sebagai teks yang tumpah keluar dari
+  bordernya sendiri.
+- **Riwayat berhenti ngarang.** Bill yang belum disentuh siapa pun nampilin chip merah
+  "Belum lunas" bersebelahan sama teks hijau "Kamu udah bayar". Daftar bill sekarang
+  bawa `has_picks` + `i_am_payer`, jadi tampil "Belum ada yang milih" dan "Kamu yang
+  nalangin" — yang nalangin itu nombokin, bukan bayar.
+- Peringatan bagian kosong gak dobel lagi di layar pembuat bill (kartu peringatan udah
+  nyebut nama itemnya).
+- "Keluar dari Bill" dipindah ke bawah daftar item. Aksi destruktif yang jarang dipakai
+  gak pantes jadi tombol merah selebar layar di atas tugas utama.
+- Wordmark: `gap` flex bikin titiknya kelihatan jauh ("Bagiin ." jadi "Bagiin.").
+- HP sempit: harga diskon ditumpuk, gak lagi bikin kolom nama kepencet sampai baris
+  keterangan pecah jadi tiga baris.
+- Tes: `backend/test_regressions_status.py` (4 tes, total suite 91) + `tools/e2e_smoke.mjs`,
+  smoke test browser yang mastiin angka yang diliat tamu **persis** sama dengan hitungan
+  server (ini regresi yang paling mahal kalau bocor — dulu tamu disuruh transfer
+  Rp 145.000 padahal utangnya Rp 122.500).
+
 ### v51 (2026-08-12) — polish besar + tambal lubang keamanan
 
 **Keamanan (paling penting).** Sebelum ini `identity_id` merangkap dua peran: referensi

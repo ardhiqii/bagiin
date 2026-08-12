@@ -35,7 +35,7 @@ function renderOnboarding() {
   const saved = lsGet(LS_KEYS.name, "");
   app.innerHTML = shell(`
     <div style="min-height:66dvh;display:flex;flex-direction:column;justify-content:center;max-width:420px;margin:0 auto;">
-      <div class="dropzone-icon" style="margin-bottom:12px;">${ic("people")}</div>
+      <div style="margin-bottom:14px;">${brandMark(52)}</div>
       <div class="brand" style="font-size:24px;margin-bottom:10px;">Bagiin<span class="dot">.</span></div>
       <h1>Bagi bill bareng jadi gak ribet.</h1>
       <p class="muted" style="margin:8px 0 22px;">Foto struk, share link, semua milih itemnya sendiri. Pajaknya kebagi otomatis.</p>
@@ -111,7 +111,7 @@ function renderHome() {
   const name = esc(String(state.identity.name || "").split(" ")[0]);
   app.innerHTML = shell(`
     <div class="topbar">
-      <div class="brand">Bagiin<span class="dot">.</span></div>
+      <div class="brand"><span class="brand-mark">${brandMark(26)}</span>Bagiin<span class="dot">.</span></div>
       <div class="right">
         <button class="icon-btn" id="history-btn" aria-label="Riwayat bill">${ic("history")}</button>
         <button class="icon-btn" id="settings-btn" aria-label="Akun kamu">${ic("user")}</button>
@@ -139,14 +139,24 @@ function renderHome() {
   loadHomeHistory();
 }
 
-function billListStatusChip(b) {
-  if (b.status === "closed") return `<span class="chip chip-grey">Selesai</span>`;
-  if (b.settled) return `<span class="chip chip-green">${ic("check")}Lunas</span>`;
+/** One status per bill row, so the chip, the colour and the icon can't drift
+ *  apart. `tone` drives the row's colour anchor. */
+function billListStatus(b) {
+  if (b.status === "closed") return { tone: "done", label: "Selesai", icon: "check" };
+  if (b.settled) return { tone: "ok", label: "Lunas", icon: "check" };
   // a bill nobody has picked from isn't "belum lunas" — nobody owes anything
   // yet. Saying so put a red chip next to a green "Kamu udah bayar" on a bill
   // where literally nothing had happened (bug: chips contradicted each other).
-  if (!b.has_picks) return `<span class="chip chip-grey">Belum ada yang milih</span>`;
-  return `<span class="chip chip-red">Belum lunas</span>`;
+  if (!b.has_picks) return { tone: "idle", label: "Belum dipilih", icon: "receipt" };
+  return { tone: "due", label: "Belum lunas", icon: "receipt" };
+}
+
+const STATUS_CHIP = { ok: "chip-green", due: "chip-red", done: "chip-grey", idle: "chip-grey" };
+
+function billListStatusChip(b) {
+  const s = billListStatus(b);
+  const withIcon = s.tone === "ok" ? ic("check") : "";
+  return `<span class="chip ${STATUS_CHIP[s.tone]}">${withIcon}${s.label}</span>`;
 }
 
 // personal line for the CURRENT viewer — only meaningful while the bill is
@@ -163,19 +173,26 @@ function personalStatusHtml(b) {
 
 function billRowHtml(b) {
   const when = b.transacted_at || b.created_at;
+  const s = billListStatus(b);
+  // A list of identical grey rows is unreadable at a glance — you have to stop
+  // and read each chip to know what needs doing. The colour bar + tinted icon
+  // give the eye something to scan, and both come from the same status object
+  // as the chip so they can never disagree.
   return `
-    <div class="history-row" role="button" tabindex="0" data-id="${esc(b.id)}"
-         aria-label="Buka bill ${esc(b.title)}">
-      <div class="avatar" aria-hidden="true">${ic("receipt")}</div>
-      <div style="flex:1;min-width:0;">
-        <div class="item-name">${esc(b.title)}</div>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:3px;flex-wrap:wrap;">
+    <div class="history-row is-${s.tone}" role="button" tabindex="0" data-id="${esc(b.id)}"
+         aria-label="Buka bill ${esc(b.title)}, ${esc(s.label)}">
+      <div class="avatar status-mark" aria-hidden="true">${ic(s.icon)}</div>
+      <div class="row-body">
+        <div class="row-title">
+          <span class="item-name">${esc(b.title)}</span>
+          <span class="muted row-date">${esc(shortDate(when))}</span>
+        </div>
+        <div class="row-meta">
           ${billListStatusChip(b)}
-          <span class="muted">${esc(shortDate(when))}</span>
+          <span class="money row-amount">${fmt(b.total_idr)}</span>
         </div>
         ${personalStatusHtml(b)}
       </div>
-      <div class="money item-price">${fmt(b.total_idr)}</div>
       ${b.can_manage
         // gate on can_manage (creator OR resolved payer), not owner_id — the
         // creator keeps management powers even when someone else fronted the

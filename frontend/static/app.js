@@ -57,6 +57,38 @@ const ICONS = {
   wave: '<path d="M4 12.5c1.6-3.5 3.2-5.2 4.8-5.2 2.4 0 2.4 9.4 4.8 9.4 1.6 0 3.1-1.7 4.6-5.2"/>',
   empty: '<rect x="3.5" y="6" width="17" height="13.5" rx="2.2"/><path d="M3.5 10.5h17"/><path d="M8.5 15h7"/>',
 };
+/** The actual product mark — a receipt torn down a zigzag seam, the same shape
+ *  as the favicon. The UI used to show a generic "people" glyph instead, so the
+ *  brand never appeared anywhere the user could see it. */
+function brandMark(size = 40) {
+  const id = "bm" + Math.random().toString(36).slice(2, 8);
+  return `<svg width="${size}" height="${size}" viewBox="0 0 512 512" role="img"
+    aria-label="Bagiin" style="display:block;border-radius:${Math.round(size * 0.22)}px;">
+    <defs>
+      <linearGradient id="${id}g" x1="0" y1="0" x2=".25" y2="1">
+        <stop offset="0" stop-color="#FB943C"/><stop offset="1" stop-color="#DF5208"/>
+      </linearGradient>
+      <clipPath id="${id}l"><polygon points="-20,-20 261.5,-20 235.5,26 261.5,72 235.5,118 261.5,164 235.5,210 261.5,256 235.5,302 261.5,348 235.5,394 261.5,440 235.5,486 261.5,532 -20,560"/></clipPath>
+      <clipPath id="${id}r"><polygon points="560,-20 276.5,-20 250.5,26 276.5,72 250.5,118 276.5,164 250.5,210 276.5,256 250.5,302 276.5,348 250.5,394 276.5,440 250.5,486 276.5,532 560,560"/></clipPath>
+      <g id="${id}s">
+        <path d="M124 110 H388 a16 16 0 0 1 16 16 V366 H108 V126 a16 16 0 0 1 16-16 Z" fill="#FFFDFA"/>
+        <polygon points="108,366 121.5,384 135,366 148.5,384 162,366 175.5,384 189,366 202.5,384 216,366 229.5,384 243,366 256.5,384 270,366 283.5,384 297,366 310.5,384 324,366 337.5,384 351,366 364.5,384 378,366 391.5,384 404,366" fill="#FFFDFA"/>
+        <g fill="#D84E08">
+          <rect x="138" y="166" width="98" height="17" rx="8.5"/>
+          <rect x="138" y="214" width="98" height="17" rx="8.5"/>
+          <rect x="138" y="262" width="61" height="17" rx="8.5"/>
+          <rect x="276" y="166" width="98" height="17" rx="8.5"/>
+          <rect x="276" y="214" width="98" height="17" rx="8.5"/>
+          <rect x="276" y="262" width="61" height="17" rx="8.5"/>
+        </g>
+      </g>
+    </defs>
+    <rect width="512" height="512" rx="115" fill="url(#${id}g)"/>
+    <g clip-path="url(#${id}l)"><g transform="translate(0 6)"><use href="#${id}s"/></g></g>
+    <g clip-path="url(#${id}r)"><g transform="translate(0 -6)"><use href="#${id}s"/></g></g>
+  </svg>`;
+}
+
 function ic(name, cls) {
   const d = ICONS[name] || "";
   return `<svg class="ico ${cls || ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor"

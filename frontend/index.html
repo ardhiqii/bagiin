@@ -353,10 +353,43 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .dropzone-icon { color:var(--brand); margin-bottom:10px; }
 .dropzone-icon svg { width:38px; height:38px; }
 
-.history-row { display:flex; align-items:center; gap:12px; padding:13px 10px; margin:0 -10px;
-               border-radius:var(--r-sm); cursor:pointer; transition:background .14s var(--ease); }
+.history-row { display:flex; align-items:center; gap:12px; padding:13px 10px 13px 16px; margin:0 -10px;
+               border-radius:var(--r-sm); cursor:pointer; position:relative;
+               transition:background .14s var(--ease); }
 .history-row + .history-row { border-top:1px solid var(--border); border-radius:0; }
 @media (hover:hover) { .history-row:hover { background:var(--surface-2); } }
+/* status colour anchor: a bar at the head of the row plus a tinted icon, so a
+   long list is scannable without reading every chip */
+.history-row::before {
+  content:""; position:absolute; left:2px; top:14px; bottom:14px; width:4px;
+  border-radius:var(--r-full); background:var(--border-strong);
+}
+.history-row.is-ok::before   { background:var(--green); }
+.history-row.is-due::before  { background:var(--red); }
+.history-row.is-done::before { background:var(--border-strong); }
+.history-row.is-idle::before { background:var(--border-strong); }
+/* The row is [icon][title+meta][amount][delete]. Without min-width:0 the text
+   column refuses to shrink, so a long bill name wrapped onto three lines and a
+   nowrap status chip overflowed straight across the amount (bug: "Belum ada
+   yang milih" painted on top of "Rp 28.000" on a 390px phone). */
+.row-body { flex:1; min-width:0; }
+.history-row .item-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* The amount sits on the status line rather than in its own column: on a 390px
+   phone a fourth column left the status chip ~40px and truncated it to "Be…". */
+/* Two lines: [name .......... date] / [status ........... amount]. Everything
+   on one line left the status chip ~40px on a 390px phone and truncated it to
+   "Be…"; only the name is allowed to give up space. */
+.row-title { display:flex; align-items:baseline; gap:8px; min-width:0; }
+.row-date { flex-shrink:0; }
+.row-meta { display:flex; align-items:center; gap:8px; margin-top:5px; min-width:0; }
+.row-meta .chip { flex-shrink:0; }
+.row-amount { margin-left:auto; flex-shrink:0; font-size:15px; font-weight:700; padding-left:8px; }
+.status-mark { color:var(--text-3); }
+.history-row.is-ok   .status-mark { background:var(--green-soft); color:var(--green);
+                                    border-color:color-mix(in srgb, var(--green) 25%, transparent); }
+.history-row.is-due  .status-mark { background:var(--red-soft); color:var(--red);
+                                    border-color:color-mix(in srgb, var(--red) 25%, transparent); }
+.history-row.is-done .status-mark { opacity:.65; }
 .history-month { font-size:12px; font-weight:700; color:var(--text-3); letter-spacing:.04em;
                  text-transform:uppercase; margin:16px 0 4px; }
 .history-month:first-child { margin-top:0; }

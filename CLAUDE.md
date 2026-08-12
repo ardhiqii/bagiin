@@ -24,7 +24,17 @@ venv/bin/python -m pytest -q                       # full suite (68 tests, ~3s)
 venv/bin/python -m pytest test_behaviors.py -q     # one file
 venv/bin/python -m pytest test_behaviors.py -q -k slot   # one test
 venv/bin/python test_calc_regression.py            # test files also run standalone (__main__)
+
+# browser smoke test of the guest picker (needs Chrome on --remote-debugging-port=9222)
+BAGIIN_DB=/tmp/e2e.db BAGIIN_UPLOAD_DIR=/tmp/e2e-up venv/bin/python -m uvicorn main:app --port 8099 &
+node ../tools/e2e_smoke.mjs
 ```
+
+`tools/e2e_smoke.mjs` seeds a bill, drives the real UI, and asserts the guest is shown
+**exactly** what the server says they owe. That equality is the expensive regression: the
+frontend used to re-derive the split in JS and told people to transfer the wrong amount.
+It needs no dependencies — Node's built-in WebSocket talks to a Chrome that is already
+running with `--remote-debugging-port=9222`.
 
 Tests set `BAGIIN_DB` to a temp file at import time, so they never touch `backend/bagiin.db`
 (the live DB, gitignored). Any new test file must do the same **before** importing `db`.
