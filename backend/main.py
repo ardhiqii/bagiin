@@ -388,7 +388,18 @@ def my_bills(identity_id: str, request: Request):
     # placeholder-name resolution that paid_by_identity_id alone misses
     for row in rows:
         bill_data = db.get_bill(row["id"])
-        row["owner_id"] = _owner_id(bill_data) if bill_data else (row["paid_by_identity_id"] or row["creator_identity_id"])
+        if bill_data:
+            owner_id = _owner_id(bill_data)
+            row["owner_id"] = owner_id
+            # personal payment state for THIS viewer: the resolved payer is
+            # auto-paid (they fronted), otherwise check their payment record
+            row["my_paid"] = (owner_id == identity_id) or any(
+                p["identity_id"] == identity_id and p["status"] == "paid"
+                for p in bill_data["payments"]
+            )
+        else:
+            row["owner_id"] = row["paid_by_identity_id"] or row["creator_identity_id"]
+            row["my_paid"] = False
     return rows
 
 
