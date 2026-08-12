@@ -2,8 +2,10 @@
 import io
 import json
 import os
+import re
 import secrets
 import time
+import hashlib
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,7 +21,7 @@ if _env_path.exists():
 
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -969,10 +971,59 @@ def serve_photo(filename: str):
 
 
 # ---------- static frontend ----------
+#
+# Cache strategy (industry-standard content hashing):
+#   * index.html & manifest.json are rendered dynamically with asset URLs
+#     like /static/app.js?v=<sha256[:12]>. The HTML itself is served
+#     no-cache + ETag so browsers/CF revalidate it every load.
+#   * Every other file under /static/ is served immutable, max-age=1y.
+#     Content changes -> new hash -> new URL -> cache never goes stale.
+#   * No more manual version bumps (v57 etc.) - the hash IS the version.
 
-app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")
+STATIC_DIR = FRONTEND_DIR / "static"
+_HASH_RE = re.compile(rb"@HASH:([a-zA-Z0-9._-]+)@")
 
 
-@app.get("/")
-def index():
-    return FileResponse(str(FRONTEND_DIR / "index.html"))
+class ImmutableStaticFiles(StaticFiles):
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return resp
+
+
+def _asset_hash(name: str) -> str:
+    return hashlib.sha256((STATIC_DIR / name).read_bytes()).hexdigest()[:12]
+
+
+def _render_template(path: Path) -> bytes:
+    return _HASH_RE.sub(lambda m: _asset_hash(m.group(1).decode()).encode(), path.read_bytes())
+
+
+def _no_cache_response(content: bytes, media_type: str, request: Request) -> Response:
+    """Serve rendered HTML/manifest with revalidation semantics (ETag/304)."""
+    etag = '"' + hashlib.sha256(content).hexdigest() + '"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304)
+    return Response(content, media_type=media_type, headers={
+        "Cache-Control": "no-cache, must-revalidate",
+        "ETag": etag,
+    })
+
+
+@app.api_route("/static/manifest.json", methods=["GET", "HEAD"])
+def manifest(request: Request):
+    return _no_cache_response(
+        _render_template(FRONTEND_DIR / "manifest.json"),
+        "application/manifest+json", request,
+    )
+
+
+@app.api_route("/", methods=["GET", "HEAD"])
+def index(request: Request):
+    return _no_cache_response(
+        _render_template(FRONTEND_DIR / "index.html"),
+        "text/html; charset=utf-8", request,
+    )
+
+
+app.mount("/static", ImmutableStaticFiles(directory=str(STATIC_DIR)), name="static")
