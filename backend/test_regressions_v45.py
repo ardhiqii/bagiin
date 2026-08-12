@@ -27,6 +27,19 @@ from main import app, _compute_response
 c = TestClient(app)
 
 
+
+def _H(who):
+    """Auth headers for a caller. Accepts an identity dict or a bare id.
+
+    Since v51 the identity id is only a public reference — requests must also
+    carry the identity's secret, so tests go through this helper.
+    """
+    ident = who if isinstance(who, dict) else db.get_identity(who)
+    h = {"X-Identity-Id": ident["id"]}
+    if ident.get("secret"):
+        h["X-Identity-Secret"] = ident["secret"]
+    return h
+
 def _mk_bill(creator, title="Makan", subtotal=0, tax=0, service=0, total=0,
              items=None, participants=None, tax_included=0, tax_mode="proportional",
              paid_by_name=None):
@@ -52,8 +65,8 @@ def test_settled_consistent_between_list_and_detail_price0_item():
     bid = _mk_bill(creator, subtotal=0, tax=1000, service=0, total=1000,
                    items=[{"name": "gratisan", "price": 0}],
                    participants=["Aufa", "Budi"])
-    H = {"X-Identity-Id": creator["id"]}
-    Hb = {"X-Identity-Id": budi["id"]}
+    H = _H(creator["id"])
+    Hb = _H(budi["id"])
 
     c.post(f"/api/bills/{bid}/join", headers=Hb, json={})
     ids = _ids(bid)
@@ -78,8 +91,8 @@ def test_settled_consistent_unpaid_guest():
     bid = _mk_bill(creator, subtotal=30000, tax=3000, total=33000,
                    items=[{"name": "Makan", "price": 30000}],
                    participants=["Aufa2", "Budi2"])
-    H = {"X-Identity-Id": creator["id"]}
-    Hb = {"X-Identity-Id": budi["id"]}
+    H = _H(creator["id"])
+    Hb = _H(budi["id"])
 
     c.post(f"/api/bills/{bid}/join", headers=Hb, json={})
     ids = _ids(bid)
@@ -103,7 +116,7 @@ def test_create_rejects_tax_included_with_tax():
         "subtotal": 15000, "tax": 1500, "service": 500, "total": 17000,
         "tax_included": True,
     }
-    r = c.post("/api/bills", headers={"X-Identity-Id": creator["id"]}, json=payload)
+    r = c.post("/api/bills", headers=_H(creator["id"]), json=payload)
     assert r.status_code == 400, f"expected 400, got {r.status_code}: {r.text}"
 
 
@@ -115,7 +128,7 @@ def test_create_rejects_inconsistent_total():
         "items": [{"name": "A", "price": 10000}],
         "subtotal": 10000, "tax": 1000, "service": 500, "total": 99999,
     }
-    r = c.post("/api/bills", headers={"X-Identity-Id": creator["id"]}, json=payload)
+    r = c.post("/api/bills", headers=_H(creator["id"]), json=payload)
     assert r.status_code == 400, f"expected 400, got {r.status_code}: {r.text}"
 
 
@@ -130,7 +143,7 @@ def test_update_rejects_inconsistent_total():
         "items": [{"id": ids["A"], "name": "A", "price": 10000}],
         "subtotal": 10000, "tax": 1000, "service": 0, "total": 12345,
     }
-    r = c.put(f"/api/bills/{bid}", headers={"X-Identity-Id": creator["id"]}, json=payload)
+    r = c.put(f"/api/bills/{bid}", headers=_H(creator["id"]), json=payload)
     assert r.status_code == 400, f"expected 400, got {r.status_code}: {r.text}"
 
 
@@ -142,8 +155,8 @@ def test_equal_tax_zero_subtotal_lands_on_creator():
                    tax_mode="equal",
                    items=[{"name": "Gratis", "price": 5000, "discount": 5000}],
                    participants=["Aufa6", "Budi6"])
-    H = {"X-Identity-Id": creator["id"]}
-    Hb = {"X-Identity-Id": budi["id"]}
+    H = _H(creator["id"])
+    Hb = _H(budi["id"])
 
     c.post(f"/api/bills/{bid}/join", headers=Hb, json={})
     ids = _ids(bid)

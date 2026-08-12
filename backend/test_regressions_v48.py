@@ -30,6 +30,19 @@ app.state.limiter.enabled = False
 c = TestClient(app, raise_server_exceptions=False)
 
 
+
+def _H(who):
+    """Auth headers for a caller. Accepts an identity dict or a bare id.
+
+    Since v51 the identity id is only a public reference — requests must also
+    carry the identity's secret, so tests go through this helper.
+    """
+    ident = who if isinstance(who, dict) else db.get_identity(who)
+    h = {"X-Identity-Id": ident["id"]}
+    if ident.get("secret"):
+        h["X-Identity-Secret"] = ident["secret"]
+    return h
+
 def _mk_bill(creator, title="Makan", subtotal=0, tax=0, service=0, total=0,
              items=None, participants=None, tax_included=0, tax_mode="proportional",
              paid_by_name=None):
@@ -51,21 +64,28 @@ def test_creator_keeps_control_after_payer_resolves():
     bid = _mk_bill(aufa, subtotal=100000, total=100000,
                    items=[{"name": "A", "price": 100000}],
                    participants=["Aufa48", "Amel48"], paid_by_name="Amel48")
-    HA = {"X-Identity-Id": aufa["id"]}
-    HAa = {"X-Identity-Id": amel["id"]}
+    HA = _H(aufa["id"])
+    HAa = _H(amel["id"])
 
-    # payer placeholder resolves once Amel joins
+    # payer placeholder resolves once Amel joins — for display and auto-paid
+    # only. Ownership must NOT follow a name match (v51): otherwise anyone who
+    # joins under the payer's name takes the bill over.
     r = c.post(f"/api/bills/{bid}/join", headers=HAa, json={})
     assert r.status_code == 200, r.text
     data = db.get_bill(bid)
-    assert _owner_id(data) == amel["id"], "owner should resolve to Amel"
+    assert db.resolve_payer(data)[0] == amel["id"], "payer should resolve to Amel"
+    assert _owner_id(data) == aufa["id"], "ownership stays with the creator"
+    assert not _can_manage(data, amel["id"]), "name match must not grant powers"
     assert _can_manage(data, aufa["id"]), "creator must still manage"
 
-    # creator changes payer to Amel by identity (previously 403)
+    # creator changes payer to Amel by identity (previously 403). THIS is what
+    # promotes her to owner — an explicit choice by someone who may manage.
     r = c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": amel["id"]}, headers=HA)
     assert r.status_code == 200, r.text
     d = r.json()
     assert d["paid_by_id"] == amel["id"], d["paid_by_id"]
+    assert _owner_id(db.get_bill(bid)) == amel["id"], "confirmed payer owns it"
+    assert _can_manage(db.get_bill(bid), aufa["id"]), "creator keeps powers too"
 
     # creator changes payer back to themselves
     r = c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": aufa["id"]}, headers=HA)
@@ -85,8 +105,8 @@ def test_stranger_still_cannot_manage():
     bid = _mk_bill(aufa, subtotal=100000, total=100000,
                    items=[{"name": "A", "price": 100000}],
                    participants=["Aufa48b", "Amel48b"], paid_by_name="Amel48b")
-    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": amel["id"]}, json={})
-    HM = {"X-Identity-Id": mallory["id"]}
+    c.post(f"/api/bills/{bid}/join", headers=_H(amel["id"]), json={})
+    HM = _H(mallory["id"])
     assert c.post(f"/api/bills/{bid}/close", headers=HM).status_code == 403
     assert c.delete(f"/api/bills/{bid}", headers=HM).status_code == 403
     assert c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": mallory["id"]}, headers=HM).status_code == 403
@@ -105,7 +125,7 @@ def test_uncovered_slot_warning_honest_total():
     bid = _mk_bill(aufa, subtotal=641283, total=641283, tax_included=1,
                    items=[{"name": "2 nights", "price": 641283, "mode": "slot", "slot_count": 2}],
                    participants=["Aufa48c"])
-    HA = {"X-Identity-Id": aufa["id"]}
+    HA = _H(aufa["id"])
     # pick 1 of 2 slots (like the real bill) so 1 stays uncovered
     d = c.get(f"/api/bills/{bid}", headers=HA).json()
     item_id = d["items"][0]["id"]

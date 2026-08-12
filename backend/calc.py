@@ -71,13 +71,17 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
                 empty = slot_count - taken
                 amount = eff - per_slot * taken
                 uncovered_idr += amount
-                uncovered_slots.append({
-                    "item_id": it["id"],
-                    "name": it["name"],
-                    "per_slot": per_slot,
-                    "empty": empty,
-                    "amount_idr": amount,
-                })
+                if amount > 0:
+                    # a fully discounted item leaves empty slots worth nothing —
+                    # reporting them produced "3 bagian kosong = Rp 0" and a
+                    # warning the creator could never act on
+                    uncovered_slots.append({
+                        "item_id": it["id"],
+                        "name": it["name"],
+                        "per_slot": per_slot,
+                        "empty": empty,
+                        "amount_idr": amount,
+                    })
             continue
         # free mode: split proportionally by servings taken (qty = how many
         # portions this person takes, default 1). eff // total_qty per serving,

@@ -23,6 +23,19 @@ from main import app, _compute_response
 c = TestClient(app)
 
 
+
+def _H(who):
+    """Auth headers for a caller. Accepts an identity dict or a bare id.
+
+    Since v51 the identity id is only a public reference — requests must also
+    carry the identity's secret, so tests go through this helper.
+    """
+    ident = who if isinstance(who, dict) else db.get_identity(who)
+    h = {"X-Identity-Id": ident["id"]}
+    if ident.get("secret"):
+        h["X-Identity-Secret"] = ident["secret"]
+    return h
+
 def _mk_bill(creator, title="Makan", subtotal=60000, tax=6000, service=0,
              total=66000, items=None, participants=None, tax_included=0,
              paid_by_name=None, participant_count=None):
@@ -54,8 +67,8 @@ def test_full_lifecycle_happy_path():
         {"name": "Mie", "price": 10000},
     ], subtotal=60000, tax=6000, total=66000)
     ids = _ids(bid)
-    H = {"X-Identity-Id": creator["id"]}
-    Hb = {"X-Identity-Id": budi["id"]}
+    H = _H(creator["id"])
+    Hb = _H(budi["id"])
 
     # creator default payer -> paid, but not settled (nothing picked)
     r = c.get(f"/api/bills/{bid}", headers=H)
@@ -99,7 +112,7 @@ def test_full_lifecycle_happy_path():
     assert c.post(f"/api/bills/{bid}/payments/{budi['id']}/unpaid", headers=Hb).status_code == 403
     assert c.post(f"/api/bills/{bid}/selections", headers=Hb,
                   json={"picks": []}).status_code == 403
-    assert c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": db.new_identity("Caca")["id"]}).status_code == 403
+    assert c.post(f"/api/bills/{bid}/join", headers=_H(db.new_identity("Caca")["id"])).status_code == 403
 
     # reopen -> editable again
     r = c.post(f"/api/bills/{bid}/reopen", headers=H)
@@ -115,16 +128,16 @@ def test_reopen_permissions():
     creator = db.new_identity("Aufa2", role="creator")
     budi = db.new_identity("Budi2")
     bid = _mk_bill(creator)
-    c.post(f"/api/bills/{bid}/close", headers={"X-Identity-Id": creator["id"]})
+    c.post(f"/api/bills/{bid}/close", headers=_H(creator["id"]))
     # guest can't reopen
-    assert c.post(f"/api/bills/{bid}/reopen", headers={"X-Identity-Id": budi["id"]}).status_code == 403
+    assert c.post(f"/api/bills/{bid}/reopen", headers=_H(budi["id"])).status_code == 403
     # stranger can't reopen
     stranger = db.new_identity("X")
-    assert c.post(f"/api/bills/{bid}/reopen", headers={"X-Identity-Id": stranger["id"]}).status_code == 403
+    assert c.post(f"/api/bills/{bid}/reopen", headers=_H(stranger["id"])).status_code == 403
     # reopen an open bill -> 400
-    r = c.post(f"/api/bills/{bid}/reopen", headers={"X-Identity-Id": creator["id"]})
+    r = c.post(f"/api/bills/{bid}/reopen", headers=_H(creator["id"]))
     assert r.status_code == 200
-    assert c.post(f"/api/bills/{bid}/reopen", headers={"X-Identity-Id": creator["id"]}).status_code == 400
+    assert c.post(f"/api/bills/{bid}/reopen", headers=_H(creator["id"])).status_code == 400
     print("PASS reopen permissions")
 
 
@@ -136,7 +149,7 @@ def test_payer_placeholder_does_not_mark_creator_paid():
     creator = db.new_identity("Aufa3", role="creator")
     bid = _mk_bill(creator, paid_by_name="Budi", items=[{"name": "A", "price": 60000}],
                    subtotal=60000, tax=6000, total=66000)
-    r = c.get(f"/api/bills/{bid}", headers={"X-Identity-Id": creator["id"]})
+    r = c.get(f"/api/bills/{bid}", headers=_H(creator["id"]))
     data = r.json()
     assert data["paid_by_name"] == "Budi"
     assert data["paid_by_id"] is None, data["paid_by_id"]
@@ -152,8 +165,8 @@ def test_payer_placeholder_resolves_on_join():
                    subtotal=60000, tax=6000, total=66000)
     ids = _ids(bid)
     # Budi joins + picks -> payer resolves to him, he's auto-paid, settled
-    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": budi["id"]})
-    r = c.post(f"/api/bills/{bid}/selections", headers={"X-Identity-Id": budi["id"]},
+    c.post(f"/api/bills/{bid}/join", headers=_H(budi["id"]))
+    r = c.post(f"/api/bills/{bid}/selections", headers=_H(budi["id"]),
                json={"picks": [ids["A"]]})
     data = r.json()
     assert data["paid_by_id"] == budi["id"]
@@ -171,13 +184,13 @@ def test_remove_person_clears_stale_payer():
     creator = db.new_identity("Aufa5", role="creator")
     budi = db.new_identity("Budi5")
     bid = _mk_bill(creator)
-    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": budi["id"]})
-    c.put(f"/api/bills/{bid}/paid_by", headers={"X-Identity-Id": creator["id"]},
+    c.post(f"/api/bills/{bid}/join", headers=_H(budi["id"]))
+    c.put(f"/api/bills/{bid}/paid_by", headers=_H(creator["id"]),
           json={"identity_id": budi["id"]})
-    r = c.get(f"/api/bills/{bid}", headers={"X-Identity-Id": creator["id"]})
+    r = c.get(f"/api/bills/{bid}", headers=_H(creator["id"]))
     assert r.json()["paid_by_id"] == budi["id"]
     # creator is co-owner even after the payer resolved -> can remove Budi
-    r = c.delete(f"/api/bills/{bid}/people/{budi['id']}", headers={"X-Identity-Id": creator["id"]})
+    r = c.delete(f"/api/bills/{bid}/people/{budi['id']}", headers=_H(creator["id"]))
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["paid_by_id"] == creator["id"]  # falls back to creator
@@ -193,7 +206,7 @@ def test_permissions_matrix():
     stranger = db.new_identity("Stranger")
     bid = _mk_bill(creator)
     ids = _ids(bid)
-    H, Hb, Hs = ({"X-Identity-Id": x} for x in (creator["id"], budi["id"], stranger["id"]))
+    H, Hb, Hs = (_H(x) for x in (creator["id"], budi["id"], stranger["id"]))
 
     # stranger: can't edit, can't close, can't set payer, can't mark paid, can't delete
     assert c.put(f"/api/bills/{bid}", headers=Hs, json={"title": "X", "items": [{"name": "A", "price": 1}]}).status_code == 403
@@ -222,8 +235,8 @@ def test_slot_oversubscription_blocked():
     bid = _mk_bill(creator, items=[{"name": "Teh", "price": 30000, "mode": "slot", "slot_count": 1}],
                    subtotal=30000, tax=0, total=30000, participants=["Aufa", "Amel", "Budi"])
     ids = _ids(bid)
-    Ha = {"X-Identity-Id": amel["id"]}
-    Hb = {"X-Identity-Id": budi["id"]}
+    Ha = _H(amel["id"])
+    Hb = _H(budi["id"])
     assert c.post(f"/api/bills/{bid}/selections", headers=Ha,
                   json={"picks": [{"item_id": ids["Teh"], "qty": 1}]}).status_code == 200
     # second person over the only slot -> 400
@@ -255,7 +268,7 @@ def test_update_bill_foreign_id_no_data_loss():
     obid = _mk_bill(other, items=[{"name": "Foreign", "price": 1000}], subtotal=1000, tax=0, total=1000)
     oids = _ids(obid)
     # update with a foreign item id mixed in
-    r = c.put(f"/api/bills/{bid}", headers={"X-Identity-Id": creator["id"]}, json={
+    r = c.put(f"/api/bills/{bid}", headers=_H(creator["id"]), json={
         "title": "Makan",
         "items": [
             {"id": ids["A"], "name": "A2", "price": 31000},
@@ -285,7 +298,7 @@ def test_unassigned_items_go_to_creator():
         {"name": "Ayam", "price": 30000},
     ], subtotal=60000, tax=0, total=60000)
     ids = _ids(bid)
-    c.post(f"/api/bills/{bid}/selections", headers={"X-Identity-Id": budi["id"]},
+    c.post(f"/api/bills/{bid}/selections", headers=_H(budi["id"]),
            json={"picks": [ids["Nasi"]]})
     data = _compute_response(db.get_bill(bid))
     by = {p["identity_id"]: p for p in data["people"]}
@@ -306,7 +319,7 @@ def test_tax_included_keeps_service():
     bid = _mk_bill(creator, items=[{"name": "Nasi", "price": 50000}, {"name": "Ayam", "price": 50000}],
                    subtotal=100000, tax=11000, service=5000, total=105000, tax_included=1)
     ids = _ids(bid)
-    c.post(f"/api/bills/{bid}/selections", headers={"X-Identity-Id": budi["id"]},
+    c.post(f"/api/bills/{bid}/selections", headers=_H(budi["id"]),
            json={"picks": [ids["Nasi"]]})
     data = _compute_response(db.get_bill(bid))
     by = {p["identity_id"]: p for p in data["people"]}
@@ -328,8 +341,8 @@ def test_discount_split():
         {"name": "Normal", "price": 10000},
     ], subtotal=30000, tax=3000, total=33000)
     ids = _ids(bid)
-    Ha = {"X-Identity-Id": amel["id"]}
-    Hb = {"X-Identity-Id": budi["id"]}
+    Ha = _H(amel["id"])
+    Hb = _H(budi["id"])
     # shared discounted item: effective 15000 split between two
     c.post(f"/api/bills/{bid}/selections", headers=Ha, json={"picks": [ids["DiskonItem"]]})
     c.post(f"/api/bills/{bid}/selections", headers=Hb,
@@ -347,9 +360,9 @@ def test_free_qty_portions():
     budi = db.new_identity("Budi12")
     bid = _mk_bill(creator, items=[{"name": "Teh", "price": 30000}], subtotal=30000, tax=0, total=30000)
     ids = _ids(bid)
-    c.post(f"/api/bills/{bid}/selections", headers={"X-Identity-Id": amel["id"]},
+    c.post(f"/api/bills/{bid}/selections", headers=_H(amel["id"]),
            json={"picks": [{"item_id": ids["Teh"], "qty": 2}]})
-    c.post(f"/api/bills/{bid}/selections", headers={"X-Identity-Id": budi["id"]},
+    c.post(f"/api/bills/{bid}/selections", headers=_H(budi["id"]),
            json={"picks": [{"item_id": ids["Teh"], "qty": 1}]})
     data = _compute_response(db.get_bill(bid))
     by = {p["identity_id"]: p for p in data["people"]}
@@ -363,7 +376,7 @@ def test_duplicate_picks_merged():
     amel = db.new_identity("Amel13")
     bid = _mk_bill(creator, items=[{"name": "A", "price": 10000}], subtotal=10000, tax=0, total=10000)
     ids = _ids(bid)
-    r = c.post(f"/api/bills/{bid}/selections", headers={"X-Identity-Id": amel["id"]},
+    r = c.post(f"/api/bills/{bid}/selections", headers=_H(amel["id"]),
                json={"picks": [{"item_id": ids["A"], "qty": 1}, {"item_id": ids["A"], "qty": 2}]})
     assert r.status_code == 200
     # duplicate item ids merged into qty (1+2=3 portions of a 10000 item =
@@ -378,17 +391,17 @@ def test_invalid_inputs():
     creator = db.new_identity("Aufa14", role="creator")
     amel = db.new_identity("Amel14")
     bid = _mk_bill(creator, items=[{"name": "A", "price": 10000}], subtotal=10000, tax=0, total=10000)
-    Ha = {"X-Identity-Id": amel["id"]}
+    Ha = _H(amel["id"])
     # unknown item id
     r = c.post(f"/api/bills/{bid}/selections", headers=Ha, json={"picks": [{"item_id": 999999, "qty": 1}]})
     assert r.status_code == 400
     # discount > price
-    r = c.put(f"/api/bills/{bid}", headers={"X-Identity-Id": creator["id"]}, json={
+    r = c.put(f"/api/bills/{bid}", headers=_H(creator["id"]), json={
         "title": "X", "items": [{"name": "A", "price": 10000, "discount": 15000}],
         "participants": ["Aufa", "Budi"], "subtotal": -5000, "tax": 0, "service": 0, "total": -5000})
     assert r.status_code == 400
     # empty items on create
-    r = c.post("/api/bills", headers={"X-Identity-Id": creator["id"]}, json={
+    r = c.post("/api/bills", headers=_H(creator["id"]), json={
         "title": "X", "items": [], "participants": [], "subtotal": 0, "tax": 0, "service": 0, "total": 0})
     assert r.status_code == 400
     # GET is public by design (guests open bills via link without identity)
@@ -403,17 +416,17 @@ def test_settled_list_matches_detail():
     bid = _mk_bill(creator, items=[{"name": "A", "price": 30000}, {"name": "B", "price": 30000}],
                    subtotal=60000, tax=0, total=60000)
     ids = _ids(bid)
-    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": budi["id"]})
-    c.post(f"/api/bills/{bid}/selections", headers={"X-Identity-Id": budi["id"]}, json={"picks": [ids["A"]]})
+    c.post(f"/api/bills/{bid}/join", headers=_H(budi["id"]))
+    c.post(f"/api/bills/{bid}/selections", headers=_H(budi["id"]), json={"picks": [ids["A"]]})
     # creator is default payer -> auto-paid; Budi paid -> settled in both views
-    c.post(f"/api/bills/{bid}/payments/{budi['id']}/paid", headers={"X-Identity-Id": budi["id"]})
+    c.post(f"/api/bills/{bid}/payments/{budi['id']}/paid", headers=_H(budi["id"]))
     detail = _compute_response(db.get_bill(bid))
     bills = db.get_bills_for_identity(creator["id"])
     row = next(b for b in bills if b["id"] == bid)
     assert detail["settled"] is True, detail["settled"]
     assert row["settled"] is True, row
     # unpay Budi -> both unsettled
-    c.post(f"/api/bills/{bid}/payments/{budi['id']}/unpaid", headers={"X-Identity-Id": creator["id"]})
+    c.post(f"/api/bills/{bid}/payments/{budi['id']}/unpaid", headers=_H(creator["id"]))
     detail = _compute_response(db.get_bill(bid))
     bills = db.get_bills_for_identity(creator["id"])
     row = next(b for b in bills if b["id"] == bid)
@@ -437,14 +450,14 @@ def test_payer_is_owner_privileges():
     ], subtotal=60000, tax=0, total=60000, participants=["Aufa", "Amel"])
     ids = _ids(bid)
     # Amel joins, becomes payer (resolved via identity)
-    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": amel["id"]})
-    r = c.put(f"/api/bills/{bid}/paid_by", headers={"X-Identity-Id": creator["id"]},
+    c.post(f"/api/bills/{bid}/join", headers=_H(amel["id"]))
+    r = c.put(f"/api/bills/{bid}/paid_by", headers=_H(creator["id"]),
               json={"identity_id": amel["id"]})
     assert r.status_code == 200
     assert r.json()["owner_id"] == amel["id"]
-    Hc = {"X-Identity-Id": creator["id"]}
-    Ha = {"X-Identity-Id": amel["id"]}
-    Hs = {"X-Identity-Id": stranger["id"]}
+    Hc = _H(creator["id"])
+    Ha = _H(amel["id"])
+    Hs = _H(stranger["id"])
 
     # payer can close
     r = c.post(f"/api/bills/{bid}/close", headers=Ha)
@@ -482,18 +495,24 @@ def test_payer_is_owner_privileges():
 
 
 def test_owner_id_in_list_and_detail():
-    """List + detail both expose the owner (payer when resolved)."""
+    """A payer resolved by NAME is display-only: they get the auto-paid status
+    but ownership stays with the creator until a manager confirms them."""
     creator = db.new_identity("Aufa21", role="creator")
     amel = db.new_identity("Amel21")
     bid = _mk_bill(creator, paid_by_name="Amel21", items=[{"name": "A", "price": 30000}],
                    subtotal=30000, tax=0, total=30000)
-    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": amel["id"]})
-    detail = _compute_response(db.get_bill(bid))
-    assert detail["owner_id"] == amel["id"], detail["owner_id"]
-    rows = db.get_bills_for_identity(creator["id"])
+    c.post(f"/api/bills/{bid}/join", headers=_H(amel["id"]))
+    detail = _compute_response(db.get_bill(bid), creator["id"])
+    assert detail["paid_by_id"] == amel["id"], detail["paid_by_id"]
+    assert detail["owner_id"] == creator["id"], detail["owner_id"]
+    assert detail["can_manage"] is True
+    rows = c.get(f"/api/identities/{creator['id']}/bills", headers=_H(creator)).json()
     row = next(b for b in rows if b["id"] == bid)
-    assert row["paid_by_identity_id"] == amel["id"], row
-    print("PASS owner_id exposed in detail + list")
+    assert row["owner_id"] == creator["id"], row
+    assert row["can_manage"] is True, row
+    # ...and the name match alone does not let Amel manage the bill
+    assert _compute_response(db.get_bill(bid), amel["id"])["can_manage"] is False
+    print("PASS name-resolved payer is display-only, creator keeps ownership")
 
 
 def test_creator_keeps_owner_until_payer_resolves():
@@ -501,7 +520,7 @@ def test_creator_keeps_owner_until_payer_resolves():
     creator = db.new_identity("Aufa22", role="creator")
     bid = _mk_bill(creator, paid_by_name="Budi22", items=[{"name": "A", "price": 30000}],
                    subtotal=30000, tax=0, total=30000)
-    Hc = {"X-Identity-Id": creator["id"]}
+    Hc = _H(creator["id"])
     data = c.get(f"/api/bills/{bid}", headers=Hc).json()
     assert data["owner_id"] == creator["id"], data["owner_id"]
     assert data["paid_by_id"] is None
@@ -519,14 +538,14 @@ def test_name_handoff_to_joined_person_deleteable():
     creator = db.new_identity("Aufa30", role="creator")
     budi = db.new_identity("Budi30")
     bid = _mk_bill(creator)
-    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": budi["id"]})
-    r = c.put(f"/api/bills/{bid}/paid_by", headers={"X-Identity-Id": creator["id"]},
+    c.post(f"/api/bills/{bid}/join", headers=_H(budi["id"]))
+    r = c.put(f"/api/bills/{bid}/paid_by", headers=_H(creator["id"]),
               json={"name": "Budi30"})
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["paid_by_id"] == budi["id"], data["paid_by_id"]  # resolved now
     assert data["owner_id"] == budi["id"]
-    r = c.delete(f"/api/bills/{bid}", headers={"X-Identity-Id": budi["id"]})
+    r = c.delete(f"/api/bills/{bid}", headers=_H(budi["id"]))
     assert r.status_code == 200, (r.status_code, r.text)
     print("PASS name hand-off resolves identity -> owner can delete")
 
@@ -538,15 +557,15 @@ def test_creator_cannot_be_removed():
     budi = db.new_identity("Budi31")
     bid = _mk_bill(creator, items=[{"name": "A", "price": 30000}, {"name": "B", "price": 30000}],
                    subtotal=60000, tax=0, total=60000)
-    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": budi["id"]})
-    c.put(f"/api/bills/{bid}/paid_by", headers={"X-Identity-Id": creator["id"]},
+    c.post(f"/api/bills/{bid}/join", headers=_H(budi["id"]))
+    c.put(f"/api/bills/{bid}/paid_by", headers=_H(creator["id"]),
           json={"identity_id": budi["id"]})
-    r = c.delete(f"/api/bills/{bid}/people/{creator['id']}", headers={"X-Identity-Id": budi["id"]})
+    r = c.delete(f"/api/bills/{bid}/people/{creator['id']}", headers=_H(budi["id"]))
     assert r.status_code == 400, (r.status_code, r.text)
     # removing a regular guest still works
     amel = db.new_identity("Amel31")
-    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": amel["id"]})
-    r = c.delete(f"/api/bills/{bid}/people/{amel['id']}", headers={"X-Identity-Id": budi["id"]})
+    c.post(f"/api/bills/{bid}/join", headers=_H(amel["id"]))
+    r = c.delete(f"/api/bills/{bid}/people/{amel['id']}", headers=_H(budi["id"]))
     assert r.status_code == 200
     print("PASS creator removal blocked; guest removal ok")
 
@@ -558,7 +577,7 @@ def test_slot_remainder_distributed_per_slot():
     bid = _mk_bill(creator, items=[{"name": "S", "price": 10004, "mode": "slot", "slot_count": 5}],
                    subtotal=10004, tax=0, total=10004, participants=["Aufa", "Budi"])
     ids = _ids(bid)
-    c.post(f"/api/bills/{bid}/selections", headers={"X-Identity-Id": creator["id"]},
+    c.post(f"/api/bills/{bid}/selections", headers=_H(creator["id"]),
            json={"picks": [{"item_id": ids["S"], "qty": 5}]})
     data = _compute_response(db.get_bill(bid))
     sub = sum(p["subtotal_idr"] for p in data["people"])
@@ -584,7 +603,7 @@ def test_tax_not_lost_when_no_one_has_share():
 def test_malformed_inputs_return_400():
     """Malformed create/update/selections payloads must be 400, not 500."""
     creator = db.new_identity("Aufa34", role="creator")
-    Hc = {"X-Identity-Id": creator["id"]}
+    Hc = _H(creator["id"])
     cases = [
         ("/api/bills", {"title": "X", "items": [{"name": "A", "price": "abc"}], "subtotal": 0, "tax": 0, "service": 0, "total": 0}),
         ("/api/bills", {"title": "X", "items": [{"price": 1000}], "subtotal": 0, "tax": 0, "service": 0, "total": 0}),
@@ -619,12 +638,12 @@ def test_settled_creator_default_payer_list_matches():
     bid = _mk_bill(creator, items=[{"name": "A", "price": 30000}, {"name": "B", "price": 30000}],
                    subtotal=60000, tax=0, total=60000)
     ids = _ids(bid)
-    c.post(f"/api/bills/{bid}/join", headers={"X-Identity-Id": budi["id"]})
-    c.post(f"/api/bills/{bid}/selections", headers={"X-Identity-Id": creator["id"]},
+    c.post(f"/api/bills/{bid}/join", headers=_H(budi["id"]))
+    c.post(f"/api/bills/{bid}/selections", headers=_H(creator["id"]),
            json={"picks": [ids["A"]]})
-    c.post(f"/api/bills/{bid}/selections", headers={"X-Identity-Id": budi["id"]},
+    c.post(f"/api/bills/{bid}/selections", headers=_H(budi["id"]),
            json={"picks": [ids["B"]]})
-    c.post(f"/api/bills/{bid}/payments/{budi['id']}/paid", headers={"X-Identity-Id": budi["id"]})
+    c.post(f"/api/bills/{bid}/payments/{budi['id']}/paid", headers=_H(budi["id"]))
     detail = _compute_response(db.get_bill(bid))
     rows = db.get_bills_for_identity(creator["id"])
     row = next(b for b in rows if b["id"] == bid)

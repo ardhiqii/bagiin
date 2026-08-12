@@ -37,6 +37,19 @@ app.state.limiter.enabled = False
 c = TestClient(app, raise_server_exceptions=False)
 
 
+
+def _H(who):
+    """Auth headers for a caller. Accepts an identity dict or a bare id.
+
+    Since v51 the identity id is only a public reference — requests must also
+    carry the identity's secret, so tests go through this helper.
+    """
+    ident = who if isinstance(who, dict) else db.get_identity(who)
+    h = {"X-Identity-Id": ident["id"]}
+    if ident.get("secret"):
+        h["X-Identity-Secret"] = ident["secret"]
+    return h
+
 def _mk_bill(creator, title="Makan", subtotal=0, tax=0, service=0, total=0,
              items=None, participants=None, tax_included=0, tax_mode="proportional",
              paid_by_name=None):
@@ -55,7 +68,7 @@ def _pick(bid, identity, item_id, qty=1):
 
 def _row_for(ident, bid):
     r = c.get(f"/api/identities/{ident['id']}/bills",
-              headers={"X-Identity-Id": ident["id"]})
+              headers=_H(ident["id"]))
     assert r.status_code == 200, r.text
     rows = [x for x in r.json() if x["id"] == bid]
     assert len(rows) == 1, f"bill {bid} not in {ident['name']}'s list"
@@ -72,8 +85,8 @@ def test_my_paid_personal_status_in_list():
                    items=[{"name": "A", "price": 300000}],
                    participants=["Aufa50", "Amel50", "Budi50"],
                    paid_by_name="Amel50")
-    HAa = {"X-Identity-Id": amel["id"]}
-    HB = {"X-Identity-Id": budi["id"]}
+    HAa = _H(amel["id"])
+    HB = _H(budi["id"])
     c.post(f"/api/bills/{bid}/join", headers=HAa, json={})
     c.post(f"/api/bills/{bid}/join", headers=HB, json={})
     item_id = db.get_bill(bid)["items"][0]["id"]
@@ -93,14 +106,14 @@ def test_my_paid_personal_status_in_list():
     assert row["settled"] is False, row
 
     # guest marks paid -> my_paid true, but bill still unsettled (Aufa left)
-    r = c.post(f"/api/bills/{bid}/payments/{budi['id']}/paid", headers=HAa)
+    r = c.post(f"/api/bills/{bid}/payments/{budi['id']}/paid", headers=HB)
     assert r.status_code == 200, r.text
     row = _row_for(budi, bid)
     assert row["my_paid"] is True, row
     assert row["settled"] is False, f"should stay unsettled: {row}"
 
     # creator pays too -> everyone settled
-    r = c.post(f"/api/bills/{bid}/payments/{aufa['id']}/paid", headers=HAa)
+    r = c.post(f"/api/bills/{bid}/payments/{aufa['id']}/paid", headers=_H(aufa))
     assert r.status_code == 200, r.text
     row = _row_for(budi, bid)
     assert row["my_paid"] is True, row
@@ -117,8 +130,8 @@ def test_my_paid_false_for_creator_without_share():
                    items=[{"name": "A", "price": 300000}],
                    participants=["Aufa50b", "Amel50b", "Budi50b"],
                    paid_by_name="Amel50b")
-    HAa = {"X-Identity-Id": amel["id"]}
-    HB = {"X-Identity-Id": budi["id"]}
+    HAa = _H(amel["id"])
+    HB = _H(budi["id"])
     c.post(f"/api/bills/{bid}/join", headers=HAa, json={})
     c.post(f"/api/bills/{bid}/join", headers=HB, json={})
     item_id = db.get_bill(bid)["items"][0]["id"]
@@ -126,7 +139,7 @@ def test_my_paid_false_for_creator_without_share():
     _pick(bid, budi, item_id)
 
     # payer paid; both guests paid; creator has NO share -> settled
-    r = c.post(f"/api/bills/{bid}/payments/{budi['id']}/paid", headers=HAa)
+    r = c.post(f"/api/bills/{bid}/payments/{budi['id']}/paid", headers=HB)
     assert r.status_code == 200, r.text
     row = _row_for(aufa, bid)
     assert row["my_paid"] is False, row

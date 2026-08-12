@@ -435,6 +435,77 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Changelog
 
+### v51 (2026-08-12) — polish besar + tambal lubang keamanan
+
+**Keamanan (paling penting).** Sebelum ini `identity_id` merangkap dua peran: referensi
+publik (dia muncul di payload tiap bill — `owner_id`, `people[].identity_id`,
+`creator_identity_id`) *dan* satu-satunya kredensial. Artinya siapa pun yang dapat link
+WhatsApp bisa nyalin id pembuat bill terus:
+ganti namanya, nempelin rekening sendiri ke profil dia (duit orang lain nyasar ke
+penyerang), bikin kode pemulihan → ambil alih akun permanen, dan hapus bill.
+Sekarang:
+
+- `identity` punya kolom `secret` (128-bit). Id tetap publik, `secret` yang autentikasi,
+  dikirim lewat header `X-Identity-Secret`. Disimpan di localStorage bareng id.
+- Identity lama (sebelum v51) belum punya secret → `POST /api/identities/{id}/bind`
+  bikin sekali (trust-on-first-use), panggilan kedua ditolak 403. Browser lama tetap
+  jalan sampai dia bind. **Catatan: ini artinya identity lama yang belum kebind masih
+  bisa direbut duluan sampai pemiliknya buka app lagi.**
+- `paid_by_confirmed`: payer yang cuma *cocok nama* (`paid_by_name` = "Budi", ada tamu
+  namanya "budi") sekarang display-only — dia dianggap lunas otomatis tapi **gak**
+  dapat kuasa kelola. Kuasa cuma pindah kalau pengelola milih orangnya eksplisit.
+
+**Logika yang salah:**
+
+- `settled` gak lagi otomatis `true` cuma karena bill ditutup. Bill yang ditutup dengan
+  Rp 75.000 slot kosong + orang belum bayar tetap "belum lunas" (dulu: chip hijau
+  "Lunas" di riwayat padahal barisnya sendiri bilang "belum").
+- Field baru `all_paid` (semua yang punya bagian udah bayar) dipisah dari `settled`
+  (`all_paid` && gak ada bagian kosong).
+- `db.resolve_payer()` jadi satu-satunya penentu siapa yang bayar. Dulu detail bill,
+  flag `settled`, dan daftar riwayat masing-masing ngitung sendiri dan hasilnya beda —
+  riwayat bilang "Kamu udah bayar" sementara bill-nya bilang orang itu masih ngutang penuh.
+- `PUT /api/bills/{id}` nolak item dengan id dobel. Dulu validasi ngitung dua kali tapi
+  DB nyimpen satu, jadi `total_idr` nyangkut lebih besar dari isi itemnya — ada duit yang
+  gak ditagih ke siapa pun dan `total_ok` diam-diam `false`.
+- Edit bill gak lagi ngehapus roster: `participants`/`participant_count` yang gak dikirim
+  = "biarin", bukan "kosongin".
+- Slot kosong yang harganya Rp 0 (item didiskon penuh) gak dilaporin lagi sebagai
+  peringatan "3 bagian kosong = Rp 0".
+- **Total tamu salah hitung.** Frontend nyalin ulang mesin split di JS tapi ngeluarin item
+  bebas yang gak dipilih siapa pun dari basis pajak, padahal `calc.py` naruh item itu ke
+  pembuat bill jadi dia tetap masuk penyebut. Akibatnya tamu diliatin Rp 145.000 padahal
+  utangnya Rp 122.500 — dan angkanya baru betul pas bill ditutup. Sekarang angka resmi
+  diambil dari `people` hasil server; hitungan lokal cuma buat estimasi optimistis.
+- Toggle "harga sudah termasuk pajak" gak lagi ngehapus Service. `calc.py` emang
+  mendukung bill tax-included yang tetap ada service charge.
+- Preview harga slot di editor ngikutin diskon (dulu bagi harga sebelum diskon, jadi item
+  yang sama nunjukin dua harga beda di dua layar).
+
+**Tampilan & rasa pakai:**
+
+- Sistem desain baru: satu keluarga netral hangat (dulu campur abu dingin + oranye), satu
+  aksen, skala radius konsisten, bayangan yang diwarnain sesuai latar. Kontras diperbaiki —
+  dulu tombol utama cuma 2.8:1 dan teks sekunder 2.45:1 (dua-duanya gagal WCAG AA).
+- **Desktop beneran didesain.** Kolom 560px yang ngambang di layar 1440px sekarang jadi
+  workspace dua kolom di ≥1040px: konten kiri, ringkasan + aksi utama jadi rail lengket
+  di kanan. Bottom sheet berubah jadi modal ketengah di ≥720px.
+- Padding bawah dihitung dari tinggi dock beneran. Dulu dipatok 96px padahal bar tamu
+  ~147px, jadi baris item terakhir ketutupan permanen.
+- Ikon SVG (satu set, stroke 1.75) gantiin emoji sebagai elemen antarmuka.
+- Hover, focus-visible, skeleton loading, empty state, riwayat dikelompokin per bulan.
+- `confirm()` bawaan browser diganti sheet sendiri; semua tombol async dikunci selama
+  request jalan biar gak dobel submit.
+- Aksesibilitas: `role`/`aria` di baris item & dialog, label nyambung ke input, target
+  sentuh ≥44px, `aria-live` di toast, keyboard bisa jalan penuh.
+- Ikon & favicon digambar ulang (struk yang disobek jadi dua, dibikin per-ukuran biar
+  16px tetap kebaca), plus `manifest.json`, apple-touch-icon, dan `og:image` — link yang
+  dishare ke WhatsApp sekarang ada preview-nya.
+- Register bahasa diseragamin ke "kamu" (dulu campur "lu", "kamu", "saya" bahkan dalam
+  satu kartu).
+
+Tes: `backend/test_regressions_v51.py` (12 tes) + seluruh suite jadi 80 tes.
+
 ### v13 (2026-08-09) — join-based roster
 - Creator no longer types participant names — just declares headcount (`Berapa orang ikut?`).
 - Guests appear in the bill the moment they join (name prompt → join), even before picking items.

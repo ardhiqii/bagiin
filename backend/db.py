@@ -160,6 +160,24 @@ def init_db():
     scols = {r[1] for r in conn.execute("PRAGMA table_info(selection)").fetchall()}
     if "qty" not in scols:
         conn.execute("ALTER TABLE selection ADD COLUMN qty INTEGER NOT NULL DEFAULT 1")
+    # migration: identity secret (v51) — the id alone used to be the credential,
+    # but every bill payload hands out ids, so anyone with the share link could
+    # replay the creator's id and rename them / add their own payment account /
+    # set a recovery code (bug: full account takeover from a WhatsApp link).
+    # The id stays the public reference; the secret is what authenticates.
+    idcols = {r[1] for r in conn.execute("PRAGMA table_info(identity)").fetchall()}
+    if "secret" not in idcols:
+        conn.execute("ALTER TABLE identity ADD COLUMN secret TEXT")
+    # migration: payer confirmation (v51) — a payer resolved by NAME must not
+    # inherit management powers, or anyone who joins with the right name owns
+    # the bill (bug: "paid_by_name: Budi" + a guest called budi = bill deleted).
+    bcols = {r[1] for r in conn.execute("PRAGMA table_info(bill)").fetchall()}
+    if "paid_by_confirmed" not in bcols:
+        conn.execute(
+            "ALTER TABLE bill ADD COLUMN paid_by_confirmed INTEGER NOT NULL DEFAULT 0")
+        # existing bills: an id set by the creator was confirmed by definition
+        conn.execute(
+            "UPDATE bill SET paid_by_confirmed = 1 WHERE paid_by_identity_id IS NOT NULL")
     conn.commit()
     conn.close()
 
@@ -177,8 +195,8 @@ def new_identity(name: str, role: str = "guest") -> dict:
     conn = get_db()
     ident_id = new_id()
     conn.execute(
-        "INSERT INTO identity (id, name, role) VALUES (?, ?, ?)",
-        (ident_id, name, role),
+        "INSERT INTO identity (id, name, role, secret) VALUES (?, ?, ?, ?)",
+        (ident_id, name, role, new_id()),
     )
     conn.commit()
     row = conn.execute("SELECT * FROM identity WHERE id = ?", (ident_id,)).fetchone()
@@ -191,6 +209,30 @@ def get_identity(ident_id: str):
     row = conn.execute("SELECT * FROM identity WHERE id = ?", (ident_id,)).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def bind_secret(ident_id: str) -> str | None:
+    """Give a pre-v51 identity a secret, once, and hand it back.
+
+    Trust-on-first-use migration: identities created before the secret column
+    existed have none, and their owner's browser only holds the id. The first
+    caller presenting such an id gets a secret minted and bound; every later
+    request must present it. Returns None if the identity already has one.
+    """
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            "UPDATE identity SET secret = ? WHERE id = ? AND secret IS NULL",
+            (new_id(), ident_id),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return None
+        row = conn.execute(
+            "SELECT secret FROM identity WHERE id = ?", (ident_id,)).fetchone()
+        return row["secret"] if row else None
+    finally:
+        conn.close()
 
 
 def restore_identity(code: str):
@@ -362,36 +404,53 @@ def update_bill_photo(bill_id: str, photo_path: str | None):
         _unlink_photo(old["photo_path"])
 
 
+UNCHANGED = object()  # "this field was not in the request" (vs. explicitly null)
+
+
 def update_bill(bill_id: str, title: str, merchant: str | None,
-                transacted_at: str | None, participants: list[str],
+                transacted_at: str | None, participants: list[str] | None,
                 items: list[dict], subtotal: int, tax: int, service: int, total: int,
-                participant_count: int | None = None,
+                participant_count=UNCHANGED,
                 tax_included: int = 0):
     """Full bill update with item diffing.
 
     - Items that keep their id -> updated in place, selections preserved.
     - Items with no id -> inserted as new.
     - Items no longer present -> deleted together with their selections.
+    - `participants=None` / `participant_count=UNCHANGED` leave those alone.
+      They used to be overwritten unconditionally, so every edit of an
+      API-created bill silently wiped its roster (bug: the typed names that
+      hadn't joined yet disappeared from the "Yang bayar" picker).
     """
     conn = get_db()
-    conn.execute(
-        """UPDATE bill SET title = ?, merchant = ?, transacted_at = ?,
-           subtotal_idr = ?, tax_idr = ?, service_idr = ?, total_idr = ?, participant_count = ?, tax_included = ?
-           WHERE id = ?""",
-        (title, merchant, transacted_at, subtotal, tax, service, total, participant_count,
-         1 if tax_included else 0, bill_id),
-    )
-    # participants (simple replace, but keep identity_id claims for same names)
-    claims = {r["name"]: r["identity_id"] for r in conn.execute(
-        "SELECT name, identity_id FROM bill_participant WHERE bill_id = ? AND identity_id IS NOT NULL",
-        (bill_id,)).fetchall()}
-    conn.execute("DELETE FROM bill_participant WHERE bill_id = ?", (bill_id,))
-    for i, p in enumerate(participants):
-        name = p.strip()
+    if participant_count is UNCHANGED:
         conn.execute(
-            "INSERT INTO bill_participant (bill_id, name, identity_id, sort_order) VALUES (?, ?, ?, ?)",
-            (bill_id, name, claims.get(name), i),
+            """UPDATE bill SET title = ?, merchant = ?, transacted_at = ?,
+               subtotal_idr = ?, tax_idr = ?, service_idr = ?, total_idr = ?, tax_included = ?
+               WHERE id = ?""",
+            (title, merchant, transacted_at, subtotal, tax, service, total,
+             1 if tax_included else 0, bill_id),
         )
+    else:
+        conn.execute(
+            """UPDATE bill SET title = ?, merchant = ?, transacted_at = ?,
+               subtotal_idr = ?, tax_idr = ?, service_idr = ?, total_idr = ?, participant_count = ?, tax_included = ?
+               WHERE id = ?""",
+            (title, merchant, transacted_at, subtotal, tax, service, total, participant_count,
+             1 if tax_included else 0, bill_id),
+        )
+    # participants (simple replace, but keep identity_id claims for same names)
+    if participants is not None:
+        claims = {r["name"]: r["identity_id"] for r in conn.execute(
+            "SELECT name, identity_id FROM bill_participant WHERE bill_id = ? AND identity_id IS NOT NULL",
+            (bill_id,)).fetchall()}
+        conn.execute("DELETE FROM bill_participant WHERE bill_id = ?", (bill_id,))
+        for i, p in enumerate(participants):
+            name = p.strip()
+            conn.execute(
+                "INSERT INTO bill_participant (bill_id, name, identity_id, sort_order) VALUES (?, ?, ?, ?)",
+                (bill_id, name, claims.get(name), i),
+            )
     # items diff
     existing = {r["id"] for r in conn.execute(
         "SELECT id FROM item WHERE bill_id = ?", (bill_id,))}
@@ -460,7 +519,10 @@ def claim_participant(bill_id: str, identity_id: str, name: str):
         (identity_id, bill_id, name),
     )
     # resolve paid_by: if the bill says "paid by <name>" and this person just
-    # claimed that slot, link them as the payer (unambiguous identity wins)
+    # claimed that slot, link them as the payer (unambiguous identity wins).
+    # paid_by_confirmed stays 0 — a name match is a display convenience, not
+    # proof, so it must never grant management powers (bug: any guest who
+    # joined under the payer's name became the bill owner and could delete it).
     row = conn.execute(
         "SELECT paid_by_identity_id, paid_by_name FROM bill WHERE id = ?", (bill_id,)
     ).fetchone()
@@ -476,16 +538,57 @@ def claim_participant(bill_id: str, identity_id: str, name: str):
     conn.close()
 
 
-def set_paid_by(bill_id: str, identity_id: str | None, name: str | None = None):
+def resolve_payer(bill_data: dict) -> tuple[str | None, str]:
+    """Who fronted the money, as (identity_id, display_name).
+
+    SINGLE SOURCE OF TRUTH for payer resolution — the detail payload, the
+    settled flag and the bill list all call this. They used to each re-derive
+    it and disagreed (bug: history said "Kamu udah bayar" while the bill
+    itself said the same person still owed the full total).
+
+    An explicit paid_by_identity_id wins. Otherwise a paid_by_name is matched
+    against people who joined / claimed a slot. If nothing is declared at all,
+    the creator is the payer.
+    """
+    bill = bill_data["bill"]
+    creator_id = bill["creator_identity_id"]
+    paid_by_id = bill.get("paid_by_identity_id")
+    paid_by_name = bill.get("paid_by_name") or ""
+
+    if paid_by_id:
+        ident = get_identity(paid_by_id)
+        return paid_by_id, (ident["name"] if ident else paid_by_name)
+
+    if paid_by_name:
+        target = paid_by_name.strip().lower()
+        candidates = [p["identity_id"] for p in bill_data.get("payments", [])]
+        candidates += [p["identity_id"] for p in bill_data.get("participants", [])
+                       if p.get("identity_id")]
+        for cid in candidates:
+            ident = get_identity(cid)
+            if ident and ident["name"].strip().lower() == target:
+                return cid, ident["name"]
+        # declared but not joined yet: nobody is auto-paid, bill can't settle
+        return None, paid_by_name
+
+    creator = get_identity(creator_id)
+    return creator_id, (creator["name"] if creator else "?")
+
+
+def set_paid_by(bill_id: str, identity_id: str | None, name: str | None = None,
+                confirmed: bool = True):
     """Assign who paid the bill (null identity + null name = creator pays).
 
     identity_id is preferred (unambiguous); name is kept as a display/resolve
-    fallback for people who haven't joined yet.
+    fallback for people who haven't joined yet. `confirmed` records that a
+    manager picked this person on purpose — only a confirmed payer inherits
+    management powers (see main._owner_id).
     """
     conn = get_db()
     conn.execute(
-        "UPDATE bill SET paid_by_identity_id = ?, paid_by_name = ? WHERE id = ?",
-        (identity_id, name, bill_id),
+        "UPDATE bill SET paid_by_identity_id = ?, paid_by_name = ?, paid_by_confirmed = ? "
+        "WHERE id = ?",
+        (identity_id, name, 1 if (identity_id and confirmed) else 0, bill_id),
     )
     conn.commit()
     conn.close()
@@ -527,8 +630,8 @@ def remove_person(bill_id: str, identity_id: str):
         (bill_id, identity_id),
     )
     conn.execute(
-        "UPDATE bill SET paid_by_identity_id = NULL, paid_by_name = NULL "
-        "WHERE id = ? AND paid_by_identity_id = ?",
+        "UPDATE bill SET paid_by_identity_id = NULL, paid_by_name = NULL, "
+        "paid_by_confirmed = 0 WHERE id = ? AND paid_by_identity_id = ?",
         (bill_id, identity_id),
     )
     conn.commit()
@@ -762,38 +865,33 @@ def delete_bill(bill_id: str, owner_id: str) -> bool:
 
 
 def _bill_settled(conn, bill_id: str, status: str) -> bool:
-    """True when the bill is closed OR everyone with a real share has paid AND
-    no slot remains empty.
+    """True when nobody owes anything: everyone with a real share has paid and
+    no slot is left empty.
 
     SINGLE SOURCE OF TRUTH: mirrors main._compute_response's settled logic
     exactly (same calc.compute, same owed definition = total_idr > 0, same
-    auto-paid rules). The list endpoint used to re-implement this with SQL and
+    resolve_payer). The list endpoint used to re-implement this with SQL and
     drifted from the detail view (price-0 picks, tax landing on the creator) —
     bug: settled flag contradicted itself between endpoints.
+
+    Closing a bill does NOT settle it. It used to, so a bill closed with empty
+    slots and an unpaid guest still showed a green "Lunas" in history.
     """
-    if status == "closed":
-        return True
     data = get_bill(bill_id)
     if not data:
         return False
-    bill = data["bill"]
     sel_ids = {s["identity_id"] for s in data["selections"]}
     if not sel_ids:
         return False
-    paid_by_id = bill["paid_by_identity_id"]
-    paid_by_name = (bill["paid_by_name"] or "")
-    creator_id = bill["creator_identity_id"]
     result = calc.compute(
-        bill, data["items"], data["selections"],
-        data["participants"], creator_id,
+        data["bill"], data["items"], data["selections"],
+        data["participants"], data["bill"]["creator_identity_id"],
     )
     owed_ids = {p["identity_id"] for p in result["people"] if p["total_idr"] > 0}
     paid_ids = {p["identity_id"] for p in data["payments"] if p["status"] == "paid"}
-    if paid_by_id:
-        paid_ids.add(paid_by_id)
-    elif not paid_by_name:
-        # no payer declared -> creator is the default payer (mirrors detail)
-        paid_ids.add(creator_id)
+    payer_id, _ = resolve_payer(data)
+    if payer_id:
+        paid_ids.add(payer_id)
     return owed_ids <= paid_ids and result["uncovered_idr"] == 0
 
 

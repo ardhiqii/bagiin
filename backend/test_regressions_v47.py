@@ -36,6 +36,19 @@ app.state.limiter.enabled = False
 c = TestClient(app, raise_server_exceptions=False)
 
 
+
+def _H(who):
+    """Auth headers for a caller. Accepts an identity dict or a bare id.
+
+    Since v51 the identity id is only a public reference — requests must also
+    carry the identity's secret, so tests go through this helper.
+    """
+    ident = who if isinstance(who, dict) else db.get_identity(who)
+    h = {"X-Identity-Id": ident["id"]}
+    if ident.get("secret"):
+        h["X-Identity-Secret"] = ident["secret"]
+    return h
+
 def _mk_bill(creator, title="Makan", subtotal=0, tax=0, service=0, total=0,
              items=None, participants=None, tax_included=0, tax_mode="proportional",
              paid_by_name=None):
@@ -55,7 +68,7 @@ def test_set_code_rejects_other_identity():
     alice = db.new_identity("Alice47")
     bob = db.new_identity("Bob47")
     r = c.post(f"/api/identities/{alice['id']}/code",
-               json={"code": "pwned-12345678"}, headers={"X-Identity-Id": bob["id"]})
+               json={"code": "pwned-12345678"}, headers=_H(bob["id"]))
     assert r.status_code == 403, r.text
 
 
@@ -63,7 +76,7 @@ def test_generate_code_rejects_other_identity():
     alice = db.new_identity("Alice47b")
     bob = db.new_identity("Bob47b")
     r = c.post(f"/api/identities/{alice['id']}/code/generate",
-               headers={"X-Identity-Id": bob["id"]})
+               headers=_H(bob["id"]))
     assert r.status_code == 403, r.text
 
 
@@ -71,7 +84,7 @@ def test_update_name_rejects_other_identity():
     alice = db.new_identity("Alice47c")
     bob = db.new_identity("Bob47c")
     r = c.post(f"/api/identities/{alice['id']}/name",
-               json={"name": "Hacked"}, headers={"X-Identity-Id": bob["id"]})
+               json={"name": "Hacked"}, headers=_H(bob["id"]))
     assert r.status_code == 403, r.text
 
 
@@ -79,10 +92,10 @@ def test_accounts_rejects_other_identity():
     alice = db.new_identity("Alice47d")
     bob = db.new_identity("Bob47d")
     r = c.get(f"/api/identities/{alice['id']}/accounts",
-              headers={"X-Identity-Id": bob["id"]})
+              headers=_H(bob["id"]))
     assert r.status_code == 403, r.text
     r = c.post(f"/api/identities/{alice['id']}/accounts",
-               json={"brand": "BCA", "account_no": "123"}, headers={"X-Identity-Id": bob["id"]})
+               json={"brand": "BCA", "account_no": "123"}, headers=_H(bob["id"]))
     assert r.status_code == 403, r.text
 
 
@@ -90,13 +103,13 @@ def test_my_bills_rejects_other_identity():
     alice = db.new_identity("Alice47e")
     bob = db.new_identity("Bob47e")
     r = c.get(f"/api/identities/{alice['id']}/bills",
-              headers={"X-Identity-Id": bob["id"]})
+              headers=_H(bob["id"]))
     assert r.status_code == 403, r.text
 
 
 def test_own_identity_endpoints_still_work():
     alice = db.new_identity("Alice47f")
-    H = {"X-Identity-Id": alice["id"]}
+    H = _H(alice["id"])
     assert c.post(f"/api/identities/{alice['id']}/code",
                   json={"code": "mysecret123"}, headers=H).status_code == 200
     assert c.post(f"/api/identities/{alice['id']}/name",
@@ -109,7 +122,7 @@ def test_own_identity_endpoints_still_work():
 
 def test_create_rejects_subtotal_mismatch():
     alice = db.new_identity("Alice47g")
-    H = {"X-Identity-Id": alice["id"]}
+    H = _H(alice["id"])
     r = c.post("/api/bills", json={
         "title": "mismatch", "participants": ["Alice47g"], "participant_count": 1,
         "items": [{"name": "X", "price": 1000, "discount": 0, "mode": "free"}],
@@ -122,7 +135,7 @@ def test_create_rejects_subtotal_mismatch():
 
 def test_create_accepts_matching_subtotal_with_discount():
     alice = db.new_identity("Alice47h")
-    H = {"X-Identity-Id": alice["id"]}
+    H = _H(alice["id"])
     r = c.post("/api/bills", json={
         "title": "ok", "participants": ["Alice47h"], "participant_count": 1,
         "items": [{"name": "X", "price": 1000, "discount": 200, "mode": "free"}],
@@ -134,7 +147,7 @@ def test_create_accepts_matching_subtotal_with_discount():
 
 def test_update_rejects_subtotal_mismatch():
     alice = db.new_identity("Alice47i")
-    H = {"X-Identity-Id": alice["id"]}
+    H = _H(alice["id"])
     bid = _mk_bill(alice, subtotal=5000, total=5000,
                    items=[{"name": "A", "price": 5000}])
     r = c.put(f"/api/bills/{bid}", json={
@@ -150,7 +163,7 @@ def test_update_rejects_subtotal_mismatch():
 
 def test_duplicate_participants_deduped():
     alice = db.new_identity("Alice47j")
-    H = {"X-Identity-Id": alice["id"]}
+    H = _H(alice["id"])
     r = c.post("/api/bills", json={
         "title": "dup", "participants": ["Alice47j", "ALICE47J", "  alice47j  "],
         "participant_count": 3,
@@ -165,7 +178,7 @@ def test_duplicate_participants_deduped():
 
 def test_negative_participant_count_rejected():
     alice = db.new_identity("Alice47k")
-    H = {"X-Identity-Id": alice["id"]}
+    H = _H(alice["id"])
     r = c.post("/api/bills", json={
         "title": "neg", "participants": ["Alice47k"], "participant_count": -3,
         "items": [{"name": "X", "price": 100, "discount": 0, "mode": "free"}],
@@ -179,7 +192,7 @@ def test_negative_participant_count_rejected():
 
 def test_mark_paid_unknown_identity_404_no_lock_wedge():
     alice = db.new_identity("Alice47l")
-    H = {"X-Identity-Id": alice["id"]}
+    H = _H(alice["id"])
     bid = _mk_bill(alice, subtotal=5000, total=5000,
                    items=[{"name": "A", "price": 5000}])
     r = c.post(f"/api/bills/{bid}/payments/nonexistent-zzz/paid", headers=H)

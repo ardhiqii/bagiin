@@ -55,13 +55,43 @@ db.init_db()
 # ---------- helpers ----------
 
 def _identity_from_request(request: Request):
+    """Resolve + AUTHENTICATE the caller.
+
+    The id is public — every bill payload lists the ids of everyone on it, so
+    anyone holding the share link knows the creator's id. Authentication is the
+    `X-Identity-Secret` header, which only ever reaches the device that created
+    (or restored) the identity. (bug: id-only auth meant a guest could replay
+    the creator's id to rename them, attach their own bank account to the
+    creator's profile, mint a recovery code and own the account for good.)
+
+    Identities created before v51 have no secret; they keep working until the
+    client calls /bind, which mints one (trust on first use).
+    """
     ident_id = request.headers.get("X-Identity-Id", "")
     if not ident_id:
         raise HTTPException(400, "Missing X-Identity-Id header")
     ident = db.get_identity(ident_id)
     if not ident:
         raise HTTPException(404, "Identity not found")
+    stored = ident.get("secret")
+    if stored:
+        given = request.headers.get("X-Identity-Secret", "")
+        if not given or not secrets.compare_digest(str(stored), given):
+            raise HTTPException(403, "Sesi gak valid, coba masuk ulang")
     return ident
+
+
+def _viewer_id(request: Request) -> str | None:
+    """Best-effort caller for read-only endpoints.
+
+    The bill link alone grants read access, so a missing or stale identity
+    header must not 4xx here — it only means the viewer gets no management
+    flags in the payload.
+    """
+    try:
+        return _identity_from_request(request)["id"]
+    except HTTPException:
+        return None
 
 
 def _bill_or_404(bill_id: str):
@@ -72,29 +102,19 @@ def _bill_or_404(bill_id: str):
 
 
 def _owner_id(bill_data: dict) -> str:
-    """Effective bill owner: the resolved payer, else the creator.
+    """Effective bill owner: the CONFIRMED payer, else the creator.
 
-    The person who paid fronted the money, so they get the owner powers
-    (edit, close, mark paid, delete...). Until a payer is resolved (either
-    paid_by_identity_id set, or the placeholder name matches someone who
-    joined/claimed), the creator stays in control.
+    The person who fronted the money gets the owner powers (edit, close, mark
+    paid, delete...), but only once a manager picked them on purpose. A payer
+    that merely resolved by matching `paid_by_name` is a display convenience —
+    granting it ownership let anyone who joined under that name take the bill
+    over (bug: bill created "dibayar Budi", a guest named budi opens the link
+    and can delete it).
     """
     bill = bill_data["bill"]
     pid = bill.get("paid_by_identity_id")
-    if pid:
+    if pid and bill.get("paid_by_confirmed"):
         return pid
-    pname = (bill.get("paid_by_name") or "").strip().lower()
-    if pname:
-        for p in bill_data.get("payments", []):
-            ident = db.get_identity(p["identity_id"])
-            if ident and ident["name"].strip().lower() == pname:
-                return ident["id"]
-        for p in bill_data.get("participants", []):
-            pident = p.get("identity_id")
-            if pident:
-                ident = db.get_identity(pident)
-                if ident and ident["name"].strip().lower() == pname:
-                    return ident["id"]
     return bill["creator_identity_id"]
 
 
@@ -140,7 +160,7 @@ def generate_readable_code() -> str:
     return "-".join(parts)
 
 
-def _compute_response(bill_data: dict):
+def _compute_response(bill_data: dict, viewer_id: str | None = None):
     """Compute split and return enriched payload for UI."""
     bill = bill_data["bill"]
     result = calc.compute(
@@ -175,35 +195,9 @@ def _compute_response(bill_data: dict):
     # creator name
     creator = db.get_identity(bill["creator_identity_id"])
     creator_name = creator["name"] if creator else "?"
-    # who paid? default = creator. paid_by_identity_id wins (unambiguous);
-    # otherwise try matching paid_by_name against joined identities / claimed
-    # participants. If still unresolved (placeholder name, person hasn't
-    # joined), paid_by_id stays None -> nobody is auto-marked paid and the
-    # bill can't be "settled" until the real payer joins and is resolved.
-    paid_by_id = bill.get("paid_by_identity_id")
-    paid_by_name = bill.get("paid_by_name") or ""
-    if not paid_by_id and paid_by_name:
-        target = paid_by_name.strip().lower()
-        for p in bill_data["payments"]:
-            ident = db.get_identity(p["identity_id"])
-            if ident and ident["name"].strip().lower() == target:
-                paid_by_id = p["identity_id"]
-                break
-        if not paid_by_id:
-            for p in bill_data["participants"]:
-                pid = p.get("identity_id")
-                if pid:
-                    ident = db.get_identity(pid)
-                    if ident and ident["name"].strip().lower() == target:
-                        paid_by_id = pid
-                        break
-    if not paid_by_id and not paid_by_name:
-        paid_by_id = bill["creator_identity_id"]
-        paid_by_name = creator_name
-    elif paid_by_id:
-        pb = db.get_identity(paid_by_id)
-        if pb:
-            paid_by_name = pb["name"]
+    # who paid? one shared resolver (db.resolve_payer) so the detail payload,
+    # the settled flag and the bill list can never disagree again
+    paid_by_id, paid_by_name = db.resolve_payer(bill_data)
     # payment status
     pay_status = {p["identity_id"]: p["status"] for p in bill_data["payments"]}
     for p in result["people"]:
@@ -219,22 +213,29 @@ def _compute_response(bill_data: dict):
             "qty": int(s.get("qty", 1)),
             "id": s["identity_id"],
         })
-    # settled: closed OR at least one item was actually picked AND everyone
-    # with a share (total > 0) has paid, AND no empty slots remain. The
-    # resolved payer counts as paid automatically. (A fresh bill with nothing
-    # picked is NOT settled, even though unpicked items default to the creator.)
+    # settled = no money outstanding: at least one item was actually picked,
+    # everyone with a share (total > 0) has paid, and no empty slots remain.
+    # The resolved payer counts as paid automatically (they fronted it).
+    #
+    # Closing a bill does NOT make it settled. It used to, so a bill closed
+    # with Rp 75.000 of empty slots and an unpaid guest still showed a green
+    # "Lunas" chip in history while the person's own row said "belum" (bug:
+    # two contradicting statements one scroll apart).
     sel_ids = {s["identity_id"] for s in bill_data["selections"]}
     owed_ids = {p["identity_id"] for p in result["people"] if p["total_idr"] > 0}
     paid_ids = {p["identity_id"] for p in bill_data["payments"] if p["status"] == "paid"}
     if paid_by_id:
         paid_ids.add(paid_by_id)
-    settled = (
-        bill["status"] == "closed"
-        or (bool(sel_ids) and owed_ids <= paid_ids and result["uncovered_idr"] == 0)
-    )
+    all_paid = bool(sel_ids) and owed_ids <= paid_ids
+    settled = all_paid and result["uncovered_idr"] == 0
     return {
+        "all_paid": all_paid,
         "bill": bill,
         "owner_id": _owner_id(bill_data),
+        # who may edit/close/delete: the creator keeps their powers even after
+        # handing the payer role to someone else (bug: the creator was dropped
+        # into the guest view with no share button on their own bill)
+        "can_manage": bool(viewer_id) and _can_manage(bill_data, viewer_id),
         "creator_name": creator_name,
         "creator_accounts": db.get_accounts(bill["creator_identity_id"]),
         "paid_by_id": paid_by_id,
@@ -291,6 +292,24 @@ async def restore_identity(request: Request):
     return ident
 
 
+@app.post("/api/identities/{identity_id}/bind")
+@limiter.limit("20/minute")
+def bind_identity_secret(identity_id: str, request: Request):
+    """Mint the auth secret for an identity created before v51.
+
+    Trust on first use: the browser that still holds only the old id calls
+    this once and stores what it gets back. Identities that already have a
+    secret return 403 — the secret is never re-issued.
+    """
+    ident = db.get_identity(identity_id)
+    if not ident:
+        raise HTTPException(404, "Identity not found")
+    secret = db.bind_secret(identity_id)
+    if not secret:
+        raise HTTPException(403, "Identitas ini udah punya sesi")
+    return {"id": identity_id, "name": ident["name"], "secret": secret}
+
+
 @app.post("/api/identities/{identity_id}/code")
 async def set_code(identity_id: str, request: Request):
     ident = _identity_from_request(request)
@@ -327,6 +346,21 @@ async def update_name(identity_id: str, request: Request):
         raise HTTPException(400, "Nama wajib diisi")
     db.update_identity_name(identity_id, name)
     return {"ok": True}
+
+
+@app.get("/api/identities/{identity_id}/me")
+def get_me(identity_id: str, request: Request):
+    """Own profile. `has_code` drives the settings copy — the screen used to
+    offer "Buat Kode" every visit, and tapping it silently killed the code the
+    user had already written down."""
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas gak cocok")
+    return {
+        "id": ident["id"],
+        "name": ident["name"],
+        "has_code": bool(ident.get("identity_code_hash")),
+    }
 
 
 @app.get("/api/identities/{identity_id}/accounts")
@@ -389,16 +423,21 @@ def my_bills(identity_id: str, request: Request):
     for row in rows:
         bill_data = db.get_bill(row["id"])
         if bill_data:
-            owner_id = _owner_id(bill_data)
-            row["owner_id"] = owner_id
+            row["owner_id"] = _owner_id(bill_data)
+            row["can_manage"] = _can_manage(bill_data, identity_id)
             # personal payment state for THIS viewer: the resolved payer is
-            # auto-paid (they fronted), otherwise check their payment record
-            row["my_paid"] = (owner_id == identity_id) or any(
+            # auto-paid (they fronted the money), otherwise check their payment
+            # record. Must use the SAME resolver as the bill screen — deriving
+            # it from _owner_id instead said "Kamu udah bayar" in history while
+            # the bill itself showed the same person owing the full total.
+            payer_id, _ = db.resolve_payer(bill_data)
+            row["my_paid"] = (payer_id == identity_id) or any(
                 p["identity_id"] == identity_id and p["status"] == "paid"
                 for p in bill_data["payments"]
             )
         else:
             row["owner_id"] = row["paid_by_identity_id"] or row["creator_identity_id"]
+            row["can_manage"] = row["creator_identity_id"] == identity_id
             row["my_paid"] = False
     return rows
 
@@ -479,7 +518,7 @@ async def create_bill(request: Request):
 @app.get("/api/bills/{bill_id}")
 def get_bill(bill_id: str, request: Request):
     data = _bill_or_404(bill_id)
-    return _compute_response(data)
+    return _compute_response(data, _viewer_id(request))
 
 
 @app.put("/api/bills/{bill_id}")
@@ -503,6 +542,17 @@ async def update_bill(bill_id: str, request: Request):
         if discount > price:
             raise HTTPException(400, f"Diskon {i['name']} gak bisa lebih besar dari harga")
         eff_sum += price - discount
+    # the same item id twice would be validated twice but stored once, leaving
+    # bill.total_idr permanently larger than the sum of its items (bug: 100k
+    # charged to nobody, total_ok false, and no screen surfaces it)
+    seen_ids = set()
+    for i in items:
+        iid = i.get("id")
+        if iid in (None, ""):
+            continue
+        if iid in seen_ids:
+            raise HTTPException(400, "Ada item dobel di daftar")
+        seen_ids.add(iid)
     # slot-mode guards for edited items: slot_count >= taken, and switching a
     # slot item to free clamps everyone's qty to 1
     cur_items = {i["id"]: i for i in bill_data["items"]}
@@ -529,16 +579,23 @@ async def update_bill(bill_id: str, request: Request):
         elif cur["mode"] == "slot":
             # switching to free: clamp qty to 1 (people stay selected once)
             db.clamp_selection_qty(bill_id, int(iid))
-    participants = []
-    seen_participants = set()
-    for p in (data.get("participants") or []):
-        if isinstance(p, str) and p.strip():
-            key = p.strip().lower()
-            if key not in seen_participants:
-                seen_participants.add(key)
-                participants.append(p.strip())
-    pc = data.get("participant_count")
-    participant_count = _to_int(pc, "Jumlah orang", minv=0) if pc not in (None, "") else None
+    # absent keys mean "leave as is" — the edit screen doesn't send these, and
+    # overwriting them wiped the roster of every bill that had one (bug: typed
+    # names that hadn't joined yet vanished from the "Yang bayar" picker)
+    participants = None
+    if "participants" in data:
+        participants = []
+        seen_participants = set()
+        for p in (data.get("participants") or []):
+            if isinstance(p, str) and p.strip():
+                key = p.strip().lower()
+                if key not in seen_participants:
+                    seen_participants.add(key)
+                    participants.append(p.strip())
+    participant_count = db.UNCHANGED
+    if "participant_count" in data:
+        pc = data.get("participant_count")
+        participant_count = _to_int(pc, "Jumlah orang", minv=0) if pc not in (None, "") else None
     subtotal_v = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0)
     tax_v = _to_int(data.get("tax"), "Pajak", 0, minv=0)
     service_v = _to_int(data.get("service"), "Service", 0, minv=0)
@@ -571,7 +628,7 @@ async def update_bill(bill_id: str, request: Request):
         total=total_v,
         tax_included=1 if data.get("tax_included") else 0,
     )
-    return _compute_response(db.get_bill(bill_id))
+    return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
 @app.put("/api/bills/{bill_id}/paid_by")
@@ -605,22 +662,22 @@ async def set_paid_by(bill_id: str, request: Request):
         # column NULL -> owner mismatch -> bill undeletable by anyone)
         target_l = name.strip().lower()
         for p in bill_data["payments"]:
-            ident = db.get_identity(p["identity_id"])
-            if ident and ident["name"].strip().lower() == target_l:
-                identity_id = ident["id"]
-                name = ident["name"]
+            cand = db.get_identity(p["identity_id"])
+            if cand and cand["name"].strip().lower() == target_l:
+                identity_id = cand["id"]
+                name = cand["name"]
                 break
         if not identity_id:
             for p in bill_data["participants"]:
                 pid = p.get("identity_id")
                 if pid:
-                    ident = db.get_identity(pid)
-                    if ident and ident["name"].strip().lower() == target_l:
-                        identity_id = ident["id"]
-                        name = ident["name"]
+                    cand = db.get_identity(pid)
+                    if cand and cand["name"].strip().lower() == target_l:
+                        identity_id = cand["id"]
+                        name = cand["name"]
                         break
-    db.set_paid_by(bill_id, identity_id, name)
-    return _compute_response(db.get_bill(bill_id))
+    db.set_paid_by(bill_id, identity_id, name, confirmed=True)
+    return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
 @app.delete("/api/bills/{bill_id}")
@@ -651,7 +708,7 @@ def join_bill(bill_id: str, request: Request):
         raise HTTPException(403, "Bill sudah ditutup")
     ident = _identity_from_request(request)
     db.join_bill(bill_id, ident["id"], ident["name"])
-    return _compute_response(db.get_bill(bill_id))
+    return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
 @app.delete("/api/bills/{bill_id}/people/{identity_id}")
@@ -667,7 +724,7 @@ def remove_person(bill_id: str, identity_id: str, request: Request):
     if identity_id == bill_data["bill"]["creator_identity_id"]:
         raise HTTPException(400, "Pembuat bill gak bisa dihapus")
     db.remove_person(bill_id, identity_id)
-    return _compute_response(db.get_bill(bill_id))
+    return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
 @app.post("/api/bills/{bill_id}/selections")
@@ -719,7 +776,7 @@ async def set_selections(bill_id: str, request: Request):
         db.set_selections(bill_id, ident["id"], picks)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    return _compute_response(db.get_bill(bill_id))
+    return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
 @app.put("/api/bills/{bill_id}/items/{item_id}/slots")
@@ -748,7 +805,7 @@ async def set_item_slots(bill_id: str, item_id: int, request: Request):
         raise HTTPException(400, f"Slot minimal {taken} (sudah keambil {taken})")
     if not db.set_item_slots(bill_id, item_id, slot_count):
         raise HTTPException(404, "Item tidak ditemukan")
-    return _compute_response(db.get_bill(bill_id))
+    return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
 @app.delete("/api/bills/{bill_id}/items/{item_id}/selections/{identity_id}")
@@ -767,7 +824,7 @@ async def release_selection(bill_id: str, item_id: int, identity_id: str, reques
     if not db.get_selection(bill_id, item_id, identity_id):
         raise HTTPException(404, "Orang itu gak punya slot di item ini")
     db.set_selection_qty(bill_id, identity_id, item_id, 0)
-    return _compute_response(db.get_bill(bill_id))
+    return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
 @app.post("/api/bills/{bill_id}/payments/{identity_id}/paid")
@@ -787,7 +844,7 @@ def mark_paid(bill_id: str, identity_id: str, request: Request):
         raise HTTPException(404, "Orang gak dikenal")
     db.claim_participant(bill_id, ident["id"], ident["name"])
     db.mark_paid(bill_id, identity_id)
-    return _compute_response(db.get_bill(bill_id))
+    return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
 @app.post("/api/bills/{bill_id}/payments/{identity_id}/unpaid")
@@ -800,7 +857,7 @@ def mark_unpaid(bill_id: str, identity_id: str, request: Request):
     if ident["id"] != identity_id and not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Gak bisa ubah status bayar orang lain")
     db.mark_unpaid(bill_id, identity_id)
-    return _compute_response(db.get_bill(bill_id))
+    return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
 @app.post("/api/bills/{bill_id}/reopen")
@@ -813,7 +870,7 @@ def reopen_bill(bill_id: str, request: Request):
     if bill_data["bill"]["status"] != "closed":
         raise HTTPException(400, "Bill belum ditutup")
     db.reopen_bill(bill_id)
-    return _compute_response(db.get_bill(bill_id))
+    return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
 @app.post("/api/bills/{bill_id}/photo")

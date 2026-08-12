@@ -17,6 +17,19 @@ import db
 db.init_db()
 
 
+
+def _H(who):
+    """Auth headers for a caller. Accepts an identity dict or a bare id.
+
+    Since v51 the identity id is only a public reference — requests must also
+    carry the identity's secret, so tests go through this helper.
+    """
+    ident = who if isinstance(who, dict) else db.get_identity(who)
+    h = {"X-Identity-Id": ident["id"]}
+    if ident.get("secret"):
+        h["X-Identity-Secret"] = ident["secret"]
+    return h
+
 def test_update_bill_diff():
     creator = db.new_identity("Aufa", role="creator")
     guest = db.new_identity("Rina")
@@ -574,9 +587,9 @@ def test_creator_toggle_paid():
     db.set_selections(bid, amel["id"], [data["items"][0]["id"]])
 
     c = TestClient(app)
-    H = {"X-Identity-Id": creator["id"]}
-    Ha = {"X-Identity-Id": amel["id"]}
-    Hb = {"X-Identity-Id": budi["id"]}
+    H = _H(creator["id"])
+    Ha = _H(amel["id"])
+    Hb = _H(budi["id"])
 
     # stranger can't mark Amel paid
     r = c.post(f"/api/bills/{bid}/payments/{amel['id']}/paid", headers=Hb)
