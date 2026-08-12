@@ -38,16 +38,23 @@ Env (`backend/.env`, gitignored, loaded manually at the top of `main.py`):
 
 ## Frontend versioning — read before touching `frontend/`
 
-`frontend/index.html` references `/static/vNN/{app,screens,bill}.js`. Cloudflare caches by
-path and normalizes query strings, so **every frontend change requires copying the current
-version folder to `vNN+1` and updating all `/static/vNN/` references in `index.html`**
-(scripts, favicons, apple-touch-icon, manifest, `og:image`). Old folders are kept in git. The
-The current version is whatever `index.html` points at (v55 at the time of writing) — always
-check, don't assume. Never hit the live domain with partial files: Cloudflare caches
-`/static/vNN/*` for 24h on first request, and a half-written file served once will be
-served to everyone (this bit twice — v51 shipped as v52, and an edit after the first
-v53/v54 load forced v55). Verify every edit against `localhost:8082` BEFORE loading the
-public URL; once a version is public, treat it as frozen.
+Assets live flat in `frontend/static/` (no version folders). `index.html` and
+`manifest.json` are **server-rendered templates** (see "static frontend" block at the
+bottom of `backend/main.py`): asset URLs carry a content hash
+(`/static/app.js?v=<sha256[:12]>`), computed at request time from the file bytes.
+
+Cache semantics:
+- `index.html` + `/static/manifest.json` → `Cache-Control: no-cache, must-revalidate`
+  + `ETag` (304 revalidation). Cloudflare treats them as DYNAMIC — always fetched fresh.
+- Everything else under `/static/` → `Cache-Control: public, max-age=31536000, immutable`.
+  Content changes ⇒ new hash ⇒ new URL ⇒ no stale reads ever.
+
+**Deploying a frontend change is just pushing the file** — no version bump, no folder
+copy, nothing to remember. The hash IS the version. There is no "current version".
+
+Still never hit the live domain with partial files mid-write, and verify edits against
+`localhost:8082` BEFORE loading the public URL (CF may cache a half-written asset under
+its hash URL once; it is orphaned the moment the file completes, but verify anyway).
 
 No build step, no framework, no npm. Vanilla JS with global functions loaded via three
 `<script>` tags; all CSS is inline in `index.html`. JS budget: < 50KB gz.
