@@ -44,7 +44,7 @@ gateway, just a link.
 ## Project structure
 
 ```
-kasbareng/
+bagiin/
 ├── backend/
 │   ├── main.py      # FastAPI app & endpoints
 │   ├── db.py        # SQLite schema + queries

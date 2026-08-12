@@ -208,7 +208,7 @@ creator_identity_id. Rate limit per IP (lihat Section 9).
 ## 8. OCR - Gemini free tier
 
 - **Verified (2026-08-09):** Google free tier masih ada, key AQ.Ab8... (disimpan
-  ~/kasbareng/backend/.env) valid di free tier, tanpa kartu. Limit ratusan request/hari
+  /opt/projects/bagiin/backend/.env) valid di free tier, tanpa kartu. Limit ratusan request/hari
   per project - jauh di atas kebutuhan (beberapa struk/minggu).
 - **MODEL YANG DIPAKAI: `gemini-3.5-flash`** (verified: baca struk test 100% bener,
   output JSON clean). CATATAN: `gemini-2.5-flash` udah GAK tersedia buat user baru
@@ -271,11 +271,11 @@ creator_identity_id. Rate limit per IP (lihat Section 9).
 ## 10. Teknologi & deployment
 
 - Backend: FastAPI + SQLite (pattern stockbit-backend: venv + systemd).
-  Path: ~/kasbareng/backend
+  Path: /opt/projects/bagiin/backend
 - Frontend: server-rendered HTML + htmx (~16KB gz, verified htmx.org) atau vanilla JS.
   JANGAN React (~45-50KB gz, parse bottleneck di Android mid-range, verified).
   Budget: total JS < 50KB gz (hard cap 100KB). System font stack (no webfont).
-  Path: ~/kasbareng/frontend
+  Path: /opt/projects/bagiin/frontend
 - Nginx reverse proxy + HTTPS (Let's Encrypt), subdomain: bagiin.ardhiqi.com.
   Infra note (cek 2026-08-09): VPS IP 209.17.118.186, zone ardhiqi.com di Cloudflare,
   A record bagiin SUDAH ada (proxied=true). Pattern deploy: certbot --dns-cloudflare (kredensial
