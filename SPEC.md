@@ -435,6 +435,36 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Changelog
 
+### 2026-08-12 (lanjutan 2) — status kebaca sekilas & bill baru mulai dari share
+
+- **Warna status di daftar bill.** Dulu semua baris kelihatan sama, harus dibaca
+  chip-nya satu-satu buat tau mana yang belum beres. Sekarang tiap baris punya
+  batang warna + ikon yang diwarnain (hijau lunas / merah belum / abu selesai &
+  belum dipilih), semuanya ditarik dari satu objek status yang sama dengan chip-nya
+  jadi gak mungkin beda.
+- Baris bill ditata ulang jadi dua baris: `[nama … tanggal]` / `[status … nominal]`.
+  Ditumpuk satu baris bikin chip status cuma kebagian ~40px di HP 390px — kepotong
+  jadi "Be…", dan sebelumnya malah nimpa nominalnya.
+- **Urutan daftar salah.** Diurut `created_at` tapi yang ditampilin `transacted_at`,
+  jadi tanggalnya kebaca 9 Agu, 2 Agu, 11 Agu, 28 Jul. Sekarang diurut pakai tanggal
+  yang ditampilin, sekalian bikin home dan riwayat sepakat.
+- **Bill baru sekarang dimulai dari "share".** Buka bill 3 detik setelah dibuat dulu
+  nampilin "Belum lunas" merah, chip "Rp 0 udah masuk", dan kartu yang ngelistin
+  semua item sebagai "tidak dipilih siapa pun → masuk ke pembuat bill" — semuanya
+  bener secara teknis, semuanya gak berguna, dan kebacanya kayak laporan error.
+  Tombol utamanya malah "Tutup Bill", aksi paling akhir dalam siklus. Selama belum
+  ada yang gabung: kartu ajakan share naik ke paling atas, aksi utama di dock jadi
+  "Bagikan Link", status cuma satu ("Belum ada yang gabung"), dan peringatan item
+  ditahan sampai ada orangnya. Share link itu satu-satunya hal yang bikin produk ini
+  jalan, tapi selama ini cuma ikon 20px di pojok.
+- Logo produk (struk yang disobek, sama kayak favicon) akhirnya muncul di UI —
+  sebelumnya onboarding pakai ikon orang generik dan brand-nya gak ada di mana-mana.
+- Sheet bayar: PPN + service seluruh bill dicopot dari baris yang nampilin porsi
+  pribadi (dua angka gak berhubungan bersebelahan, teksnya pecah tiga baris).
+- Angka utama gak pecah dua baris lagi kalau chip status di sebelahnya panjang, dan
+  tombol sekunder di `.btn-row` gak lagi ngambil separuh baris sampai label CTA-nya
+  patah.
+
 ### 2026-08-12 (lanjutan) — kosakata status & perapian UI
 
 Pass lanjutan setelah audit visual di browser (desktop 1440 + HP 390, terang & gelap).
