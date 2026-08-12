@@ -514,6 +514,29 @@ pengembangan (app.js cuma 3,5KB, screens/bill.js juga versi lama). File bener ad
 git; CF tetap nyajian versi rusak sampai path-nya ganti. Bump versi folder = mekanisme
 cache-busting resmi project (lihat CLAUDE.md).
 
+### v53 (2026-08-12) — polish copy: kapitalisasi konsisten
+
+Polesan teks di seluruh app (screens.js, bill.js, index.html):
+
+- **Label form** → Title Case: Judul Bill, Tanggal Transaksi, Nama Item, Harga Item
+  Sudah Termasuk Pajak, Yang Bayar, Aku Yang Bayar, Nama Yang Bayar, Kode Pemulihan,
+  Metode Bayar, Bank / E-Wallet, Nomor Rekening / E-Money, Atas Nama (Opsional).
+- **Tombol & CTA** → Title Case konsisten: Bikin Manual (Tanpa Foto), Tambah Item,
+  Simpan Perubahan, Edit Bill, Tutup Bill, Tutup Bill Sekarang, Buka Lagi, Buka Bill
+  Lagi, Hapus Selamanya, Hapus Bill, Gabung Bill, Lanjut, Milih Item, Konfirmasi Item,
+  Pakai Nama Ini, Pilih Item Kamu, Tambah Foto Struk, Tandai Lunas, Tandai Udah Bayar,
+  Salin Link, Kirim Lewat WhatsApp, Bagikan Lewat Aplikasi Lain, Coba Lagi, Tempel Teks.
+- **Heading & status** → Mau Bagi Bill Apa Hari Ini?, Bikin Bill Pertama Kamu Sekarang!,
+  Foto Struknya, Gagal Baca Struk, Ditutup · Belum Lunas, Total Bagian, Estimasi Kamu,
+  Slot Kamu, Porsi Kamu, Subtotal Item, Item & Siapa yang Pilih, Kamu yang Nalangin Bill Ini.
+- Teks bantu/deskripsi tetap sentence case (cuma huruf pertama kapital), contoh
+  "ketik item & harganya" → "Ketik item & harganya".
+- Title tab & og:title → "Bagiin — Bagi Bill Bareng Tanpa Ribet".
+
+**Catatan deploy:** v53 dan v54 sempat ke-serve publik dengan versi intermediate
+(ada 1-2 tombol belum ke-title-case) karena CF cache 24h per path — dikoreksi dengan
+bump v54, lalu v55 (versi final). Ketiganya isinya sama di git; v55 yang dirujuk index.html.
+
 ### v13 (2026-08-09) — join-based roster
 - Creator no longer types participant names — just declares headcount (`Berapa orang ikut?`).
 - Guests appear in the bill the moment they join (name prompt → join), even before picking items.
