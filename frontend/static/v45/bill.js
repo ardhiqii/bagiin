@@ -392,7 +392,10 @@ async function updateGuestSelection(data, me) {
 function openSlotPickerSheet(data, me, it) {
   const selList = (data.sel_by_item[it.id] || []);
   const othersTaken = othersSel(selList, me).reduce((s, x) => s + (x.qty || 1), 0);
-  const myQty = (mySelEntry(selList, me) || {}).qty || 0;
+  // live state for my picks (same stale-snapshot bug as free picker: after an
+  // optimistic pick the snapshot lacks my row, so release button + empty count
+  // were wrong)
+  const myQty = state.selQty.get(it.id) || (mySelEntry(selList, me) || {}).qty || 0;
   const max = it.slot_count - othersTaken;
   const leftEmpty = Math.max(0, max - myQty);
   const perSlot = Math.floor(Math.max(0, it.price_idr - (it.discount_idr || 0)) / it.slot_count);
@@ -467,7 +470,11 @@ function openSlotPickerSheet(data, me, it) {
 function openFreePickerSheet(data, me, it) {
   const selList = (data.sel_by_item[it.id] || []);
   const othersQty = othersSel(selList, me).reduce((s, x) => s + (x.qty || 1), 0);
-  const myQty = (mySelEntry(selList, me) || {}).qty || 0;
+  // myQty MUST come from live state.selQty, not the backend snapshot: after an
+  // optimistic pick the snapshot still lacks my row, so reading it here showed
+  // "Belum ada yang ambil" while I already had picks (bug: status + release
+  // button both used the stale myQty)
+  const myQty = state.selQty.get(it.id) || (mySelEntry(selList, me) || {}).qty || 0;
   // status must count MY picks too — "Belum ada yang ambil" is only true
   // when nobody (including me) picked it (bug: showed "Belum ada" while I
   // already had picks, because othersQty excludes me)
