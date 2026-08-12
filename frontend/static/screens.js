@@ -119,7 +119,9 @@ function renderHome() {
     </div>
     <div style="margin-bottom:18px;">
       <p class="muted">Halo, ${name}</p>
-      <h1>Mau Bagi Bill Apa Hari Ini?</h1>
+      <!-- card titles and buttons are Title Case, but this is a sentence —
+           Title Case on a full question reads like a headline in English -->
+      <h1>Mau bagi bill apa hari ini?</h1>
     </div>
     <button class="btn-primary" id="create-btn" style="margin-bottom:20px;">${ic("plus")} Buat Bill Baru</button>
     <div class="card">
@@ -234,7 +236,8 @@ async function loadHomeHistory() {
     if (seeAll) seeAll.classList.toggle("hidden", bills.length <= 5);
     if (!bills.length) {
       box.innerHTML = `<div class="empty-state">${ic("receipt")}
-        <p>Belum ada bill.</p><p class="muted">Bikin Bill Pertama Kamu Sekarang!</p></div>`;
+        <p>Belum ada bill.</p><p class="muted">Foto struknya, share linknya, terus semua milih
+        item yang dia makan sendiri.</p></div>`;
       return;
     }
     box.innerHTML = bills.slice(0, 5).map(billRowHtml).join("");
@@ -1045,6 +1048,9 @@ function renderVerify(ocr, manual = false) {
         <span>Item</span>
         <span class="muted">${manual ? "Ketik item &amp; harganya" : "cek ulang, edit kalau salah"}</span>
       </div>
+      <p class="muted" style="margin:-4px 0 10px;"><strong style="color:var(--text-2);">Bebas</strong>
+      = siapa pun boleh centang, harganya dibagi rata sesuai porsi yang keambil.
+      <strong style="color:var(--text-2);">Slot</strong> = dibagi jadi N bagian tetap.</p>
       <div id="items-list"></div>
       <button class="btn-outline btn-sm" id="add-item-btn" style="width:100%;margin-top:10px;">${ic("plus")} Tambah Item</button>
     </div>
@@ -1067,7 +1073,7 @@ function renderVerify(ocr, manual = false) {
       </div>
       <label class="toggle-row" for="tax-included-toggle" style="margin-top:10px;">
         <span style="flex:1;">
-          <span class="label-strong">Harga Item Sudah Termasuk Pajak</span>
+          <span class="label-strong">Harga item sudah termasuk pajak</span>
           <span class="muted" style="display:block;">Kalau struk nulis "termasuk pajak", harga tiap item udah kehitung pajaknya</span>
         </span>
         <input type="checkbox" id="tax-included-toggle" ${verifyState.tax_included ? "checked" : ""}>
@@ -1083,7 +1089,7 @@ function renderVerify(ocr, manual = false) {
       <div class="card-title"><span>Yang Bayar</span></div>
       <label class="toggle-row" for="paid-by-me">
         <span style="flex:1;">
-          <span class="label-strong">Aku Yang Bayar</span>
+          <span class="label-strong">Aku yang bayar</span>
           <span class="muted" style="display:block;">Yang bayar dianggap udah lunas otomatis</span>
         </span>
         <input type="checkbox" id="paid-by-me" ${verifyState.paid_by_name ? "" : "checked"}>
@@ -1230,11 +1236,13 @@ function renderVerifyItems() {
             <span class="muted" style="font-size:12px;">orang</span>
           </span>` : ""}
         </div>
-        <div class="muted" style="font-size:12px;line-height:1.45;">
-          ${isSlot
-            ? `Dibagi ${slots} bagian tetap${eff > 0 ? ` · ${rupiahFmt(perSlot)}/bagian` : ""}. Tiap orang bisa ambil 1 bagian atau lebih, sisanya keliatan kosong.`
-            : `Pilih bebas: centang item yang kamu makan — bisa ambil 1 porsi atau lebih. Harganya dibagi sesuai porsi yang keambil.`}
-        </div>
+        ${/* Only "slot" needs a per-item line, because the numbers differ per
+              item. The "bebas" explainer is identical for every row — printed
+              under all of them it filled the form with the same paragraph four
+              times over. It lives once, above the list. */ ""}
+        ${isSlot ? `<div class="muted" style="font-size:12px;line-height:1.45;">
+          Dibagi ${slots} bagian tetap${eff > 0 ? ` · ${rupiahFmt(perSlot)}/bagian` : ""}. Tiap orang bisa ambil 1 bagian atau lebih, sisanya keliatan kosong.
+        </div>` : ""}
       </div>
     </div>`;
   }).join("");

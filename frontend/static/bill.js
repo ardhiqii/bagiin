@@ -214,47 +214,65 @@ async function loadBillView(billId) {
 function renderGuestNamePrompt(billId, data) {
   const app = $("#app");
   const saved = lsGet(LS_KEYS.name, "");
+  const payerName = data.paid_by_name || data.creator_name;
+  const joined = (data.people || []).length;
+  // Every guest arrives here from a WhatsApp link, cold. It used to show a bare
+  // total and a name box on an unbranded page — no idea what this is, who is
+  // asking, or what happens next. Give them the product name, what the bill
+  // contains, who is already on it, and who they will end up paying.
   app.innerHTML = `
     <div class="topbar">
       <button class="icon-btn ghost" id="guest-back" aria-label="Ke beranda">${ic("back")}</button>
-      <div class="topbar-title">Gabung Bill</div>
+      <div class="brand" style="font-size:17px;"><span class="brand-mark">${brandMark(24)}</span>Bagiin<span class="dot">.</span></div>
       <div style="width:42px;flex-shrink:0;"></div>
     </div>
     ${shell(`
       <div class="card">
-        <div class="label-sm">Bill</div>
+        <div class="label-sm">Kamu diajak bagi bill</div>
         <div style="font-size:21px;font-weight:800;margin-top:4px;letter-spacing:-.02em;">${esc(data.bill.title)}</div>
         <div class="money hero-total" style="margin-top:6px;">${fmt(data.bill.total_idr)}</div>
-        ${data.bill.tax_included ? `<p class="muted" style="color:var(--green);margin-top:6px;">${ic("check")} Harga item sudah termasuk pajak — gak ada PPN tambahan</p>` : ""}
-        <p class="muted" style="margin-top:6px;">dibuat oleh ${esc(data.creator_name)}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+          <span class="chip chip-grey">${ic("receipt")}${data.items.length} item</span>
+          <span class="chip chip-grey">${ic("people")}${joined} orang udah gabung</span>
+        </div>
+        ${data.bill.tax_included ? `<p class="muted" style="color:var(--green);margin-top:10px;">${ic("check")} Harga item sudah termasuk pajak — gak ada PPN tambahan</p>` : ""}
+        <p class="muted" style="margin-top:10px;">${payerName === data.creator_name
+          ? `Dibuat <strong style="color:var(--text);">${esc(data.creator_name)}</strong> — nanti bayarnya ke dia`
+          : `Dibuat ${esc(data.creator_name)} · nanti bayarnya ke <strong style="color:var(--text);">${esc(payerName)}</strong>`}</p>
       </div>
       <div class="card">
-        <div class="field" style="margin-bottom:10px;">
-          <label for="guest-name">Kamu siapa?</label>
-          <input id="guest-name" placeholder="Nama Kamu" value="${esc(saved)}" maxlength="30" autocomplete="off">
-        </div>
-        <button class="btn-primary" id="guest-go">Lanjut, Milih Item</button>
+        <form id="guest-form" novalidate>
+          <div class="field" style="margin-bottom:10px;">
+            <label for="guest-name">Kamu siapa?</label>
+            <input id="guest-name" name="name" placeholder="Nama kamu" value="${esc(saved)}"
+                   maxlength="30" autocomplete="name">
+          </div>
+          <button class="btn-primary" type="submit" id="guest-go">Lanjut, Milih Item</button>
+        </form>
+        <p class="muted" style="margin-top:12px;">Tanpa akun. Namamu cuma buat nandain item yang kamu ambil, dan cuma kesimpen di HP ini.</p>
       </div>`)}`;
   $("#guest-back").addEventListener("click", () => location.hash = "#/");
   const input = $("#guest-name");
   input.focus();
-  const go = () => withBusy($("#guest-go"), "Bentar...", async () => {
-    const name = input.value.trim();
-    if (!name) { toast("Isi nama dulu"); return; }
-    try {
-      await ensureIdentity(name);
-      const fresh = await apiJson("/api/bills/" + billId + "/join", "POST", {});
-      renderGuestView(fresh, state.identity);
-    } catch (e) {
-      // closed bill or join hiccup: guest can still view the final split
-      // (bug: without this fallback a nameless guest on a closed bill was
-      // stuck at the name prompt forever)
-      toast(e.message);
-      renderGuestView(data, state.identity);
-    }
+  $("#guest-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    withBusy($("#guest-go"), "Bentar...", async () => {
+      const name = input.value.trim();
+      if (!name) { toast("Isi nama dulu"); input.focus(); return; }
+      try {
+        await ensureIdentity(name);
+        const fresh = await apiJson("/api/bills/" + billId + "/join", "POST", {});
+        renderGuestView(fresh, state.identity);
+      } catch (e2) {
+        toast(e2.message);
+        // A closed bill still 403s on join — that guest should see the final
+        // split anyway. But if we never got an identity (the create call
+        // itself failed), renderGuestView would blow up on me.id, so stay put
+        // and let them retry (bug: offline at this step = white screen).
+        if (state.identity) renderGuestView(data, state.identity);
+      }
+    });
   });
-  $("#guest-go").addEventListener("click", go);
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
 }
 
 // ---------- Guest view: pick items ----------
@@ -1474,6 +1492,9 @@ function renderEditBill(data) {
     </div>
     <div class="card" id="items-card">
       <div class="card-title">Item <span class="muted">(edit kalau salah)</span></div>
+      <p class="muted" style="margin:-4px 0 10px;"><strong style="color:var(--text-2);">Bebas</strong>
+      = siapa pun boleh centang, harganya dibagi rata sesuai porsi yang keambil.
+      <strong style="color:var(--text-2);">Slot</strong> = dibagi jadi N bagian tetap.</p>
       <div id="items-list"></div>
       <button class="btn-outline btn-sm" id="add-item-btn" style="width:100%;margin-top:8px;">${ic("plus")} Tambah Item</button>
     </div>
@@ -1486,7 +1507,7 @@ function renderEditBill(data) {
       </div>
       <label class="toggle-row" style="margin-top:10px;">
         <span style="flex:1;">
-          <span class="label-strong">Harga Item Sudah Termasuk Pajak</span>
+          <span class="label-strong">Harga item sudah termasuk pajak</span>
           <span class="muted">Kalau struk nulis "termasuk pajak", harga item udah kehitung pajaknya</span>
         </span>
         <input type="checkbox" id="tax-included-toggle" ${editState.tax_included ? "checked" : ""}>
@@ -1567,11 +1588,14 @@ function renderEditItems() {
             <span class="muted">orang</span>
           </div>` : ""}
         </div>
-        <div class="muted" style="font-size:12px;line-height:1.45;">
-          ${it.mode === "slot"
-            ? `Dibagi ${it.slot_count || 2} bagian tetap${it.price > 0 ? ` · ${rupiahFmt(Math.floor(it.price / (it.slot_count || 2)))}/bagian` : ""}. Tiap orang bisa ambil 1+ bagian, yang kosong keliatan.`
-            : `Pilih bebas: centang item yang kamu makan — bisa ambil 1 porsi atau lebih. Harga dibagi sesuai porsi yang keambil.`}
-        </div>
+        ${/* per-slot price must divide the price AFTER discount, like calc.py
+              (bug: this copy still divided the pre-discount price, so a
+              discounted slot item showed one figure here and another on the
+              bill screen). The "bebas" explainer is the same for every row —
+              it lives once above the list instead of under all of them. */ ""}
+        ${it.mode === "slot" ? `<div class="muted" style="font-size:12px;line-height:1.45;">
+          Dibagi ${it.slot_count || 2} bagian tetap${it.price > 0 ? ` · ${rupiahFmt(Math.floor(Math.max(0, (it.price || 0) - (it.discount || 0)) / (it.slot_count || 2)))}/bagian` : ""}. Tiap orang bisa ambil 1+ bagian, yang kosong keliatan.
+        </div>` : ""}
       </div>
     </div>`).join("");
   $$("[data-role=name]", elList).forEach(inp => inp.addEventListener("input", (e) => {
