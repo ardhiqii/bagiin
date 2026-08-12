@@ -537,6 +537,15 @@ Polesan teks di seluruh app (screens.js, bill.js, index.html):
 (ada 1-2 tombol belum ke-title-case) karena CF cache 24h per path — dikoreksi dengan
 bump v54, lalu v55 (versi final). Ketiganya isinya sama di git; v55 yang dirujuk index.html.
 
+### v56 (2026-08-12) — fix chip "Nalangin" + tombol metode bayar di view creator
+
+- Chip "nalangin" di baris pembayar (dan chip status lain: "lunas", "udah bayar",
+  "semua lunas") sekarang kapital: "Nalangin", "Lunas", "Udah Bayar", "Semua Lunas".
+- **View creator/manager sekarang punya tombol "Metode Bayar <nama>"** — dulu cuma
+  ada di view tamu, padahal creator yang ngutang juga perlu liat rekening/e-wallet
+  yang nalangin. Tombolnya di bawah baris "Yang nalangin: X", buka sheet yang sama
+  (akun si pembayar; fallback akun creator cuma kalau creator yang bayar).
+
 ### v13 (2026-08-09) — join-based roster
 - Creator no longer types participant names — just declares headcount (`Berapa orang ikut?`).
 - Guests appear in the bill the moment they join (name prompt → join), even before picking items.
