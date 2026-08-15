@@ -186,6 +186,15 @@ def init_db():
     if "creator_left" not in bcols:
         conn.execute(
             "ALTER TABLE bill ADD COLUMN creator_left INTEGER NOT NULL DEFAULT 0")
+    # migration: manual bill-level settle (v60). Auto-settled needs the bill to
+    # have started (roster > 1), so a solo bill can never reach "Lunas" on its
+    # own — but the owner may still want to declare the whole bill settled
+    # (paid cash outside the app, or literally just one person). This flag is
+    # the explicit override; `settled` becomes manual OR auto.
+    bcols = {r[1] for r in conn.execute("PRAGMA table_info(bill)").fetchall()}
+    if "settled_manual" not in bcols:
+        conn.execute(
+            "ALTER TABLE bill ADD COLUMN settled_manual INTEGER NOT NULL DEFAULT 0")
     conn.commit()
     conn.close()
 
@@ -847,6 +856,19 @@ def reopen_bill(bill_id: str):
     conn.close()
 
 
+def set_settled_manual(bill_id: str, value: bool):
+    """Owner-declared bill-level settle (v60): mark the whole bill lunas in one
+    click — for cash settlements outside the app, or a genuinely solo bill
+    that can never auto-settle (auto-settled requires roster > 1)."""
+    conn = get_db()
+    conn.execute(
+        "UPDATE bill SET settled_manual = ? WHERE id = ?",
+        (1 if value else 0, bill_id),
+    )
+    conn.commit()
+    conn.close()
+
+
 def delete_bill(bill_id: str, owner_id: str) -> bool:
     """Owner (CONFIRMED payer, else creator) deletes a bill + everything.
 
@@ -932,6 +954,11 @@ def _bill_settled(conn, bill_id: str, status: str) -> bool:
     payer_id, _ = resolve_payer(data)
     if payer_id:
         paid_ids.add(payer_id)
+    # v60: owner-declared manual settle overrides the auto math (solo bills
+    # can never auto-settle — nobody joined — but the owner may still declare
+    # it done)
+    if bill.get("settled_manual"):
+        return True
     return (
         len(roster_ids) > 1
         and owed_ids <= paid_ids

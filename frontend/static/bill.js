@@ -9,9 +9,13 @@ const normName = (s) => String(s || "").trim().toLowerCase();
 // chip while unpaid people were listed one scroll below it).
 function statusChipHtml(data) {
   if (data.bill.status === "closed") {
-    return data.settled
-      ? `<span class="chip chip-green">${ic("check")}Ditutup · lunas</span>`
-      : `<span class="chip chip-grey">Ditutup · Belum Lunas</span>`;
+    if (data.settled)
+      return `<span class="chip chip-green">${ic("check")}Ditutup · lunas</span>`;
+    // a closed bill nobody but the creator ever joined isn't "Belum Lunas" —
+    // nobody owes anybody anything (bug: solo closed bill said "Belum Lunas")
+    if ((data.people || []).length <= 1)
+      return `<span class="chip chip-grey">Ditutup · Selesai</span>`;
+    return `<span class="chip chip-grey">Ditutup · Belum Lunas</span>`;
   }
   if (data.settled) return `<span class="chip chip-green">${ic("check")}Lunas</span>`;
   return `<span class="chip chip-red">Belum lunas</span>`;
@@ -288,7 +292,7 @@ function renderGuestView(data, me) {
   // "share the link", not "belum lunas". Mirror the creator view's guard so
   // a fresh solo bill never wears a misleading status (bug: "blom ada yg
   // join tp keterangannya lunas").
-  const soloSoFar = data.people.length <= 1 && !closed;
+  const soloSoFar = data.people.length <= 1 && !closed && !data.settled;
 
   // build my picks (item_id -> qty) from backend selections
   const mySel = new Map();
@@ -993,7 +997,7 @@ function renderCreatorView(data) {
   // not started (bug: a 3-second-old bill opened on "Belum lunas", a Rp 0 chip,
   // and a red-ish card listing every item as "tidak dipilih siapa pun", while
   // the only primary button offered was "Tutup Bill").
-  const soloSoFar = data.people.length <= 1 && !closed;
+  const soloSoFar = data.people.length <= 1 && !closed && !data.settled;
   if (soloSoFar) {
     statusChip = `<span class="chip chip-grey">Belum ada yang gabung</span>`;
   } else if (data.all_paid && data.uncovered_idr === 0) {
@@ -1080,6 +1084,13 @@ function renderCreatorView(data) {
         <span class="chip ${totalPaid > 0 ? "chip-green" : "chip-grey"}">${totalPaid > 0 ? ic("check") : ""}${fmt(totalPaid)} udah masuk</span>
         ${statusChip}
       </div>`}
+      ${!closed && !data.settled ? `
+      <button class="btn-outline btn-sm" id="settle-all-btn" style="width:100%;margin-top:10px;">
+        ${ic("check")} Tandai Lunas
+      </button>` : data.settled_manual ? `
+      <button class="btn-outline btn-sm" id="unsettle-all-btn" style="width:100%;margin-top:10px;">
+        ${ic("refresh")} Batalin Lunas
+      </button>` : ""}
       ${closedNotSettled ? `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} Bill udah ditutup tapi ${totalUnpaid > 0 ? `masih ada ${fmt(totalUnpaid)} yang belum dibayar` : `masih ada ${fmt(data.uncovered_idr)} bagian yang gak keambil`}. Buka lagi kalau mau dibenerin.</p>` : ""}
       ${photoBtnHtml(data)}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;">
@@ -1233,6 +1244,12 @@ function renderCreatorView(data) {
   if (closeBtn) closeBtn.addEventListener("click", () => openCloseConfirm(data));
   const reopenBtn = $("#reopen-bill-btn");
   if (reopenBtn) reopenBtn.addEventListener("click", () => openReopenConfirm(data));
+  // v60: bill-level settle — one click marks the whole bill lunas (cash
+  // settled outside the app, or a solo bill that can never auto-settle)
+  const settleAllBtn = $("#settle-all-btn");
+  if (settleAllBtn) settleAllBtn.addEventListener("click", () => toggleSettleAll(data, settleAllBtn));
+  const unsettleAllBtn = $("#unsettle-all-btn");
+  if (unsettleAllBtn) unsettleAllBtn.addEventListener("click", () => toggleSettleAll(data, unsettleAllBtn));
   $$(".slot-mgr").forEach(b => b.addEventListener("click", () => {
     const it = data.items.find(x => x.id === parseInt(b.dataset.item, 10));
     if (it) openSlotManagerSheet(data, it);
@@ -1257,6 +1274,21 @@ async function togglePaidByCreator(data, btn) {
     try {
       await api(`/api/bills/${data.bill.id}/payments/${identityId}/${action}`, { method: "POST" });
       toast(currentlyPaid ? `${name} dibatalin lunasnya` : `${name} ditandai lunas ✓`);
+      loadBillView(data.bill.id);
+    } catch (e) { toast(e.message); }
+  });
+}
+
+// ---------- Bill-level settle (v60): whole bill lunas in one click ----------
+// For cash settlements outside the app (no need to tap each person), or a
+// genuinely solo bill that can never auto-settle because nobody joined.
+async function toggleSettleAll(data, btn) {
+  const currentlySettled = !!data.settled_manual;
+  const action = currentlySettled ? "unsettle" : "settle";
+  await withBusy(btn, "Bentar...", async () => {
+    try {
+      const fresh = await api(`/api/bills/${data.bill.id}/${action}`, { method: "POST" });
+      toast(currentlySettled ? "Lunas dibatalin" : "Bill ditandai lunas ✓");
       loadBillView(data.bill.id);
     } catch (e) { toast(e.message); }
   });

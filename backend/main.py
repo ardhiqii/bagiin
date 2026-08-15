@@ -241,10 +241,17 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
     paid_ids = {p["identity_id"] for p in bill_data["payments"] if p["status"] == "paid"}
     if paid_by_id:
         paid_ids.add(paid_by_id)
-    all_paid = bool(sel_ids) and len(result["people"]) > 1 and owed_ids <= paid_ids
-    settled = all_paid and result["uncovered_idr"] == 0
+    # v60: the owner can declare the WHOLE bill settled in one click (cash
+    # settled outside the app, or a genuinely solo bill that can never
+    # auto-settle). Manual override wins — it says "bill ini udah beres",
+    # regardless of the roster/paid math below.
+    settled_manual = bool(bill.get("settled_manual"))
+    auto_all_paid = bool(sel_ids) and len(result["people"]) > 1 and owed_ids <= paid_ids
+    all_paid = settled_manual or auto_all_paid
+    settled = settled_manual or (auto_all_paid and result["uncovered_idr"] == 0)
     return {
         "all_paid": all_paid,
+        "settled_manual": settled_manual,
         "bill": bill,
         "owner_id": _owner_id(bill_data),
         # who may edit/close/delete (v57): the CONFIRMED payer is the sole
@@ -941,6 +948,34 @@ def reopen_bill(bill_id: str, request: Request):
     if bill_data["bill"]["status"] != "closed":
         raise HTTPException(400, "Bill belum ditutup")
     db.reopen_bill(bill_id)
+    return _compute_response(db.get_bill(bill_id), ident["id"])
+
+
+@app.post("/api/bills/{bill_id}/settle")
+def settle_bill(bill_id: str, request: Request):
+    """Owner marks the WHOLE bill lunas in one click (v60).
+
+    For cash settlements outside the app (no need to tap each person's
+    Tandai Lunas one by one), or a genuinely solo bill that can never
+    auto-settle because nobody else joined. Manual settle overrides the
+    auto math, so this works on open AND closed bills.
+    """
+    bill_data = _bill_or_404(bill_id)
+    ident = _identity_from_request(request)
+    if not _can_manage(bill_data, ident["id"]):
+        raise HTTPException(403, "Hanya owner bill (yang bayar)")
+    db.set_settled_manual(bill_id, True)
+    return _compute_response(db.get_bill(bill_id), ident["id"])
+
+
+@app.post("/api/bills/{bill_id}/unsettle")
+def unsettle_bill(bill_id: str, request: Request):
+    """Undo a manual whole-bill settle (v60)."""
+    bill_data = _bill_or_404(bill_id)
+    ident = _identity_from_request(request)
+    if not _can_manage(bill_data, ident["id"]):
+        raise HTTPException(403, "Hanya owner bill (yang bayar)")
+    db.set_settled_manual(bill_id, False)
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
