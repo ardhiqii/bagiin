@@ -224,9 +224,13 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
             "qty": int(s.get("qty", 1)),
             "id": s["identity_id"],
         })
-    # settled = no money outstanding: at least one item was actually picked,
-    # everyone with a share (total > 0) has paid, and no empty slots remain.
-    # The resolved payer counts as paid automatically (they fronted it).
+    # settled = no money outstanding: at least one item was picked, the bill
+    # has actually started (someone else joined the creator — a solo bill
+    # where the creator picked everything used to resolve payer=creator,
+    # auto-pay them, and wear a green "Lunas" chip before anyone else even
+    # joined, bug: "blom ada yg join tp keterangannya lunas"), everyone with
+    # a share (total > 0) has paid, and no empty slots remain. The resolved
+    # payer counts as paid automatically (they fronted it).
     #
     # Closing a bill does NOT make it settled. It used to, so a bill closed
     # with Rp 75.000 of empty slots and an unpaid guest still showed a green
@@ -237,7 +241,7 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
     paid_ids = {p["identity_id"] for p in bill_data["payments"] if p["status"] == "paid"}
     if paid_by_id:
         paid_ids.add(paid_by_id)
-    all_paid = bool(sel_ids) and owed_ids <= paid_ids
+    all_paid = bool(sel_ids) and len(result["people"]) > 1 and owed_ids <= paid_ids
     settled = all_paid and result["uncovered_idr"] == 0
     return {
         "all_paid": all_paid,

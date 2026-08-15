@@ -894,9 +894,15 @@ def _bill_settled(conn, bill_id: str, status: str) -> bool:
 
     SINGLE SOURCE OF TRUTH: mirrors main._compute_response's settled logic
     exactly (same calc.compute, same owed definition = total_idr > 0, same
-    resolve_payer). The list endpoint used to re-implement this with SQL and
-    drifted from the detail view (price-0 picks, tax landing on the creator) —
-    bug: settled flag contradicted itself between endpoints.
+    resolve_payer, same roster = people + joined payments + creator). The list
+    endpoint used to re-implement this with SQL and drifted from the detail
+    view (price-0 picks, tax landing on the creator) — bug: settled flag
+    contradicted itself between endpoints.
+
+    A solo bill (nobody joined the creator yet) is NOT settled — it used to
+    resolve payer=creator, auto-pay them, and wear a green "Lunas" chip
+    before anyone else even joined (bug: "blom ada yg join tp keterangannya
+    lunas").
 
     Closing a bill does NOT settle it. It used to, so a bill closed with empty
     slots and an unpaid guest still showed a green "Lunas" in history.
@@ -907,16 +913,30 @@ def _bill_settled(conn, bill_id: str, status: str) -> bool:
     sel_ids = {s["identity_id"] for s in data["selections"]}
     if not sel_ids:
         return False
+    bill = data["bill"]
+    # same effective owner as main._owner_id: the CONFIRMED payer, else creator
+    pid = bill.get("paid_by_identity_id")
+    fallback_id = pid if (pid and bill.get("paid_by_confirmed")) else bill["creator_identity_id"]
     result = calc.compute(
-        data["bill"], data["items"], data["selections"],
-        data["participants"], data["bill"]["creator_identity_id"],
+        bill, data["items"], data["selections"],
+        data["participants"], fallback_id,
     )
+    # same roster as main._compute_response: people + joined-but-unselected
+    # payments + creator (until they walk out)
+    roster_ids = {p["identity_id"] for p in result["people"]}
+    roster_ids |= {p["identity_id"] for p in data["payments"]}
+    if not bill.get("creator_left"):
+        roster_ids.add(bill["creator_identity_id"])
     owed_ids = {p["identity_id"] for p in result["people"] if p["total_idr"] > 0}
     paid_ids = {p["identity_id"] for p in data["payments"] if p["status"] == "paid"}
     payer_id, _ = resolve_payer(data)
     if payer_id:
         paid_ids.add(payer_id)
-    return owed_ids <= paid_ids and result["uncovered_idr"] == 0
+    return (
+        len(roster_ids) > 1
+        and owed_ids <= paid_ids
+        and result["uncovered_idr"] == 0
+    )
 
 
 def get_bills_for_identity(identity_id: str):
