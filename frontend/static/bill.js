@@ -284,6 +284,11 @@ function renderGuestView(data, me) {
   const myPaid = myPeople.length ? myPeople[0].paid === "paid" : false;
   const iAmPayer = data.paid_by_id === me.id;
   const payerName = data.paid_by_name || data.creator_name;
+  // nobody but the creator is on the bill yet — the product moment is
+  // "share the link", not "belum lunas". Mirror the creator view's guard so
+  // a fresh solo bill never wears a misleading status (bug: "blom ada yg
+  // join tp keterangannya lunas").
+  const soloSoFar = data.people.length <= 1 && !closed;
 
   // build my picks (item_id -> qty) from backend selections
   const mySel = new Map();
@@ -302,7 +307,7 @@ function renderGuestView(data, me) {
           <div class="label-sm">Total bill</div>
           <div class="money hero-total">${fmt(data.bill.total_idr)}</div>
         </div>
-        <span>${statusChipHtml(data)}</span>
+        <span>${soloSoFar ? `<span class="chip chip-grey">Belum ada yang gabung</span>` : statusChipHtml(data)}</span>
       </div>
       ${data.bill.merchant ? `<p class="muted" style="margin-top:6px;">${esc(data.bill.merchant)}</p>` : ""}
       ${data.bill.transacted_at ? `<p class="muted">${esc(shortDate(data.bill.transacted_at))}</p>` : ""}
@@ -315,7 +320,7 @@ function renderGuestView(data, me) {
       ${data.bill.tax_included ? `<p class="muted" style="margin-top:6px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — gak ada PPN tambahan</p>` : ""}
       ${photoBtnHtml(data)}
       ${uncoveredNoteHtml(data)}
-      ${data.all_paid && !closed ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua yang milih item udah lunas 🎉</p>` : ""}
+      ${data.all_paid && !closed && !soloSoFar ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua yang milih item udah lunas 🎉</p>` : ""}
     </div>
     <button class="btn-outline" id="pay-methods-btn" style="margin-bottom:12px;">
       ${ic("wallet")} Metode Bayar ${esc(payerName)}
@@ -669,17 +674,32 @@ function openFreePickerSheet(data, me, it) {
       <span class="money fr-total" style="font-size:24px;font-weight:800;">${fmt(perServingEst(it, othersQty, qty) * qty)}</span>
     </div>
     <button class="btn-primary" id="fr-confirm">Simpan ${qty} porsi</button>
-    ${myQty > 0 ? `<button class="btn-danger-ghost" id="fr-release">${ic("x")} Lepas Pilihan (${myQty})</button>` : ""}
-    <button class="btn-outline" id="fr-close">${myQty > 0 ? "Batal" : "Tutup"}</button>`, { noAutofocus: true });
+    <div class="btn-row">
+      ${myQty > 0 ? `<button class="btn-danger-ghost" id="fr-release" style="margin-top:0;">${ic("x")} Lepas Pilihan (${myQty})</button>` : ""}
+      <button class="btn-outline" id="fr-close" style="margin-top:0;">${myQty > 0 ? "Batal" : "Tutup"}</button>
+    </div>`, { noAutofocus: true });
 
   const sync = () => {
     $(".fr-qty", s.sheet).textContent = qty;
     $(".fr-total", s.sheet).textContent = fmt(perServingEst(it, othersQty, qty) * qty);
     $(".fr-qty-inc", s.sheet).disabled = qty >= MAX_P;
-    $(".fr-qty-dec", s.sheet).disabled = qty <= 1;
+    // minus at 1 means "lepas pilihan" (same as the release button) when a
+    // pick exists to release; only truly dead when nothing is picked yet, so
+    // qty can't drop below 1 (bug: minus stayed greyed out at 1 while the
+    // user held a pick and wanted to drop it)
+    $(".fr-qty-dec", s.sheet).disabled = qty <= 1 && myQty === 0;
+    $(".fr-qty-dec", s.sheet).ariaLabel = qty <= 1 && myQty > 0 ? "Lepas pilihan" : "Kurangi porsi";
+    $(".fr-qty-dec", s.sheet).style.color = qty <= 1 && myQty > 0 ? "var(--red)" : "";
     $("#fr-confirm", s.sheet).textContent = `Simpan ${qty} porsi`;
   };
-  $(".fr-qty-dec", s.sheet).addEventListener("click", () => { qty = Math.max(1, qty - 1); sync(); });
+  $(".fr-qty-dec", s.sheet).addEventListener("click", () => {
+    if (qty <= 1 && myQty > 0) {
+      // dropping from 1 to 0 = release the whole pick (no 0-porsi state)
+      const rel = $("#fr-release", s.sheet);
+      if (rel) { rel.click(); return; }
+    }
+    qty = Math.max(1, qty - 1); sync();
+  });
   $(".fr-qty-inc", s.sheet).addEventListener("click", () => { qty = Math.min(MAX_P, qty + 1); sync(); });
   // (bug: no in-flight guard — a double tap fired two POSTs)
   $("#fr-confirm", s.sheet).addEventListener("click", (ev) =>
