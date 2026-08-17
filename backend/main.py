@@ -264,6 +264,7 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
         "paid_by_name": paid_by_name,
         "paid_by_accounts": db.get_accounts(paid_by_id),
         "items": bill_data["items"],
+        "photos": bill_data.get("photos", []),
         "participants": [{"name": p["name"], "identity_id": p["identity_id"]} for p in bill_data["participants"]],
         "people": result["people"],
         "sel_by_item": sel_by_item,
@@ -543,6 +544,7 @@ async def create_bill(request: Request):
         } for i in items],
         participants=participants,
         photo_path=data.get("photo_path"),
+        photos=data.get("photos") if isinstance(data.get("photos"), list) else None,
         paid_by_name=paid_by_name,
     )
     return created
@@ -982,6 +984,9 @@ def unsettle_bill(bill_id: str, request: Request):
 @app.post("/api/bills/{bill_id}/photo")
 @limiter.limit("10/minute")
 async def upload_photo(bill_id: str, request: Request, file: UploadFile = File(...)):
+    """Attach another receipt photo (v61: multi-photo, no longer a single
+    replace). Legacy URL kept; the payload no longer carries photo_path
+    writes to the old column."""
     bill_data = _bill_or_404(bill_id)
     ident = _identity_from_request(request)
     if not _can_manage(bill_data, ident["id"]):
@@ -992,7 +997,36 @@ async def upload_photo(bill_id: str, request: Request, file: UploadFile = File(.
     filename = secrets.token_hex(8) + ".jpg"
     path = UPLOAD_DIR / filename
     path.write_bytes(raw)
-    db.update_bill_photo(bill_id, str(path))
+    db.add_bill_photo(bill_id, str(path))
+    return _compute_response(db.get_bill(bill_id), ident["id"])
+
+
+@app.delete("/api/bills/{bill_id}/photos/{photo_id}")
+def delete_photo(bill_id: str, photo_id: int, request: Request):
+    """Remove one receipt photo (v61). Owner only, file unlinked."""
+    bill_data = _bill_or_404(bill_id)
+    ident = _identity_from_request(request)
+    if not _can_manage(bill_data, ident["id"]):
+        raise HTTPException(403, "Hanya owner bill (yang bayar)")
+    path = db.delete_bill_photo(photo_id)
+    if path is None:
+        raise HTTPException(404, "Foto gak ketemu")
+    db._unlink_photo(path)
+    return _compute_response(db.get_bill(bill_id), ident["id"])
+
+
+@app.post("/api/photos")
+@limiter.limit("10/minute")
+async def upload_photo_standalone(request: Request, file: UploadFile = File(...)):
+    """Upload a receipt photo WITHOUT scanning (v61) — for the manual create
+    flow. Returns the saved path so the client can attach it to a bill."""
+    _identity_from_request(request)
+    raw = await file.read()
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(400, "Foto maksimal 5MB")
+    filename = secrets.token_hex(8) + ".jpg"
+    path = UPLOAD_DIR / filename
+    path.write_bytes(raw)
     return {"photo_path": str(path), "filename": filename}
 
 

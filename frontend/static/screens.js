@@ -827,31 +827,43 @@ function renderCreate(opts = {}) {
 
   const dz = $("#dz");
   const fileInput = $("#file-input");
-  const openPicker = (capture) => {
+  // v61: mode = "scan" (default, OCR the photo) | "attach" (just attach it)
+  let pickMode = "scan";
+  const openPicker = (capture, attach) => {
+    pickMode = attach ? "attach" : "scan";
     fileInput.removeAttribute("capture");
     if (capture) fileInput.setAttribute("capture", "environment");
     fileInput.value = "";
     fileInput.click();
   };
 
+  const handleImageFile = async (f) => {
+    if (!f) return;
+    if (!f.type || !f.type.startsWith("image/")) { toast("File harus gambar"); return; }
+    if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
+    if (pickMode === "attach") await uploadAndAttach(f);
+    else await uploadAndOcr(f);
+  };
+
   dz.addEventListener("click", () => {
-    const body = coarse
-      ? `<button class="btn-primary" id="dz-camera">${ic("camera")} Ambil Foto</button>
-         <button class="btn-outline" id="dz-gallery">${ic("image")} Pilih dari Galeri</button>
-         <button class="btn-outline" id="dz-clipboard">${ic("clipboard")} Tempel dari Clipboard</button>`
-      : `<button class="btn-primary" id="dz-gallery">${ic("image")} Pilih file</button>
-         <button class="btn-outline" id="dz-clipboard">${ic("clipboard")} Tempel (Ctrl+V)</button>`;
+    // v61: the dropzone now asks what to do with the photo — scan it
+    // (default, auto-on) or just attach it and fill items by hand.
+    const body = `
+      <button class="btn-primary" id="dz-scan">${ic("camera")} Baca Otomatis</button>
+      <button class="btn-outline" id="dz-attach">${ic("image")} Gak Usah Dibaca</button>
+      <p class="muted" style="text-align:center;">Foto yang gak dibaca cuma ditempel — item &amp; harga diisi manual.</p>
+      <button class="btn-ghost" id="dz-cancel">Batal</button>`;
     const s = openSheet(`
       <div class="sheet-handle"></div>
       <div class="sheet-title">Foto Struk</div>
       <p class="sheet-sub">${coarse ? "Struk yang kefoto lurus & terang paling gampang kebaca." : "Bisa juga langsung tarik filenya ke area foto."}</p>
-      ${body}
-      <button class="btn-ghost" id="dz-cancel">Batal</button>`, { noAutofocus: true });
-    const cam = $("#dz-camera", s.sheet);
-    if (cam) cam.addEventListener("click", () => { s.close(); openPicker(true); });
-    $("#dz-gallery", s.sheet).addEventListener("click", () => { s.close(); openPicker(false); });
-    $("#dz-clipboard", s.sheet).addEventListener("click", () => { s.close(); readClipboardImage(); });
-    $("#dz-cancel", s.sheet).addEventListener("click", s.close);
+      ${body}`, { noAutofocus: true });
+    const scanBtn = s.sheet.querySelector("#dz-scan");
+    if (scanBtn) scanBtn.addEventListener("click", () => { s.close(); openPicker(true); });
+    const attachBtn = s.sheet.querySelector("#dz-attach");
+    if (attachBtn) attachBtn.addEventListener("click", () => { s.close(); openPicker(false, true); });
+    const cancelBtn = s.sheet.querySelector("#dz-cancel");
+    if (cancelBtn) cancelBtn.addEventListener("click", s.close);
   });
 
   // drag & drop a photo onto the dropzone
@@ -866,20 +878,17 @@ function renderCreate(opts = {}) {
   dz.addEventListener("drop", e => {
     const f = (e.dataTransfer && e.dataTransfer.files) ? e.dataTransfer.files[0] : null;
     if (!f) return;
-    if (!f.type || !f.type.startsWith("image/")) { toast("File harus gambar"); return; }
-    if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
-    uploadAndOcr(f);
+    // dropped files default to scan, like the primary dropzone button
+    pickMode = "scan";
+    handleImageFile(f);
   });
   fileInput.addEventListener("change", async () => {
-    const f = fileInput.files[0];
-    if (!f) return;
-    if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
-    await uploadAndOcr(f);
+    await handleImageFile(fileInput.files[0]);
   });
 
   const blankBill = () => ({
     items: [], subtotal: 0, tax: 0, service: 0, total: 0,
-    photo_path: null, merchant: "", date: "",
+    photo_path: null, photos: [], merchant: "", date: "",
   });
   $("#manual-btn").addEventListener("click", () => renderVerify(blankBill(), true));
   if (opts.ocrError) {
@@ -889,6 +898,35 @@ function renderCreate(opts = {}) {
     });
     $("#ocr-manual").addEventListener("click", () => renderVerify(blankBill(), true));
   }
+}
+
+// v61: upload a photo WITHOUT scanning — it gets attached to the bill and
+// the user fills items by hand. OCR failure also lands here (photo kept,
+// items manual) instead of throwing the photo away.
+async function uploadAndAttach(file) {
+  const body = $("#create-body");
+  if (body) {
+    body.innerHTML = `<div class="card" style="text-align:center;padding:40px 16px;">
+      <div class="spinner" style="width:32px;height:32px;border-width:3px;"></div>
+      <p style="margin-top:16px;font-weight:600;">Ngirim fotonya...</p>
+    </div>`;
+  }
+  const routeAtStart = location.hash;
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    const result = await api("/api/photos", { method: "POST", body: fd });
+    if (location.hash !== routeAtStart) return;
+    // keep the photo; items are filled manually
+    renderVerify({ ...blankBillForVerify(), photos: [result.photo_path] }, true);
+  } catch (e) {
+    if (location.hash !== routeAtStart) return;
+    renderCreate({ ocrError: e.message, ocrFile: file });
+  }
+}
+
+function blankBillForVerify() {
+  return { items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null, merchant: "", date: "" };
 }
 
 async function uploadAndOcr(file) {
@@ -912,7 +950,11 @@ async function uploadAndOcr(file) {
     renderVerify(result);
   } catch (e) {
     if (location.hash !== routeAtStart) return;
-    renderCreate({ ocrError: e.message, ocrFile: file });
+    // v61: OCR failed — keep the photo anyway and drop into the manual
+    // editor with it attached (before, the photo was thrown away and the
+    // user had to re-pick it on the create screen)
+    toast(e.message);
+    await uploadAndAttach(file);
   }
 }
 
@@ -987,23 +1029,37 @@ const VERIFY_CSS = `<style>
   .vf-item .icon-btn { width:40px; height:40px; min-height:40px; }
   .vf-full { grid-column:1 / -1; }
   .vf-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
+  .vf-photos { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
+  .vf-photo-wrap { position:relative; }
+  .vf-photo-wrap .photo-preview { width:100%; height:110px; object-fit:cover; border-radius:var(--r-xs); display:block; }
+  .vf-photo-wrap .photo-preview.expanded { position:fixed; inset:0; z-index:60; width:100%; height:100%;
+    object-fit:contain; background:rgba(0,0,0,.86); border-radius:0; }
+  .vf-photo-del { position:absolute; top:6px; right:6px; width:28px; height:28px; min-height:28px; padding:0;
+    border-radius:var(--r-full); background:rgba(0,0,0,.62); color:#fff; border:none; display:flex;
+    align-items:center; justify-content:center; }
   @media (max-width:399px) {
     .vf-grid { grid-template-columns:repeat(2, minmax(0,1fr)); }
     .vf-grid > .vf-sub { grid-column:1 / -1; }
+    .vf-photos { grid-template-columns:repeat(2, minmax(0,1fr)); }
   }
 </style>`;
 
 function renderVerify(ocr, manual = false) {
+  // v61: photos is an array now; legacy single photo_path folds in so OCR
+  // results (which still carry photo_path) keep working
+  const photos = Array.isArray(ocr.photos) ? ocr.photos.slice()
+    : (ocr.photo_path ? [ocr.photo_path] : []);
   verifyState = {
     items: ocr.items || [],
     subtotal: ocr.subtotal || 0,
     tax: ocr.tax || 0,
     service: ocr.service || 0,
     total: ocr.total || 0,
-    photo_path: ocr.photo_path || null,
-    title: ocr.merchant || "",
+    photo_path: photos[0] || null,
+    photos,
+    title: ocr.title || ocr.merchant || "",
     merchant: ocr.merchant || "",
-    transacted_at: ocr.date || "",
+    transacted_at: ocr.transacted_at || ocr.date || "",
     manual,
     paid_by_name: null,
     tax_included: !!(ocr.tax_included),
@@ -1025,11 +1081,24 @@ function renderVerify(ocr, manual = false) {
       <div class="topbar-title">${manual ? "Bikin Manual" : "Periksa Hasil"}</div>
       <div style="width:42px;flex-shrink:0;" aria-hidden="true"></div>
     </div>
-    ${verifyState.photo_path ? `
+    ${verifyState.photos.length ? `
     <div class="card" style="padding:8px;">
-      <img class="photo-preview" id="receipt-photo" src="/uploads/${esc(verifyState.photo_path.split("/").pop())}" alt="Foto struk asli" loading="lazy">
-      <div class="muted" style="text-align:center;margin-top:4px;">Struk asli · ketuk buat perbesar</div>
-    </div>` : ""}
+      <div class="vf-photos">
+        ${verifyState.photos.map((p, i) => `
+        <div class="vf-photo-wrap">
+          <img class="photo-preview" src="/uploads/${esc(p.split("/").pop())}" alt="Foto struk ${i + 1}" loading="lazy" data-idx="${i}">
+          <button class="vf-photo-del" data-idx="${i}" aria-label="Hapus foto ${i + 1}">${ic("x")}</button>
+        </div>`).join("")}
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn-outline btn-sm" id="verify-add-photo" style="margin-top:0;">${ic("camera")} Tambah Foto</button>
+        <span class="muted btn-auto" style="align-self:center;">Ketuk foto buat perbesar</span>
+      </div>
+    </div>` : (manual ? `
+    <div class="card" style="padding:8px;">
+      <button class="btn-outline" id="verify-add-photo" style="width:100%;">${ic("camera")} Tambah Foto Struk</button>
+      <p class="muted" style="text-align:center;margin-top:6px;">Opsional — foto cuma ditempel, gak dibaca otomatis.</p>
+    </div>` : "")}
 
     <div class="card">
       <div class="field">
@@ -1132,8 +1201,39 @@ function renderVerify(ocr, manual = false) {
     renderCreate();
   });
 
-  const photo = $("#receipt-photo");
-  if (photo) photo.addEventListener("click", () => photo.classList.toggle("expanded"));
+  // v61: multi-photo preview — tap to zoom, ✕ to remove, + to add more
+  const photoImgs = $$(".vf-photo-wrap .photo-preview");
+  photoImgs.forEach(img => img.addEventListener("click", () => img.classList.toggle("expanded")));
+  $$(".vf-photo-del").forEach(btn => btn.addEventListener("click", () => {
+    const idx = parseInt(btn.dataset.idx, 10);
+    if (!Number.isFinite(idx)) return;
+    verifyState.photos.splice(idx, 1);
+    verifyState.photo_path = verifyState.photos[0] || null;
+    renderVerify({ ...verifyState, photos: verifyState.photos, paid_by_name: verifyState.paid_by_name }, verifyState.manual);
+  }));
+  const addPhotoBtn = $("#verify-add-photo");
+  if (addPhotoBtn) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.className = "hidden";
+    addPhotoBtn.insertAdjacentElement("afterend", input);
+    addPhotoBtn.addEventListener("click", () => input.click());
+    input.addEventListener("change", async () => {
+      const f = input.files[0];
+      if (!f) return;
+      if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
+      await withBusy(addPhotoBtn, "Upload...", async () => {
+        try {
+          const fd = new FormData();
+          fd.append("file", f);
+          const result = await api("/api/photos", { method: "POST", body: fd });
+          verifyState.photos.push(result.photo_path);
+          renderVerify({ ...verifyState, photos: verifyState.photos, paid_by_name: verifyState.paid_by_name }, verifyState.manual);
+        } catch (e) { toast(e.message); }
+      });
+    });
+  }
   renderVerifyItems();
   bindVerifyInputs();
 
@@ -1405,6 +1505,7 @@ async function createBillFinal() {
           slot_count: i.mode === "slot" ? (i.slot_count || 2) : null,
         })),
         photo_path: verifyState.photo_path,
+        photos: verifyState.photos || [],
         paid_by_name: verifyState.paid_by_name || null,
         tax_included: verifyState.tax_included ? 1 : 0,
       });

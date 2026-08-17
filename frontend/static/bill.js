@@ -31,34 +31,78 @@ function uncoveredNoteHtml(data) {
   return `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} ${what} (${fmt(data.uncovered_idr)})</p>`;
 }
 
-// ---------- Receipt photo: view / upload ----------
+// ---------- Receipt photos: view / upload / remove ----------
 function photoBtnHtml(data) {
-  if (data.bill.photo_path) {
-    return `<button class="btn-outline btn-sm" id="view-photo-btn" style="width:100%;margin-top:10px;">${ic("receipt")} Liat Struk Asli</button>`;
-  }
+  const photos = data.photos || [];
   // uploading needs management rights, not payer-ness — the backend gates this
   // endpoint on _can_manage (bug: creator who handed the payer role away lost
   // the button on their own bill)
-  if (data.can_manage && data.bill.status === "open") {
-    return `<button class="btn-outline btn-sm" id="add-photo-btn" style="width:100%;margin-top:10px;">${ic("camera")} Tambah Foto Struk</button>`;
-  }
-  return "";
+  const canManage = data.can_manage && data.bill.status === "open";
+  if (!photos.length && !canManage) return "";
+  const thumbs = photos.map((p, i) => `
+    <div class="bill-photo-wrap" style="position:relative;">
+      <img src="/uploads/${esc(p.path.split("/").pop())}" alt="Struk ${i + 1}" loading="lazy"
+           data-photo="${esc(p.path)}" data-idx="${i}" style="width:100%;height:110px;object-fit:cover;border-radius:var(--r-xs);display:block;">
+      ${canManage ? `<button class="bill-photo-del" data-id="${p.id}" aria-label="Hapus foto ${i + 1}" style="position:absolute;top:6px;right:6px;width:28px;height:28px;min-height:28px;padding:0;border-radius:var(--r-full);background:rgba(0,0,0,.62);color:#fff;border:none;display:flex;align-items:center;justify-content:center;">${ic("x")}</button>` : ""}
+    </div>`).join("");
+  return `
+    <div style="margin-top:10px;">
+      ${photos.length ? `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">${thumbs}</div>` : ""}
+      ${canManage ? `<button class="btn-outline btn-sm" id="add-photo-btn" style="width:100%;margin-top:8px;">${ic("camera")} ${photos.length ? "Tambah Foto Lagi" : "Tambah Foto Struk"}</button>` : ""}
+    </div>`;
 }
 
-function openPhotoSheet(bill) {
-  const fn = bill.photo_path.split("/").pop();
+function openPhotoSheet(bill, photos, idx) {
+  const list = photos && photos.length ? photos : (bill.photo_path ? [{ path: bill.photo_path }] : []);
+  const start = Math.min(Math.max(idx || 0, 0), list.length - 1);
+  let cur = start;
+  const renderImg = () => {
+    const p = list[cur];
+    if (!p) return;
+    $("img", s.sheet).src = `/uploads/${encodeURIComponent(p.path.split("/").pop())}`;
+    if (list.length > 1) $(".sheet-title", s.sheet).textContent = `Struk asli ${cur + 1}/${list.length}`;
+  };
   const s = openSheet(`
     <div class="sheet-handle"></div>
-    <div class="sheet-title">Struk asli</div>
-    <img src="/uploads/${encodeURIComponent(fn)}" alt="Foto struk asli bill ini"
+    <div class="sheet-title">Struk asli ${list.length > 1 ? `${cur + 1}/${list.length}` : ""}</div>
+    <img src="/uploads/${encodeURIComponent(list[start].path.split("/").pop())}" alt="Foto struk asli bill ini"
          style="width:100%;border-radius:var(--r-sm);" loading="lazy">
-    <button class="btn-outline" data-act="close">Tutup</button>`, { noAutofocus: true });
+    <div class="btn-row" style="margin-top:10px;">
+      ${list.length > 1 ? `<button class="btn-outline btn-sm" id="ph-prev" style="margin-top:0;">${ic("chevron")} Sebelumnya</button>
+      <button class="btn-outline btn-sm" id="ph-next" style="margin-top:0;">Berikutnya</button>` : ""}
+      <button class="btn-primary btn-sm" data-act="close" style="margin-top:0;">Tutup</button>
+    </div>`, { noAutofocus: true });
+  const prev = $("#ph-prev", s.sheet), next = $("#ph-next", s.sheet);
+  if (prev) prev.addEventListener("click", () => { cur = (cur - 1 + list.length) % list.length; renderImg(); });
+  if (next) next.addEventListener("click", () => { cur = (cur + 1) % list.length; renderImg(); });
   $('[data-act=close]', s.sheet).addEventListener("click", s.close);
 }
 
 function bindPhotoActions(data) {
-  const vb = $("#view-photo-btn");
-  if (vb) vb.addEventListener("click", () => openPhotoSheet(data.bill));
+  // thumbnail tap -> view (with prev/next for multi-photo)
+  $$(".bill-photo-wrap img").forEach(img => img.addEventListener("click", () => {
+    const idx = parseInt(img.dataset.idx, 10);
+    openPhotoSheet(data.bill, data.photos || [], Number.isFinite(idx) ? idx : 0);
+  }));
+  // remove a photo (owner only — button only rendered for can_manage)
+  $$(".bill-photo-del").forEach(btn => btn.addEventListener("click", async () => {
+    const pid = parseInt(btn.dataset.id, 10);
+    if (!Number.isFinite(pid)) return;
+    const ok = await confirmSheet({
+      title: "Hapus foto ini?",
+      body: "Fotonya ilang dari bill. Item & pembagiannya gak berubah.",
+      confirmText: "Hapus",
+      danger: true,
+    });
+    if (!ok) return;
+    await withBusy(btn, "", async () => {
+      try {
+        await api(`/api/bills/${data.bill.id}/photos/${pid}`, { method: "DELETE" });
+        toast("Foto dihapus ✓");
+        loadBillView(data.bill.id);
+      } catch (e) { toast(e.message); }
+    });
+  }));
   const ab = $("#add-photo-btn");
   if (ab) {
     const input = document.createElement("input");
@@ -76,14 +120,7 @@ function bindPhotoActions(data) {
       fd.append("file", f);
       await withBusy(ab, "Upload...", async () => {
         try {
-          const headers = { "X-Identity-Id": state.identity.id };
-          if (state.identity.secret) headers["X-Identity-Secret"] = state.identity.secret;
-          const res = await fetch(`/api/bills/${data.bill.id}/photo`, { method: "POST", headers, body: fd });
-          if (!res.ok) {
-            let m = "Gagal upload";
-            try { const d = await res.json(); m = d.detail || m; } catch (e) {}
-            throw new Error(m);
-          }
+          await api(`/api/bills/${data.bill.id}/photo`, { method: "POST", body: fd });
           toast("Struk ditambahkan ✓");
           loadBillView(data.bill.id);
         } catch (e) { toast(e.message); }

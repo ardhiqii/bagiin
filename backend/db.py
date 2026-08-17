@@ -119,10 +119,18 @@ def init_db():
             sort_order INTEGER NOT NULL DEFAULT 0
         );
 
+        CREATE TABLE IF NOT EXISTS bill_photo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bill_id TEXT NOT NULL REFERENCES bill(id),
+            path TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0
+        );
+
         CREATE INDEX IF NOT EXISTS idx_item_bill ON item(bill_id);
         CREATE INDEX IF NOT EXISTS idx_selection_item ON selection(item_id);
         CREATE INDEX IF NOT EXISTS idx_selection_identity ON selection(identity_id);
         CREATE INDEX IF NOT EXISTS idx_payacct_identity ON payment_account(identity_id);
+        CREATE INDEX IF NOT EXISTS idx_billphoto_bill ON bill_photo(bill_id);
         """
     )
     # migration: add merchant/transacted_at to existing bills table
@@ -195,6 +203,26 @@ def init_db():
     if "settled_manual" not in bcols:
         conn.execute(
             "ALTER TABLE bill ADD COLUMN settled_manual INTEGER NOT NULL DEFAULT 0")
+    # migration: multi-photo (v61). bill.photo_path (single, legacy) is
+    # converted into bill_photo rows — one per existing photo — and the old
+    # column is KEPT untouched (never dropped, never written again) so
+    # nothing is lost and a rollback still reads it.
+    legacy = conn.execute(
+        "SELECT id, photo_path FROM bill WHERE photo_path IS NOT NULL AND photo_path != ''"
+    ).fetchall()
+    if legacy:
+        existing = {
+            (r["bill_id"], r["path"]) for r in conn.execute(
+                "SELECT bill_id, path FROM bill_photo"
+            ).fetchall()
+        }
+        for row in legacy:
+            key = (row["id"], row["photo_path"])
+            if key not in existing:
+                conn.execute(
+                    "INSERT INTO bill_photo (bill_id, path, sort_order) VALUES (?, ?, 0)",
+                    (row["id"], row["photo_path"]),
+                )
     conn.commit()
     conn.close()
 
@@ -340,7 +368,8 @@ def create_bill(creator_id: str, title: str, tax_mode: str,
                 merchant: str | None = None,
                 transacted_at: str | None = None,
                 paid_by_name: str | None = None,
-                tax_included: int = 0) -> dict:
+                tax_included: int = 0,
+                photos: list[str] | None = None) -> dict:
     conn = get_db()
     try:
         bill_id = new_id()
@@ -368,6 +397,17 @@ def create_bill(creator_id: str, title: str, tax_mode: str,
                 "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count, discount_idr) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (bill_id, item["name"], int(item["price"]), i, mode, slot_count,
                  int(item.get("discount", 0) or 0)),
+            )
+        # multi-photo (v61): every attached photo becomes a bill_photo row.
+        # The legacy single photo_path is folded in too so OCR-created bills
+        # (which still carry photo_path) get their photo migrated correctly.
+        photo_rows = list(photos or [])
+        if photo_path and photo_path not in photo_rows:
+            photo_rows.insert(0, photo_path)
+        for i, path in enumerate(photo_rows):
+            conn.execute(
+                "INSERT INTO bill_photo (bill_id, path, sort_order) VALUES (?, ?, ?)",
+                (bill_id, path, i),
             )
         conn.commit()
         return {"id": bill_id}
@@ -400,6 +440,10 @@ def get_bill(bill_id: str):
     payments = conn.execute(
         "SELECT * FROM payment WHERE bill_id = ?", (bill_id,)
     ).fetchall()
+    photos = conn.execute(
+        "SELECT id, path FROM bill_photo WHERE bill_id = ? ORDER BY sort_order, id",
+        (bill_id,),
+    ).fetchall()
     conn.close()
     return {
         "bill": dict(bill),
@@ -407,6 +451,7 @@ def get_bill(bill_id: str):
         "participants": [dict(p) for p in participants],
         "selections": [dict(s) for s in selections],
         "payments": [dict(p) for p in payments],
+        "photos": [dict(p) for p in photos],
     }
 
 
@@ -419,6 +464,37 @@ def update_bill_photo(bill_id: str, photo_path: str | None):
     # orphaned by the overwrite — clean up (bug: re-upload leaked files forever)
     if old and old["photo_path"] != photo_path:
         _unlink_photo(old["photo_path"])
+
+
+def add_bill_photo(bill_id: str, photo_path: str) -> int:
+    """Attach another receipt photo (v61). Returns the new row id."""
+    conn = get_db()
+    cur = conn.execute(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM bill_photo WHERE bill_id = ?",
+        (bill_id,),
+    ).fetchone()
+    next_order = cur[0]
+    c = conn.execute(
+        "INSERT INTO bill_photo (bill_id, path, sort_order) VALUES (?, ?, ?)",
+        (bill_id, photo_path, next_order),
+    )
+    conn.commit()
+    new_id = c.lastrowid or 0
+    conn.close()
+    return new_id
+
+
+def delete_bill_photo(photo_id: int) -> str | None:
+    """Remove one bill photo; returns its path for unlink (or None)."""
+    conn = get_db()
+    row = conn.execute("SELECT path FROM bill_photo WHERE id = ?", (photo_id,)).fetchone()
+    if not row:
+        conn.close()
+        return None
+    conn.execute("DELETE FROM bill_photo WHERE id = ?", (photo_id,))
+    conn.commit()
+    conn.close()
+    return row["path"]
 
 
 UNCHANGED = object()  # "this field was not in the request" (vs. explicitly null)
@@ -895,6 +971,11 @@ def delete_bill(bill_id: str, owner_id: str) -> bool:
     photo_path = conn.execute(
         "SELECT photo_path FROM bill WHERE id = ?", (bill_id,)
     ).fetchone()
+    photo_paths = [
+        r[0] for r in conn.execute(
+            "SELECT path FROM bill_photo WHERE bill_id = ?", (bill_id,)
+        ).fetchall()
+    ]
     conn.execute(
         "DELETE FROM selection WHERE item_id IN (SELECT id FROM item WHERE bill_id = ?)",
         (bill_id,),
@@ -902,9 +983,12 @@ def delete_bill(bill_id: str, owner_id: str) -> bool:
     conn.execute("DELETE FROM item WHERE bill_id = ?", (bill_id,))
     conn.execute("DELETE FROM payment WHERE bill_id = ?", (bill_id,))
     conn.execute("DELETE FROM bill_participant WHERE bill_id = ?", (bill_id,))
+    conn.execute("DELETE FROM bill_photo WHERE bill_id = ?", (bill_id,))
     conn.execute("DELETE FROM bill WHERE id = ?", (bill_id,))
     conn.commit()
     conn.close()
+    for p in photo_paths:
+        _unlink_photo(p)
     if photo_path:
         _unlink_photo(photo_path["photo_path"])
     return True
