@@ -127,16 +127,41 @@ function renderHome() {
     <div class="card">
       <div class="card-title">
         <span>Riwayat</span>
-        <button class="btn-ghost btn-sm btn-auto hidden" id="see-all">Lihat semua ${ic("chevron")}</button>
       </div>
-      <div id="home-history">${skeletonRows(3)}</div>
+      ${HIST_CSS}
+      <div class="hist-filters">
+        ${HIST_FILTERS.map(f =>
+          `<button type="button" class="chip-btn ${histState.filter === f.v ? "chip-active" : ""}" data-filter="${f.v}"
+                   aria-pressed="${histState.filter === f.v}">${esc(f.label)}</button>`).join("")}
+        <select class="hist-month-sel" id="home-month" aria-label="Filter bulan">
+          <option value="all">Semua bulan</option>
+        </select>
+      </div>
+      <div id="home-history">${skeletonRows(5)}</div>
     </div>`);
   watchDock();
 
   $("#create-btn").addEventListener("click", () => location.hash = "#/create");
   $("#history-btn").addEventListener("click", () => location.hash = "#/history");
   $("#settings-btn").addEventListener("click", () => location.hash = "#/settings");
-  $("#see-all").addEventListener("click", () => location.hash = "#/history");
+
+  $$(".hist-filters .chip-btn").forEach(btn =>
+    btn.addEventListener("click", () => {
+      histState.filter = btn.dataset.filter;
+      histState.limit = HIST_PAGE;
+      $$(".hist-filters .chip-btn").forEach(b => {
+        const on = b === btn;
+        b.classList.toggle("chip-active", on);
+        b.setAttribute("aria-pressed", String(on));
+      });
+      loadHomeHistory();
+    }));
+  const mSel = $("#home-month");
+  if (mSel) mSel.addEventListener("change", () => {
+    histState.month = mSel.value;
+    histState.limit = HIST_PAGE;
+    loadHomeHistory();
+  });
 
   loadHomeHistory();
 }
@@ -226,28 +251,6 @@ function bindBillRows(box, onDone) {
   }));
 }
 
-async function loadHomeHistory() {
-  const box = $("#home-history");
-  if (!box) return;
-  box.innerHTML = skeletonRows(3);
-  try {
-    const bills = await api("/api/identities/" + state.identity.id + "/bills");
-    const seeAll = $("#see-all");
-    if (seeAll) seeAll.classList.toggle("hidden", bills.length <= 5);
-    if (!bills.length) {
-      box.innerHTML = `<div class="empty-state">${ic("receipt")}
-        <p>Belum ada bill.</p><p class="muted">Foto struknya, share linknya, terus semua milih
-        item yang dia makan sendiri.</p></div>`;
-      return;
-    }
-    box.innerHTML = bills.slice(0, 5).map(billRowHtml).join("");
-    bindBillRows(box, loadHomeHistory);
-  } catch (e) {
-    box.innerHTML = identityErrorHtml(e);
-    bindIdentityError(box);
-  }
-}
-
 // ---------- History ----------
 // page size for history — renders in batches so a long list doesn't build one
 // giant string / thousands of nodes at once (bug: everything rendered at once)
@@ -331,17 +334,19 @@ function passHistoryFilter(b) {
   return billListStatus(b).tone === histState.filter;
 }
 
-async function loadHistoryList() {
-  const box = $("#hist-list");
+// shared list renderer for home + history — same filter/pagination behaviour,
+// different containers, so the two screens can't drift apart
+async function loadBillList(boxSel, monthSelId, moreId, emptyMsg) {
+  const box = $(boxSel);
   if (!box) return;
   try {
     const bills = await api("/api/identities/" + state.identity.id + "/bills");
     if (!bills.length) {
       box.innerHTML = `<div class="empty-state">${ic("empty")}
-        <p>Belum ada bill.</p><p class="muted">Bill yang kamu buat atau kamu ikutin bakal nongol di sini.</p></div>`;
+        <p>Belum ada bill.</p><p class="muted">${emptyMsg}</p></div>`;
       return;
     }
-    const mSel = $("#hist-month");
+    const mSel = $(monthSelId);
     if (mSel && mSel.options.length <= 1) mSel.innerHTML += monthOptionsHtml(bills);
     // newest first, grouped by month so a long list stays scannable
     const sorted = bills.slice().sort((a, b) =>
@@ -361,20 +366,30 @@ async function loadHistoryList() {
     }
     if (filtered.length > histState.limit) {
       const rest = filtered.length - histState.limit;
-      html += `<button type="button" class="btn-outline btn-sm" id="hist-more" style="width:100%;margin-top:12px;">Muat ${Math.min(rest, HIST_PAGE)} lagi (${rest} tersisa)</button>`;
+      html += `<button type="button" class="btn-outline btn-sm" id="${moreId}" style="width:100%;margin-top:12px;">Muat ${Math.min(rest, HIST_PAGE)} lagi (${rest} tersisa)</button>`;
     }
     box.innerHTML = html;
-    bindBillRows(box, loadHistoryList);
-    const moreBtn = $("#hist-more");
+    bindBillRows(box, () => loadBillList(boxSel, monthSelId, moreId, emptyMsg));
+    const moreBtn = $( "#" + moreId);
     if (moreBtn) moreBtn.addEventListener("click", () => {
       histState.limit += HIST_PAGE;
-      loadHistoryList();
+      loadBillList(boxSel, monthSelId, moreId, emptyMsg);
     });
   } catch (e) {
     box.innerHTML = identityErrorHtml(e);
     bindIdentityError(box);
     if (!e || e.status !== 404) toast(e.message);
   }
+}
+
+async function loadHistoryList() {
+  return loadBillList("#hist-list", "#hist-month", "hist-more",
+    "Bill yang kamu buat atau kamu ikutin bakal nongol di sini.");
+}
+
+async function loadHomeHistory() {
+  return loadBillList("#home-history", "#home-month", "home-more",
+    "Foto struknya, share linknya, terus semua milih item yang dia makan sendiri.");
 }
 
 // ---------- Settings / Akun ----------
