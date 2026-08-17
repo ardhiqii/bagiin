@@ -363,7 +363,12 @@ function passHistoryFilter(b) {
   if (histState.year !== "all" && iso.slice(0, 4) !== histState.year) return false;
   if (histState.month !== "all" && iso.slice(5, 7) !== histState.month) return false;
   if (histState.filter === "all") return true;
-  return billListStatus(b).tone === histState.filter;
+  const tone = billListStatus(b).tone;
+  // a closed bill wears "Selesai" (tone done), but if everyone settled it's
+  // still lunas — filter "Lunas" must find it (bug: closed & settled bills
+  // vanished from the Lunas filter; "Kitchen & Dimsum" case, 2026-08)
+  if (histState.filter === "ok") return tone === "ok" || (tone === "done" && b.settled);
+  return tone === histState.filter;
 }
 
 // shared list renderer for home + history — same filter/pagination behaviour,
