@@ -357,6 +357,10 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
            gap:3px; padding:12px 14px; }
 .src-btn .src-main { display:flex; align-items:center; gap:10px; font-weight:700; font-size:15px; }
 .src-btn .muted { font-size:12.5px; line-height:1.4; padding-left:34px; }
+/* v63: muted desc inside buttons — --text-3 is invisible on the accent fill
+   (1.25:1 in dark mode). Derive from the button's own ink instead. */
+.src-btn.btn-primary .muted { color:color-mix(in srgb, var(--on-accent) 92%, transparent); }
+.src-btn.btn-outline .muted { color:var(--text-2); }
 @keyframes sheetUp { from { transform:translateY(28px); opacity:.5; } to { transform:none; opacity:1; } }
 @keyframes fade { from { opacity:0; } to { opacity:1; } }
 
