@@ -249,18 +249,86 @@ async function loadHomeHistory() {
 }
 
 // ---------- History ----------
+// page size for history — renders in batches so a long list doesn't build one
+// giant string / thousands of nodes at once (bug: everything rendered at once)
+const HIST_PAGE = 20;
+let histState = { filter: "all", month: "all", limit: HIST_PAGE };
+
+const HIST_CSS = `<style>
+  .hist-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  .hist-filters .chip-btn { font-size:13px; padding:8px 12px; min-height:0; }
+  .hist-month-sel { flex:1; min-width:130px; }
+</style>`;
+
+// filter options map to billListStatus tones so chip, filter and row can't
+// disagree about what "lunas" means
+const HIST_FILTERS = [
+  { v: "all", label: "Semua" },
+  { v: "due", label: "Belum lunas" },
+  { v: "ok",  label: "Lunas" },
+  { v: "idle", label: "Belum dipilih" },
+];
+
 function renderHistory() {
   const app = $("#app");
   app.innerHTML = shell(`
+    ${HIST_CSS}
     <div class="topbar">
       <button class="icon-btn" id="back-btn" aria-label="Kembali ke beranda">${ic("back")}</button>
       <div class="topbar-title">Riwayat</div>
       <div style="width:42px;flex-shrink:0;" aria-hidden="true"></div>
     </div>
+    <div class="hist-filters">
+      ${HIST_FILTERS.map(f =>
+        `<button type="button" class="chip-btn ${histState.filter === f.v ? "chip-active" : ""}" data-filter="${f.v}"
+                 aria-pressed="${histState.filter === f.v}">${esc(f.label)}</button>`).join("")}
+      <select class="hist-month-sel" id="hist-month" aria-label="Filter bulan">
+        <option value="all">Semua bulan</option>
+      </select>
+    </div>
     <div class="card" id="hist-list">${skeletonRows(4)}</div>`);
   watchDock();
   $("#back-btn").addEventListener("click", () => location.hash = "#/");
+  $$(".hist-filters .chip-btn").forEach(btn =>
+    btn.addEventListener("click", () => {
+      histState.filter = btn.dataset.filter;
+      histState.limit = HIST_PAGE;
+      $$(".hist-filters .chip-btn").forEach(b => {
+        const on = b === btn;
+        b.classList.toggle("chip-active", on);
+        b.setAttribute("aria-pressed", String(on));
+      });
+      loadHistoryList();
+    }));
+  const mSel = $("#hist-month");
+  if (mSel) mSel.addEventListener("change", () => {
+    histState.month = mSel.value;
+    histState.limit = HIST_PAGE;
+    loadHistoryList();
+  });
   loadHistoryList();
+}
+
+function monthOptionsHtml(bills) {
+  // unique months from bill dates, newest first — drives the date filter
+  const months = [];
+  for (const b of bills) {
+    const iso = b.transacted_at || b.created_at || "";
+    const m = String(iso).slice(0, 7); // YYYY-MM
+    if (/^\d{4}-\d{2}$/.test(m) && !months.includes(m)) months.push(m);
+  }
+  months.sort().reverse();
+  return months.map(m =>
+    `<option value="${m}" ${histState.month === m ? "selected" : ""}>${esc(monthLabel(m + "-01"))}</option>`).join("");
+}
+
+function passHistoryFilter(b) {
+  if (histState.month !== "all") {
+    const iso = b.transacted_at || b.created_at || "";
+    if (String(iso).slice(0, 7) !== histState.month) return false;
+  }
+  if (histState.filter === "all") return true;
+  return billListStatus(b).tone === histState.filter;
 }
 
 async function loadHistoryList() {
@@ -273,17 +341,35 @@ async function loadHistoryList() {
         <p>Belum ada bill.</p><p class="muted">Bill yang kamu buat atau kamu ikutin bakal nongol di sini.</p></div>`;
       return;
     }
+    const mSel = $("#hist-month");
+    if (mSel && mSel.options.length <= 1) mSel.innerHTML += monthOptionsHtml(bills);
     // newest first, grouped by month so a long list stays scannable
     const sorted = bills.slice().sort((a, b) =>
       String(b.transacted_at || b.created_at || "").localeCompare(String(a.transacted_at || a.created_at || "")));
+    const filtered = sorted.filter(passHistoryFilter);
+    if (!filtered.length) {
+      box.innerHTML = `<div class="empty-state">${ic("empty")}
+        <p>Gak ada bill yang cocok.</p><p class="muted">Coba ganti filter-nya.</p></div>`;
+      return;
+    }
+    const page = filtered.slice(0, histState.limit);
     let html = "", lastMonth = null;
-    for (const b of sorted) {
+    for (const b of page) {
       const m = monthLabel(b.transacted_at || b.created_at) || "Tanpa tanggal";
       if (m !== lastMonth) { html += `<div class="history-month">${esc(m)}</div>`; lastMonth = m; }
       html += billRowHtml(b);
     }
+    if (filtered.length > histState.limit) {
+      const rest = filtered.length - histState.limit;
+      html += `<button type="button" class="btn-outline btn-sm" id="hist-more" style="width:100%;margin-top:12px;">Muat ${Math.min(rest, HIST_PAGE)} lagi (${rest} tersisa)</button>`;
+    }
     box.innerHTML = html;
     bindBillRows(box, loadHistoryList);
+    const moreBtn = $("#hist-more");
+    if (moreBtn) moreBtn.addEventListener("click", () => {
+      histState.limit += HIST_PAGE;
+      loadHistoryList();
+    });
   } catch (e) {
     box.innerHTML = identityErrorHtml(e);
     bindIdentityError(box);
