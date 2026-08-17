@@ -787,6 +787,10 @@ function isCoarsePointer() {
   try { return window.matchMedia("(pointer:coarse)").matches; } catch (e) { return false; }
 }
 
+// v62: source & scan are separate choices. The toggle decides whether the
+// photo gets OCR'd (default on); Kamera/Upload/Paste decide where it comes from.
+// Module-level so the global paste handlers honour the toggle too.
+let scanMode = true;
 function renderCreate(opts = {}) {
   const app = $("#app");
   const coarse = isCoarsePointer();
@@ -827,11 +831,8 @@ function renderCreate(opts = {}) {
 
   const dz = $("#dz");
   const fileInput = $("#file-input");
-  // v62: source & scan are separate choices. The toggle decides whether the
-  // photo gets OCR'd (default on); Kamera/Upload decide where it comes from.
-  // Before, "Baca Otomatis" hard-wired the camera and "Gak Usah Dibaca"
-  // hard-wired the gallery, so you couldn't scan a photo from your library.
-  let scanMode = true;
+  // v62 comment moved above — scanMode is module-level now so the global
+  // paste handlers (pasteImageHandler, readClipboardImage) honour the toggle.
   const openPicker = (capture) => {
     fileInput.removeAttribute("capture");
     if (capture) fileInput.setAttribute("capture", "environment");
@@ -866,6 +867,10 @@ function renderCreate(opts = {}) {
         <span class="src-main">${ic("image")}<span>Upload Gambar</span></span>
         <span class="muted">Pilih foto dari galeri / file</span>
       </button>
+      <button class="src-btn btn-outline" id="dz-paste">
+        <span class="src-main">${ic("clipboard")}<span>Tempel dari Clipboard</span></span>
+        <span class="muted">Struk yang barusan disalin (screenshot / copy gambar)</span>
+      </button>
       <button class="btn-ghost" id="dz-cancel">Batal</button>`;
     const s = openSheet(`
       <div class="sheet-handle"></div>
@@ -885,6 +890,8 @@ function renderCreate(opts = {}) {
     if (cameraBtn) cameraBtn.addEventListener("click", () => { s.close(); openPicker(true); });
     const uploadBtn = s.sheet.querySelector("#dz-upload");
     if (uploadBtn) uploadBtn.addEventListener("click", () => { s.close(); openPicker(false); });
+    const pasteBtn = s.sheet.querySelector("#dz-paste");
+    if (pasteBtn) pasteBtn.addEventListener("click", () => { s.close(); readClipboardImage(); });
     const cancelBtn = s.sheet.querySelector("#dz-cancel");
     if (cancelBtn) cancelBtn.addEventListener("click", s.close);
   });
@@ -993,7 +1000,8 @@ function pasteImageHandler(e) {
       if (!f) continue;
       e.preventDefault();
       if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
-      uploadAndOcr(f);
+      if (scanMode) uploadAndOcr(f);
+      else uploadAndAttach(f);
       return;
     }
   }
@@ -1021,7 +1029,8 @@ async function readClipboardImage() {
       const blob = await it.getType(imgType);
       const f = new File([blob], "clipboard-image.png", { type: blob.type });
       if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
-      await uploadAndOcr(f);
+      if (scanMode) await uploadAndOcr(f);
+      else await uploadAndAttach(f);
       return;
     }
     toast("Clipboard kamu gak ada gambarnya");
