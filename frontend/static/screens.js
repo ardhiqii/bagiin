@@ -827,10 +827,12 @@ function renderCreate(opts = {}) {
 
   const dz = $("#dz");
   const fileInput = $("#file-input");
-  // v61: mode = "scan" (default, OCR the photo) | "attach" (just attach it)
-  let pickMode = "scan";
-  const openPicker = (capture, attach) => {
-    pickMode = attach ? "attach" : "scan";
+  // v62: source & scan are separate choices. The toggle decides whether the
+  // photo gets OCR'd (default on); Kamera/Upload decide where it comes from.
+  // Before, "Baca Otomatis" hard-wired the camera and "Gak Usah Dibaca"
+  // hard-wired the gallery, so you couldn't scan a photo from your library.
+  let scanMode = true;
+  const openPicker = (capture) => {
     fileInput.removeAttribute("capture");
     if (capture) fileInput.setAttribute("capture", "environment");
     fileInput.value = "";
@@ -841,27 +843,48 @@ function renderCreate(opts = {}) {
     if (!f) return;
     if (!f.type || !f.type.startsWith("image/")) { toast("File harus gambar"); return; }
     if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
-    if (pickMode === "attach") await uploadAndAttach(f);
-    else await uploadAndOcr(f);
+    if (scanMode) await uploadAndOcr(f);
+    else await uploadAndAttach(f);
   };
 
   dz.addEventListener("click", () => {
-    // v61: the dropzone now asks what to do with the photo — scan it
-    // (default, auto-on) or just attach it and fill items by hand.
+    // v62: pick WHERE the photo comes from (camera/gallery) and WHETHER it
+    // gets scanned — two independent choices inside one sheet.
     const body = `
-      <button class="btn-primary" id="dz-scan">${ic("camera")} Baca Otomatis</button>
-      <button class="btn-outline" id="dz-attach">${ic("image")} Gak Usah Dibaca</button>
-      <p class="muted" style="text-align:center;">Foto yang gak dibaca cuma ditempel — item &amp; harga diisi manual.</p>
+      <div class="tgl-row">
+        <div>
+          <div class="tgl-label">Baca Otomatis</div>
+          <div class="muted tgl-desc" id="dz-tgl-desc">Item &amp; harga dibaca dari foto — langsung masuk ke daftar</div>
+        </div>
+        <button type="button" class="switch" id="dz-tgl" role="switch" aria-checked="true" aria-label="Baca otomatis"></button>
+      </div>
+      <button class="src-btn btn-primary" id="dz-camera">
+        <span class="src-main">${ic("camera")}<span>Kamera</span></span>
+        <span class="muted">Ambil foto struk sekarang</span>
+      </button>
+      <button class="src-btn btn-outline" id="dz-upload">
+        <span class="src-main">${ic("image")}<span>Upload Gambar</span></span>
+        <span class="muted">Pilih foto dari galeri / file</span>
+      </button>
       <button class="btn-ghost" id="dz-cancel">Batal</button>`;
     const s = openSheet(`
       <div class="sheet-handle"></div>
       <div class="sheet-title">Foto Struk</div>
-      <p class="sheet-sub">${coarse ? "Struk yang kefoto lurus & terang paling gampang kebaca." : "Bisa juga langsung tarik filenya ke area foto."}</p>
+      <p class="sheet-sub">Mau difoto langsung atau pilih dari galeri — dua-duanya bisa, tinggal atur mau dibaca otomatis atau nggak.</p>
       ${body}`, { noAutofocus: true });
-    const scanBtn = s.sheet.querySelector("#dz-scan");
-    if (scanBtn) scanBtn.addEventListener("click", () => { s.close(); openPicker(true); });
-    const attachBtn = s.sheet.querySelector("#dz-attach");
-    if (attachBtn) attachBtn.addEventListener("click", () => { s.close(); openPicker(false, true); });
+    const tgl = s.sheet.querySelector("#dz-tgl");
+    const tglDesc = s.sheet.querySelector("#dz-tgl-desc");
+    if (tgl) tgl.addEventListener("click", () => {
+      scanMode = !scanMode;
+      tgl.setAttribute("aria-checked", String(scanMode));
+      tglDesc.textContent = scanMode
+        ? "Item & harga dibaca dari foto — langsung masuk ke daftar"
+        : "Foto cuma ditempel — item & harga diisi manual";
+    });
+    const cameraBtn = s.sheet.querySelector("#dz-camera");
+    if (cameraBtn) cameraBtn.addEventListener("click", () => { s.close(); openPicker(true); });
+    const uploadBtn = s.sheet.querySelector("#dz-upload");
+    if (uploadBtn) uploadBtn.addEventListener("click", () => { s.close(); openPicker(false); });
     const cancelBtn = s.sheet.querySelector("#dz-cancel");
     if (cancelBtn) cancelBtn.addEventListener("click", s.close);
   });
@@ -878,8 +901,7 @@ function renderCreate(opts = {}) {
   dz.addEventListener("drop", e => {
     const f = (e.dataTransfer && e.dataTransfer.files) ? e.dataTransfer.files[0] : null;
     if (!f) return;
-    // dropped files default to scan, like the primary dropzone button
-    pickMode = "scan";
+    // dropped files respect the sheet's toggle — no separate choice here
     handleImageFile(f);
   });
   fileInput.addEventListener("change", async () => {
