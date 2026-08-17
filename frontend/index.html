@@ -227,6 +227,24 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .item-row.selected .item-check { background:var(--accent); border-color:var(--accent); }
 .item-row.selected .item-check svg { opacity:1; transform:scale(1); }
 .item-row.selected { background:var(--accent-soft); }
+/* full slot item: non-tappable, muted — nothing left to claim */
+.item-full { opacity:.55; cursor:not-allowed; }
+.item-check-full { border-style:dashed; opacity:.5; }
+/* inline qty stepper — tap row = ambil/lepas, +/- = atur porsi/slot.
+   Only visible once the row is selected so the default state stays a
+   clean checkbox row (bug: stepper for every item made the list noisy) */
+.item-stepper { display:none; align-items:center; gap:2px; flex-shrink:0; margin-right:2px; }
+.item-row.selected .item-stepper { display:flex; }
+.step-btn {
+  width:34px; height:34px; min-height:34px; border-radius:var(--r-full);
+  border:1px solid var(--border-strong); background:var(--surface);
+  display:flex; align-items:center; justify-content:center;
+  font-size:17px; line-height:1; color:var(--text); padding:0;
+  transition:background .14s var(--ease), border-color .14s var(--ease), opacity .14s var(--ease);
+}
+.step-btn:not(:disabled):active { transform:scale(.94); }
+.step-btn:disabled { opacity:.35; cursor:not-allowed; }
+.step-qty { min-width:26px; text-align:center; font-weight:800; font-size:15px; font-variant-numeric:tabular-nums; }
 .item-info { flex:1; min-width:0; }
 .item-name { font-size:15px; font-weight:600; letter-spacing:-.01em; }
 .item-share { font-size:12.5px; color:var(--text-3); margin-top:2px; }

@@ -487,13 +487,24 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
   const a11y = readOnly
     ? ""
     : ` role="checkbox" tabindex="0" aria-checked="${isSel}" aria-label="${esc(it.name)}, ${fmt(eff)}"`;
+  // Slot items with no room left must not look tappable — a dead row that
+  // flashes "slot abis" every tap is noise. The stepper stays hidden and the
+  // row drops the checkbox affordance (bug: full-slot rows kept the checkbox
+  // visual and invited taps that did nothing).
+  const isFull = isSlot && (selList.reduce((s, x) => s + (x.qty || 1), 0) >= it.slot_count) && myQty === 0;
   return `
-    <div class="item-row${isSel ? " selected" : ""}${readOnly ? "" : " item-tappable"}" data-item="${it.id}"${a11y}>
-      ${!readOnly || isSel ? `<div class="item-check">${ic("check")}</div>` : ""}
+    <div class="item-row${isSel ? " selected" : ""}${!readOnly && !isFull ? " item-tappable" : ""}${isFull ? " item-full" : ""}" data-item="${it.id}"${a11y}>
+      ${!readOnly || isSel ? (isFull ? `<div class="item-check item-check-full">${ic("x")}</div>` : `<div class="item-check">${ic("check")}</div>`) : ""}
       <div class="item-info">
         <div class="item-name">${esc(it.name)}${isSlot ? ` <span class="slot-badge">Slot</span>` : ""}</div>
         <div class="item-share">${shareText}</div>
       </div>
+      ${!readOnly ? `
+      <div class="item-stepper" data-step-for="${it.id}">
+        <button type="button" class="step-btn step-dec" aria-label="Kurangi">−</button>
+        <span class="step-qty" aria-live="polite">${myQty || 0}</span>
+        <button type="button" class="step-btn step-inc" aria-label="Tambah">+</button>
+      </div>` : ""}
       <div class="money item-price">${priceHtml}</div>
     </div>`;
 }
@@ -502,24 +513,69 @@ function bindItemRows(data, me, root) {
   const scope = root || document;
   if (data.bill.status === "closed") return; // rows render read-only, nothing to bind
   $$("#pick-items .item-row", scope).forEach(row => {
+    const id = parseInt(row.dataset.item, 10);
+    const it = data.items.find(x => x.id === id);
+    if (!it) return;
+    const isSlot = it.mode === "slot" && it.slot_count;
+
+    const slotsLeft = () => {
+      if (!isSlot) return Infinity;
+      const taken = othersSel(data.sel_by_item[id] || [], me).reduce((s, x) => s + (x.qty || 1), 0);
+      return it.slot_count - taken; // slots NOT held by me
+    };
+
     const activate = () => {
-      const id = parseInt(row.dataset.item, 10);
+      const myQty = state.selQty.get(id) || 0;
       buzz(10);
-      const it = data.items.find(x => x.id === id);
-      if (it && it.mode === "slot" && it.slot_count) {
-        openSlotPickerSheet(data, me, it);
-      } else if (state.selQty.has(id)) {
-        // already picked -> open portion picker to change qty / release
-        openFreePickerSheet(data, me, it);
+      if (isSlot) {
+        if (myQty > 0) {
+          // already holding slots -> tap releases one (same as minus)
+          state.selQty.set(id, Math.max(0, myQty - 1));
+          if (state.selQty.get(id) === 0) state.selQty.delete(id);
+          updateGuestSelection(data, me);
+        } else if (slotsLeft() > 0) {
+          state.selQty.set(id, 1);
+          updateGuestSelection(data, me);
+        } else {
+          toast("Slot item ini udah abis");
+        }
+      } else if (myQty > 0) {
+        state.selQty.delete(id);
+        updateGuestSelection(data, me);
       } else {
         state.selQty.set(id, 1);
         updateGuestSelection(data, me);
       }
     };
-    row.addEventListener("click", activate);
+
+    const changeQty = (delta) => {
+      const myQty = state.selQty.get(id) || 0;
+      const next = myQty + delta;
+      buzz(8);
+      if (next <= 0) {
+        state.selQty.delete(id);
+      } else if (isSlot && next > slotsLeft()) {
+        toast("Slot item ini udah abis");
+        return;
+      } else {
+        state.selQty.set(id, next);
+      }
+      updateGuestSelection(data, me);
+    };
+
+    row.addEventListener("click", (e) => {
+      // stepper buttons are interactive — don't let a click on minus/plus
+      // bubble up and ALSO toggle the row (double-fire bug)
+      if (e.target.closest(".step-btn")) return;
+      activate();
+    });
     row.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") { e.preventDefault(); activate(); }
     });
+    const dec = $(".step-dec", row);
+    const inc = $(".step-inc", row);
+    if (dec) dec.addEventListener("click", (e) => { e.stopPropagation(); changeQty(-1); });
+    if (inc) inc.addEventListener("click", (e) => { e.stopPropagation(); changeQty(1); });
   });
 }
 
@@ -554,11 +610,12 @@ function renderPickRows(data, me, useServer) {
     const sel = qty > 0;
     row.classList.toggle("selected", sel);
     if (row.hasAttribute("role")) row.setAttribute("aria-checked", sel ? "true" : "false");
+    const it = data.items.find(x => x.id === id);
     const share = $(".item-share", row);
-    if (share) {
-      const it = data.items.find(x => x.id === id);
-      const selList = othersSel(data.sel_by_item[id], me);
-      if (it && it.mode === "slot" && it.slot_count) {
+    const isSlot = it && it.mode === "slot" && it.slot_count;
+    const selList = othersSel(data.sel_by_item[id], me);
+    if (share && it) {
+      if (isSlot) {
         const taken = selList.reduce((s, x) => s + (x.qty || 1), 0) + qty;
         const empty = Math.max(0, it.slot_count - taken);
         share.textContent = `${taken}/${it.slot_count} bagian${qty > 0 ? ` · kamu ${qty}×` : ""}${empty > 0 ? ` · ${empty} kosong` : ""}`;
@@ -571,6 +628,26 @@ function renderPickRows(data, me, useServer) {
         share.textContent = "belum dipilih";
       }
     }
+    // stepper live state: qty number, minus dead at 0 (or at 1 for slots —
+    // dropping to 0 means releasing), plus dead when a slot item is maxed
+    const qtyEl = $(".step-qty", row);
+    const dec = $(".step-dec", row);
+    const inc = $(".step-inc", row);
+    if (qtyEl) qtyEl.textContent = qty;
+    if (dec) dec.disabled = qty <= 0 || (isSlot && qty <= 1);
+    if (inc && it) {
+      if (isSlot) {
+        const othersTaken = selList.reduce((s, x) => s + (x.qty || 1), 0);
+        inc.disabled = qty >= it.slot_count - othersTaken;
+      } else {
+        inc.disabled = false;
+      }
+    }
+    // full-slot rows lose the tappable affordance live (someone else claimed
+    // the last slot while we looked)
+    const fullNow = isSlot && !sel && (othersSel(data.sel_by_item[id], me).reduce((s, x) => s + (x.qty || 1), 0) >= it.slot_count);
+    row.classList.toggle("item-full", fullNow && !sel);
+    row.classList.toggle("item-tappable", !fullNow || sel);
   });
 }
 
