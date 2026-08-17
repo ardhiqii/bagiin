@@ -119,6 +119,16 @@ def init_db():
             sort_order INTEGER NOT NULL DEFAULT 0
         );
 
+        CREATE TABLE IF NOT EXISTS bill_invite (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bill_id TEXT NOT NULL REFERENCES bill(id),
+            identity_id TEXT NOT NULL REFERENCES identity(id),
+            invited_by TEXT NOT NULL REFERENCES identity(id),
+            status TEXT NOT NULL DEFAULT 'pending',  -- pending | accepted | declined
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (bill_id, identity_id)
+        );
+
         CREATE TABLE IF NOT EXISTS bill_photo (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             bill_id TEXT NOT NULL REFERENCES bill(id),
@@ -131,8 +141,14 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_selection_identity ON selection(identity_id);
         CREATE INDEX IF NOT EXISTS idx_payacct_identity ON payment_account(identity_id);
         CREATE INDEX IF NOT EXISTS idx_billphoto_bill ON bill_photo(bill_id);
+        CREATE INDEX IF NOT EXISTS idx_invite_identity ON bill_invite(identity_id, status);
+        CREATE INDEX IF NOT EXISTS idx_invite_bill ON bill_invite(bill_id);
         """
     )
+    # migration: identity.auto_accept (default ON) — idempotent for existing DBs
+    icols2 = {r[1] for r in conn.execute("PRAGMA table_info(identity)").fetchall()}
+    if "auto_accept" not in icols2:
+        conn.execute("ALTER TABLE identity ADD COLUMN auto_accept INTEGER NOT NULL DEFAULT 1")
     # migration: add merchant/transacted_at to existing bills table
     cols = {r[1] for r in conn.execute("PRAGMA table_info(bill)").fetchall()}
     if "merchant" not in cols:
@@ -306,6 +322,152 @@ def update_identity_name(ident_id: str, name: str):
     conn.execute("UPDATE identity SET name = ? WHERE id = ?", (name, ident_id))
     conn.commit()
     conn.close()
+
+
+def set_auto_accept(ident_id: str, value: bool):
+    """Toggle whether direct invites to this identity join instantly (1) or
+    land as pending invites the user accepts/declines (0)."""
+    conn = get_db()
+    conn.execute("UPDATE identity SET auto_accept = ? WHERE id = ?", (1 if value else 0, ident_id))
+    conn.commit()
+    conn.close()
+
+
+def get_contacts(identity_id: str, q: str | None = None) -> list[dict]:
+    """'Kontak terbukti' — identities who have shared a bill with me.
+
+    Shared = someone is a participant (payment row) on any bill where I am
+        the creator or a participant, and vice versa. Excludes myself. Ordered by
+        most recent shared bill so the picker shows the people you actually split
+        with recently first.
+        """
+    conn = get_db()
+    query = """
+        SELECT i.id, i.name, MAX(b.created_at) AS last_shared
+        FROM identity i
+        JOIN (
+            -- people on a bill = creator OR anyone with a payment row there.
+            -- UNION (not COALESCE): with a payment present the creator used to
+            -- vanish, so contacts were one-directional (Budi saw Aufa's bill
+            -- but not Aufa as a contact).
+            SELECT b.id, b.created_at, b.creator_identity_id AS person_id
+            FROM bill b
+            UNION ALL
+            SELECT b.id, b.created_at, p.identity_id AS person_id
+            FROM payment p
+            JOIN bill b ON b.id = p.bill_id
+        ) b ON b.person_id = i.id
+        WHERE b.id IN (
+            SELECT b2.id FROM bill b2
+            WHERE b2.creator_identity_id = ?
+               OR b2.id IN (SELECT bill_id FROM payment WHERE identity_id = ?)
+        )
+        AND i.id != ?
+    """
+    params: list = [identity_id, identity_id, identity_id]
+    if q:
+        query += " AND i.name LIKE ?"
+        params.append(f"%{q}%")
+    query += " GROUP BY i.id, i.name ORDER BY last_shared DESC, i.name LIMIT 50"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ---------- direct invites (v64) ----------
+
+def create_invite(bill_id: str, identity_id: str, invited_by: str) -> dict:
+    """Record an invite. Idempotent-ish: an existing pending invite for the
+    pair is returned as-is; a fresh invite starts 'pending' (the caller flips
+    it to 'accepted' when auto-accept fires)."""
+    conn = get_db()
+    try:
+        existing = conn.execute(
+            "SELECT * FROM bill_invite WHERE bill_id = ? AND identity_id = ?",
+            (bill_id, identity_id),
+        ).fetchone()
+        if existing:
+            return dict(existing)
+        conn.execute(
+            "INSERT INTO bill_invite (bill_id, identity_id, invited_by, status) VALUES (?, ?, ?, 'pending')",
+            (bill_id, identity_id, invited_by),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM bill_invite WHERE bill_id = ? AND identity_id = ?",
+            (bill_id, identity_id),
+        ).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def mark_invite_accepted(invite_id: int):
+    conn = get_db()
+    conn.execute("UPDATE bill_invite SET status = 'accepted' WHERE id = ?", (invite_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_invite(invite_id: int):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM bill_invite WHERE id = ?", (invite_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_invites_for_bill(bill_id: str) -> list[dict]:
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM bill_invite WHERE bill_id = ? ORDER BY id", (bill_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_pending_invites(identity_id: str) -> list[dict]:
+    """Pending invites for an identity, enriched with bill + inviter names."""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT v.id, v.bill_id, v.invited_by, v.created_at, v.status,
+                  b.title AS bill_title, b.total_idr AS bill_total,
+                  inviter.name AS invited_by_name
+           FROM bill_invite v
+           JOIN bill b ON b.id = v.bill_id
+           JOIN identity inviter ON inviter.id = v.invited_by
+           WHERE v.identity_id = ? AND v.status = 'pending'
+             AND b.status = 'open'
+           ORDER BY v.created_at DESC""",
+        (identity_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def decline_invite(invite_id: int, identity_id: str) -> bool:
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE bill_invite SET status = 'declined' WHERE id = ? AND identity_id = ? AND status = 'pending'",
+        (invite_id, identity_id),
+    )
+    conn.commit()
+    ok = cur.rowcount > 0
+    conn.close()
+    return ok
+
+
+def identity_on_bill(bill_id: str, identity_id: str) -> bool:
+    """True if identity is already a participant (payment row) or the creator."""
+    conn = get_db()
+    row = conn.execute(
+        """SELECT 1 FROM bill b
+           WHERE b.id = ?
+             AND (b.creator_identity_id = ?
+                  OR EXISTS (SELECT 1 FROM payment p WHERE p.bill_id = b.id AND p.identity_id = ?))""",
+        (bill_id, identity_id, identity_id),
+    ).fetchone()
+    conn.close()
+    return row is not None
 
 
 # ---------- payment accounts ----------
@@ -754,6 +916,12 @@ def remove_person(bill_id: str, identity_id: str):
     conn.execute(
         "UPDATE bill SET paid_by_identity_id = NULL, paid_by_name = NULL, "
         "paid_by_confirmed = 0 WHERE id = ? AND paid_by_identity_id = ?",
+        (bill_id, identity_id),
+    )
+    # drop any invite rows too — an 'accepted' invite surviving the removal is
+    # a lie (re-invite would report "joined" while the person never re-joined)
+    conn.execute(
+        "DELETE FROM bill_invite WHERE bill_id = ? AND identity_id = ?",
         (bill_id, identity_id),
     )
     conn.commit()

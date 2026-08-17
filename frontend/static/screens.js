@@ -124,6 +124,7 @@ function renderHome() {
       <h1>Mau bagi bill apa hari ini?</h1>
     </div>
     <button class="btn-primary" id="create-btn" style="margin-bottom:20px;">${ic("plus")} Buat Bill Baru</button>
+    <div id="home-invites"></div>
     <div class="card">
       <div class="card-title">
         <span>Riwayat</span>
@@ -175,6 +176,57 @@ function renderHome() {
   });
 
   loadHomeHistory();
+  loadHomeInvites();
+}
+
+/** Pending direct-invite cards (v64): someone who already has an identity
+ *  invited you to a bill but your auto_accept is OFF. One tap = join, no link
+ *  needed. Cards disappear once accepted/declined. */
+async function loadHomeInvites() {
+  const box = $("#home-invites");
+  if (!box || !state.identity) return;
+  let invites;
+  try {
+    invites = await api(`/api/identities/${state.identity.id}/invites`);
+  } catch (e) {
+    box.innerHTML = ""; return;  // home shouldn't die over a side section
+  }
+  if (!invites.length) { box.innerHTML = ""; return; }
+  box.innerHTML = `
+    <div class="card" style="border-color:var(--accent-line);background:var(--accent-soft);">
+      <div class="card-title"><span>${ic("hand")} Undangan bill</span></div>
+      ${invites.map(v => `
+        <div class="invite-row" data-invite="${v.id}" data-bill="${esc(v.bill_id)}">
+          <div class="invite-row-info">
+            <div class="person-name">${esc(v.bill_title)}</div>
+            <div class="muted">dari <strong style="color:var(--text);">${esc(v.invited_by_name)}</strong> · ${fmt(v.bill_total)}</div>
+          </div>
+          <button class="btn-primary btn-sm inv-accept">${ic("check")} Gabung</button>
+          <button class="btn-ghost btn-sm inv-decline" aria-label="Tolak undangan">${ic("x")}</button>
+        </div>`).join("")}
+      <p class="muted" style="margin-top:8px;font-size:12.5px;">${invites.length > 1 ? "Kamu diundang ke beberapa bill. Terima yang mau kamu ikutin." : "Kamu diundang langsung — gak perlu link lagi."}</p>
+    </div>`;
+  $$(".inv-accept", box).forEach(b => b.addEventListener("click", async (ev) => {
+    const row = b.closest(".invite-row");
+    const invId = row.dataset.invite, billId = row.dataset.bill;
+    try {
+      await apiJson(`/api/bills/${billId}/invites/${invId}/accept`, "POST", {});
+      toast("Udah gabung 🎉");
+      row.remove();
+      if (!$(".invite-row", box)) { box.innerHTML = ""; }
+      loadHomeHistory(true);  // bill baru muncul di Riwayat
+    } catch (e) { toast(e.message); }
+  }));
+  $$(".inv-decline", box).forEach(b => b.addEventListener("click", async (ev) => {
+    const row = b.closest(".invite-row");
+    const invId = row.dataset.invite, billId = row.dataset.bill;
+    try {
+      await apiJson(`/api/bills/${billId}/invites/${invId}/decline`, "POST", {});
+      toast("Undangan ditolak");
+      row.remove();
+      if (!$(".invite-row", box)) { box.innerHTML = ""; }
+    } catch (e) { toast(e.message); }
+  }));
 }
 
 /** One status per bill row, so the chip, the colour and the icon can't drift
@@ -497,6 +549,18 @@ function renderSettings() {
     </div>
 
     <div class="card">
+      <div class="card-title"><span>Undangan</span></div>
+      <div class="toggle-row" style="padding:10px 0;">
+        <div>
+          <span class="label-strong">Langsung masuk bill</span>
+          <span class="muted" style="font-size:12.5px;display:block;margin-top:2px;">Kalau ada yang undang kamu ke bill, kamu langsung ikut — gak perlu klik apa-apa, kayak grup WA.</span>
+        </div>
+        <button class="switch" id="auto-accept-switch" role="switch" aria-checked="true" aria-label="Langsung masuk bill pas diundang" disabled></button>
+      </div>
+      <p class="muted" style="font-size:12.5px;">Matiin kalau kamu mau liat dulu siapa yang ngundang sebelum ikut. Undangan bakal muncul di beranda buat diterima atau ditolak.</p>
+    </div>
+
+    <div class="card">
       <div class="card-title"><span>Metode Bayar</span></div>
       <p class="muted" style="margin-bottom:10px;">Nomor ini bakal ditampilin ke orang yang mau bayar bill kamu.</p>
       <div id="accounts-list">${skeletonRows(2)}</div>
@@ -602,6 +666,23 @@ function renderSettings() {
     try {
       const info = await api(`/api/identities/${me.id}/me`);
       renderCodeBox(!!info.has_code);
+      const sw = $("#auto-accept-switch");
+      if (sw) {
+        const on = info.auto_accept !== false;
+        sw.setAttribute("aria-checked", String(on));
+        sw.disabled = false;  // only clickable once /me resolved (no state flash)
+        sw.addEventListener("click", async () => {
+          const next = sw.getAttribute("aria-checked") !== "true";
+          sw.setAttribute("aria-checked", String(next));
+          try {
+            await apiJson(`/api/identities/${me.id}/auto_accept`, "POST", { auto_accept: next });
+            toast(next ? "Undangan langsung masuk ya" : "Undangan bakal nunggu kamu terima");
+          } catch (e) {
+            sw.setAttribute("aria-checked", String(!next));  // rollback optimistically
+            toast(e.message);
+          }
+        });
+      }
     } catch (e) {
       const box = $("#code-box");
       if (box) { box.innerHTML = identityErrorHtml(e); bindIdentityError(box); }

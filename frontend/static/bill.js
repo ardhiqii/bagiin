@@ -1269,6 +1269,10 @@ function renderCreatorView(data) {
           </div>`;
         }).join("")}
       </div>
+      ${!closed ? `
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn-outline btn-sm" id="invite-person-btn">${ic("plus")} Undang Orang</button>
+      </div>` : ""}
     </div>
     <div class="card">
       <div class="card-title">Item &amp; Siapa yang Pilih</div>
@@ -1404,6 +1408,8 @@ function renderCreatorView(data) {
   }));
   $$(".remove-person").forEach(b => b.addEventListener("click", () =>
     openRemovePersonConfirm(data, b.dataset.id, b.dataset.name)));
+  const invitePersonBtn = $("#invite-person-btn");
+  if (invitePersonBtn) invitePersonBtn.addEventListener("click", () => openInviteSheet(data));
   $$(".toggle-paid").forEach(b => b.addEventListener("click", () => togglePaidByCreator(data, b)));
   $("#delete-bill-btn").addEventListener("click", () => openDeleteBillConfirm(data.bill.id, data.bill.title));
   watchDock();
@@ -1509,6 +1515,77 @@ function openSlotManagerSheet(data, it) {
   }));
   $("#mgr-close", s.sheet).addEventListener("click", s.close);
   sync();
+}
+
+// ---------- Direct invite: kontak terbukti ----------
+// v64: owner can add someone who already has an identity WITHOUT them clicking
+// the link. Picker shows "kontak terbukti" (people you've shared bills with),
+// searchable by name. People already on THIS bill are marked so you don't
+// re-invite. Auto-accept targets join instantly; others get a pending card.
+function openInviteSheet(data) {
+  const me = state.identity;
+  const billId = data.bill.id;
+  const onBill = new Set((data.people || []).map(p => p.identity_id));
+  onBill.add(data.bill.creator_identity_id);
+  const s = openSheet(`
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Undang Orang</div>
+    <p class="sheet-sub">Orang yang udah pernah share bill sama kamu. Yang auto-accept langsung masuk — yang lain nunggu mereka terima dari beranda.</p>
+    <input id="invite-search" placeholder="Cari nama..." maxlength="30" autocomplete="off" style="margin-bottom:10px;">
+    <div id="invite-list" style="max-height:46vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+    <button class="btn-outline" id="invite-cancel">Batal</button>`, { noAutofocus: true });
+
+  const list = $("#invite-list", s.sheet);
+  const search = $("#invite-search", s.sheet);
+  search.focus();
+
+  const renderList = (contacts) => {
+    const fresh = contacts.filter(c => !onBill.has(c.id));
+    const already = contacts.filter(c => onBill.has(c.id));
+    list.innerHTML = `
+      ${fresh.length ? fresh.map(c => `
+        <div class="account-row">
+          <div class="avatar" style="flex:0 0 auto;">${esc(initials(c.name))}</div>
+          <div style="flex:1;min-width:0;">
+            <div class="item-name">${esc(c.name)}</div>
+            <div class="muted">${c.last_shared ? "pernah share bill" : "kontak"}</div>
+          </div>
+          <button class="btn-primary btn-sm inv-send" data-id="${esc(c.id)}" data-name="${esc(c.name)}">${ic("plus")} Undang</button>
+        </div>`).join("")
+      : `<div class="empty-state" style="padding:14px 8px;">${ic("empty")}<p class="muted">${search.value.trim() ? "Gak ketemu. Coba nama lain." : "Belum ada kontak. Ajak orang lewat link dulu — abis dia join sekali, dia bakal muncul di sini."}</p></div>`}
+      ${already.length ? `<p class="muted" style="margin-top:8px;font-size:12px;">Udah di bill ini: ${already.map(c => esc(c.name)).join(", ")}</p>` : ""}`;
+    $$(".inv-send", s.sheet).forEach(b => b.addEventListener("click", () =>
+      withBusy(b, "Ngundang...", async () => {
+        try {
+          const r = await apiJson(`/api/bills/${billId}/invite`, "POST", { identity_id: b.dataset.id });
+          toast(r.status === "joined"
+            ? `${b.dataset.name} langsung masuk bill ✓`
+            : `Undangan ke ${b.dataset.name} dikirim`);
+          s.close();
+          loadBillView(billId);
+        } catch (e) { toast(e.message); }
+      })));
+  };
+
+  let timer = null;
+  let seq = 0;  // request-sequence guard: slow earlier search must not clobber a newer one
+  const load = async (q) => {
+    const mySeq = ++seq;
+    try {
+      const contacts = await api(`/api/identities/${me.id}/contacts${q ? "?q=" + encodeURIComponent(q) : ""}`);
+      if (mySeq !== seq) return;  // stale response
+      renderList(contacts);
+    } catch (e) {
+      if (mySeq !== seq) return;
+      list.innerHTML = `<div class="empty-state">${ic("alert")}<p class="muted">${esc(e.message)}</p></div>`;
+    }
+  };
+  search.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => load(search.value.trim()), 250);
+  });
+  load("");
+  $("#invite-cancel", s.sheet).addEventListener("click", s.close);
 }
 
 // ---------- Set payer (who fronted the money) ----------

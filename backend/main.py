@@ -388,6 +388,7 @@ def get_me(identity_id: str, request: Request):
         "id": ident["id"],
         "name": ident["name"],
         "has_code": bool(ident.get("identity_code_hash")),
+        "auto_accept": bool(ident.get("auto_accept", 1)),
     }
 
 
@@ -397,6 +398,44 @@ def list_accounts(identity_id: str, request: Request):
     if identity_id != ident["id"]:
         raise HTTPException(403, "Identitas gak cocok")
     return db.get_accounts(identity_id)
+
+
+@app.get("/api/identities/{identity_id}/contacts")
+def list_contacts(identity_id: str, request: Request):
+    """'Kontak terbukti' — identities who have shared a bill with me. Search
+    box on the invite sheet hits this with ?q=, client filters already-on-bill
+    people out using the bill payload."""
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas gak cocok")
+    q = (request.query_params.get("q") or "").strip()[:30] or None
+    return db.get_contacts(identity_id, q)
+
+
+@app.post("/api/identities/{identity_id}/auto_accept")
+@limiter.limit("20/minute")
+async def set_auto_accept(identity_id: str, request: Request):
+    """Toggle direct-invite behavior: ON = invites join instantly (WA-style),
+    OFF = invites land as pending cards the user accepts/declines."""
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas gak cocok")
+    data = await _read_json(request)
+    raw = data.get("auto_accept")
+    # strict boolean: bool("false") == True would silently flip ON for any
+    # malformed client (bug found in v64 review)
+    if isinstance(raw, bool):
+        value = raw
+    elif isinstance(raw, (int, float)) and raw in (0, 1):
+        value = bool(raw)
+    elif isinstance(raw, str) and raw.strip().lower() in ("true", "1"):
+        value = True
+    elif isinstance(raw, str) and raw.strip().lower() in ("false", "0", ""):
+        value = False
+    else:
+        raise HTTPException(400, "auto_accept wajib true/false")
+    db.set_auto_accept(identity_id, value)
+    return {"ok": True}
 
 
 @app.post("/api/identities/{identity_id}/accounts")
@@ -742,13 +781,106 @@ def close_bill(bill_id: str, request: Request):
 
 
 @app.post("/api/bills/{bill_id}/join")
-def join_bill(bill_id: str, request: Request):
+def join_bill_via_link(bill_id: str, request: Request):
     bill_data = _bill_or_404(bill_id)
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
     ident = _identity_from_request(request)
     db.join_bill(bill_id, ident["id"], ident["name"])
+    # joining through the link is accepting — void any pending invite for this
+    # pair so the home card doesn't keep saying "Gabung" for someone already in
+    # (edge: invited person opens the bill link directly instead of the card)
+    for inv in db.get_invites_for_bill(bill_id):
+        if inv["identity_id"] == ident["id"] and inv["status"] == "pending":
+            db.mark_invite_accepted(inv["id"])
     return _compute_response(db.get_bill(bill_id), ident["id"])
+
+
+@app.post("/api/bills/{bill_id}/invite")
+@limiter.limit("20/minute")
+async def invite_to_bill(bill_id: str, request: Request):
+    """Direct invite (v64): owner invites an identity who already has an
+    account (kontak terbukti). If the target has auto_accept ON they join
+    immediately — WA-style, no link, no click needed. If OFF, an invite row is
+    created and the target sees a pending card on their home to accept."""
+    bill_data = _bill_or_404(bill_id)
+    ident = _identity_from_request(request)
+    if not _can_manage(bill_data, ident["id"]):
+        raise HTTPException(403, "Hanya owner bill (yang bayar)")
+    if bill_data["bill"]["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup")
+    data = await _read_json(request)
+    target_id = (data.get("identity_id") or "").strip()
+    if not target_id:
+        raise HTTPException(400, "Identity id wajib diisi")
+    target = db.get_identity(target_id)
+    if not target:
+        raise HTTPException(404, "Akun gak ketemu")
+    if target_id == ident["id"]:
+        raise HTTPException(400, "Gak bisa invite diri sendiri")
+    if db.identity_on_bill(bill_id, target_id):
+        raise HTTPException(400, "Orang ini udah di bill")
+    # identity ids are public (every bill payload lists them) — scoping the
+    # invite to "kontak terbukti" stops anyone force-joining strangers to
+    # their own bills as a spam vector (bug found in v64 review)
+    if not any(c["id"] == target_id for c in db.get_contacts(ident["id"])):
+        raise HTTPException(400, "Bisa ngundang orang yang udah pernah share bill aja")
+    inv = db.create_invite(bill_id, target_id, ident["id"])
+    if inv["status"] == "accepted":
+        # stale-guard: an accepted row can outlive the person's membership
+        # (e.g. they left and re-invite happens before remove_person cleanup);
+        # report ground truth, not the cached row (bug found in v64 review)
+        if not db.identity_on_bill(bill_id, target_id):
+            db.join_bill(bill_id, target_id, target["name"])
+        return {"status": "joined"}
+    if bool(target.get("auto_accept", 1)):
+        db.mark_invite_accepted(inv["id"])
+        db.join_bill(bill_id, target_id, target["name"])
+        return {"status": "joined"}
+    return {"status": "pending"}
+
+
+@app.post("/api/bills/{bill_id}/invites/{invite_id}/accept")
+@limiter.limit("20/minute")
+def accept_invite(bill_id: str, invite_id: int, request: Request):
+    """Invitee accepts a pending invite: joins the bill like they clicked the
+    link, without needing the link."""
+    bill_data = _bill_or_404(bill_id)
+    if bill_data["bill"]["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup")
+    ident = _identity_from_request(request)
+    inv = db.get_invite(invite_id)
+    if not inv or inv["bill_id"] != bill_id or inv["identity_id"] != ident["id"]:
+        raise HTTPException(404, "Undangan gak ketemu")
+    if inv["status"] != "pending":
+        raise HTTPException(400, "Undangan ini udah diproses")
+    db.mark_invite_accepted(invite_id)
+    db.join_bill(bill_id, ident["id"], ident["name"])
+    fresh = db.get_bill(bill_id)
+    if not fresh:
+        raise HTTPException(404, "Bill gak ketemu")
+    return _compute_response(fresh, ident["id"])
+
+
+@app.post("/api/bills/{bill_id}/invites/{invite_id}/decline")
+@limiter.limit("20/minute")
+def decline_invite(bill_id: str, invite_id: int, request: Request):
+    ident = _identity_from_request(request)
+    inv = db.get_invite(invite_id)
+    if not inv or inv["bill_id"] != bill_id or inv["identity_id"] != ident["id"]:
+        raise HTTPException(404, "Undangan gak ketemu")
+    if not db.decline_invite(invite_id, ident["id"]):
+        raise HTTPException(400, "Undangan ini udah diproses")
+    return {"ok": True}
+
+
+@app.get("/api/identities/{identity_id}/invites")
+def list_pending_invites(identity_id: str, request: Request):
+    """Pending invites for the viewer — cards shown at the top of home."""
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas gak cocok")
+    return db.get_pending_invites(identity_id)
 
 
 @app.delete("/api/bills/{bill_id}/people/{identity_id}")
