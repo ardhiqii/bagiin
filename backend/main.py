@@ -262,6 +262,11 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
         "creator_accounts": db.get_accounts(bill["creator_identity_id"]),
         "paid_by_id": paid_by_id,
         "paid_by_name": paid_by_name,
+        # raw confirmation state: a payer resolved by NAME (someone joined
+        # matching the placeholder) has an identity but confirmed=0 — the
+        # creator must confirm them before they inherit management powers
+        # (v62). UI shows a banner until then.
+        "paid_by_confirmed": bool(bill.get("paid_by_confirmed")),
         "paid_by_accounts": db.get_accounts(paid_by_id),
         "items": bill_data["items"],
         "photos": bill_data.get("photos", []),

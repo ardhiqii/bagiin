@@ -1088,6 +1088,22 @@ function renderCreatorView(data) {
       ${warnRows.map(w => `<div class="warn-row${w.red ? " is-red" : ""}"${w.red ? ` style="color:var(--red);"` : ""}>${ic(w.icon)}<span>${w.text}</span></div>`).join("")}
     </div>` : "";
 
+  // v62: a payer resolved by NAME (someone joined matching the placeholder
+  // typed at creation) has an identity but no management powers until the
+  // creator confirms them. Banner only in the creator view, dismissible
+  // permanently per bill so it never nags again (user: "risi spam").
+  const payerPendingConfirm = !data.paid_by_confirmed && data.paid_by_id
+    && data.paid_by_id !== data.bill.creator_identity_id && !closed
+    && !lsGet(`bagiin_payer_dismiss_${data.bill.id}`, false);
+  const payerConfirmHtml = payerPendingConfirm ? `
+    <div class="warn-card" style="margin-top:10px;">
+      <div class="warn-row">${ic("alert")}<span><strong style="color:var(--text);">${esc(payerName)}</strong> udah join & ditandai yang nalangin. Konfirmasi biar dia bisa edit bill ini.</span></div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn-primary btn-sm" id="confirm-payer-btn">${ic("check")} Konfirmasi</button>
+        <button class="btn-outline btn-sm" id="dismiss-payer-btn">Nanti aja</button>
+      </div>
+    </div>` : "";
+
   const inviteHtml = soloSoFar ? `
     <div class="card invite-card">
       <div class="invite-head">${ic("share")}<div>
@@ -1139,6 +1155,7 @@ function renderCreatorView(data) {
       </button>
     </div>
     ${warnHtml}
+    ${payerConfirmHtml}
     <div class="card">
       <div class="card-title">Pembagian <span class="muted">(${data.people.length} orang)</span></div>
       <div id="people-list">
@@ -1273,6 +1290,23 @@ function renderCreatorView(data) {
   if (pickBtn) pickBtn.addEventListener("click", () => renderCreatorPick(data));
   const setPayerBtn = $("#set-payer-btn");
   if (setPayerBtn) setPayerBtn.addEventListener("click", () => openSetPayerSheet(data));
+  // v62: confirm the name-resolved payer — same PUT the sheet uses, one tap.
+  // Dismiss sets a per-bill flag so the banner never reappears (anti-spam).
+  const confirmPayerBtn = $("#confirm-payer-btn");
+  if (confirmPayerBtn) confirmPayerBtn.addEventListener("click", (ev) =>
+    withBusy(ev.currentTarget, "Konfirmasi...", async () => {
+      try {
+        await apiJson(`/api/bills/${data.bill.id}/paid_by`, "PUT", { identity_id: data.paid_by_id });
+        lsSet(`bagiin_payer_dismiss_${data.bill.id}`, true);
+        toast(`${data.paid_by_name} dikonfirmasi yang nalangin ✓`);
+        loadBillView(data.bill.id);
+      } catch (e) { toast(e.message); }
+    }));
+  const dismissPayerBtn = $("#dismiss-payer-btn");
+  if (dismissPayerBtn) dismissPayerBtn.addEventListener("click", () => {
+    lsSet(`bagiin_payer_dismiss_${data.bill.id}`, true);
+    loadBillView(data.bill.id);
+  });
   const methodsBtn = $("#pay-methods-btn");
   if (methodsBtn) methodsBtn.addEventListener("click", () => openAccountsSheet(data));
   const editBtn = $("#edit-bill-btn");
