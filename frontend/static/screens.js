@@ -1343,12 +1343,13 @@ function renderVerifyItems() {
       <input data-role="price" data-idx="${idx}" class="input-money" type="text" inputmode="numeric"
              value="${rupiahFmt(it.price)}" placeholder="0" aria-label="Harga item baris ${idx + 1}">
       <button type="button" data-role="del" data-idx="${idx}" class="icon-btn ghost"
-              aria-label="Hapus item baris ${idx + 1}">${ic("x")}</button>
+              aria-label="Hapus item baris ${idx + 1}" style="color:var(--red);">${ic("trash")}</button>
 
       <div class="vf-full" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <label class="label-sm" for="disc-${idx}" style="margin:0;">Diskon</label>
+        <label class="label-sm" for="disc-${idx}" style="margin:0;">Potongan (diskon)</label>
         <input id="disc-${idx}" data-role="discount" data-idx="${idx}" class="input-money" type="text"
-               inputmode="numeric" value="${rupiahFmt(it.discount)}" placeholder="0" style="max-width:120px;">
+               inputmode="numeric" value="${rupiahFmt(it.discount)}" placeholder="0" style="max-width:110px;">
+        <span class="muted" style="font-size:11.5px;">harga asli − potongan = yang dibayar</span>
         ${it.discount > 0 ? `<span class="disc-bayar money-sm" style="color:var(--green);font-weight:700;">→ bayar ${rupiahFmt(eff)}</span>` : ""}
       </div>
 
@@ -1507,7 +1508,7 @@ async function createBillFinal() {
       badMsg = `Item baris ${idx + 1} belum ada namanya`;
     } else if ((it.discount || 0) > (it.price || 0)) {
       badInput = $(`#items-list [data-role=discount][data-idx="${idx}"]`);
-      badMsg = `Diskon "${it.name}" lebih gede dari harganya`;
+      badMsg = `Potongan "${it.name}" lebih gede dari harganya`;
     }
   });
   if (badInput) {

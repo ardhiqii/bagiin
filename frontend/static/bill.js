@@ -1704,8 +1704,9 @@ function renderEditItems() {
       </div>
       <button data-role="del" data-idx="${idx}" class="icon-btn" aria-label="Hapus item ini" style="color:var(--red);">${ic("trash")}</button>
       <div style="flex-basis:100%;padding:6px 0 0;display:flex;align-items:center;gap:8px;">
-        <span class="label-sm" style="flex-shrink:0;">Diskon:</span>
-        <input data-role="discount" data-idx="${idx}" type="text" inputmode="numeric" class="input-money" value="${rupiahFmt(it.discount)}" placeholder="0" aria-label="Diskon item" style="padding:7px 9px;max-width:120px;">
+        <span class="label-sm" style="flex-shrink:0;">Potongan (diskon):</span>
+        <input data-role="discount" data-idx="${idx}" type="text" inputmode="numeric" class="input-money" value="${rupiahFmt(it.discount)}" placeholder="0" aria-label="Potongan atau diskon item" style="padding:7px 9px;max-width:110px;">
+        <span class="muted" style="font-size:11.5px;">harga asli − potongan = yang dibayar</span>
         ${it.discount > 0 ? `<span class="disc-bayar" style="color:var(--green);font-weight:700;font-size:13px;">→ bayar ${rupiahFmt(Math.max(0, it.price - it.discount))}</span>` : ""}
       </div>
       <div style="flex-basis:100%;padding:2px 0 8px;">
