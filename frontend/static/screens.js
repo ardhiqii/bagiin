@@ -133,8 +133,13 @@ function renderHome() {
         ${HIST_FILTERS.map(f =>
           `<button type="button" class="chip-btn ${histState.filter === f.v ? "chip-active" : ""}" data-filter="${f.v}"
                    aria-pressed="${histState.filter === f.v}">${esc(f.label)}</button>`).join("")}
+        <select class="hist-year-sel" id="home-year" aria-label="Filter tahun">
+          <option value="all">Semua tahun</option>
+        </select>
         <select class="hist-month-sel" id="home-month" aria-label="Filter bulan">
           <option value="all">Semua bulan</option>
+          ${MONTH_OPTS.map(([v, l]) =>
+            `<option value="${v}" ${histState.month === v ? "selected" : ""}>${l}</option>`).join("")}
         </select>
       </div>
       <div id="home-history">${skeletonRows(5)}</div>
@@ -154,13 +159,19 @@ function renderHome() {
         b.classList.toggle("chip-active", on);
         b.setAttribute("aria-pressed", String(on));
       });
-      loadHomeHistory();
+      loadHomeHistory(true);
     }));
   const mSel = $("#home-month");
   if (mSel) mSel.addEventListener("change", () => {
     histState.month = mSel.value;
     histState.limit = HIST_PAGE;
-    loadHomeHistory();
+    loadHomeHistory(true);
+  });
+  const ySel = $("#home-year");
+  if (ySel) ySel.addEventListener("change", () => {
+    histState.year = ySel.value;
+    histState.limit = HIST_PAGE;
+    loadHomeHistory(true);
   });
 
   loadHomeHistory();
@@ -255,12 +266,23 @@ function bindBillRows(box, onDone) {
 // page size for history — renders in batches so a long list doesn't build one
 // giant string / thousands of nodes at once (bug: everything rendered at once)
 const HIST_PAGE = 20;
-let histState = { filter: "all", month: "all", limit: HIST_PAGE };
+let histState = { filter: "all", year: "all", month: "all", limit: HIST_PAGE };
+// client-side bill cache so switching filters re-renders instantly instead of
+// refetching the whole list over the network every time (bug: sluggish filters)
+let histBills = null;
+// month options are fixed (Januari..Desember) — only the year list is derived
+// from data, so a "all years + Juli" filter can span every July on record
+const MONTH_OPTS = [
+  ["01", "Januari"], ["02", "Februari"], ["03", "Maret"], ["04", "April"],
+  ["05", "Mei"], ["06", "Juni"], ["07", "Juli"], ["08", "Agustus"],
+  ["09", "September"], ["10", "Oktober"], ["11", "November"], ["12", "Desember"],
+];
 
 const HIST_CSS = `<style>
   .hist-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
   .hist-filters .chip-btn { font-size:13px; padding:8px 12px; min-height:0; }
   .hist-month-sel { flex:1; min-width:130px; }
+  .hist-year-sel { width:110px; flex-shrink:0; }
 </style>`;
 
 // filter options map to billListStatus tones so chip, filter and row can't
@@ -285,8 +307,13 @@ function renderHistory() {
       ${HIST_FILTERS.map(f =>
         `<button type="button" class="chip-btn ${histState.filter === f.v ? "chip-active" : ""}" data-filter="${f.v}"
                  aria-pressed="${histState.filter === f.v}">${esc(f.label)}</button>`).join("")}
+      <select class="hist-year-sel" id="hist-year" aria-label="Filter tahun">
+        <option value="all">Semua tahun</option>
+      </select>
       <select class="hist-month-sel" id="hist-month" aria-label="Filter bulan">
         <option value="all">Semua bulan</option>
+        ${MONTH_OPTS.map(([v, l]) =>
+          `<option value="${v}" ${histState.month === v ? "selected" : ""}>${l}</option>`).join("")}
       </select>
     </div>
     <div class="card" id="hist-list">${skeletonRows(4)}</div>`);
@@ -301,53 +328,63 @@ function renderHistory() {
         b.classList.toggle("chip-active", on);
         b.setAttribute("aria-pressed", String(on));
       });
-      loadHistoryList();
+      loadHistoryList(true);
     }));
   const mSel = $("#hist-month");
   if (mSel) mSel.addEventListener("change", () => {
     histState.month = mSel.value;
     histState.limit = HIST_PAGE;
-    loadHistoryList();
+    loadHistoryList(true);
+  });
+  const ySel = $("#hist-year");
+  if (ySel) ySel.addEventListener("change", () => {
+    histState.year = ySel.value;
+    histState.limit = HIST_PAGE;
+    loadHistoryList(true);
   });
   loadHistoryList();
 }
 
-function monthOptionsHtml(bills) {
-  // unique months from bill dates, newest first — drives the date filter
-  const months = [];
+function yearOptionsHtml(bills) {
+  // unique years from bill dates, newest first — drives the year filter
+  const years = [];
   for (const b of bills) {
     const iso = b.transacted_at || b.created_at || "";
-    const m = String(iso).slice(0, 7); // YYYY-MM
-    if (/^\d{4}-\d{2}$/.test(m) && !months.includes(m)) months.push(m);
+    const y = String(iso).slice(0, 4); // YYYY
+    if (/^\d{4}$/.test(y) && !years.includes(y)) years.push(y);
   }
-  months.sort().reverse();
-  return months.map(m =>
-    `<option value="${m}" ${histState.month === m ? "selected" : ""}>${esc(monthLabel(m + "-01"))}</option>`).join("");
+  years.sort().reverse();
+  return years.map(y =>
+    `<option value="${y}" ${histState.year === y ? "selected" : ""}>${esc(y)}</option>`).join("");
 }
 
 function passHistoryFilter(b) {
-  if (histState.month !== "all") {
-    const iso = b.transacted_at || b.created_at || "";
-    if (String(iso).slice(0, 7) !== histState.month) return false;
-  }
+  const iso = String(b.transacted_at || b.created_at || "");
+  if (histState.year !== "all" && iso.slice(0, 4) !== histState.year) return false;
+  if (histState.month !== "all" && iso.slice(5, 7) !== histState.month) return false;
   if (histState.filter === "all") return true;
   return billListStatus(b).tone === histState.filter;
 }
 
 // shared list renderer for home + history — same filter/pagination behaviour,
-// different containers, so the two screens can't drift apart
-async function loadBillList(boxSel, monthSelId, moreId, emptyMsg) {
+// different containers, so the two screens can't drift apart.
+// `useCache` = reuse the previously fetched list (filter clicks, month/year
+// changes); pass false when the data may have changed (initial load, delete).
+async function loadBillList(boxSel, yearSelId, monthSelId, moreId, emptyMsg, useCache) {
   const box = $(boxSel);
   if (!box) return;
   try {
-    const bills = await api("/api/identities/" + state.identity.id + "/bills");
+    if (!useCache || !histBills) {
+      histBills = await api("/api/identities/" + state.identity.id + "/bills");
+    }
+    const bills = histBills;
     if (!bills.length) {
       box.innerHTML = `<div class="empty-state">${ic("empty")}
         <p>Belum ada bill.</p><p class="muted">${emptyMsg}</p></div>`;
       return;
     }
-    const mSel = $(monthSelId);
-    if (mSel && mSel.options.length <= 1) mSel.innerHTML += monthOptionsHtml(bills);
+    const ySel = $(yearSelId);
+    if (ySel && ySel.options.length <= 1) ySel.innerHTML += yearOptionsHtml(bills);
     // newest first, grouped by month so a long list stays scannable
     const sorted = bills.slice().sort((a, b) =>
       String(b.transacted_at || b.created_at || "").localeCompare(String(a.transacted_at || a.created_at || "")));
@@ -369,11 +406,11 @@ async function loadBillList(boxSel, monthSelId, moreId, emptyMsg) {
       html += `<button type="button" class="btn-outline btn-sm" id="${moreId}" style="width:100%;margin-top:12px;">Muat ${Math.min(rest, HIST_PAGE)} lagi (${rest} tersisa)</button>`;
     }
     box.innerHTML = html;
-    bindBillRows(box, () => loadBillList(boxSel, monthSelId, moreId, emptyMsg));
+    bindBillRows(box, () => loadBillList(boxSel, yearSelId, monthSelId, moreId, emptyMsg, false));
     const moreBtn = $( "#" + moreId);
     if (moreBtn) moreBtn.addEventListener("click", () => {
       histState.limit += HIST_PAGE;
-      loadBillList(boxSel, monthSelId, moreId, emptyMsg);
+      loadBillList(boxSel, yearSelId, monthSelId, moreId, emptyMsg, true);
     });
   } catch (e) {
     box.innerHTML = identityErrorHtml(e);
@@ -382,14 +419,14 @@ async function loadBillList(boxSel, monthSelId, moreId, emptyMsg) {
   }
 }
 
-async function loadHistoryList() {
-  return loadBillList("#hist-list", "#hist-month", "hist-more",
-    "Bill yang kamu buat atau kamu ikutin bakal nongol di sini.");
+async function loadHistoryList(useCache = false) {
+  return loadBillList("#hist-list", "#hist-year", "#hist-month", "hist-more",
+    "Bill yang kamu buat atau kamu ikutin bakal nongol di sini.", useCache);
 }
 
-async function loadHomeHistory() {
-  return loadBillList("#home-history", "#home-month", "home-more",
-    "Foto struknya, share linknya, terus semua milih item yang dia makan sendiri.");
+async function loadHomeHistory(useCache = false) {
+  return loadBillList("#home-history", "#home-year", "#home-month", "home-more",
+    "Foto struknya, share linknya, terus semua milih item yang dia makan sendiri.", useCache);
 }
 
 // ---------- Settings / Akun ----------
