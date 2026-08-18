@@ -477,6 +477,43 @@ pajak yang di-nol-in; promptnya ikut dibenerin.
   set") di bawah judul yang bohong ("lagi penuh" padahal servernya belum disetel).
   Detail teknis pindah ke log.
 
+**Back browser ngapus struk yang udah diketik ulang**
+
+Layar verifikasi itu tempat orang ngetik ulang satu struk penuh, dan keluar dari situ
+= ilang semua — makanya tombol back di app-nya udah lama nanya dulu. Tapi layar itu
+gak punya route sendiri (hash-nya tetap `#/create`), jadi gesture back Android
+langsung nembus ke router lewat `hashchange` dan isinya ilang tanpa peringatan:
+satu-satunya gesture yang beneran dipakai orang di HP justru yang gak dijaga.
+
+Sekarang editornya punya `#/create/verify` (masuk pakai `replaceState`, jadi gak
+nambah entri history) dan `app.js` punya leave-guard di level router. Tiap jalan
+keluar yang disengaja (simpan, tombol back, "Coba Scan Lagi") ngebersihin guard-nya,
+jadi gak mungkin nyangkut dan bikin navigasi mati. Diuji di Chrome: back sistem
+nanya dan semua ketikan utuh pas dibatalin, editor kosong keluar tanpa nanya, dua kali
+back cepat (~140ms) cuma buka satu sheet dan gak ngapus apa-apa, load dingin ke
+`#/create/verify` mendarat di layar buat-bill, dan deep link + suite e2e gak keganggu.
+
+**Backend: 14 lubang dari audit**
+
+- Siapa pun yang pegang link bisa **nyelundup ke roster** lewat
+  `POST /payments/{id}/paid` — endpoint-nya cuma ngecek "ini gw?", gak pernah "gw ada
+  di bill ini?", padahal `INSERT OR IGNORE` di situ bikin baris payment sendiri. Itu
+  sama aja kayak `/join`, bedanya ini juga ngubah `len(people) > 1` — salah satu
+  penjaga bill solo biar gak auto-lunas.
+- `can_manage` di daftar bill sempat dikasih ke payer yang belum dikonfirmasi.
+- Creator yang udah keluar gak bisa diundang balik (`identity_on_bill` ngitung dia
+  terus).
+- Foto masih bisa ditambah/dihapus di bill yang udah ditutup lewat API, padahal
+  tombolnya disembunyiin — jadi foto di bill tertutup gak bisa dihapus selamanya.
+- `POST /api/identities/restore` bisa dibikin 500 sama **siapa aja tanpa login**
+  (body `{"code": [1,2,3]}` → `.strip()` di list). Plus body JSON non-objek, harga 20
+  digit (OverflowError di sqlite), `PUT /api/accounts/{id}` yang gak lewat
+  `_read_json`, endpoint foto yang nerima file apa aja, dan `/uploads/<direktori>`.
+- Edit parsial diem-diem nge-null-in `merchant`/`transacted_at` — dan `transacted_at`
+  sekarang nentuin urutan + filter bulan di daftar bill.
+- Undangan pending sekarang kelihatan sama yang ngirim (khusus manager) dan bisa
+  dibatalin.
+
 **Lain-lain**
 
 - Layar 1920px: kolomnya melar sampai "Judul Bill" selebar 1440px dan nama item
