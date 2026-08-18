@@ -513,7 +513,10 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
   #app { max-width:none; padding:12px clamp(16px,3vw,40px) 56px; }
   .topbar { margin-bottom:22px; }
   .shell { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:26px; align-items:start; }
-  .shell-main { max-width:680px; }
+  /* form fills its whole column so it sits right next to the rail —
+     capping it at 680px left a sea of empty space between the form and
+     the sticky action rail on wide monitors */
+  .shell-main { max-width:none; }
   .shell-side { display:block; position:sticky; top:78px; }
   .shell-solo { display:block; max-width:680px; margin:0 auto; }
 
