@@ -438,6 +438,64 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Changelog
 
+### 2026-08-19 (v67) — audit lanjutan 2 + deploy
+
+Pass ketiga, hasil audit paralel (undangan+foto, alur bikin bill, identitas/auth, sweep
+visual 390px). Semua di bawah ini udah live di produksi (restart 2026-08-19 01:26).
+
+**Duit: estimasi di dock sekarang persis sama dengan server**
+
+`bill.js` ngitung ulang bagian kamu di JS biar angkanya gerak pas ngetuk item, tapi sisa
+pembulatannya beda sama `calc.py` — jadi angkanya "tik" berubah pas server jawab
+(3.833 → 3.834). Sekarang sisa pembulatannya dibagi sama persis kayak backend, buat item
+bebas maupun item slot yang penuh, dan gak ikut masuk basis pajak (sama kayak di sana).
+Dikunci sama suite baru `tools/e2e_rounding.mjs` yang sengaja pakai harga yang gak habis
+dibagi, dicek dua kali: pas ngetuk dan setelah respons masuk.
+
+**Keamanan & data**
+
+- **Path foto gak divalidasi.** `POST /api/bills` nerima string apa pun sebagai path foto,
+  termasuk path foto bill orang lain — yang lalu kesajiin ke semua orang yang pegang link
+  kita. Sekarang tiap basename wajib cocok sama pola yang emang server ini bikin.
+- **Foto yang dibuang sebelum bill jadi nyangkut selamanya di server.** Tombol ✕ di
+  editor cuma ngapus dari array di browser. Sekarang ada `DELETE /api/photos/{filename}`
+  (nolak file yang masih dipakai bill) dan klien manggilnya di semua jalur buang: ✕,
+  tombol back, back sistem, dan retry scan — yang ternyata juga ninggalin foto lama tiap
+  kali dipencet.
+- **Undangan yang ditolak bisa dipaksa masuk lagi.** Undang ulang orang yang auto-accept-
+  nya nyala langsung nyeret dia masuk, jadi "Tolak" bisa dibatalin sepihak. Sekarang
+  undangan ulang setelah ditolak selalu pending.
+- `/uploads/` kirim `X-Content-Type-Options: nosniff`.
+
+**Kinerja**
+
+Daftar bill nge-load tiap bill **dua kali** (query daftar → `_bill_settled` → `get_bill`,
+terus `my_bills` → `get_bill` lagi): 242 koneksi SQLite buat 60 bill. Sekarang 122, dengan
+payload yang sama persis.
+
+**UI (temuan sweep visual 390px, terang & gelap)**
+
+- **Sheet bayar mecah nama item jadi satu kata per baris.** Kolom harga `flex-shrink:0`,
+  jadi catatan diskon ngunci kolom itu ~180px dan nama keremes: "Ayam Bakar Bumbu Rujak
+  Pedas Level 5" jadi tujuh baris — di layar terakhir sebelum orang transfer duit.
+  Catatan harganya pindah ke bawah nama; sekarang dua baris.
+- Sheet "ubah yang nalangin" ngisi otomatis kotak "buat yang belum join" pakai nama payer
+  yang udah kepilih, jadi satu orang muncul dua kali di satu sheet.
+- Spinner "Lagi baca struknya" gak pernah muncul pas retry scan — hash diganti dan
+  `uploadAndOcr` dipanggil di tick yang sama, jadi pencarian `#create-body` jalan sebelum
+  router sempat ngegambar.
+- Rekening dobel pas paste ke-deteksi (nomor + brand dinormalisasi), toggle auto-accept
+  jadi 40px, foto yang filenya ilang nampilin placeholder bukan ikon rusak, baris item di
+  layar manager gak pecah tiga baris lagi di HP, dan `#app` berhenti melar di 1400px
+  (di 1920 "Judul Bill" tadinya selebar 1440px).
+
+**Tes**
+
+184 lulus (14 baru di `test_regressions_v67.py`, termasuk satu yang ngunci "daftar dan
+layar bill harus sepakat" di lima keadaan sekaligus). Tiga suite browser:
+`e2e_smoke` (angka tamu = angka server), `e2e_settled` (satu bill satu jawaban),
+`e2e_rounding` (estimasi = server sampai rupiah terakhir).
+
 ### 2026-08-18 (v66) — audit lanjutan: bill gak bisa dihapus, service charge ilang
 
 Pass kedua, hasil audit paralel per-fitur (undangan+foto, alur bikin bill/OCR,
