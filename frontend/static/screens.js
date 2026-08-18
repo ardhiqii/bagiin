@@ -177,15 +177,22 @@ async function loadHomeInvites() {
   $$(".inv-accept", box).forEach(b => b.addEventListener("click", async (ev) => {
     const row = b.closest(".invite-row");
     const invId = row.dataset.invite, billId = row.dataset.bill;
-    try {
-      await apiJson(`/api/bills/${billId}/invites/${invId}/accept`, "POST", {});
-      toast("Udah gabung 🎉");
-      // re-render the whole card, not just row.remove(): the footer line is
-      // written from invites.length, so removing one of two rows left "Kamu
-      // diundang ke beberapa bill" over a single invite
-      loadHomeInvites();
-      loadHomeHistory(false);  // bill baru muncul di Riwayat — force refetch (useCache=true reused the pre-join list and the new bill stayed invisible)
-    } catch (e) { toast(e.message); }
+    // no busy lock meant a double-tap fired two accepts, and the second's
+    // 400 replaced "Udah gabung 🎉" with "Undangan ini udah diproses" (bug)
+    await withBusy(b, "Gabung...", async () => {
+      try {
+        await apiJson(`/api/bills/${billId}/invites/${invId}/accept`, "POST", {});
+        toast("Udah gabung 🎉");
+        // re-render the whole card, not just row.remove(): the footer line is
+        // written from invites.length, so removing one of two rows left "Kamu
+        // diundang ke beberapa bill" over a single invite
+        loadHomeInvites();
+        loadHomeHistory(false);  // bill baru muncul di Riwayat — force refetch (useCache=true reused the pre-join list and the new bill stayed invisible)
+      } catch (e) {
+        toast(e.message);
+        loadHomeInvites();  // failure used to leave the stale card inviting another tap (bug)
+      }
+    });
   }));
   $$(".inv-decline", box).forEach(b => b.addEventListener("click", async (ev) => {
     const row = b.closest(".invite-row");
@@ -199,11 +206,16 @@ async function loadHomeInvites() {
       confirmText: "Tolak", cancelText: "Kembali", danger: true,
     });
     if (!ok) return;
-    try {
-      await apiJson(`/api/bills/${billId}/invites/${invId}/decline`, "POST", {});
-      toast("Undangan ditolak");
-      loadHomeInvites();   // same reason as accept: the footer counts rows
-    } catch (e) { toast(e.message); }
+    await withBusy(b, "", async () => {
+      try {
+        await apiJson(`/api/bills/${billId}/invites/${invId}/decline`, "POST", {});
+        toast("Undangan ditolak");
+        loadHomeInvites();   // same reason as accept: the footer counts rows
+      } catch (e) {
+        toast(e.message);
+        loadHomeInvites();  // failure used to leave the stale card inviting another tap (bug)
+      }
+    });
   }));
 }
 
@@ -1104,7 +1116,13 @@ function renderCreate(opts = {}) {
     ? `<div class="warn-box">
          <div style="display:flex;gap:9px;align-items:flex-start;">
            <span style="color:var(--red);display:flex;">${ic("alert")}</span>
-           <div><strong>Gagal Baca Struk</strong>
+           <!-- this card only paints when /api/photos itself failed (uploadAndAttach's
+                catch) — offline / rate-limit / >5MB. An OCR read failure never lands
+                here: uploadAndOcr's catch falls through to uploadAndAttach, which
+                re-uploads successfully and opens the manual editor instead (see the
+                warn-box inside renderVerify for that case). "Gagal Baca Struk" named
+                the wrong cause here (bug: headline blamed OCR for an upload failure). -->
+           <div><strong>Gagal Upload Foto</strong>
              <p class="muted" style="margin-top:4px;">${esc(opts.ocrError)}</p></div>
          </div>
          <div class="btn-row" style="margin-top:12px;">
@@ -1245,7 +1263,10 @@ function renderCreate(opts = {}) {
 // v61: upload a photo WITHOUT scanning — it gets attached to the bill and
 // the user fills items by hand. OCR failure also lands here (photo kept,
 // items manual) instead of throwing the photo away.
-async function uploadAndAttach(file) {
+// `ocrReason`, when set, is why OCR failed upstream (see uploadAndOcr's
+// catch) — carried through so the manual editor that opens can explain
+// itself instead of just appearing blank with no context.
+async function uploadAndAttach(file, ocrReason) {
   const body = $("#create-body");
   if (body) {
     body.innerHTML = `<div class="card" style="text-align:center;padding:40px 16px;">
@@ -1260,7 +1281,8 @@ async function uploadAndAttach(file) {
     const result = await api("/api/photos", { method: "POST", body: fd });
     if (location.hash !== routeAtStart) return;
     // keep the photo; items are filled manually
-    renderVerify({ ...blankBillForVerify(), photos: [result.photo_path] }, true);
+    renderVerify({ ...blankBillForVerify(), photos: [result.photo_path],
+      ocrError: ocrReason || null, ocrRetryFile: ocrReason ? file : null }, true);
   } catch (e) {
     if (location.hash !== routeAtStart) return;
     renderCreate({ ocrError: e.message, ocrFile: file });
@@ -1324,9 +1346,13 @@ async function uploadAndOcr(file) {
     if (location.hash !== routeAtStart) return;
     // v61: OCR failed — keep the photo anyway and drop into the manual
     // editor with it attached (before, the photo was thrown away and the
-    // user had to re-pick it on the create screen)
-    toast(e.message);
-    await uploadAndAttach(file);
+    // user had to re-pick it on the create screen). The reason used to only
+    // go out as a toast, started before the extra /api/photos round-trip
+    // below even began — by the time the (blank-looking) form appeared, the
+    // 2.6s toast had usually already expired and nobody knew why they were
+    // suddenly looking at "Bikin Manual" (bug). Carry it into the editor
+    // instead, where it can't disappear before it's read.
+    await uploadAndAttach(file, e.message);
   }
 }
 
@@ -1406,6 +1432,33 @@ let verifyState = {
   participants: [], extraNames: [],
 };
 
+// Leaving this screen throws away every correction the user typed, so ask
+// first when there is anything to lose (bug: one stray back tap and a whole
+// re-typed receipt was gone). Global (not a closure inside renderVerify) so
+// app.js's router-level leave-guard can call it too — it protects the
+// browser/system Back path, not just the in-app back button.
+// Was title/tax/service/items only — attaching photos, picking a date,
+// naming a payer or picking participants all vanished silently too (bug:
+// under-counted what "typed content" meant).
+function verifyHasTypedContent() {
+  return !!(String(verifyState.title || "").trim() ||
+    verifyState.tax || verifyState.service ||
+    verifyState.transacted_at ||
+    (verifyState.photos || []).length ||
+    (!verifyState.paidByMyself && String(verifyState.paid_by_name || "").trim()) ||
+    (verifyState.participants || []).length ||
+    (verifyState.extraNames || []).length ||
+    (verifyState.items || []).some(i =>
+      String(i.name || "").trim() || (i.price || 0) > 0 || (i.discount || 0) > 0));
+}
+function confirmDiscardVerify() {
+  return confirmSheet({
+    title: "Buang isian ini?",
+    body: "Semua yang udah kamu ketik di sini — item, harga, judul — bakal ilang.",
+    confirmText: "Buang aja", cancelText: "Lanjut isi", danger: true,
+  });
+}
+
 /* Layout rules that only this screen needs. Injected with the screen markup so
    there is no build step and nothing leaks to other screens.
    - .vf-item: the row used to be flex-wrap, so under ~360px the ✕ wrapped
@@ -1431,7 +1484,7 @@ const VERIFY_CSS = `<style>
   .vf-photo-wrap .photo-preview { width:100%; height:110px; object-fit:cover; border-radius:var(--r-xs); display:block; }
   .vf-photo-wrap .photo-preview.expanded { position:fixed; inset:0; z-index:60; width:100%; height:100%;
     object-fit:contain; background:rgba(0,0,0,.86); border-radius:0; }
-  .vf-photo-del { position:absolute; top:4px; right:4px; width:36px; height:36px; min-height:36px; padding:0;
+  .vf-photo-del { position:absolute; top:4px; right:4px; width:40px; height:40px; min-height:40px; padding:0;
     border-radius:var(--r-full); background:rgba(0,0,0,.62); color:#fff; border:none; display:flex;
     align-items:center; justify-content:center; }
   @media (max-width:399px) {
@@ -1439,6 +1492,16 @@ const VERIFY_CSS = `<style>
     .vf-grid > .vf-sub { grid-column:1 / -1; }
     .vf-photos { grid-template-columns:repeat(2, minmax(0,1fr)); }
   }
+  /* Same 40px floor as .vf-item .icon-btn above, applied consistently: the
+     slot +/- steppers were 37x27 and 34x32 (mismatched with each other, both
+     under the floor), the Bebas/Slot mode chips were 32px tall, and the
+     add-item / paste-from-clipboard buttons were 38px — small enough that a
+     thumb missed them (see the identical bug noted on .hist-filters .chip-btn
+     in HIST_CSS: under the floor next to full-size controls reads as broken,
+     not smaller). .chip-btn's own rule (index.html) has no min-height at all,
+     so every place it's used inside this screen needs it re-asserted here. */
+  .item-mode-btn, .slot-dec, .slot-inc { min-height:40px; min-width:40px; justify-content:center; }
+  #add-item-btn, #verify-paste-photo, #verify-add-photo { min-height:40px; }
 </style>`;
 
 function renderVerify(ocr, manual = false) {
@@ -1476,6 +1539,11 @@ function renderVerify(ocr, manual = false) {
         taxSaved: (ocr && typeof ocr.taxSaved === "number") ? ocr.taxSaved : (ocr.tax || 0),
         participants: (ocr && ocr.participants) || [],
         extraNames: (ocr && ocr.extraNames) || [],
+        // why OCR failed, if that's how we got here (see uploadAndOcr's catch
+        // and uploadAndAttach) — carried across re-renders (photo add/remove)
+        // the same way every other field here is, by reading it off `ocr`.
+        ocrError: (ocr && ocr.ocrError) || null,
+        ocrRetryFile: (ocr && ocr.ocrRetryFile) || null,
       };
   // subtotal auto-follows the item sum UNLESS the user explicitly typed their
   // own subtotal. For OCR: when the receipt's subtotal differs from the items
@@ -1529,6 +1597,20 @@ function renderVerify(ocr, manual = false) {
       </div>
     </div>
 
+    ${verifyState.ocrError ? `
+    <div class="warn-box">
+      <div style="display:flex;gap:9px;align-items:flex-start;">
+        <span style="color:var(--red);display:flex;">${ic("alert")}</span>
+        <div><strong>Struknya Gagal Dibaca Otomatis</strong>
+          <p class="muted" style="margin-top:4px;">${esc(verifyState.ocrError)}</p>
+          <p class="muted" style="margin-top:4px;">Fotonya kesimpen kok — isi manual di bawah, atau coba baca otomatis lagi.</p></div>
+      </div>
+      ${verifyState.ocrRetryFile ? `
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn-outline btn-sm" id="verify-retry-scan">${ic("refresh")} Coba Scan Lagi</button>
+      </div>` : ""}
+    </div>` : ""}
+
     <div class="card" id="items-card">
       <div class="card-title">
         <span>Item</span>
@@ -1546,15 +1628,15 @@ function renderVerify(ocr, manual = false) {
       <div class="vf-grid">
         <div class="vf-sub">
           <label for="subtotal-input">Subtotal (Rp)</label>
-          <input class="input-money" type="text" inputmode="numeric" id="subtotal-input" placeholder="0" value="${rupiahFmt(verifyState.subtotal)}">
+          <input class="input-money" type="text" inputmode="numeric" id="subtotal-input" placeholder="0" maxlength="16" value="${rupiahFmt(verifyState.subtotal)}">
         </div>
         <div>
           <label for="tax-input">PPN (Rp)</label>
-          <input class="input-money" type="text" inputmode="numeric" id="tax-input" placeholder="0" value="${rupiahFmt(verifyState.tax)}">
+          <input class="input-money" type="text" inputmode="numeric" id="tax-input" placeholder="0" maxlength="16" value="${rupiahFmt(verifyState.tax)}">
         </div>
         <div>
           <label for="service-input">Service (Rp)</label>
-          <input class="input-money" type="text" inputmode="numeric" id="service-input" placeholder="0" value="${rupiahFmt(verifyState.service)}">
+          <input class="input-money" type="text" inputmode="numeric" id="service-input" placeholder="0" maxlength="16" value="${rupiahFmt(verifyState.service)}">
         </div>
       </div>
       <label class="toggle-row" for="tax-included-toggle" style="margin-top:10px;">
@@ -1610,23 +1692,24 @@ function renderVerify(ocr, manual = false) {
   $("#app").innerHTML = shell(main, side);
   watchDock();
 
-  // leaving this screen throws away every correction the user typed, so ask
-  // first when there is anything to lose (bug: one stray back tap and a whole
-  // re-typed receipt was gone)
-  const hasTypedContent = () =>
-    !!(String(verifyState.title || "").trim() ||
-       verifyState.tax || verifyState.service ||
-       (verifyState.items || []).some(i => String(i.name || "").trim() || (i.price || 0) > 0));
+  // #/create/verify is this screen's own route (see render() in app.js) —
+  // give it one on entry so the leave-guard below has a hash to protect.
+  // Re-renders while already here (photo add/remove, paste) leave the hash
+  // alone, since it already matches.
+  if (location.hash !== "#/create/verify") history.replaceState(null, "", "#/create/verify");
+  // Router-level leave-guard (onHashChange in app.js): the browser/system
+  // Back gesture fires `hashchange` directly, bypassing the in-app back
+  // button below entirely — this makes ANY way of leaving the hash ask
+  // first. Re-registered every render so the guard closure always reads the
+  // CURRENT verifyState, not whatever it was when first armed.
+  guardHash(async () => !verifyHasTypedContent() || confirmDiscardVerify());
   $("#back-btn").addEventListener("click", async () => {
-    if (hasTypedContent()) {
-      const ok = await confirmSheet({
-        title: "Buang isian ini?",
-        body: "Semua yang udah kamu ketik di sini — item, harga, judul — bakal ilang.",
-        confirmText: "Buang aja", cancelText: "Lanjut isi", danger: true,
-      });
+    if (verifyHasTypedContent()) {
+      const ok = await confirmDiscardVerify();
       if (!ok) return;
     }
-    renderCreate();
+    clearHashGuard();
+    location.hash = "#/create";
   });
 
   // v61: multi-photo preview — tap to zoom, ✕ to remove, + to add more
@@ -1642,6 +1725,18 @@ function renderVerify(ocr, manual = false) {
   const addPhotoBtn = $("#verify-add-photo");
   const pastePhotoBtn = $("#verify-paste-photo");
   if (pastePhotoBtn) pastePhotoBtn.addEventListener("click", () => readClipboardImage());
+  const retryScanBtn = $("#verify-retry-scan");
+  if (retryScanBtn) retryScanBtn.addEventListener("click", () => {
+    const f = verifyState.ocrRetryFile;
+    if (!f) { toast("Foto aslinya udah gak ada — upload ulang ya"); return; }
+    // route through #/create first (clearing the guard on the way): this is
+    // a deliberate hop back into the OCR flow, not a "leave and lose data"
+    // the guard should question, and uploadAndOcr needs the create screen's
+    // #create-body mounted for its spinner
+    clearHashGuard();
+    location.hash = "#/create";
+    uploadAndOcr(f);
+  });
   if (addPhotoBtn) {
     const input = document.createElement("input");
     input.type = "file";
@@ -1825,7 +1920,7 @@ function renderVerifyItems() {
     <div class="vf-item" data-idx="${idx}">
       <input data-role="name" data-idx="${idx}" value="${esc(it.name)}" placeholder="Nama Item"
              maxlength="60" aria-label="Nama item baris ${idx + 1}">
-      <input data-role="price" data-idx="${idx}" class="input-money" type="text" inputmode="numeric"
+      <input data-role="price" data-idx="${idx}" class="input-money" type="text" inputmode="numeric" maxlength="16"
              value="${rupiahFmt(it.price)}" placeholder="0" aria-label="Harga item baris ${idx + 1}">
       <button type="button" data-role="del" data-idx="${idx}" class="icon-btn ghost"
               aria-label="Hapus item baris ${idx + 1}" style="color:var(--red);">${ic("trash")}</button>
@@ -1833,7 +1928,7 @@ function renderVerifyItems() {
       <div class="vf-full" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <label class="label-sm" for="disc-${idx}" style="margin:0;">Potongan (diskon)</label>
         <input id="disc-${idx}" data-role="discount" data-idx="${idx}" class="input-money" type="text"
-               inputmode="numeric" value="${rupiahFmt(it.discount)}" placeholder="0" style="max-width:110px;">
+               inputmode="numeric" maxlength="16" value="${rupiahFmt(it.discount)}" placeholder="0" style="max-width:110px;">
         ${/* "harga asli − potongan = yang dibayar" used to sit next to every
               discount box: five copies of the same subtraction, four lines each
               on a phone. The green result below says it better, and only when
@@ -1941,10 +2036,20 @@ function updateVerifyTotal() {
     // splits a service charge on a tax-included bill.
     subtotal = sumItems;
     si.value = rupiahFmt(subtotal);
+    // disabled, not just overwritten: a keystroke here used to still fire
+    // (this field isn't readonly) and set subtotalTouched = true even
+    // though the value it "typed" was instantly stomped right back to
+    // sumItems above. Turning tax-included back OFF then stopped
+    // re-deriving the subtotal at all (subtotalTouched was already true),
+    // so editing any item price left it permanently mismatched with no fix
+    // but retyping the subtotal by hand (bug: CTA stuck on "Subtotal belum
+    // cocok sama item" forever). Disabling means the keystroke never happens.
+    si.disabled = true;
     if (ti) { ti.value = ""; ti.disabled = true; }
     tax = 0;
-  } else if (ti) {
-    ti.disabled = false;
+  } else {
+    si.disabled = false;
+    if (ti) ti.disabled = false;
   }
   const total = subtotal + tax + service;
   verifyState.subtotal = subtotal; verifyState.tax = tax; verifyState.service = service;
@@ -2064,15 +2169,28 @@ async function createBillFinal() {
               .catch(e => ({ name: p.name, status: e.message, ok: false }))
           )
         );
-        const invited = results.map(r => {
-          if (r.status === "rejected") return `${r.reason && r.reason.name ? r.reason.name : "Seseorang"} gagal`;
-          const v = r.value;
-          return v.ok
-            ? `${v.name} ${v.status === "joined" ? "langsung masuk" : "diundang"}`
-            : `${v.name} gagal (${v.status})`;
-        });
-        if (invited.length) toast(invited.join(" · "));
+        const values = results.map(r => r.status === "fulfilled" ? r.value
+          : { name: (r.reason && r.reason.name) || "Seseorang", status: "error", ok: false });
+        const joined = values.filter(v => v.ok && v.status === "joined");
+        const pending = values.filter(v => v.ok && v.status !== "joined");
+        const failed = values.filter(v => !v.ok);
+        // five picked contacts used to join `invited.join(" · ")` into ONE
+        // toast — ~100 chars in a pill capped at min(90%, 420px), gone after
+        // 2.6s while the app was already navigating to the new bill (bug:
+        // nobody could read it in time). Report counts instead — always
+        // legible at a glance — plus a taste of who, not the full roster.
+        const named = [...joined, ...pending].map(v => v.name).slice(0, 2);
+        const extra = values.length - named.length;
+        let msg = `${values.length} orang diundang`;
+        if (joined.length) msg += ` · ${joined.length} langsung masuk`;
+        if (named.length) msg += ` (${named.join(", ")}${extra > 0 ? ` +${extra} lagi` : ""})`;
+        if (failed.length) msg += ` · ${failed.length} gagal`;
+        toast(msg);
       }
+      // a successful submit is not a "leave" the guard should question —
+      // without this the router's leave-guard (armed on entry) would pop
+      // "Buang isian ini?" right after the bill was already saved
+      clearHashGuard();
       location.hash = "#/b/" + bill.id;
     } catch (e) {
       toast(e.message);
@@ -2081,7 +2199,14 @@ async function createBillFinal() {
 }
 
 // ---------- rupiah input helpers ----------
-function rupiahDigits(v) { return String(v == null ? "" : v).replace(/\D/g, "").replace(/^0+(?=\d)/, ""); }
+// Capped at 12 digits (a trillion rupiah — far past any real receipt).
+// Uncapped, 20 digits parsed to 1e20 and crashed bill creation with a sqlite
+// OverflowError -> HTTP 500 (bug); at >=17 digits parseInt already loses
+// precision (the field shows one number, state holds another), and at >=22
+// digits ANY re-render wiped the field to "122", because JS stringifies
+// numbers that big in exponent form ("1e+22") and \D strips everything but
+// the digits out of the exponent.
+function rupiahDigits(v) { return String(v == null ? "" : v).replace(/\D/g, "").replace(/^0+(?=\d)/, "").slice(0, 12); }
 function rupiahFmt(v) { const d = rupiahDigits(v); return d ? d.replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ""; }
 function rupiahParse(s) { return parseInt(rupiahDigits(s) || "0", 10); }
 function bindRupiahInput(input, onChange) {

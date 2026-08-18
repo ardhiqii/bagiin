@@ -357,11 +357,68 @@ function render() {
   if (!state.identity) { renderOnboarding(); return; }
   if (parts[0] === "history") { renderHistory(); return; }
   if (parts[0] === "settings") { renderSettings(); return; }
-  if (parts[0] === "create") { renderCreate(); return; }
+  if (parts[0] === "create") {
+    // #/create/verify is the OCR/manual editor (see renderVerify in
+    // screens.js) — a real route so a page load / forward-nav / the guard
+    // revert below all land on the right screen instead of a blank form.
+    if (parts[1] === "verify") {
+      if (typeof verifyHasTypedContent === "function" && verifyHasTypedContent()) {
+        renderVerify(verifyState, verifyState.manual);
+      } else {
+        // direct hit / reload with nothing retained to show — bounce to a
+        // fresh create screen rather than render an editor with no data
+        location.hash = "#/create";
+      }
+      return;
+    }
+    renderCreate();
+    return;
+  }
   renderHome();
 }
 
-window.addEventListener("hashchange", render);
+// ---------- navigation leave-guard ----------
+// A screen can ask to be asked-before-leaving on ANY hashchange, not just
+// clicks on its own in-app back button. Needed because the verify editor
+// (renderVerify) has no route of its own by default in a hash router built
+// only around #/, #/history, #/settings, #/create, #/b/<id> — so the
+// Android system back gesture / browser Back fires `hashchange` straight
+// into the router, bypassing whatever confirm the screen wired to its own
+// back BUTTON (bug: system Back destroyed a re-typed receipt with zero
+// warning, because popping the hash entry and re-rendering happens before
+// any in-app handler gets a say).
+//
+// A pushState "sentinel" entry pushed on enter was the other option, but
+// undoing a *cancelled* back with it means pushing a brand new entry every
+// time (the popped one is gone from the back-stack for good) — the history
+// stack grows by one per cancelled back press. `replaceState` instead
+// mutates the CURRENT entry in place, so a cancelled leave costs nothing,
+// and the rewrite happens synchronously BEFORE the async confirm sheet, so
+// the address bar and the screen can never be caught disagreeing mid-ask.
+let leaveGuardFn = null;   // async () => boolean; true = ok to leave
+let guardedHash = null;    // the hash the current guard is protecting
+let guardBusy = false;     // one confirm at a time — a double back-press must not stack sheets
+
+function guardHash(fn) { guardedHash = location.hash; leaveGuardFn = fn; }
+function clearHashGuard() { guardedHash = null; leaveGuardFn = null; }
+
+async function onHashChange() {
+  if (!leaveGuardFn || location.hash === guardedHash) { render(); return; }
+  if (guardBusy) { history.replaceState(null, "", guardedHash); return; }
+  guardBusy = true;
+  const dest = location.hash;
+  const fn = leaveGuardFn;
+  history.replaceState(null, "", guardedHash);
+  const ok = await fn();
+  guardBusy = false;
+  if (ok) {
+    leaveGuardFn = null; guardedHash = null;
+    history.replaceState(null, "", dest);
+    render();
+  }
+  // not ok: already reverted above, screen was never touched — done.
+}
+window.addEventListener("hashchange", onHashChange);
 // a dropped file anywhere outside the dropzone used to navigate the tab to the
 // image and destroy the whole session
 ["dragover", "drop"].forEach(ev =>
