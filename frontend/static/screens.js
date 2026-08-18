@@ -241,12 +241,13 @@ function billListStatus(b) {
   return { tone: "due", label: "Belum lunas", icon: "receipt" };
 }
 
-const STATUS_CHIP = { ok: "chip-green", due: "chip-red", done: "chip-grey", idle: "chip-grey" };
+const STATUS_CHIP = { ok: "chip-green", due: "chip-red", done: "chip-grey", idle: "chip-accent" };
 
 function billListStatusChip(b) {
+  // text-only chips: the row avatar already carries the status icon, so an icon
+  // on SOME chips but not others is just noise.
   const s = billListStatus(b);
-  const withIcon = s.tone === "ok" ? ic("check") : "";
-  return `<span class="chip ${STATUS_CHIP[s.tone]}">${withIcon}${s.label}</span>`;
+  return `<span class="chip ${STATUS_CHIP[s.tone]}">${esc(s.label)}</span>`;
 }
 
 // personal line for the CURRENT viewer — only meaningful while the bill is
@@ -255,10 +256,12 @@ function personalStatusHtml(b) {
   if (b.status === "closed" || b.settled || !b.has_picks) return "";
   // the payer never "paid" — they fronted the money. Calling that "udah bayar"
   // is what made a fresh bill claim a payment that never happened.
+  // personal lines are always neutral: the chip already owns the status colour,
+  // so colouring the line too makes one row scream two messages at once.
   if (b.i_am_payer) return `<div class="item-share">Kamu yang nalangin</div>`;
   return b.my_paid
-    ? `<div class="item-share" style="color:var(--green);">Kamu udah bayar</div>`
-    : `<div class="item-share" style="color:var(--red);">Kamu belum bayar</div>`;
+    ? `<div class="item-share">Kamu udah bayar</div>`
+    : `<div class="item-share">Kamu belum bayar</div>`;
 }
 
 function billRowHtml(b) {
@@ -283,13 +286,11 @@ function billRowHtml(b) {
         </div>
         ${personalStatusHtml(b)}
       </div>
-      ${b.can_manage
-        // gate on can_manage (creator OR resolved payer), not owner_id — the
-        // creator keeps management powers even when someone else fronted the
-        // money, and owner_id alone hid the delete button from them
-        ? `<button class="icon-btn ghost delete-bill" data-id="${esc(b.id)}" data-title="${esc(b.title)}"
-                   aria-label="Hapus bill ${esc(b.title)}">${ic("trash")}</button>`
-        : ""}
+      <!-- always render the button so the amount's right edge doesn't jump
+           between rows; guests get a muted disabled ghost instead of nothing -->
+      <button class="icon-btn ghost delete-bill${b.can_manage ? "" : " is-disabled"}" data-id="${esc(b.id)}"
+              data-title="${esc(b.title)}" aria-label="Hapus bill ${esc(b.title)}"
+              ${b.can_manage ? "" : "disabled tabindex=\"-1\" aria-hidden=\"true\""}>${ic("trash")}</button>
     </div>`;
 }
 

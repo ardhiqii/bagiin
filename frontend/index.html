@@ -413,6 +413,9 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
                border-radius:var(--r-sm); cursor:pointer; position:relative;
                transition:background .14s var(--ease); }
 .history-row + .history-row { border-top:1px solid var(--border); border-radius:0; }
+.history-row .delete-bill svg { width:18px; height:18px; }
+.history-row .delete-bill.is-disabled { opacity:.35; pointer-events:none; }
+@media (hover:hover) { .history-row .delete-bill:not(.is-disabled):hover { color:var(--red); background:var(--red-soft); } }
 @media (hover:hover) { .history-row:hover { background:var(--surface-2); } }
 /* status colour anchor: a bar at the head of the row plus a tinted icon, so a
    long list is scannable without reading every chip */
@@ -423,7 +426,7 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .history-row.is-ok::before   { background:var(--green); }
 .history-row.is-due::before  { background:var(--red); }
 .history-row.is-done::before { background:var(--border-strong); }
-.history-row.is-idle::before { background:var(--border-strong); }
+.history-row.is-idle::before { background:var(--accent); }
 /* The row is [icon][title+meta][amount][delete]. Without min-width:0 the text
    column refuses to shrink, so a long bill name wrapped onto three lines and a
    nowrap status chip overflowed straight across the amount (bug: "Belum ada
@@ -436,18 +439,19 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
    on one line left the status chip ~40px on a 390px phone and truncated it to
    "Be…"; only the name is allowed to give up space. */
 .row-title { display:flex; align-items:baseline; gap:8px; min-width:0; }
-.row-date { flex-shrink:0; }
+.row-date { flex-shrink:0; margin-left:auto; }
 .row-meta { display:flex; align-items:center; gap:8px; margin-top:5px; min-width:0; }
 .row-meta .chip { flex-shrink:0; }
-.row-amount { margin-left:auto; flex-shrink:0; font-size:15px; font-weight:700; padding-left:8px; }
+.row-amount { margin-left:auto; flex-shrink:0; font-size:15px; font-weight:700; }
 .status-mark { color:var(--text-3); }
 .history-row.is-ok   .status-mark { background:var(--green-soft); color:var(--green);
                                     border-color:color-mix(in srgb, var(--green) 25%, transparent); }
 .history-row.is-due  .status-mark { background:var(--red-soft); color:var(--red);
                                     border-color:color-mix(in srgb, var(--red) 25%, transparent); }
-.history-row.is-done .status-mark { opacity:.65; }
+.history-row.is-done .status-mark { background:var(--surface-3); color:var(--text-3); border-color:var(--border); }
+.history-row.is-idle .status-mark { background:var(--surface-2); color:var(--text-3); border-color:var(--border); }
 .history-month { font-size:12px; font-weight:700; color:var(--text-3); letter-spacing:.04em;
-                 text-transform:uppercase; margin:16px 0 4px; }
+                 text-transform:uppercase; margin:16px -10px 4px 6px; }
 .history-month:first-child { margin-top:0; }
 
 .empty-state { text-align:center; padding:36px 16px; color:var(--text-2); }
