@@ -201,6 +201,13 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .chip-red   { background:var(--red-soft);   color:var(--red);   border-color:color-mix(in srgb, var(--red) 22%, transparent); }
 .chip-grey  { background:var(--surface-2);  color:var(--text-2); border-color:var(--border); }
 .chip-accent{ background:var(--accent-soft);color:var(--accent); border-color:var(--accent-line); }
+.people-chip { display:inline-flex; align-items:center; gap:5px; padding:5px 6px 5px 11px; border-radius:var(--r-full);
+               background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent-line);
+               font-size:13px; font-weight:600; }
+.people-chip-x { width:20px; height:20px; min-height:20px; padding:0; border-radius:50%; border:none;
+                 background:transparent; color:inherit; display:inline-flex; align-items:center; justify-content:center;
+                 cursor:pointer; }
+.people-chip-x:hover { background:rgba(0,0,0,.15); }
 .chip-btn { display:inline-flex; align-items:center; gap:5px; border-radius:var(--r-full);
             padding:6px 11px; font-size:12px; font-weight:600; cursor:pointer;
             border:1px solid var(--border); background:var(--surface-2); color:var(--text-2); }

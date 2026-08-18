@@ -1183,6 +1183,25 @@ function blankBillForVerify() {
   return { items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null, merchant: "", date: "" };
 }
 
+// attach a photo to the MANUAL verify screen (upload now, path carried into the
+// bill on submit) — separate from uploadAndAttach because that one re-renders a
+// blank verify with a single photo; here we must preserve every field the user
+// already typed and push onto the existing photos array.
+async function verifyAttachPhoto(file) {
+  if (file.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
+  const btn = $("#verify-add-photo");
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const result = await api("/api/photos", { method: "POST", body: fd });
+    const next = { ...verifyState, photos: [...verifyState.photos, result.photo_path] };
+    next.photo_path = next.photos[0] || null;
+    renderVerify(next, verifyState.manual);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
 async function uploadAndOcr(file) {
   const body = $("#create-body");
   if (body) {
@@ -1217,7 +1236,6 @@ async function uploadAndOcr(file) {
 // Global paste listener — only acts when the create screen dropzone is mounted,
 // so pasting an image elsewhere (notes, chat input) is never hijacked.
 function pasteImageHandler(e) {
-  if (!document.getElementById("dz")) return;
   const items = (e.clipboardData && e.clipboardData.items) || [];
   for (const it of items) {
     if (it.kind === "file" && it.type && it.type.startsWith("image/")) {
@@ -1225,6 +1243,10 @@ function pasteImageHandler(e) {
       if (!f) continue;
       e.preventDefault();
       if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
+      // manual verify screen has its own photo row — attach there too, not
+      // just the dropzone (user pasted a screenshot while filling the form)
+      if (document.getElementById("verify-add-photo")) { verifyAttachPhoto(f); return; }
+      if (!document.getElementById("dz")) return;
       if (scanMode) uploadAndOcr(f);
       else uploadAndAttach(f);
       return;
@@ -1254,6 +1276,7 @@ async function readClipboardImage() {
       const blob = await it.getType(imgType);
       const f = new File([blob], "clipboard-image.png", { type: blob.type });
       if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
+      if (document.getElementById("verify-add-photo")) { await verifyAttachPhoto(f); return; }
       if (scanMode) await uploadAndOcr(f);
       else await uploadAndAttach(f);
       return;
@@ -1269,6 +1292,10 @@ let verifyState = {
   items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null,
   title: "", merchant: "", transacted_at: "", manual: false, paid_by_name: null,
   tax_included: false, taxSaved: 0,
+  // people invited from the create screen: kontak = proven contacts with
+  // identity ids (chained into /invite after the bill exists); extraNames =
+  // free-typed names with no identity (sent as legacy participant placeholders)
+  participants: [], extraNames: [],
 };
 
 /* Layout rules that only this screen needs. Injected with the screen markup so
@@ -1306,23 +1333,25 @@ function renderVerify(ocr, manual = false) {
   const photos = Array.isArray(ocr.photos) ? ocr.photos.slice()
     : (ocr.photo_path ? [ocr.photo_path] : []);
   verifyState = {
-    items: ocr.items || [],
-    subtotal: ocr.subtotal || 0,
-    tax: ocr.tax || 0,
-    service: ocr.service || 0,
-    total: ocr.total || 0,
-    photo_path: photos[0] || null,
-    photos,
-    title: ocr.title || ocr.merchant || "",
-    merchant: ocr.merchant || "",
-    transacted_at: ocr.transacted_at || ocr.date || "",
-    manual,
-    paid_by_name: null,
-    tax_included: !!(ocr.tax_included),
-    // last PPN the user typed, so switching "termasuk pajak" off can put it
-    // back (see the toggle handler)
-    taxSaved: ocr.tax || 0,
-  };
+        items: ocr.items || [],
+        subtotal: ocr.subtotal || 0,
+        tax: ocr.tax || 0,
+        service: ocr.service || 0,
+        total: ocr.total || 0,
+        photo_path: photos[0] || null,
+        photos,
+        title: ocr.title || ocr.merchant || "",
+        merchant: ocr.merchant || "",
+        transacted_at: ocr.transacted_at || ocr.date || "",
+        manual,
+        paid_by_name: null,
+        tax_included: !!(ocr.tax_included),
+        // last PPN the user typed, so switching "termasuk pajak" off can put it
+        // back (see the toggle handler)
+        taxSaved: ocr.tax || 0,
+        participants: (ocr && ocr.participants) || [],
+        extraNames: (ocr && ocr.extraNames) || [],
+      };
   // subtotal auto-follows the item sum UNLESS the user explicitly typed their
   // own subtotal. For OCR: when the receipt's subtotal differs from the items
   // (LLM missed an item line), keep the receipt value & show the warning —
@@ -1348,11 +1377,13 @@ function renderVerify(ocr, manual = false) {
       </div>
       <div class="btn-row" style="margin-top:8px;">
         <button class="btn-outline btn-sm" id="verify-add-photo" style="margin-top:0;">${ic("camera")} Tambah Foto</button>
+        <button class="btn-outline btn-sm" id="verify-paste-photo" style="margin-top:0;">${ic("clipboard")} Tempel</button>
         <span class="muted btn-auto" style="align-self:center;">Ketuk foto buat perbesar</span>
       </div>
     </div>` : (manual ? `
     <div class="card" style="padding:8px;">
       <button class="btn-outline" id="verify-add-photo" style="width:100%;">${ic("camera")} Tambah Foto Struk</button>
+      <button class="btn-outline btn-sm" id="verify-paste-photo" style="width:100%;margin-top:8px;">${ic("clipboard")} Tempel dari Clipboard</button>
       <p class="muted" style="text-align:center;margin-top:6px;">Opsional — foto cuma ditempel, gak dibaca otomatis.</p>
     </div>` : "")}
 
@@ -1424,6 +1455,20 @@ function renderVerify(ocr, manual = false) {
         <input id="paid-by-name-input" placeholder="Contoh: Budi" value="${esc(verifyState.paid_by_name || "")}" maxlength="30" autocomplete="off">
         <p class="muted" style="margin-top:5px;">Bisa diubah lagi nanti setelah orangnya join bill</p>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        <span>Siapa yang Ikut</span>
+        <span class="muted">opsional — bisa undang lagi nanti</span>
+      </div>
+      <p class="muted" style="margin:-4px 0 10px;">Pilih dari orang yang pernah share bill sama kamu — yang auto-accept langsung masuk, yang lain dapat undangan di beranda. Selain itu bisa ketik nama bebas.</p>
+      <div id="people-pick" style="display:flex;flex-direction:column;gap:6px;"></div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <input id="person-name-input" placeholder="Nama lainnya (opsional)" maxlength="30" autocomplete="off" style="flex:1;">
+        <button class="btn-outline btn-sm" id="person-name-add" style="flex-shrink:0;">${ic("plus")} Tambah</button>
+      </div>
+      <div id="people-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
     </div>`;
 
   const side = `
@@ -1468,6 +1513,8 @@ function renderVerify(ocr, manual = false) {
     renderVerify({ ...verifyState, photos: verifyState.photos, paid_by_name: verifyState.paid_by_name }, verifyState.manual);
   }));
   const addPhotoBtn = $("#verify-add-photo");
+  const pastePhotoBtn = $("#verify-paste-photo");
+  if (pastePhotoBtn) pastePhotoBtn.addEventListener("click", () => readClipboardImage());
   if (addPhotoBtn) {
     const input = document.createElement("input");
     input.type = "file";
@@ -1492,6 +1539,91 @@ function renderVerify(ocr, manual = false) {
   }
   renderVerifyItems();
   bindVerifyInputs();
+
+  // ---------- "Siapa yang Ikut" picker ----------
+  const peoplePick = $("#people-pick");
+  const chipsBox = $("#people-chips");
+  const personNameInput = $("#person-name-input");
+  const personNameAdd = $("#person-name-add");
+  const renderPeopleChips = () => {
+    if (!chipsBox) return;
+    const all = [
+      ...verifyState.participants.map(p => ({ key: "id:" + p.id, label: p.name, kind: "kontak" })),
+      ...verifyState.extraNames.map(n => ({ key: "name:" + n, label: n, kind: "nama" })),
+    ];
+    chipsBox.innerHTML = all.map(p => `
+      <span class="people-chip" data-key="${esc(p.key)}">
+        ${esc(p.label)} <button class="people-chip-x" data-key="${esc(p.key)}" aria-label="Hapus ${esc(p.label)}">${ic("x")}</button>
+      </span>`).join("");
+    $$(".people-chip-x", chipsBox).forEach(btn => btn.addEventListener("click", () => {
+      const key = btn.dataset.key;
+      if (key.startsWith("id:")) {
+        const id = key.slice(3);
+        verifyState.participants = verifyState.participants.filter(p => p.id !== id);
+        const cb = $(`#pp-cb-${id}`);
+        if (cb) cb.checked = false;
+      } else {
+        const name = key.slice(5);
+        verifyState.extraNames = verifyState.extraNames.filter(n => n !== name);
+      }
+      renderPeopleChips();
+    }));
+  };
+  if (personNameAdd) {
+    const addName = () => {
+      const v = (personNameInput.value || "").trim();
+      if (!v) return;
+      if (verifyState.extraNames.includes(v)) { toast("Nama itu udah kepilih"); return; }
+      verifyState.extraNames.push(v);
+      personNameInput.value = "";
+      renderPeopleChips();
+    };
+    personNameAdd.addEventListener("click", addName);
+    personNameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addName(); } });
+  }
+  if (peoplePick) {
+    const me = state.identity;
+    peoplePick.innerHTML = `<p class="muted" style="padding:2px 0;">Muat kontak...</p>`;
+    if (me && me.id) {
+      (async () => {
+        try {
+          const contacts = await api(`/api/identities/${me.id}/contacts`);
+          if (!document.getElementById("people-pick")) return; // left the screen
+          if (!contacts || !contacts.length) {
+            peoplePick.innerHTML = `<p class="muted" style="padding:2px 0;">Belum ada kontak — Undang orang lewat link dulu, nanti dia muncul di sini.</p>`;
+            return;
+          }
+          peoplePick.innerHTML = contacts.map(c => `
+            <label class="account-row" style="cursor:pointer;">
+              <input type="checkbox" id="pp-cb-${esc(c.id)}" style="flex:0 0 auto;" />
+              <div class="avatar" style="flex:0 0 auto;">${esc(initials(c.name))}</div>
+              <div style="flex:1;min-width:0;">
+                <div class="item-name">${esc(c.name)}</div>
+                <div class="muted">${c.last_shared ? "pernah share bill" : "kontak"}</div>
+              </div>
+            </label>`).join("");
+          $$("#people-pick input[type=checkbox]").forEach(cb => cb.addEventListener("change", () => {
+            const label = cb.closest(".account-row");
+            const name = label.querySelector(".item-name").textContent;
+            const id = cb.id.slice(6); // strip "pp-cb-"
+            if (cb.checked) {
+              if (!verifyState.participants.some(p => p.id === id)) verifyState.participants.push({ id, name });
+            } else {
+              verifyState.participants = verifyState.participants.filter(p => p.id !== id);
+            }
+            renderPeopleChips();
+          }));
+          // restore previously selected checkboxes on re-render (photo added etc.)
+          verifyState.participants.forEach(p => { const cb = $(`#pp-cb-${p.id}`); if (cb) cb.checked = true; });
+        } catch (e) {
+          if (document.getElementById("people-pick")) peoplePick.innerHTML = `<p class="muted" style="padding:2px 0;">${esc(e.message)}</p>`;
+        }
+      })();
+    } else {
+      peoplePick.innerHTML = `<p class="muted" style="padding:2px 0;">Login dulu buat milih siapa yang ikut.</p>`;
+    }
+  }
+  renderPeopleChips();
 
   $("#add-item-btn").addEventListener("click", () => {
     verifyState.items.push({ name: "", price: 0, discount: 0 });
@@ -1765,7 +1897,26 @@ async function createBillFinal() {
         photos: verifyState.photos || [],
         paid_by_name: verifyState.paid_by_name || null,
         tax_included: verifyState.tax_included ? 1 : 0,
+        // free-typed names become legacy participant placeholders; proven
+        // contacts are NOT sent here (avoids double rows) — they're invited by
+        // identity right after the bill exists, below
+        participants: verifyState.extraNames || [],
       });
+      // invite the proven-contacts picked on the create screen: auto-accept
+      // joins instantly, others get a pending card on their home. Done as a
+      // chain because /invite needs an existing bill id.
+      if (verifyState.participants.length) {
+        const invited = [];
+        for (const p of verifyState.participants) {
+          try {
+            const r = await apiJson(`/api/bills/${bill.id}/invite`, "POST", { identity_id: p.id });
+            invited.push(`${p.name} ${r.status === "joined" ? "langsung masuk" : "diundang"}`);
+          } catch (e) {
+            invited.push(`${p.name} gagal (${e.message})`);
+          }
+        }
+        if (invited.length) toast(invited.join(" · "));
+      }
       location.hash = "#/b/" + bill.id;
     } catch (e) {
       toast(e.message);
