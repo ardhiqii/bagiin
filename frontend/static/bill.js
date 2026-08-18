@@ -1048,7 +1048,7 @@ function accountRowsHtml(name, accounts) {
       <div class="account-row">
         ${brandChipHtml(a.brand)}
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;font-size:14px;">${esc(a.brand)}</div>
+          <div style="font-weight:600;font-size:14px;">${esc(brandLabel(a.brand))}</div>
           <div class="muted" style="font-size:13px;">${esc(a.account_no)}${a.holder_name ? " · " + esc(a.holder_name) : ""}</div>
         </div>
         <button class="btn-outline btn-sm copy-acct" data-no="${esc(a.account_no)}" aria-label="Salin nomor ${esc(a.brand)}">${ic("copy")} Salin</button>

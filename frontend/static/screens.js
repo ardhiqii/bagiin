@@ -544,6 +544,13 @@ function brandInfo(code) {
   const k = String(code || "").toLowerCase();
   return BRANDS.find(b => b.c.toLowerCase() === k) || null;
 }
+
+/** Display name for a stored brand: canonical casing when we know the brand
+ *  ("bca" -> "BCA", "gopay" -> "GoPay"), the raw value otherwise. */
+function brandLabel(code) {
+  const b = brandInfo(code);
+  return b ? b.c : String(code || "");
+}
 function chipTextColor(hex) {
   const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
   return (0.299 * r + 0.587 * g + 0.114 * b) > 165 ? "#18181B" : "#fff";
@@ -742,7 +749,7 @@ function renderSettings() {
         <div class="account-row">
           ${brandChipHtml(a.brand)}
           <div style="flex:1;min-width:0;">
-            <div class="item-name">${esc(a.brand)}</div>
+            <div class="item-name">${esc(brandLabel(a.brand))}</div>
             <div class="muted">${esc(a.account_no)}${a.holder_name ? " · " + esc(a.holder_name) : ""}</div>
           </div>
           <button class="icon-btn ghost" data-edit="${a.id}" aria-label="Edit ${esc(a.brand)} ${esc(a.account_no)}">${ic("pencil")}</button>
