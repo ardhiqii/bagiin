@@ -530,10 +530,16 @@ def test_creator_keeps_owner_until_payer_resolves():
 
 # ---------- bug-hunt fixes (v41) ----------
 
-def test_name_handoff_to_joined_person_deleteable():
-    """Hand-off payer by NAME to someone already joined resolves the identity
-    immediately -> owner can delete the bill (bug: paid_by_identity_id stayed
-    NULL -> _owner_id saw Budi but db.delete_bill saw creator -> undeletable)."""
+def test_name_handoff_resolves_identity_but_does_not_hand_over_the_bill():
+    """Hand-off payer by NAME resolves the identity for display (bug:
+    paid_by_identity_id stayed NULL -> _owner_id saw Budi but db.delete_bill
+    saw creator -> undeletable) — but it must NOT confirm them.
+
+    Confirming on the name path re-opened the v51 takeover from the other side:
+    a guest with the share link renames themselves to the placeholder, joins,
+    and the manager's "Pakai Nama Ini" tap makes them the sole owner. Handing
+    the bill over is the explicit identity_id path (the v62 banner), and only
+    that one."""
     creator = db.new_identity("Aufa30", role="creator")
     budi = db.new_identity("Budi30")
     bid = _mk_bill(creator)
@@ -543,10 +549,16 @@ def test_name_handoff_to_joined_person_deleteable():
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["paid_by_id"] == budi["id"], data["paid_by_id"]  # resolved now
-    assert data["owner_id"] == budi["id"]
-    r = c.delete(f"/api/bills/{bid}", headers=_H(budi["id"]))
-    assert r.status_code == 200, (r.status_code, r.text)
-    print("PASS name hand-off resolves identity -> owner can delete")
+    assert data["paid_by_name"] == "Budi30"
+    assert data["owner_id"] == creator["id"], "name alone never hands over"
+    assert c.delete(f"/api/bills/{bid}", headers=_H(budi["id"])).status_code == 403
+    # the creator still holds it, and can still hand it over on purpose
+    r = c.put(f"/api/bills/{bid}/paid_by", headers=_H(creator["id"]),
+              json={"identity_id": budi["id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["owner_id"] == budi["id"]
+    assert c.delete(f"/api/bills/{bid}", headers=_H(budi["id"])).status_code == 200
+    print("PASS name hand-off resolves identity but never confirms")
 
 
 def test_creator_removable_once_a_payer_holds_the_bill():
@@ -674,7 +686,7 @@ if __name__ == "__main__":
     test_payer_is_owner_privileges()
     test_owner_id_in_list_and_detail()
     test_creator_keeps_owner_until_payer_resolves()
-    test_name_handoff_to_joined_person_deleteable()
+    test_name_handoff_resolves_identity_but_does_not_hand_over_the_bill()
     test_creator_removable_once_a_payer_holds_the_bill()
     test_slot_remainder_distributed_per_slot()
     test_tax_not_lost_when_no_one_has_share()

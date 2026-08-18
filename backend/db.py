@@ -16,15 +16,36 @@ _PHOTO_NAME_RE = re.compile(r"^[0-9a-f]{16}\.jpg$")
 def _unlink_photo(photo_path):
     """Remove an uploaded photo file if it's one of ours (hex.jpg). Safe-guard:
     never unlink arbitrary paths — the URL is public, so a hostile photo_path
-    value must not be able to delete server files."""
+    value must not be able to delete server files.
+
+    Second guard: skip files another bill still points at. Paths are visible to
+    everyone who can read a bill, so submitting a stranger's path and deleting
+    your own bill used to unlink their receipt (bug: v64 audit).
+    """
     if not photo_path:
         return
     try:
+        if _photo_in_use(photo_path):
+            return
         p = Path(photo_path)
         if _PHOTO_NAME_RE.match(p.name):
             p.unlink(missing_ok=True)
     except Exception:
         pass
+
+
+def _photo_in_use(photo_path) -> bool:
+    """Is this file still referenced by any bill (new table or legacy column)?"""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM bill_photo WHERE path = ? "
+            "UNION ALL SELECT 1 FROM bill WHERE photo_path = ? LIMIT 1",
+            (photo_path, photo_path),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
 
 
 def get_db():
@@ -374,7 +395,47 @@ def get_contacts(identity_id: str, q: str | None = None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def is_contact(identity_id: str, other_id: str) -> bool:
+    """Have these two ever shared a bill? Same rule as get_contacts, without
+    its LIMIT 50 — the invite endpoint used to test membership against that
+    truncated list, so the picker (which filters BEFORE the limit) happily
+    offered contact #51 and the invite then answered "Bisa ngundang orang yang
+    udah pernah share bill aja" (bug: v64 audit)."""
+    if not other_id or other_id == identity_id:
+        return False
+    a, b = identity_id, other_id
+    conn = get_db()
+    try:
+        row = conn.execute(
+            """
+            SELECT 1 FROM bill x
+            WHERE (x.creator_identity_id = ?
+                   OR x.id IN (SELECT bill_id FROM payment WHERE identity_id = ?))
+              AND (x.creator_identity_id = ?
+                   OR x.id IN (SELECT bill_id FROM payment WHERE identity_id = ?))
+            LIMIT 1
+            """,
+            (a, a, b, b),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
 # ---------- direct invites (v64) ----------
+
+def reopen_declined_invite(conn, bill_id: str, identity_id: str, invited_by: str) -> bool:
+    """Turn a declined invite back into a pending one. Without this a decline
+    was permanent: create_invite returned the declined row, the endpoint
+    reported "pending", and the invitee never saw a card again (bug: v64
+    audit)."""
+    cur = conn.execute(
+        "UPDATE bill_invite SET status = 'pending', invited_by = ?, created_at = datetime('now') "
+        "WHERE bill_id = ? AND identity_id = ? AND status = 'declined'",
+        (invited_by, bill_id, identity_id),
+    )
+    return cur.rowcount > 0
+
 
 def create_invite(bill_id: str, identity_id: str, invited_by: str) -> dict:
     """Record an invite. Idempotent-ish: an existing pending invite for the
@@ -387,6 +448,17 @@ def create_invite(bill_id: str, identity_id: str, invited_by: str) -> dict:
             (bill_id, identity_id),
         ).fetchone()
         if existing:
+            # a declined invite is a "no thanks", not a permanent ban — asking
+            # again is a normal thing to do, and returning the declined row
+            # made the owner see "undangan dikirim" for an invite that could
+            # never appear (bug: v64 audit)
+            if existing["status"] == "declined" and reopen_declined_invite(
+                    conn, bill_id, identity_id, invited_by):
+                conn.commit()
+                existing = conn.execute(
+                    "SELECT * FROM bill_invite WHERE bill_id = ? AND identity_id = ?",
+                    (bill_id, identity_id),
+                ).fetchone()
             return dict(existing)
         conn.execute(
             "INSERT INTO bill_invite (bill_id, identity_id, invited_by, status) VALUES (?, ?, ?, 'pending')",
@@ -646,14 +718,30 @@ def add_bill_photo(bill_id: str, photo_path: str) -> int:
     return new_id
 
 
-def delete_bill_photo(photo_id: int) -> str | None:
-    """Remove one bill photo; returns its path for unlink (or None)."""
+def delete_bill_photo(bill_id: str, photo_id: int) -> str | None:
+    """Remove one photo FROM THIS BILL; returns its path for unlink (or None).
+
+    Scoped by bill_id on purpose: photo ids are a global autoincrement and every
+    reader of a bill payload gets them, so looking a photo up by id alone let
+    someone delete another bill's photo through a bill they do manage (bug:
+    found in the v64 audit).
+    """
     conn = get_db()
-    row = conn.execute("SELECT path FROM bill_photo WHERE id = ?", (photo_id,)).fetchone()
+    row = conn.execute(
+        "SELECT path FROM bill_photo WHERE id = ? AND bill_id = ?",
+        (photo_id, bill_id),
+    ).fetchone()
     if not row:
         conn.close()
         return None
-    conn.execute("DELETE FROM bill_photo WHERE id = ?", (photo_id,))
+    conn.execute("DELETE FROM bill_photo WHERE id = ? AND bill_id = ?", (photo_id, bill_id))
+    # the legacy single-photo column is what the init_db backfill reads. Leaving
+    # it set meant every restart re-created the row the user just deleted, now
+    # pointing at an unlinked file (bug: deleted receipts came back).
+    conn.execute(
+        "UPDATE bill SET photo_path = NULL WHERE id = ? AND photo_path = ?",
+        (bill_id, row["path"]),
+    )
     conn.commit()
     conn.close()
     return row["path"]
@@ -1184,10 +1272,16 @@ def _bill_settled(conn, bill_id: str, status: str) -> bool:
     data = get_bill(bill_id)
     if not data:
         return False
+    bill = data["bill"]
+    if bill.get("settled_manual"):
+        # the manual override has to be checked BEFORE the "nobody picked
+        # anything" shortcut, or a solo bill marked lunas by hand reads
+        # "Lunas" on its own screen and "Belum ada yang milih" in the list —
+        # and a solo bill is exactly what the button is for (bug: v64 audit)
+        return True
     sel_ids = {s["identity_id"] for s in data["selections"]}
     if not sel_ids:
         return False
-    bill = data["bill"]
     # same effective owner as main._owner_id: the CONFIRMED payer, else creator
     pid = bill.get("paid_by_identity_id")
     fallback_id = pid if (pid and bill.get("paid_by_confirmed")) else bill["creator_identity_id"]

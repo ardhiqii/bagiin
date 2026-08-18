@@ -126,54 +126,22 @@ function renderHome() {
     <button class="btn-primary" id="create-btn" style="margin-bottom:20px;">${ic("plus")} Buat Bill Baru</button>
     <div id="home-invites"></div>
     <div class="card">
+      <!-- Home used to carry the whole history screen: the same list, the same
+           four filter chips and the same two selects. On a 390px phone that
+           pushed the first bill below the fold, and the app had two screens
+           doing one job. Home = the last few bills; Riwayat owns the filters. -->
       <div class="card-title">
-        <span>Riwayat</span>
+        <span>Bill Terakhir</span>
+        <button type="button" class="link-btn" id="see-all-btn">Lihat Semua</button>
       </div>
-      ${HIST_CSS}
-      <div class="hist-filters">
-        ${HIST_FILTERS.map(f =>
-          `<button type="button" class="chip-btn ${histState.filter === f.v ? "chip-active" : ""}" data-filter="${f.v}"
-                   aria-pressed="${histState.filter === f.v}">${esc(f.label)}</button>`).join("")}
-        <select class="hist-year-sel" id="home-year" aria-label="Filter tahun">
-          <option value="all">Semua tahun</option>
-        </select>
-        <select class="hist-month-sel" id="home-month" aria-label="Filter bulan">
-          <option value="all">Semua bulan</option>
-          ${MONTH_OPTS.map(([v, l]) =>
-            `<option value="${v}" ${histState.month === v ? "selected" : ""}>${l}</option>`).join("")}
-        </select>
-      </div>
-      <div id="home-history">${skeletonRows(5)}</div>
+      <div id="home-history">${skeletonRows(4)}</div>
     </div>`);
   watchDock();
 
   $("#create-btn").addEventListener("click", () => location.hash = "#/create");
   $("#history-btn").addEventListener("click", () => location.hash = "#/history");
   $("#settings-btn").addEventListener("click", () => location.hash = "#/settings");
-
-  $$(".hist-filters .chip-btn").forEach(btn =>
-    btn.addEventListener("click", () => {
-      histState.filter = btn.dataset.filter;
-      histState.limit = HIST_PAGE;
-      $$(".hist-filters .chip-btn").forEach(b => {
-        const on = b === btn;
-        b.classList.toggle("chip-active", on);
-        b.setAttribute("aria-pressed", String(on));
-      });
-      loadHomeHistory(true);
-    }));
-  const mSel = $("#home-month");
-  if (mSel) mSel.addEventListener("change", () => {
-    histState.month = mSel.value;
-    histState.limit = HIST_PAGE;
-    loadHomeHistory(true);
-  });
-  const ySel = $("#home-year");
-  if (ySel) ySel.addEventListener("change", () => {
-    histState.year = ySel.value;
-    histState.limit = HIST_PAGE;
-    loadHomeHistory(true);
-  });
+  $("#see-all-btn").addEventListener("click", () => location.hash = "#/history");
 
   loadHomeHistory();
   loadHomeInvites();
@@ -246,11 +214,15 @@ function billListStatus(b) {
   // a bill nobody has picked from isn't "belum lunas" — nobody owes anything
   // yet. Saying so put a red chip next to a green "Kamu udah bayar" on a bill
   // where literally nothing had happened (bug: chips contradicted each other).
-  if (!b.has_picks) return { tone: "idle", label: "Belum dipilih", icon: "receipt" };
+  if (!b.has_picks) return { tone: "idle", label: "Belum ada yang milih", icon: "receipt" };
   return { tone: "due", label: "Belum lunas", icon: "receipt" };
 }
 
-const STATUS_CHIP = { ok: "chip-green", due: "chip-red", done: "chip-grey", idle: "chip-accent" };
+// Colour means MONEY here: green = beres, red = masih ada yang belum dibayar,
+// abu = gak ada yang ketagih (selesai / belum jalan). "Belum dipilih" used to
+// wear the accent, so a normal list came up with four orange rows shouting the
+// same colour as the "Buat Bill Baru" button — nothing stood out any more.
+const STATUS_CHIP = { ok: "chip-green", due: "chip-red", done: "chip-grey", idle: "chip-grey" };
 
 function billListStatusChip(b) {
   // text-only chips: the row avatar already carries the status icon, so an icon
@@ -298,11 +270,13 @@ function billRowHtml(b) {
         </div>
         ${personalStatusHtml(b)}
       </div>
-      <!-- always render the button so the amount's right edge doesn't jump
-           between rows; guests get a muted disabled ghost instead of nothing -->
-      <button class="icon-btn ghost delete-bill${b.can_manage ? "" : " is-disabled"}" data-id="${esc(b.id)}"
-              data-title="${esc(b.title)}" aria-label="Hapus bill ${esc(b.title)}"
-              ${b.can_manage ? "" : "disabled tabindex=\"-1\" aria-hidden=\"true\""}>${ic("trash")}</button>
+      <!-- keep the column width so the amounts line up down the list, but a
+           bill you can't delete gets empty space, not a greyed-out trash can:
+           a dead destructive control on most rows is noise, not information -->
+      ${b.can_manage
+        ? `<button class="icon-btn ghost delete-bill" data-id="${esc(b.id)}"
+              data-title="${esc(b.title)}" aria-label="Hapus bill ${esc(b.title)}">${ic("trash")}</button>`
+        : `<span class="row-gap" aria-hidden="true"></span>`}
     </div>`;
 }
 
@@ -345,9 +319,14 @@ const MONTH_OPTS = [
 
 const HIST_CSS = `<style>
   .hist-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-  .hist-filters .chip-btn { font-size:13px; padding:8px 12px; min-height:0; }
-  .hist-month-sel { flex:1; min-width:130px; }
-  .hist-year-sel { width:110px; flex-shrink:0; }
+  /* min-height:0 shrank these to ~37px next to 50px-tall selects — under the
+     thumb minimum and visibly out of line with the row */
+  .hist-filters .chip-btn { font-size:13px; padding:10px 14px; min-height:40px; }
+  /* status chips on one line, the two date selects on their own: mixed
+     together they wrapped unpredictably, and a 118px year select clipped its
+     own "Semua tahun" option down to "Semua t" */
+  .hist-selects { display:flex; gap:8px; margin-bottom:14px; }
+  .hist-selects select { flex:1 1 0; min-width:0; }
 </style>`;
 
 // filter options map to billListStatus tones so chip, filter and row can't
@@ -372,6 +351,8 @@ function renderHistory() {
       ${HIST_FILTERS.map(f =>
         `<button type="button" class="chip-btn ${histState.filter === f.v ? "chip-active" : ""}" data-filter="${f.v}"
                  aria-pressed="${histState.filter === f.v}">${esc(f.label)}</button>`).join("")}
+    </div>
+    <div class="hist-selects">
       <select class="hist-year-sel" id="hist-year" aria-label="Filter tahun">
         <option value="all">Semua tahun</option>
       </select>
@@ -407,20 +388,19 @@ function renderHistory() {
     histState.limit = HIST_PAGE;
     loadHistoryList(true);
   });
+  // paging is per-visit: leaving the screen at "80 rows shown" and coming
+  // back should start from the top page again
+  histState.limit = HIST_PAGE;
   loadHistoryList();
 }
 
-function yearOptionsHtml(bills) {
-  // unique years from bill dates, newest first — drives the year filter
+function availableYears(bills) {
   const years = [];
   for (const b of bills) {
-    const iso = b.transacted_at || b.created_at || "";
-    const y = String(iso).slice(0, 4); // YYYY
+    const y = String(b.transacted_at || b.created_at || "").slice(0, 4);
     if (/^\d{4}$/.test(y) && !years.includes(y)) years.push(y);
   }
-  years.sort().reverse();
-  return years.map(y =>
-    `<option value="${y}" ${histState.year === y ? "selected" : ""}>${esc(y)}</option>`).join("");
+  return years.sort().reverse();
 }
 
 function passHistoryFilter(b) {
@@ -445,9 +425,12 @@ function passHistoryFilter(b) {
 // different containers, so the two screens can't drift apart.
 // `useCache` = reuse the previously fetched list (filter clicks, month/year
 // changes); pass false when the data may have changed (initial load, delete).
-async function loadBillList(boxSel, yearSelId, monthSelId, moreId, emptyMsg, useCache) {
+async function loadBillList(boxSel, yearSelId, monthSelId, moreId, emptyMsg, useCache, opts = {}) {
   const box = $(boxSel);
   if (!box) return;
+  // preview = the home card: newest few, no filters (a filter set on Riwayat
+  // must not silently hide bills on home), no month headers, no paging.
+  const preview = opts.preview || 0;
   try {
     if (!useCache || !histBills) {
       histBills = await api("/api/identities/" + state.identity.id + "/bills");
@@ -458,11 +441,19 @@ async function loadBillList(boxSel, yearSelId, monthSelId, moreId, emptyMsg, use
         <p>Belum ada bill.</p><p class="muted">${emptyMsg}</p></div>`;
       return;
     }
-    const ySel = $(yearSelId);
+    const ySel = yearSelId ? $(yearSelId) : null;
     // rebuild the year options on every fetch — a conditional append left
     // stale years behind after a delete (bug: deleted bill's year stayed
-    // selectable and returned an empty result)
-    if (ySel) ySel.innerHTML = yearOptionsHtml(bills);
+    // selectable and returned an empty result). Keep "Semua tahun" at the top:
+    // replacing the whole innerHTML wiped the static option, so the select
+    // read "2026" on an unfiltered list and there was no way back to all
+    // years once one was picked (bug: a filter you can't turn off).
+    if (ySel) {
+      const years = availableYears(bills);
+      if (histState.year !== "all" && !years.includes(histState.year)) histState.year = "all";
+      ySel.innerHTML = `<option value="all"${histState.year === "all" ? " selected" : ""}>Semua tahun</option>`
+        + years.map(y => `<option value="${y}"${histState.year === y ? " selected" : ""}>${esc(y)}</option>`).join("");
+    }
     // newest first, grouped by month so a long list stays scannable.
     // transacted_at is sometimes date-only ("2026-08-18") and sometimes a
     // datetime — comparing raw strings would order "2026-08-18" before
@@ -475,6 +466,15 @@ async function loadBillList(boxSel, yearSelId, monthSelId, moreId, emptyMsg, use
       return isNaN(d) ? 0 : d.getTime();
     };
     const sorted = bills.slice().sort((a, b) => _ts(b) - _ts(a));
+    if (preview) {
+      box.innerHTML = sorted.slice(0, preview).map(billRowHtml).join("");
+      bindBillRows(box, () => loadBillList(boxSel, yearSelId, monthSelId, moreId, emptyMsg, false, opts));
+      // the count lives on the card's own "Lihat Semua" link — a second
+      // full-width button underneath said the same thing twice
+      const seeAll = $("#see-all-btn");
+      if (seeAll && sorted.length > preview) seeAll.textContent = `Lihat Semua (${sorted.length})`;
+      return;
+    }
     const filtered = sorted.filter(passHistoryFilter);
     if (!filtered.length) {
       box.innerHTML = `<div class="empty-state">${ic("empty")}
@@ -511,9 +511,11 @@ async function loadHistoryList(useCache = false) {
     "Bill yang kamu buat atau kamu ikutin bakal nongol di sini.", useCache);
 }
 
+const HOME_PREVIEW = 4;
 async function loadHomeHistory(useCache = false) {
-  return loadBillList("#home-history", "#home-year", "#home-month", "home-more",
-    "Bill yang kamu buat atau kamu ikutin bakal nongol di sini.", useCache);
+  return loadBillList("#home-history", null, null, "home-more",
+    "Bill yang kamu buat atau kamu ikutin bakal nongol di sini.", useCache,
+    { preview: HOME_PREVIEW });
 }
 
 // ---------- Settings / Akun ----------
@@ -535,7 +537,13 @@ const BRANDS = [
   // silently disagreed with what the user saw selected).
   { c: "Lainnya", hex: "#6B6259" },
 ];
-function brandInfo(code) { return BRANDS.find(b => b.c === code) || null; }
+// case-insensitive: accounts saved by an older build (or by the paste parser
+// before it canonicalised) carry values like "bca", and an exact match dropped
+// them to a grey unbranded chip
+function brandInfo(code) {
+  const k = String(code || "").toLowerCase();
+  return BRANDS.find(b => b.c.toLowerCase() === k) || null;
+}
 function chipTextColor(hex) {
   const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
   return (0.299 * r + 0.587 * g + 0.114 * b) > 165 ? "#18181B" : "#fff";
@@ -676,7 +684,7 @@ function renderSettings() {
            ${ic("check")}<span>Kamu udah punya kode pemulihan. Simpan baik-baik ya — itu satu-satunya
            cara balik ke akun ini kalau data browser kamu kehapus.</span>
          </div>
-         <button class="btn-outline btn-sm" id="regen-code" style="width:100%;">${ic("refresh")} Bikin kode baru</button>`
+         <button class="btn-outline btn-sm" id="regen-code" style="width:100%;">${ic("refresh")} Bikin Kode Baru</button>`
       : `<button class="btn-outline" id="gen-code">${ic("key")} Buat Kode</button>`;
     const gen = $("#gen-code");
     if (gen) gen.addEventListener("click", () => generate(gen));
@@ -927,7 +935,7 @@ function openPasteAccountsSheet(identityId, onAdded) {
     </div>
     <label for="paste-input">Teks Metode Bayar</label>
     <textarea id="paste-input" rows="6" placeholder="Tempel teks di sini..." style="resize:vertical;"></textarea>
-    <button class="btn-primary" id="parse-acct-btn">Parse</button>
+    <button class="btn-primary" id="parse-acct-btn">Cek Teksnya</button>
     <div id="paste-result"></div>
     <button class="btn-outline" id="close-sheet">Tutup</button>`, { noAutofocus: true });
 
@@ -1135,12 +1143,18 @@ function renderCreate(opts = {}) {
     // v62: pick WHERE the photo comes from (camera/gallery) and WHETHER it
     // gets scanned — two independent choices inside one sheet.
     const body = `
+      <!-- scanMode is module-level and survives screen changes, so the switch
+           has to be drawn from it. Hardcoding aria-checked="true" meant that
+           after turning scanning off once, the sheet showed it ON while the
+           camera still skipped OCR (bug: the toggle lied about its own state) -->
       <div class="tgl-row">
         <div>
           <div class="tgl-label">Baca Otomatis</div>
-          <div class="muted tgl-desc" id="dz-tgl-desc">Item &amp; harga dibaca dari foto — langsung masuk ke daftar</div>
+          <div class="muted tgl-desc" id="dz-tgl-desc">${scanMode
+            ? "Item &amp; harga dibaca dari foto — langsung masuk ke daftar"
+            : "Foto cuma ditempel — item &amp; harga diisi manual"}</div>
         </div>
-        <button type="button" class="switch" id="dz-tgl" role="switch" aria-checked="true" aria-label="Baca otomatis"></button>
+        <button type="button" class="switch" id="dz-tgl" role="switch" aria-checked="${scanMode}" aria-label="Baca otomatis"></button>
       </div>
       <button class="src-btn btn-primary" id="dz-camera">
         <span class="src-main">${ic("camera")}<span>Kamera</span></span>
@@ -1238,7 +1252,11 @@ async function uploadAndAttach(file) {
 }
 
 function blankBillForVerify() {
-  return { items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null, merchant: "", date: "" };
+  // one empty row, not zero: a manual bill always needs at least one item, and
+  // an empty card under a paragraph explaining "Bebas vs Slot" is an
+  // explanation with nothing to point at
+  return { items: [{ name: "", price: 0, mode: "free" }], subtotal: 0, tax: 0,
+           service: 0, total: 0, photo_path: null, merchant: "", date: "" };
 }
 
 // attach a photo to the MANUAL verify screen (upload now, path carried into the
@@ -1348,7 +1366,9 @@ async function readClipboardImage() {
     }
     toast("Clipboard kamu gak ada gambarnya");
   } catch (e) {
-    toast("Gak bisa baca clipboard: " + e.message);
+    // a raw DOMException string ("NotAllowedError: ...") spliced into
+      // Indonesian copy helps nobody — say what to do instead
+      toast("Gak bisa baca clipboard. Coba tempel pakai Ctrl+V ya");
   }
 }
 
@@ -1372,6 +1392,12 @@ let verifyState = {
 const VERIFY_CSS = `<style>
   .vf-item { display:grid; grid-template-columns:1fr 110px 40px; gap:8px; align-items:center;
              padding:12px 2px; border-bottom:1px solid var(--border); }
+  /* "Nasi Goreng Spesial" in a 1fr column next to a 110px price box reads
+     "Nasi Goreng Spe:" — give the name the whole width on a phone */
+  @media (max-width:430px) {
+    .vf-item { grid-template-columns:1fr 40px; }
+    .vf-item [data-role=name] { grid-column:1 / -1; }
+  }
   .vf-item:last-child { border-bottom:none; }
   .vf-item input { padding:9px 10px; }
   .vf-item .icon-btn { width:40px; height:40px; min-height:40px; }
@@ -1382,7 +1408,7 @@ const VERIFY_CSS = `<style>
   .vf-photo-wrap .photo-preview { width:100%; height:110px; object-fit:cover; border-radius:var(--r-xs); display:block; }
   .vf-photo-wrap .photo-preview.expanded { position:fixed; inset:0; z-index:60; width:100%; height:100%;
     object-fit:contain; background:rgba(0,0,0,.86); border-radius:0; }
-  .vf-photo-del { position:absolute; top:6px; right:6px; width:28px; height:28px; min-height:28px; padding:0;
+  .vf-photo-del { position:absolute; top:4px; right:4px; width:36px; height:36px; min-height:36px; padding:0;
     border-radius:var(--r-full); background:rgba(0,0,0,.62); color:#fff; border:none; display:flex;
     align-items:center; justify-content:center; }
   @media (max-width:399px) {
@@ -1420,8 +1446,11 @@ function renderVerify(ocr, manual = false) {
           : ((ocr && ocr.paid_by_name) == null),
         tax_included: !!(ocr.tax_included),
         // last PPN the user typed, so switching "termasuk pajak" off can put it
-        // back (see the toggle handler)
-        taxSaved: ocr.tax || 0,
+        // back (see the toggle handler). Every re-render (add/remove photo,
+        // paste) feeds verifyState back through here — reading only `tax` lost
+        // the saved number whenever "termasuk pajak" was on, because that
+        // forces tax to 0 (bug: PPN vanished after attaching a photo)
+        taxSaved: (ocr && typeof ocr.taxSaved === "number") ? ocr.taxSaved : (ocr.tax || 0),
         participants: (ocr && ocr.participants) || [],
         extraNames: (ocr && ocr.extraNames) || [],
       };
@@ -1536,11 +1565,8 @@ function renderVerify(ocr, manual = false) {
     </div>
 
     <div class="card">
-      <div class="card-title">
-        <span>Siapa yang Ikut</span>
-        <span class="muted">opsional — bisa undang lagi nanti</span>
-      </div>
-      <p class="muted" style="margin:-4px 0 10px;">Pilih dari orang yang pernah share bill sama kamu — yang auto-accept langsung masuk, yang lain dapat undangan di beranda. Selain itu bisa ketik nama bebas.</p>
+      <div class="card-title"><span>Siapa yang Ikut</span></div>
+      <p class="muted" style="margin:-4px 0 10px;">Opsional, bisa diundang lagi nanti. Pilih dari orang yang pernah share bill sama kamu — yang auto-accept langsung masuk, sisanya dapat undangan di beranda. Nama lain bisa diketik manual.</p>
       <div id="people-pick" style="display:flex;flex-direction:column;gap:6px;"></div>
       <div style="display:flex;gap:8px;margin-top:10px;">
         <input id="person-name-input" placeholder="Nama lainnya (opsional)" maxlength="30" autocomplete="off" style="flex:1;">
@@ -1668,7 +1694,7 @@ function renderVerify(ocr, manual = false) {
           const contacts = await api(`/api/identities/${me.id}/contacts`);
           if (!document.getElementById("people-pick")) return; // left the screen
           if (!contacts || !contacts.length) {
-            peoplePick.innerHTML = `<p class="muted" style="padding:2px 0;">Belum ada kontak — Undang orang lewat link dulu, nanti dia muncul di sini.</p>`;
+            peoplePick.innerHTML = `<p class="muted" style="padding:2px 0;">Belum ada kontak — undang orang lewat link dulu, nanti dia muncul di sini.</p>`;
             return;
           }
           peoplePick.innerHTML = contacts.map(c => `
@@ -1785,7 +1811,10 @@ function renderVerifyItems() {
         <label class="label-sm" for="disc-${idx}" style="margin:0;">Potongan (diskon)</label>
         <input id="disc-${idx}" data-role="discount" data-idx="${idx}" class="input-money" type="text"
                inputmode="numeric" value="${rupiahFmt(it.discount)}" placeholder="0" style="max-width:110px;">
-        <span class="muted" style="font-size:11.5px;">harga asli − potongan = yang dibayar</span>
+        ${/* "harga asli − potongan = yang dibayar" used to sit next to every
+              discount box: five copies of the same subtraction, four lines each
+              on a phone. The green result below says it better, and only when
+              there is actually a discount. */ ""}
         ${it.discount > 0 ? `<span class="disc-bayar money-sm" style="color:var(--green);font-weight:700;">→ bayar ${rupiahFmt(eff)}</span>` : ""}
       </div>
 
@@ -1801,7 +1830,7 @@ function renderVerifyItems() {
             <button type="button" class="chip-btn slot-dec" data-idx="${idx}" aria-label="Kurangi jumlah bagian"><span aria-hidden="true">−</span></button>
             <span class="slot-count money-sm" style="min-width:20px;text-align:center;color:var(--text);">${slots}</span>
             <button type="button" class="chip-btn slot-inc" data-idx="${idx}" aria-label="Tambah jumlah bagian">${ic("plus")}</button>
-            <span class="muted" style="font-size:12px;">orang</span>
+            <span class="muted" style="font-size:12px;">bagian</span>
           </span>` : ""}
         </div>
         ${/* Only "slot" needs a per-item line, because the numbers differ per
@@ -1911,7 +1940,7 @@ function updateVerifyTotal() {
   if (warn) {
     if (ocrEmpty) {
       warn.classList.remove("hidden");
-      warn.textContent = "OCR gak nemu item dari fotonya — tambah item manual aja, subtotal udah dibiarin dari struk.";
+      warn.textContent = "Struknya gak kebaca jelas — tambah item manual aja, subtotal udah dibiarin dari struk.";
       warn.style.color = "var(--accent)";
     } else if (mismatch) {
       warn.classList.remove("hidden");

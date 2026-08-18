@@ -567,6 +567,13 @@ async def create_bill(request: Request):
         raise HTTPException(400, "Total gak cocok sama subtotal + pajak + service")
     if subtotal != eff_sum:
         raise HTTPException(400, f"Subtotal gak cocok sama isi item (harusnya Rp {eff_sum:,})")
+    # a non-string here reached sqlite3 and raised InterfaceError -> 500, and
+    # Cloudflare replaces 5xx bodies with its own error page (bug: v64 audit)
+    photos = [p for p in (data.get("photos") or []) if isinstance(p, str) and p] \
+        if isinstance(data.get("photos"), list) else None
+    photo_path = data.get("photo_path")
+    if photo_path is not None and not isinstance(photo_path, str):
+        raise HTTPException(400, "photo_path harus teks")
     created = db.create_bill(
         creator_id=ident["id"],
         title=title,
@@ -587,8 +594,8 @@ async def create_bill(request: Request):
             "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0),
         } for i in items],
         participants=participants,
-        photo_path=data.get("photo_path"),
-        photos=data.get("photos") if isinstance(data.get("photos"), list) else None,
+        photo_path=photo_path,
+        photos=photos,
         paid_by_name=paid_by_name,
     )
     return created
@@ -755,7 +762,15 @@ async def set_paid_by(bill_id: str, request: Request):
                         identity_id = cand["id"]
                         name = cand["name"]
                         break
-    db.set_paid_by(bill_id, identity_id, name, confirmed=True)
+    # `confirmed` is the difference between "display this name" and "hand this
+    # person the bill" (v51/v57). Only an explicit identity_id is a deliberate
+    # pick; a name that merely MATCHED someone who joined is display-only.
+    # Confirming the name path re-opened the takeover v51 closed: a guest with
+    # the share link renames themselves to the placeholder ("budi"), joins, and
+    # the manager's harmless-looking "Pakai Nama Ini" tap makes them the sole
+    # owner — the real creator then gets 403 on their own bill and the guest
+    # can delete it (bug found in the v64 audit).
+    db.set_paid_by(bill_id, identity_id, name, confirmed=bool(data.get("identity_id")))
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
@@ -823,7 +838,7 @@ async def invite_to_bill(bill_id: str, request: Request):
     # identity ids are public (every bill payload lists them) — scoping the
     # invite to "kontak terbukti" stops anyone force-joining strangers to
     # their own bills as a spam vector (bug found in v64 review)
-    if not any(c["id"] == target_id for c in db.get_contacts(ident["id"])):
+    if not db.is_contact(ident["id"], target_id):
         raise HTTPException(400, "Bisa ngundang orang yang udah pernah share bill aja")
     inv = db.create_invite(bill_id, target_id, ident["id"])
     if inv["status"] == "accepted":
@@ -1145,7 +1160,10 @@ def delete_photo(bill_id: str, photo_id: int, request: Request):
     ident = _identity_from_request(request)
     if not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
-    path = db.delete_bill_photo(photo_id)
+    # scope the delete to THIS bill: photo ids are a global autoincrement and
+    # every reader of a bill payload sees them, so an unscoped id let anyone
+    # delete any bill's photo from a bill they do manage (bug: v64 audit)
+    path = db.delete_bill_photo(bill_data["bill"]["id"], photo_id)
     if path is None:
         raise HTTPException(404, "Foto gak ketemu")
     db._unlink_photo(path)

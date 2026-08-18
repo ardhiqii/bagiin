@@ -438,6 +438,103 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Changelog
 
+### 2026-08-18 (v65) — audit pass: takeover ditutup, UI dirapihin lagi
+
+Pass audit penuh setelah v59–v64 (filter+paging riwayat, undangan langsung,
+stepper inline, multi-foto, settle sekaligus, konfirmasi payer by name).
+
+**Keamanan**
+
+- **Bill bisa direbut lewat nama payer.** Bill dibikin "dibayar Budi". Siapa pun
+  yang pegang link bisa ganti namanya jadi "budi", join, terus pas si pembuat
+  ngetuk "Pakai Nama Ini" (kelihatannya gak ngapa-ngapain — namanya udah keisi
+  duluan), backend nge-set `paid_by_confirmed = 1` → orang itu jadi **satu-satunya**
+  owner: pembuatnya kena 403 di billnya sendiri dan bill-nya bisa dihapus orang
+  lain. Ini aturan v51 yang bocor lagi dari sisi lain. Sekarang cuma `identity_id`
+  eksplisit (banner konfirmasi v62) yang nge-confirm; jalur nama tetap nyambungin
+  identitas buat tampilan doang.
+- **Hapus foto gak dibatesin ke bill-nya.** `DELETE /api/bills/{bill}/photos/{id}`
+  nyari foto by id doang. Id foto itu autoincrement global dan dikirim ke semua
+  yang bisa baca bill, jadi orang bisa ngehapus foto bill orang lain lewat bill
+  miliknya sendiri. Sekarang query-nya `WHERE id = ? AND bill_id = ?`.
+- **Hapus bill sendiri bisa ngilangin struk orang lain.** Path foto ikut di
+  payload, jadi bisa dipasang ke bill sendiri; pas bill itu dihapus, file-nya
+  di-unlink — punya korban. `_unlink_photo` sekarang nolak hapus file yang masih
+  dipakai bill lain.
+- **Foto yang dihapus balik lagi tiap restart.** `init_db` nge-backfill kolom lama
+  `bill.photo_path` ke `bill_photo` tiap boot, sementara hapus foto cuma ngapus
+  baris `bill_photo`. Sekarang kolom lamanya ikut dikosongin.
+
+**Status yang saling bantah**
+
+- "Tandai Lunas" (v60) di bill solo: layar bill bilang **Lunas**, daftar di home
+  bilang **Belum ada yang milih** — `_bill_settled` keburu return di cek "belum
+  ada yang milih" sebelum baca flag manualnya. Padahal bill solo justru alasan
+  tombol itu ada.
+- Bill yang di-Tandai Lunas: header hijau "Lunas" tapi tiap baris orang masih
+  nampilin tombol "Tandai Lunas", dan layar tamu masih nagih. Sekarang UI baca
+  `settled_manual`.
+- Bill ditutup + ditandai lunas manual masih nyetak "masih ada Rp X yang belum
+  dibayar" merah di bawah chip hijau "Ditutup · lunas".
+- Undangan yang **ditolak** gak bisa diundang lagi selamanya: `create_invite`
+  balikin baris `declined`, endpoint-nya lapor "pending", yang diundang gak pernah
+  liat kartunya. Sekarang di-reset jadi pending.
+- Cek kontak buat undangan pakai daftar yang di-`LIMIT 50`, padahal pencarian
+  kontak nyaring sebelum limit — jadi kontak ke-51 muncul di picker tapi ditolak
+  "bisa ngundang orang yang udah pernah share bill aja". Sekarang pakai
+  `db.is_contact()` tanpa limit.
+
+**UI — HP dan desktop**
+
+- **Baris item yang dicentang jebol di HP.** Stepper (−/+) + harga + checkbox
+  nyisain ~90px buat nama, jadi "Ayam Bakar Madu" pecah jadi tiga baris. Di layar
+  ≤430px stepper sekarang turun ke barisnya sendiri, tombolnya jadi 40px, dan
+  keterangan "kamu 1×" dicopot (steppernya udah nunjukin angka yang sama).
+- **Sheet bayar gak nyebut mau transfer ke mana.** Ini layar terakhir sebelum
+  orang beneran ngirim duit, judulnya "Konfirmasi Item" dan isinya cuma daftar
+  item — nomor rekeningnya ada di tombol lain di layar belakangnya. Sekarang:
+  "Bayar ke <nama>", total, lalu **Kirim ke** + rekening/e-wallet + tombol Salin.
+- **Home = salinan Riwayat.** Dua-duanya daftar bill lengkap dengan empat chip
+  filter dan dua dropdown; di HP filternya doang udah makan setengah layar.
+  Home sekarang cuma 4 bill terakhir + "Lihat Semua"; filter tinggal di Riwayat.
+- **Filter tahun gak bisa dibalikin ke "Semua tahun".** Opsinya kehapus tiap
+  daftar dimuat, jadi selectnya nulis "2026" padahal filternya mati, dan sekali
+  milih tahun gak ada jalan pulang.
+- Chip status "Belum dipilih" pakai warna aksen — di daftar normal empat baris
+  ikutan oranye, warnanya sama kayak tombol utama, jadi gak ada yang menonjol.
+  Sekarang warna = duit: hijau beres, merah masih ada tagihan, abu netral.
+- Kartu owner nyetak chip status yang **sama persis dua kali** ("Rp 88.975 belum
+  dibayar" di atas dan lagi 12px di bawahnya). Diganti bar progress "udah masuk".
+- Tiga tombol full-width numpuk di kartu owner (Tandai Lunas / Tambah Foto /
+  Metode Bayar) tanpa hierarki — yang paling berdampak malah paling atas.
+  Sekarang dua utilitas sebaris, aksi duitnya sendirian di bawah.
+- Baris orang di HP: nama + rincian + total + chip + tombol hapus rebutan 326px.
+  Sekarang totalnya turun ke baris kedua.
+- Toggle "Baca Otomatis" bohong: `aria-checked` di-hardcode `true`, padahal
+  scanMode disimpen di module — matiin sekali, buka lagi, kelihatannya nyala tapi
+  OCR-nya mati.
+- PPN ilang di editor: nambah/hapus foto nge-reset `taxSaved` ke 0 kalau "harga
+  termasuk pajak" lagi nyala.
+- Tombol hapus 20–34px (chip peserta, hapus foto, hapus orang, stepper) dinaikin
+  ke ≥30–40px. Tombol hapus bill di baris yang bukan punya kita gak dirender lagi
+  sebagai tombol mati.
+- Copy: "Parse" → "Cek Teksnya", "OCR gak nemu item" → "Struknya gak kebaca
+  jelas", DOMException mentah di toast clipboard diganti instruksi, chip status
+  konsisten sentence case.
+- ~110 baris kode mati dibuang (`openFreePickerSheet`, `computeMyTotal` — sisa
+  dari perpindahan ke stepper inline).
+
+**Tes**
+
+- `backend/conftest.py` baru: suite-nya selama ini kebind ke direktori upload
+  **produksi** (`/var/www/bagiin-uploads`) karena cuma `BAGIIN_DB` yang di-set per
+  file — di VPS itu berarti nulis JPEG tes ke folder live. Rate limiter juga
+  dimatiin pas tes (bucket-nya global per-IP, suite-nya nge-429 sendiri).
+- `test_regressions_v65.py` (8 tes) buat semua temuan di atas. Total 138 lulus.
+- ⚠️ `test_regressions_v62.py::test_confirm_by_name_resolves_and_confirms` sekarang
+  GAGAL — dia nge-assert perilaku yang jadi celah takeover di atas. File-nya
+  mode 600 punya user `hermes`, jadi belum bisa diupdate.
+
 ### 2026-08-12 (lanjutan 4) — pembuat bill boleh keluar (v58)
 
 Nutup celah desain yang ketinggalan dari v57: sejak payer di-confirm, pembuat bill

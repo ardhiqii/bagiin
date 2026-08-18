@@ -20,7 +20,7 @@ cd backend
 source venv/bin/activate                 # venv is committed-adjacent but gitignored
 uvicorn main:app --reload --port 8082    # serves API + frontend at http://localhost:8082
 
-venv/bin/python -m pytest -q                       # full suite (98 tests, ~4s)
+venv/bin/python -m pytest -q                       # full suite (~140 tests, ~7s)
 venv/bin/python -m pytest test_behaviors.py -q     # one file
 venv/bin/python -m pytest test_behaviors.py -q -k slot   # one test
 venv/bin/python test_calc_regression.py            # test files also run standalone (__main__)
@@ -38,6 +38,9 @@ running with `--remote-debugging-port=9222`.
 
 Tests set `BAGIIN_DB` to a temp file at import time, so they never touch `backend/bagiin.db`
 (the live DB, gitignored). Any new test file must do the same **before** importing `db`.
+`backend/conftest.py` does the same for `BAGIIN_UPLOAD_DIR` once for the whole session
+(main.py resolves and `mkdir`s it at import, so the first file to import `main` binds it
+for every other file) and disables the rate limiter, whose buckets are process-global.
 
 Production: `sudo systemctl restart bagiin.service` (systemd + nginx + Let's Encrypt on the
 VPS; uploads live in `/var/www/bagiin-uploads`).
@@ -108,7 +111,10 @@ mints one (trust on first use). Bill id is a 22-char `token_urlsafe(16)`; posses
 grants read access. Rate limiting via slowapi per IP.
 
 **Ownership:** `_owner_id()` / `_can_manage()` in `main.py` encode the rule —
-the CONFIRMED payer is the sole manager (v57). Before any payer is confirmed
+the CONFIRMED payer is the sole manager (v57). Only an explicit `identity_id`
+on `PUT /paid_by` confirms; passing a `name` resolves the identity for display
+and must never set `paid_by_confirmed` (v65 — doing so let anyone with the link
+rename themselves to the placeholder and take the bill over). Before any payer is confirmed
 the creator manages; once a manager explicitly confirms a payer (`paid_by`
 with an `identity_id`), power moves to them completely and the creator becomes
 a regular participant. A payer matched only by name is display-only and never
