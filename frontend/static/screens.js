@@ -1398,6 +1398,28 @@ async function verifyAttachPhoto(file) {
   return upload();
 }
 
+// v67: release a photo the user attached and then threw away before the bill
+// ever existed — DELETE /api/photos/{filename} (backend/main.py) unlinks the
+// orphaned upload. `verifyState.photos` holds the full path /api/photos and
+// /api/ocr hand back (e.g. "/var/www/bagiin-uploads/<hex>.jpg"); the endpoint
+// takes the bare filename, so strip the path the same way the <img> preview
+// already does. Best-effort and silent — the user asked to remove a
+// thumbnail (or walked away from the whole editor), and a server hiccup
+// cleaning up a stray file on disk is not their problem; log, never toast.
+// Never call this for a photo that belongs to a SAVED bill — bill.js has its
+// own DELETE /api/bills/{id}/photos/{id} for those, and this endpoint
+// refuses (409) anything a bill still references anyway.
+function releaseAbandonedPhoto(path) {
+  if (!path) return;
+  const filename = String(path).split("/").pop();
+  if (!filename) return;
+  api(`/api/photos/${filename}`, { method: "DELETE" })
+    .catch(e => console.warn("releaseAbandonedPhoto: gagal hapus " + filename, e));
+}
+function releaseAbandonedPhotos(paths) {
+  (paths || []).forEach(releaseAbandonedPhoto);
+}
+
 async function uploadAndOcr(file) {
   const body = $("#create-body");
   if (body) {
@@ -1777,12 +1799,21 @@ function renderVerify(ocr, manual = false) {
   // button below entirely — this makes ANY way of leaving the hash ask
   // first. Re-registered every render so the guard closure always reads the
   // CURRENT verifyState, not whatever it was when first armed.
-  guardHash(async () => !verifyHasTypedContent() || confirmDiscardVerify());
+  guardHash(async () => {
+    if (!verifyHasTypedContent()) return true;
+    const ok = await confirmDiscardVerify();
+    // confirmed leaving with photos already on the server and no bill ever
+    // created to reference them — release them (J1: the system Back /
+    // browser Back path, not just the in-app button below)
+    if (ok) releaseAbandonedPhotos(verifyState.photos);
+    return ok;
+  });
   $("#back-btn").addEventListener("click", async () => {
     if (verifyHasTypedContent()) {
       const ok = await confirmDiscardVerify();
       if (!ok) return;
     }
+    releaseAbandonedPhotos(verifyState.photos);
     clearHashGuard();
     location.hash = "#/create";
   });
@@ -1793,7 +1824,10 @@ function renderVerify(ocr, manual = false) {
   $$(".vf-photo-del").forEach(btn => btn.addEventListener("click", () => {
     const idx = parseInt(btn.dataset.idx, 10);
     if (!Number.isFinite(idx)) return;
-    verifyState.photos.splice(idx, 1);
+    const [removed] = verifyState.photos.splice(idx, 1);
+    // J1: the bill doesn't exist yet, so nothing else references this file —
+    // release it on the server instead of just forgetting the path client-side
+    releaseAbandonedPhoto(removed);
     verifyState.photo_path = verifyState.photos[0] || null;
     renderVerify({ ...verifyState, photos: verifyState.photos, paid_by_name: verifyState.paid_by_name }, verifyState.manual);
   }));
@@ -1801,16 +1835,33 @@ function renderVerify(ocr, manual = false) {
   const pastePhotoBtn = $("#verify-paste-photo");
   if (pastePhotoBtn) pastePhotoBtn.addEventListener("click", () => readClipboardImage());
   const retryScanBtn = $("#verify-retry-scan");
-  if (retryScanBtn) retryScanBtn.addEventListener("click", () => {
+  if (retryScanBtn) retryScanBtn.addEventListener("click", async () => {
     const f = verifyState.ocrRetryFile;
+    // only rendered when ocrRetryFile is truthy (see the warn-box above), but
+    // a File held across a bfcache restore or a stale re-render could still
+    // end up here empty — never leave the button silently dead (J3)
     if (!f) { toast("Foto aslinya udah gak ada — upload ulang ya"); return; }
+    const staleOnRetry = verifyState.photos.slice();
     // route through #/create first (clearing the guard on the way): this is
     // a deliberate hop back into the OCR flow, not a "leave and lose data"
     // the guard should question, and uploadAndOcr needs the create screen's
-    // #create-body mounted for its spinner
+    // #create-body mounted for its spinner.
+    // history.replaceState (not location.hash=) so this doesn't fire an
+    // async hashchange: `location.hash=` used to win a race against
+    // uploadAndOcr's own synchronous lookup of #create-body, which ran
+    // before the router's renderCreate() had painted it, so the "Lagi baca
+    // struknya..." spinner silently never appeared (bug: J3). Render the
+    // create screen ourselves, synchronously, the same way renderVerify
+    // claims its own route above.
     clearHashGuard();
-    location.hash = "#/create";
-    uploadAndOcr(f);
+    history.replaceState(null, "", "#/create");
+    renderCreate();
+    await uploadAndOcr(f);
+    // uploadAndOcr always ends by replacing verifyState wholesale (success:
+    // renderVerify(result); OCR-fail-again: uploadAndAttach's own re-upload)
+    // with a FRESH upload — the file(s) attached before this retry are now
+    // orphaned server-side unless the new state still points at them (J1)
+    releaseAbandonedPhotos(staleOnRetry.filter(p => !verifyState.photos.includes(p)));
   });
   if (addPhotoBtn) {
     const input = document.createElement("input");
