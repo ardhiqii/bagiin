@@ -25,9 +25,10 @@ venv/bin/python -m pytest test_behaviors.py -q     # one file
 venv/bin/python -m pytest test_behaviors.py -q -k slot   # one test
 venv/bin/python test_calc_regression.py            # test files also run standalone (__main__)
 
-# browser smoke test of the guest picker (needs Chrome on --remote-debugging-port=9222)
+# browser smoke tests (need Chrome on --remote-debugging-port=9222)
 BAGIIN_DB=/tmp/e2e.db BAGIIN_UPLOAD_DIR=/tmp/e2e-up venv/bin/python -m uvicorn main:app --port 8099 &
-node ../tools/e2e_smoke.mjs
+node ../tools/e2e_smoke.mjs      # guest picker: shown total == server total
+node ../tools/e2e_settled.mjs    # a hand-settled bill says the same thing on every screen
 ```
 
 `tools/e2e_smoke.mjs` seeds a bill, drives the real UI, and asserts the guest is shown
@@ -35,6 +36,11 @@ node ../tools/e2e_smoke.mjs
 frontend used to re-derive the split in JS and told people to transfer the wrong amount.
 It needs no dependencies — Node's built-in WebSocket talks to a Chrome that is already
 running with `--remote-debugging-port=9222`.
+
+`tools/e2e_settled.mjs` guards the other recurring bug class: one bill, two contradicting
+statements. A bill settled by hand (`POST /settle`, v60) deliberately leaves every payment
+row `unpaid`, so the manager view, the guest view and the list must all read
+`settled_manual` or they argue with each other on screen.
 
 Tests set `BAGIIN_DB` to a temp file at import time, so they never touch `backend/bagiin.db`
 (the live DB, gitignored). Any new test file must do the same **before** importing `db`.
