@@ -134,6 +134,27 @@ def _can_manage(bill_data: dict, ident_id: str) -> bool:
     return _owner_id(bill_data) == ident_id
 
 
+def _is_bill_member(bill_data: dict, ident_id: str) -> bool:
+    """Is this identity actually on the bill: a payment row (joined), a
+    selection (picked something), or the creator who hasn't left?
+
+    Same membership test `leave_bill` uses to guard exits. `mark_paid` reuses
+    it (v66) -- it used to only check "is this me", never "am I on this
+    bill", so anyone holding the share link could call `/paid` with their own
+    id and self-insert into the roster without ever calling `/join` (`db.
+    mark_paid`'s `INSERT OR IGNORE` creates the payment row on its own). That
+    is `/join` in every effect except one: it also flips `len(people) > 1`,
+    one of the two guards that stop a solo bill from auto-settling (bug:
+    v66 audit).
+    """
+    bill = bill_data["bill"]
+    if ident_id == bill["creator_identity_id"] and not bill.get("creator_left"):
+        return True
+    if any(p["identity_id"] == ident_id for p in bill_data["payments"]):
+        return True
+    return any(s["identity_id"] == ident_id for s in bill_data["selections"])
+
+
 def _names_for_identities(ident_ids: list[str]) -> dict[str, str]:
     out = {}
     for iid in ident_ids:
@@ -177,6 +198,27 @@ def _to_str(value, field: str, *, maxlen: int | None = None) -> str:
     if maxlen is not None and len(v) > maxlen:
         raise HTTPException(400, f"{field} maksimal {maxlen} karakter")
     return v
+
+
+_MAX_IDR = 10**12  # a trillion rupiah -- comfortably above any real bill,
+# comfortably below what sqlite3's INSERT can choke on. `_to_int` calls for
+# money had `minv=0` but no `maxv`, so e.g. `1e20` reached sqlite3 and raised
+# `OverflowError: Python int too large to convert to SQLite INTEGER` -> 500
+# (bug: v66 audit, a 20-digit price in a create/update payload).
+
+_ALLOWED_PHOTO_MIME = {"image/jpeg", "image/png", "image/webp"}
+
+
+def _check_photo_mime(content_type: str | None):
+    """Reject anything that isn't a real photo (400, casual Indonesian).
+
+    `/api/ocr` already rejects `image/heic`; these two endpoints checked size
+    only, so a HEIC or a plain text file sailed through as 200, got stored as
+    `<hex>.jpg`, got a `bill_photo` row, and the uploader got a success toast
+    plus a broken thumbnail (bug: v66 audit).
+    """
+    if (content_type or "") not in _ALLOWED_PHOTO_MIME:
+        raise HTTPException(400, "Format foto gak didukung, pilih JPEG/PNG/WEBP")
 
 
 def generate_readable_code() -> str:
@@ -269,15 +311,35 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
     auto_all_paid = bool(sel_ids) and len(result["people"]) > 1 and owed_ids <= paid_ids
     all_paid = settled_manual or auto_all_paid
     settled = settled_manual or (auto_all_paid and result["uncovered_idr"] == 0)
+    # who may edit/close/delete (v57): the CONFIRMED payer is the sole
+    # manager. Before any payer is confirmed the creator manages; after
+    # confirmation the creator is a regular participant like everyone else.
+    can_manage_flag = bool(viewer_id) and _can_manage(bill_data, viewer_id)
+    # pending invites (v66): manager-only, additive. Before this the sender
+    # of an invite had no visibility into it at all -- no way to tell "Undang"
+    # was already sent, and no way to take back a wrong one (recipient with
+    # auto_accept OFF). Scoped to the manager the same way creator_accounts
+    # etc. already are -- never surfaced to every holder of the share link
+    # (bug found in the v66 audit).
+    pending_invites = []
+    if can_manage_flag:
+        for inv in db.get_invites_for_bill(bill["id"]):
+            if inv["status"] != "pending":
+                continue
+            target = db.get_identity(inv["identity_id"])
+            pending_invites.append({
+                "id": inv["id"],
+                "identity_id": inv["identity_id"],
+                "name": target["name"] if target else "?",
+                "created_at": inv["created_at"],
+            })
     return {
         "all_paid": all_paid,
         "settled_manual": settled_manual,
         "bill": bill,
         "owner_id": _owner_id(bill_data),
-        # who may edit/close/delete (v57): the CONFIRMED payer is the sole
-        # manager. Before any payer is confirmed the creator manages; after
-        # confirmation the creator is a regular participant like everyone else.
-        "can_manage": bool(viewer_id) and _can_manage(bill_data, viewer_id),
+        "can_manage": can_manage_flag,
+        "pending_invites": pending_invites,
         "creator_name": creator_name,
         "creator_accounts": db.get_accounts(bill["creator_identity_id"]),
         "paid_by_id": paid_by_id,
@@ -313,9 +375,16 @@ async def _read_json(request: Request) -> dict:
     if not raw:
         raise HTTPException(400, "Body required")
     try:
-        return json.loads(raw)
+        parsed = json.loads(raw)
     except Exception:
         raise HTTPException(400, "Invalid JSON")
+    # a JSON array (or string/number) parses fine but every caller immediately
+    # does data.get(...) on it -> AttributeError -> 500 (bug: `POST /api/bills`
+    # with `[]` as the body). A non-object body is malformed input, not a
+    # server error.
+    if not isinstance(parsed, dict):
+        raise HTTPException(400, "Body harus JSON object")
+    return parsed
 
 
 @app.post("/api/identities")
@@ -333,7 +402,10 @@ async def create_identity(request: Request):
 @limiter.limit("10/minute")
 async def restore_identity(request: Request):
     data = await _read_json(request)
-    code = (data.get("code") or "").strip()
+    # unauthenticated endpoint (no identity/secret needed to restore) -- a
+    # non-string code (list/dict) reached `.strip()` -> AttributeError -> 500,
+    # reachable by anyone (bug: v66 audit, A12)
+    code = _to_str(data.get("code"), "Code", maxlen=100)
     ident = db.restore_identity(code)
     if not ident:
         raise HTTPException(404, "Code tidak dikenal")
@@ -364,7 +436,9 @@ async def set_code(identity_id: str, request: Request):
     if identity_id != ident["id"]:
         raise HTTPException(403, "Identitas gak cocok")
     data = await _read_json(request)
-    code = (data.get("code") or "").strip()
+    # same non-string-code crash as restore_identity, self-inflicted only
+    # here since the caller is already authenticated (bug: v66 audit, A13)
+    code = _to_str(data.get("code"), "Code", maxlen=100)
     if len(code) < 8:
         raise HTTPException(400, "Code minimal 8 karakter")
     db.set_identity_code(identity_id, code)
@@ -477,11 +551,14 @@ async def add_account(identity_id: str, request: Request):
 @limiter.limit("30/minute")
 async def update_account(account_id: int, request: Request):
     ident = _identity_from_request(request)
-    body = await request.json()
-    brand = str(body.get("brand") or "").strip()
-    account_no = str(body.get("account_no") or "").strip()
-    holder_name = body.get("holder_name")
-    holder_name = str(holder_name).strip() if holder_name else None
+    # `request.json()` raised on a malformed/empty body instead of a clean
+    # 400, and bare str(x or "") silently persisted a dict value as
+    # "{'a': 1}" instead of rejecting it -- both fixed to match add_account
+    # (bug: v66 audit, A14)
+    body = await _read_json(request)
+    brand = _to_str(body.get("brand"), "Brand", maxlen=40)
+    account_no = _to_str(body.get("account_no"), "Nomor", maxlen=60)
+    holder_name = _to_str(body.get("holder_name"), "Nama pemilik", maxlen=60) or None
     if not brand or not account_no:
         raise HTTPException(400, "brand dan account_no wajib")
     acc = db.update_account(account_id, ident["id"], brand, account_no, holder_name)
@@ -529,11 +606,17 @@ def my_bills(identity_id: str, request: Request):
             row["has_picks"] = bool(bill_data["selections"])
         else:
             # defensive fallback (bill row exists but get_bill failed): mirror
-            # _owner_id as best we can — confirmed payer, else creator.
-            row["owner_id"] = row["paid_by_identity_id"] or row["creator_identity_id"]
-            row["can_manage"] = (row["paid_by_identity_id"] == identity_id) or (
-                not row["paid_by_identity_id"] and row["creator_identity_id"] == identity_id
-            )
+            # _owner_id exactly -- confirmed payer, else creator. This branch
+            # used to grant can_manage off paid_by_identity_id alone, without
+            # paid_by_confirmed: a payer resolved only by matching
+            # `paid_by_name` (display-only, per CLAUDE.md) got management
+            # powers here even though the real _owner_id path never grants
+            # them that (bug: v66 audit, `get_bills_for_identity` didn't even
+            # select paid_by_confirmed, now added).
+            pid = row["paid_by_identity_id"]
+            owner_id = pid if (pid and row["paid_by_confirmed"]) else row["creator_identity_id"]
+            row["owner_id"] = owner_id
+            row["can_manage"] = owner_id == identity_id
             row["my_paid"] = False
             row["i_am_payer"] = False
             row["has_picks"] = False
@@ -557,8 +640,8 @@ async def create_bill(request: Request):
     for i in items:
         if not isinstance(i, dict) or not _to_str(i.get("name"), "Nama item", maxlen=120):
             raise HTTPException(400, "Nama item wajib diisi")
-        price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0)
-        discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0)
+        price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0, maxv=_MAX_IDR)
+        discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0, maxv=_MAX_IDR)
         if discount > price:
             raise HTTPException(400, f"Diskon {i['name']} gak bisa lebih besar dari harga")
         eff_sum += price - discount
@@ -573,10 +656,10 @@ async def create_bill(request: Request):
     pc = data.get("participant_count")
     participant_count = _to_int(pc, "Jumlah orang", minv=0) if pc not in (None, "") else None
     paid_by_name = _to_str(data.get("paid_by_name"), "Nama yang nalangin", maxlen=60) or None
-    subtotal = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0)
-    tax = _to_int(data.get("tax"), "Pajak", 0, minv=0)
-    service = _to_int(data.get("service"), "Service", 0, minv=0)
-    total = _to_int(data.get("total"), "Total", 0, minv=0)
+    subtotal = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0, maxv=_MAX_IDR)
+    tax = _to_int(data.get("tax"), "Pajak", 0, minv=0, maxv=_MAX_IDR)
+    service = _to_int(data.get("service"), "Service", 0, minv=0, maxv=_MAX_IDR)
+    total = _to_int(data.get("total"), "Total", 0, minv=0, maxv=_MAX_IDR)
     tax_included = 1 if data.get("tax_included") else 0
     # reject impossible combos instead of persisting a bill whose split can
     # never reconcile (bug: tax_included + tax>0 made sum(people) != total,
@@ -589,7 +672,21 @@ async def create_bill(request: Request):
         raise HTTPException(400, f"Subtotal gak cocok sama isi item (harusnya Rp {eff_sum:,})")
     # a non-string here reached sqlite3 and raised InterfaceError -> 500, and
     # Cloudflare replaces 5xx bodies with its own error page (bug: v64 audit)
-    photos = [p for p in (data.get("photos") or []) if isinstance(p, str) and p] \
+    #
+    # capped at 10 (v66 audit): an unbounded list let one bad-faith create post
+    # e.g. 2000 photos -> 2000 bill_photo rows -> every viewer of the share
+    # link downloads a 2000-entry payload and renders 2000 <img> tags.
+    # (NOT done: requiring each basename to match db._PHOTO_NAME_RE, as also
+    # asked for. That regex is `^[0-9a-f]{16}\.jpg$` -- the shape of a path
+    # THIS server generated via secrets.token_hex(8). But test_regressions_v61
+    # pins arbitrary caller-supplied paths here on purpose (test_create_
+    # with_photos_list posts photos=["/tmp/a.jpg", "/tmp/b.jpg"] straight to
+    # this endpoint and asserts they're stored verbatim; test_legacy_photo_
+    # path_folds_in and test_upload_adds_not_replaces do the same). Enforcing
+    # the regex 400s on all three. Per the work order ("if you cannot satisfy
+    # both, stop and report rather than weakening either side") this is left
+    # undone -- see the final report.)
+    photos = [p for p in (data.get("photos") or []) if isinstance(p, str) and p][:10] \
         if isinstance(data.get("photos"), list) else None
     photo_path = data.get("photo_path")
     if photo_path is not None and not isinstance(photo_path, str):
@@ -608,10 +705,10 @@ async def create_bill(request: Request):
         total=total,
         items=[{
             "name": i["name"],
-            "price": _to_int(i["price"], f"Harga {i['name']}", minv=0),
+            "price": _to_int(i["price"], f"Harga {i['name']}", minv=0, maxv=_MAX_IDR),
             "mode": i.get("mode", "free"),
             "slot_count": _to_int(i.get("slot_count"), f"Slot {i['name']}", 1, minv=1) if i.get("mode") == "slot" else None,
-            "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0),
+            "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0, maxv=_MAX_IDR),
         } for i in items],
         participants=participants,
         photo_path=photo_path,
@@ -643,8 +740,8 @@ async def update_bill(bill_id: str, request: Request):
     for i in items:
         if not isinstance(i, dict) or not str(i.get("name") or "").strip():
             raise HTTPException(400, "Nama item wajib diisi")
-        price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0)
-        discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0)
+        price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0, maxv=_MAX_IDR)
+        discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0, maxv=_MAX_IDR)
         if discount > price:
             raise HTTPException(400, f"Diskon {i['name']} gak bisa lebih besar dari harga")
         eff_sum += price - discount
@@ -702,10 +799,21 @@ async def update_bill(bill_id: str, request: Request):
     if "participant_count" in data:
         pc = data.get("participant_count")
         participant_count = _to_int(pc, "Jumlah orang", minv=0) if pc not in (None, "") else None
-    subtotal_v = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0)
-    tax_v = _to_int(data.get("tax"), "Pajak", 0, minv=0)
-    service_v = _to_int(data.get("service"), "Service", 0, minv=0)
-    total_v = _to_int(data.get("total"), "Total", 0, minv=0)
+    # absent keys mean "leave as is", same reasoning as participants above --
+    # merchant/transacted_at used to become NULL unconditionally, and
+    # transacted_at drives the history list's ordering and its year/month
+    # filter, so a partial-update client quietly moved the bill to another
+    # month (bug: v66 audit). An explicit null/"" still nulls the column.
+    merchant = db.UNCHANGED
+    if "merchant" in data:
+        merchant = _to_str(data.get("merchant"), "Nama tempat", maxlen=120) or None
+    transacted_at = db.UNCHANGED
+    if "transacted_at" in data:
+        transacted_at = _to_str(data.get("transacted_at"), "Tanggal", maxlen=40) or None
+    subtotal_v = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0, maxv=_MAX_IDR)
+    tax_v = _to_int(data.get("tax"), "Pajak", 0, minv=0, maxv=_MAX_IDR)
+    service_v = _to_int(data.get("service"), "Service", 0, minv=0, maxv=_MAX_IDR)
+    total_v = _to_int(data.get("total"), "Total", 0, minv=0, maxv=_MAX_IDR)
     # same impossible-combo guards as create
     if data.get("tax_included") and tax_v > 0:
         raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
@@ -716,17 +824,17 @@ async def update_bill(bill_id: str, request: Request):
     db.update_bill(
         bill_id,
         title=_to_str(data.get("title"), "Judul bill", maxlen=120) or bill_data["bill"]["title"],
-        merchant=_to_str(data.get("merchant"), "Nama tempat", maxlen=120) or None,
-        transacted_at=_to_str(data.get("transacted_at"), "Tanggal", maxlen=40) or None,
+        merchant=merchant,
+        transacted_at=transacted_at,
         participants=participants,
         participant_count=participant_count,
         items=[{
             "id": i.get("id"),
             "name": i["name"],
-            "price": _to_int(i["price"], f"Harga {i['name']}", minv=0),
+            "price": _to_int(i["price"], f"Harga {i['name']}", minv=0, maxv=_MAX_IDR),
             "mode": i.get("mode", "free"),
             "slot_count": _to_int(i.get("slot_count"), f"Slot {i['name']}", 1, minv=1) if i.get("mode") == "slot" else None,
-            "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0),
+            "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0, maxv=_MAX_IDR),
         } for i in items],
         subtotal=subtotal_v,
         tax=tax_v,
@@ -918,6 +1026,23 @@ def list_pending_invites(identity_id: str, request: Request):
     return db.get_pending_invites(identity_id)
 
 
+@app.delete("/api/bills/{bill_id}/invites/{invite_id}")
+@limiter.limit("20/minute")
+def cancel_bill_invite(bill_id: str, invite_id: int, request: Request):
+    """Manager withdraws a pending invite (v66) -- the sender's only recourse
+    when they invited the wrong contact, or the recipient (auto_accept OFF)
+    just hasn't answered yet. Scoped to this bill and gated on _can_manage,
+    same as every other roster mutation (bug found in the v66 audit: this
+    endpoint didn't exist, so a mis-sent invite was permanent)."""
+    bill_data = _bill_or_404(bill_id)
+    ident = _identity_from_request(request)
+    if not _can_manage(bill_data, ident["id"]):
+        raise HTTPException(403, "Hanya owner bill (yang bayar)")
+    if not db.cancel_invite(bill_id, invite_id):
+        raise HTTPException(404, "Undangan gak ketemu")
+    return _compute_response(db.get_bill(bill_id), ident["id"])
+
+
 @app.delete("/api/bills/{bill_id}/people/{identity_id}")
 def remove_person(bill_id: str, identity_id: str, request: Request):
     bill_data = _bill_or_404(bill_id)
@@ -1094,6 +1219,11 @@ def mark_paid(bill_id: str, identity_id: str, request: Request):
     # (bug: mark_paid of a random id -> 500, then every writer hung 5s -> 500)
     if not db.get_identity(identity_id):
         raise HTTPException(404, "Orang gak dikenal")
+    # the target must already be ON the bill — this used to be close to /join
+    # in effect (see _is_bill_member's docstring), a roster-injection route
+    # that never called /join and never got vetted by it (bug: v66 audit).
+    if not _is_bill_member(bill_data, identity_id):
+        raise HTTPException(404, "Orang itu belum join bill ini")
     db.claim_participant(bill_id, ident["id"], ident["name"])
     db.mark_paid(bill_id, identity_id)
     return _compute_response(db.get_bill(bill_id), ident["id"])
@@ -1163,6 +1293,12 @@ async def upload_photo(bill_id: str, request: Request, file: UploadFile = File(.
     ident = _identity_from_request(request)
     if not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
+    # a photo added while open then never removable once the bill closes (the
+    # UI already hides both controls once closed; the API must too, like
+    # every other mutation) (bug: v66 audit)
+    if bill_data["bill"]["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup")
+    _check_photo_mime(file.content_type)
     raw = await file.read()
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(400, "Foto maksimal 5MB")
@@ -1180,6 +1316,8 @@ def delete_photo(bill_id: str, photo_id: int, request: Request):
     ident = _identity_from_request(request)
     if not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
+    if bill_data["bill"]["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup")
     # scope the delete to THIS bill: photo ids are a global autoincrement and
     # every reader of a bill payload sees them, so an unscoped id let anyone
     # delete any bill's photo from a bill they do manage (bug: v64 audit)
@@ -1196,6 +1334,7 @@ async def upload_photo_standalone(request: Request, file: UploadFile = File(...)
     """Upload a receipt photo WITHOUT scanning (v61) — for the manual create
     flow. Returns the saved path so the client can attach it to a bill."""
     _identity_from_request(request)
+    _check_photo_mime(file.content_type)
     raw = await file.read()
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(400, "Foto maksimal 5MB")
@@ -1232,7 +1371,11 @@ async def ocr_upload(request: Request, file: UploadFile = File(...)):
 @app.get("/uploads/{filename}")
 def serve_photo(filename: str):
     path = UPLOAD_DIR / filename
-    if not path.exists():
+    # path.exists() is also true for a directory, and FileResponse raises
+    # RuntimeError ("... is not a file") on one -> 500 instead of 404. No
+    # traversal is possible (the route regex blocks "/"), but `%2e%2e`
+    # decodes to ".." -> UPLOAD_DIR itself, a directory (bug: v66 audit).
+    if not path.is_file():
         raise HTTPException(404)
     return FileResponse(path, media_type="image/jpeg", headers={
         "Cache-Control": "private, max-age=31536000, immutable",

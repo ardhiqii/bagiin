@@ -481,6 +481,29 @@ def mark_invite_accepted(invite_id: int):
     conn.close()
 
 
+def cancel_invite(bill_id: str, invite_id: int) -> bool:
+    """Manager withdraws a still-pending invite (v66).
+
+    Before this the sender of an invite to someone with `auto_accept` OFF had
+    no way back: the invite sat pending forever, the card kept saying
+    "Undang" with no hint one was already outstanding, and a wrong invite
+    (fat-fingered contact) could never be taken back (bug found in the v66
+    audit). Deletes the row outright rather than flipping a status -- unlike
+    a decline there's no state worth keeping, so a later re-invite starts
+    fresh through create_invite's normal insert path instead of the
+    reopen-declined detour.
+    """
+    conn = get_db()
+    cur = conn.execute(
+        "DELETE FROM bill_invite WHERE id = ? AND bill_id = ? AND status = 'pending'",
+        (invite_id, bill_id),
+    )
+    conn.commit()
+    ok = cur.rowcount > 0
+    conn.close()
+    return ok
+
+
 def get_invite(invite_id: int):
     conn = get_db()
     row = conn.execute("SELECT * FROM bill_invite WHERE id = ?", (invite_id,)).fetchone()
@@ -529,12 +552,21 @@ def decline_invite(invite_id: int, identity_id: str) -> bool:
 
 
 def identity_on_bill(bill_id: str, identity_id: str) -> bool:
-    """True if identity is already a participant (payment row) or the creator."""
+    """True if identity is already a participant (payment row) or the creator
+    who hasn't walked out.
+
+    (bug: the creator branch counted them unconditionally, so a creator who
+    left once a confirmed payer took the bill over (v58, `creator_left=1`)
+    could never be invited back -- /invite always answered "Orang ini udah di
+    bill" even though they were gone from the roster and their own history.
+    `join_bill` already clears the flag on rejoin, so this just has to agree
+    that a left creator isn't on the bill.)
+    """
     conn = get_db()
     row = conn.execute(
         """SELECT 1 FROM bill b
            WHERE b.id = ?
-             AND (b.creator_identity_id = ?
+             AND ((b.creator_identity_id = ? AND b.creator_left = 0)
                   OR EXISTS (SELECT 1 FROM payment p WHERE p.bill_id = b.id AND p.identity_id = ?))""",
         (bill_id, identity_id, identity_id),
     ).fetchone()
@@ -750,9 +782,10 @@ def delete_bill_photo(bill_id: str, photo_id: int) -> str | None:
 UNCHANGED = object()  # "this field was not in the request" (vs. explicitly null)
 
 
-def update_bill(bill_id: str, title: str, merchant: str | None,
-                transacted_at: str | None, participants: list[str] | None,
-                items: list[dict], subtotal: int, tax: int, service: int, total: int,
+def update_bill(bill_id: str, title: str, merchant=UNCHANGED,
+                transacted_at=UNCHANGED, participants: list[str] | None = None,
+                items: list[dict] = None, subtotal: int = 0, tax: int = 0,
+                service: int = 0, total: int = 0,
                 participant_count=UNCHANGED,
                 tax_included: int = 0):
     """Full bill update with item diffing.
@@ -764,24 +797,28 @@ def update_bill(bill_id: str, title: str, merchant: str | None,
       They used to be overwritten unconditionally, so every edit of an
       API-created bill silently wiped its roster (bug: the typed names that
       hadn't joined yet disappeared from the "Yang bayar" picker).
+    - `merchant`/`transacted_at`=UNCHANGED (v66) leave those columns alone
+      too. Absent keys used to fall through to `None` -> NULL, and
+      `transacted_at` now drives the history list's ordering and its
+      year/month filter, so a partial-update client quietly moved a bill to
+      another month (bug: v66 audit). An explicit `null`/`""` still nulls the
+      column -- only a genuinely absent key means "don't touch this".
     """
     conn = get_db()
-    if participant_count is UNCHANGED:
-        conn.execute(
-            """UPDATE bill SET title = ?, merchant = ?, transacted_at = ?,
-               subtotal_idr = ?, tax_idr = ?, service_idr = ?, total_idr = ?, tax_included = ?
-               WHERE id = ?""",
-            (title, merchant, transacted_at, subtotal, tax, service, total,
-             1 if tax_included else 0, bill_id),
-        )
-    else:
-        conn.execute(
-            """UPDATE bill SET title = ?, merchant = ?, transacted_at = ?,
-               subtotal_idr = ?, tax_idr = ?, service_idr = ?, total_idr = ?, participant_count = ?, tax_included = ?
-               WHERE id = ?""",
-            (title, merchant, transacted_at, subtotal, tax, service, total, participant_count,
-             1 if tax_included else 0, bill_id),
-        )
+    set_cols = ["title = ?", "subtotal_idr = ?", "tax_idr = ?", "service_idr = ?",
+                "total_idr = ?", "tax_included = ?"]
+    params = [title, subtotal, tax, service, total, 1 if tax_included else 0]
+    if merchant is not UNCHANGED:
+        set_cols.append("merchant = ?")
+        params.append(merchant)
+    if transacted_at is not UNCHANGED:
+        set_cols.append("transacted_at = ?")
+        params.append(transacted_at)
+    if participant_count is not UNCHANGED:
+        set_cols.append("participant_count = ?")
+        params.append(participant_count)
+    params.append(bill_id)
+    conn.execute(f"UPDATE bill SET {', '.join(set_cols)} WHERE id = ?", params)
     # participants (simple replace, but keep identity_id claims for same names)
     if participants is not None:
         claims = {r["name"]: r["identity_id"] for r in conn.execute(
@@ -1338,7 +1375,7 @@ def get_bills_for_identity(identity_id: str):
     rows = conn.execute(
         """SELECT DISTINCT b.id, b.title, b.merchant, b.transacted_at,
                   b.total_idr, b.status, b.created_at, b.closed_at,
-                  b.creator_identity_id, b.paid_by_identity_id
+                  b.creator_identity_id, b.paid_by_identity_id, b.paid_by_confirmed
           FROM bill b
           LEFT JOIN payment p ON p.bill_id = b.id AND p.identity_id = ?
           WHERE (b.creator_identity_id = ? AND b.creator_left = 0) OR p.id IS NOT NULL
