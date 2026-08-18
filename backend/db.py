@@ -3,6 +3,7 @@ import os
 import re
 import sqlite3
 import secrets
+import time
 from pathlib import Path
 
 import calc
@@ -46,6 +47,45 @@ def _photo_in_use(photo_path) -> bool:
         return row is not None
     finally:
         conn.close()
+
+
+def sweep_orphaned_photos(upload_dir, max_age_seconds: int = 86400) -> int:
+    """Delete uploaded photos nothing references anymore, older than
+    `max_age_seconds` (default 1 day, so a photo mid-create-flow never gets
+    swept out from under a slow uploader).
+
+    Not wired to a scheduler — this repo has none (no startup task runner,
+    no APScheduler, no cron entry checked in). Call it from an ops cron job
+    or a one-off invocation. Belt-and-braces, not the primary cleanup path:
+    DELETE /api/photos/{filename} (main.py) is what the client is expected
+    to call when it discards a photo; this only mops up whatever that missed
+    (a crashed tab, a killed upload) so files don't pile up forever.
+
+    Safety, matching `_unlink_photo`: only ever touches direct children of
+    `upload_dir` whose name matches `_PHOTO_NAME_RE` (never walks into
+    subdirectories, never follows a name outside that shape), and never
+    unlinks a file `_photo_in_use` says a bill still points at. Returns the
+    count of files removed.
+    """
+    upload_dir = Path(upload_dir)
+    if not upload_dir.is_dir():
+        return 0
+    now = time.time()
+    removed = 0
+    for entry in upload_dir.iterdir():
+        try:
+            if not entry.is_file() or not _PHOTO_NAME_RE.match(entry.name):
+                continue
+            age = now - entry.stat().st_mtime
+            if age < max_age_seconds:
+                continue
+            if _photo_in_use(str(entry)):
+                continue
+            entry.unlink(missing_ok=True)
+            removed += 1
+        except Exception:
+            continue
+    return removed
 
 
 def get_db():
@@ -440,7 +480,18 @@ def reopen_declined_invite(conn, bill_id: str, identity_id: str, invited_by: str
 def create_invite(bill_id: str, identity_id: str, invited_by: str) -> dict:
     """Record an invite. Idempotent-ish: an existing pending invite for the
     pair is returned as-is; a fresh invite starts 'pending' (the caller flips
-    it to 'accepted' when auto-accept fires)."""
+    it to 'accepted' when auto-accept fires).
+
+    The returned dict carries an extra, non-persisted `reopened_from_decline`
+    flag (v67). Both a brand-new invite and one reopened from a decline come
+    back with `status == 'pending'` — indistinguishable by status alone — but
+    the caller (main.invite_to_bill) must NOT treat them the same when
+    auto_accept is ON: a decline is a "no thanks", not a ban (so re-inviting
+    is fine and reopens the row), but composing that with auto_accept meant
+    an explicit "Tolak" got silently overridden the moment the same person
+    was invited again, with no further consent from them (bug: v67 audit).
+    A first-time invite to an auto-accept contact must still join instantly.
+    """
     conn = get_db()
     try:
         existing = conn.execute(
@@ -459,7 +510,12 @@ def create_invite(bill_id: str, identity_id: str, invited_by: str) -> dict:
                     "SELECT * FROM bill_invite WHERE bill_id = ? AND identity_id = ?",
                     (bill_id, identity_id),
                 ).fetchone()
-            return dict(existing)
+                row = dict(existing)
+                row["reopened_from_decline"] = True
+                return row
+            row = dict(existing)
+            row["reopened_from_decline"] = False
+            return row
         conn.execute(
             "INSERT INTO bill_invite (bill_id, identity_id, invited_by, status) VALUES (?, ?, ?, 'pending')",
             (bill_id, identity_id, invited_by),
@@ -469,7 +525,9 @@ def create_invite(bill_id: str, identity_id: str, invited_by: str) -> dict:
             "SELECT * FROM bill_invite WHERE bill_id = ? AND identity_id = ?",
             (bill_id, identity_id),
         ).fetchone()
-        return dict(row)
+        out = dict(row)
+        out["reopened_from_decline"] = False
+        return out
     finally:
         conn.close()
 
@@ -1302,9 +1360,17 @@ def delete_bill(bill_id: str, owner_id: str) -> bool:
     return True
 
 
-def _bill_settled(conn, bill_id: str, status: str) -> bool:
+def _bill_settled(bill_data: dict | None) -> bool:
     """True when nobody owes anything: everyone with a real share has paid and
     no slot is left empty.
+
+    Takes an already-loaded `get_bill()` payload rather than re-fetching (v67)
+    — `conn` and `status` used to be accepted here and never used; the
+    function re-fetched the whole bill itself via `get_bill(bill_id)`, a
+    fresh sqlite connection every call. `get_bills_for_identity` now loads
+    each bill once and hands it to both this function and (via the caller)
+    `main.my_bills`, instead of three separate full fetches per bill
+    (measured 242 connections for 60 bills before; see test_regressions_v67).
 
     SINGLE SOURCE OF TRUTH: mirrors main._compute_response's settled logic
     exactly (same calc.compute, same owed definition = total_idr > 0, same
@@ -1321,7 +1387,7 @@ def _bill_settled(conn, bill_id: str, status: str) -> bool:
     Closing a bill does NOT settle it. It used to, so a bill closed with empty
     slots and an unpaid guest still showed a green "Lunas" in history.
     """
-    data = get_bill(bill_id)
+    data = bill_data
     if not data:
         return False
     bill = data["bill"]
@@ -1370,6 +1436,16 @@ def get_bills_for_identity(identity_id: str):
     A creator who left the bill (v58) drops out of it like anyone else: the
     bill stops showing up here unless they rejoin (which gives them a payment
     row, so the join below picks it up again).
+
+    Each bill is fetched via `get_bill()` exactly once (v67) and handed to
+    `_bill_settled`. The full payload also rides along on the row under the
+    private key `_bill_data` — `main.my_bills` used to call `get_bill` a
+    SECOND time per bill to compute owner/can_manage/payment fields off the
+    same data this function already loaded; it now pops `_bill_data` instead
+    of re-fetching, and strips the key before the row goes out over HTTP so
+    the response is unchanged. (This function's own return value, used
+    directly by a few tests, does carry the extra key — it's private/internal
+    and additive, not part of the public API.)
     """
     conn = get_db()
     rows = conn.execute(
@@ -1382,10 +1458,12 @@ def get_bills_for_identity(identity_id: str):
           ORDER BY COALESCE(b.transacted_at, b.created_at) DESC, b.created_at DESC""",
         (identity_id, identity_id),
     ).fetchall()
+    conn.close()
     out = []
     for r in rows:
         d = dict(r)
-        d["settled"] = _bill_settled(conn, d["id"], d["status"])
+        bill_data = get_bill(d["id"])
+        d["settled"] = _bill_settled(bill_data)
+        d["_bill_data"] = bill_data
         out.append(d)
-    conn.close()
     return out

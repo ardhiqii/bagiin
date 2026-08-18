@@ -116,18 +116,13 @@ def test_a4_create_bill_photos_list_is_capped():
     rows -> every viewer of the share link downloads a 2000-entry payload and
     renders 2000 <img> tags. Capped at 10.
 
-    NOT enforced here: requiring each entry's basename to match
-    db._PHOTO_NAME_RE (also asked for in the work order). That regex is
-    `^[0-9a-f]{16}\\.jpg$` -- the shape of a path THIS server generates via
-    secrets.token_hex(8). test_regressions_v61.py pins arbitrary
-    caller-supplied paths through this same endpoint on purpose
-    (test_create_with_photos_list posts photos=["/tmp/a.jpg", "/tmp/b.jpg"]
-    and asserts they're stored verbatim). Enforcing the regex would 400 that
-    pinned test, so per the work order ("if you cannot satisfy both, stop and
-    report") only the cap is implemented -- see the final report.
+    v67 added the other half — each basename must look like a path this server
+    actually generated (db._PHOTO_NAME_RE) — so the fixture paths here are
+    upload-shaped now. A junk or foreign path is rejected outright; that is
+    covered in test_regressions_v67.py.
     """
     aufa = db.new_identity("Aufa66d", role="creator")
-    many = [f"/tmp/v66-{i}.jpg" for i in range(50)]
+    many = [f"/tmp/{i:016x}.jpg" for i in range(50)]
     bid = _mk_bill(aufa, photos=many)
     assert len(db.get_bill(bid)["photos"]) == 10
 

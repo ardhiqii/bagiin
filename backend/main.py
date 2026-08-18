@@ -584,8 +584,15 @@ def my_bills(identity_id: str, request: Request):
     # expose the effective owner (resolved payer, else creator) so the UI can
     # show owner-only actions (delete) — mirrors _owner_id, including the
     # placeholder-name resolution that paid_by_identity_id alone misses
+    #
+    # bill_data rides in on row["_bill_data"] (v67) — get_bills_for_identity
+    # already loaded it once (for the settled flag); re-fetching it here too
+    # meant every bill on this list opened a fresh sqlite connection twice
+    # over, on top of what the list query itself and _bill_settled used
+    # (measured 242 connections for 60 bills). Pop it so it never reaches the
+    # JSON response — the payload must stay byte-identical.
     for row in rows:
-        bill_data = db.get_bill(row["id"])
+        bill_data = row.pop("_bill_data", None)
         if bill_data:
             row["owner_id"] = _owner_id(bill_data)
             row["can_manage"] = _can_manage(bill_data, identity_id)
@@ -676,21 +683,35 @@ async def create_bill(request: Request):
     # capped at 10 (v66 audit): an unbounded list let one bad-faith create post
     # e.g. 2000 photos -> 2000 bill_photo rows -> every viewer of the share
     # link downloads a 2000-entry payload and renders 2000 <img> tags.
-    # (NOT done: requiring each basename to match db._PHOTO_NAME_RE, as also
-    # asked for. That regex is `^[0-9a-f]{16}\.jpg$` -- the shape of a path
-    # THIS server generated via secrets.token_hex(8). But test_regressions_v61
-    # pins arbitrary caller-supplied paths here on purpose (test_create_
-    # with_photos_list posts photos=["/tmp/a.jpg", "/tmp/b.jpg"] straight to
-    # this endpoint and asserts they're stored verbatim; test_legacy_photo_
-    # path_folds_in and test_upload_adds_not_replaces do the same). Enforcing
-    # the regex 400s on all three. Per the work order ("if you cannot satisfy
-    # both, stop and report rather than weakening either side") this is left
-    # undone -- see the final report.)
-    photos = [p for p in (data.get("photos") or []) if isinstance(p, str) and p][:10] \
-        if isinstance(data.get("photos"), list) else None
+    #
+    # each basename must also match db._PHOTO_NAME_RE (v67): every real photo
+    # this server ever hands a client (via /api/photos, /api/ocr, or the
+    # legacy OCR flow) is named `secrets.token_hex(8) + ".jpg"`. Paths are
+    # handed back to every reader of a bill payload, so without this check a
+    # client could post another bill's photo path (or any string) straight
+    # into bill_photo and have it served to everyone with the share link.
+    # db._unlink_photo already refuses to delete a file another bill still
+    # references, but that only guards deletion -- this closes the intake
+    # side.
+    def _valid_photo_name(p) -> bool:
+        return isinstance(p, str) and bool(p) and bool(db._PHOTO_NAME_RE.match(Path(p).name))
+
+    photos_raw = data.get("photos")
+    photos = None
+    if isinstance(photos_raw, list):
+        photos = []
+        for p in photos_raw[:10]:
+            if not isinstance(p, str) or not p:
+                continue
+            if not _valid_photo_name(p):
+                raise HTTPException(400, "Path foto gak valid")
+            photos.append(p)
     photo_path = data.get("photo_path")
-    if photo_path is not None and not isinstance(photo_path, str):
-        raise HTTPException(400, "photo_path harus teks")
+    if photo_path is not None:
+        if not isinstance(photo_path, str):
+            raise HTTPException(400, "photo_path harus teks")
+        if photo_path and not _valid_photo_name(photo_path):
+            raise HTTPException(400, "Path foto gak valid")
     created = db.create_bill(
         creator_id=ident["id"],
         title=title,
@@ -976,6 +997,13 @@ async def invite_to_bill(bill_id: str, request: Request):
         if not db.identity_on_bill(bill_id, target_id):
             db.join_bill(bill_id, target_id, target["name"])
         return {"status": "joined"}
+    if inv.get("reopened_from_decline"):
+        # they said no once — the next invite has to be accepted on purpose,
+        # even with auto_accept ON. Without this, invite -> decline -> invite
+        # again silently forced them onto the bill with no further consent
+        # (bug: v67 audit). A first-time invite to an auto-accept contact
+        # still joins instantly below.
+        return {"status": "pending"}
     if bool(target.get("auto_accept", 1)):
         db.mark_invite_accepted(inv["id"])
         db.join_bill(bill_id, target_id, target["name"])
@@ -1344,6 +1372,41 @@ async def upload_photo_standalone(request: Request, file: UploadFile = File(...)
     return {"photo_path": str(path), "filename": filename}
 
 
+@app.delete("/api/photos/{filename}")
+def delete_photo_standalone(filename: str, request: Request):
+    """Release a photo the client never ended up attaching to a bill (v67).
+
+    Two leaks this closes: (a) the verify/create screen only splices a
+    removed photo out of the client-side array — the file /api/photos already
+    wrote stays on disk; (b) starting a bill, uploading, then abandoning the
+    flow leaves the file too. Nothing ever swept them, and production writes
+    to /var/www/bagiin-uploads.
+
+    `filename` is the bare name /api/photos handed back (not a path), scoped
+    by db._PHOTO_NAME_RE the same way db._unlink_photo is — this can only
+    ever unlink a file this server generated, never an arbitrary path.
+    Refuses to touch anything db._photo_in_use says a bill still references,
+    so an already-attached photo can't be yanked out from under a bill this
+    way (delete it via DELETE /api/bills/{id}/photos/{id} instead).
+
+    Any authenticated identity may call this — the file isn't attributed to
+    whoever uploaded it, and the filename is an unguessable 16-hex token, so
+    there's nothing to authorize beyond "you have a valid identity". Returns
+    200 whether or not the file was still there (the client's goal —
+    "make sure this is gone" — is met either way); 404 for a name that was
+    never a real upload; 409 if a bill still points at it.
+    """
+    _identity_from_request(request)
+    if not db._PHOTO_NAME_RE.match(filename):
+        raise HTTPException(404, "Foto gak ketemu")
+    path = UPLOAD_DIR / filename
+    full_path = str(path)
+    if db._photo_in_use(full_path):
+        raise HTTPException(409, "Foto ini masih dipakai di bill")
+    path.unlink(missing_ok=True)
+    return {"deleted": True}
+
+
 @app.post("/api/ocr")
 @limiter.limit("10/minute")
 async def ocr_upload(request: Request, file: UploadFile = File(...)):
@@ -1379,6 +1442,11 @@ def serve_photo(filename: str):
         raise HTTPException(404)
     return FileResponse(path, media_type="image/jpeg", headers={
         "Cache-Control": "private, max-age=31536000, immutable",
+        # upload endpoints accept png/webp too (v66) but every file here is
+        # served with a forced image/jpeg content type -- if the bytes and
+        # the declared type disagree, don't let a browser sniff and decide
+        # to run them as something else (v67).
+        "X-Content-Type-Options": "nosniff",
     })
 
 

@@ -33,10 +33,15 @@ function uncoveredNoteHtml(data) {
 
 // ---------- Receipt photos: view / upload / remove ----------
 function photoThumbHtml(p, i, canManage) {
+  // a row can outlive its file (older data, a failed upload) — onerror swaps
+  // the <img> for a neutral placeholder instead of the browser's broken-image
+  // glyph (bug: a missing file rendered as a giant broken-image icon in the grid)
   return `
     <div class="bill-photo-wrap" style="position:relative;">
       <img src="/uploads/${esc(p.path.split("/").pop())}" alt="Struk ${i + 1}" loading="lazy"
-           data-photo="${esc(p.path)}" data-idx="${i}" style="width:100%;height:110px;object-fit:cover;border-radius:var(--r-xs);display:block;">
+           data-photo="${esc(p.path)}" data-idx="${i}" style="width:100%;height:110px;object-fit:cover;border-radius:var(--r-xs);display:block;"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+      <div class="photo-missing" style="width:100%;height:110px;">${ic("image")}<span>Foto gak ketemu</span></div>
       ${canManage ? `<button class="bill-photo-del" data-id="${p.id}" aria-label="Hapus foto ${i + 1}" style="position:absolute;top:4px;right:4px;width:40px;height:40px;min-height:40px;padding:0;border-radius:var(--r-full);background:rgba(0,0,0,.62);color:#fff;border:none;display:flex;align-items:center;justify-content:center;">${ic("x")}</button>` : ""}
     </div>`;
 }
@@ -79,17 +84,26 @@ function openPhotoSheet(bill, photos, idx) {
   const list = photos && photos.length ? photos : (bill.photo_path ? [{ path: bill.photo_path }] : []);
   const start = Math.min(Math.max(idx || 0, 0), list.length - 1);
   let cur = start;
+  // same fallback as the thumbnail grid: reset both panes before swapping
+  // src so a working photo after a missing one isn't left hidden behind the
+  // placeholder from the previous onerror
   const renderImg = () => {
     const p = list[cur];
     if (!p) return;
-    $("img", s.sheet).src = `/uploads/${encodeURIComponent(p.path.split("/").pop())}`;
+    const img = $("img", s.sheet);
+    const missing = $(".photo-missing", s.sheet);
+    img.style.display = "block";
+    if (missing) missing.style.display = "none";
+    img.src = `/uploads/${encodeURIComponent(p.path.split("/").pop())}`;
     if (list.length > 1) $(".sheet-title", s.sheet).textContent = `Struk asli ${cur + 1}/${list.length}`;
   };
   const s = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-title">Struk asli ${list.length > 1 ? `${cur + 1}/${list.length}` : ""}</div>
     <img src="/uploads/${encodeURIComponent(list[start].path.split("/").pop())}" alt="Foto struk asli bill ini"
-         style="width:100%;border-radius:var(--r-sm);" loading="lazy">
+         style="width:100%;border-radius:var(--r-sm);" loading="lazy"
+         onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+    <div class="photo-missing" style="width:100%;height:220px;">${ic("image")}<span>Foto struk gak ketemu</span></div>
     <div class="btn-row" style="margin-top:10px;">
       ${list.length > 1 ? `<button class="btn-outline btn-sm" id="ph-prev" style="margin-top:0;">${ic("chevron")} Sebelumnya</button>
       <button class="btn-outline btn-sm" id="ph-next" style="margin-top:0;">Berikutnya</button>` : ""}
@@ -816,10 +830,59 @@ function perServingEst(it, othersQty, myQty) {
   return totalQty > 0 ? Math.floor(eff / totalQty) : eff;
 }
 
-// LOCAL ESTIMATE ONLY — see myBreakdown(). Mirrors backend calc:
-// - free item: price / (others + me), rounded like backend (floor + rem)
-// - slot item: per-slot price (price // slot_count) * my qty
-// - tax proportional to total subtotal across ALL people, rounded down.
+// Merge the live (post-tap) qty for ME into a server-snapshot selector list,
+// keeping everyone else's order as returned. If I'm already in `selList`
+// (an earlier pick, now just changing qty) I keep that slot; a brand-new
+// pick is appended at the end, since calc.py orders selectors by each
+// identity's first-ever appearance in the raw selection rows and mine would
+// be the newest. selQty===0 drops me out entirely (a release).
+function mergeLiveSelectors(selList, myId, myName, myQty) {
+  const isMe = s => (s.id ? s.id === myId : (!s.id && normName(s.name) === normName(myName)));
+  const out = [];
+  let found = false;
+  (selList || []).forEach(s => {
+    if (isMe(s)) {
+      found = true;
+      if (myQty > 0) out.push({ id: myId, qty: myQty });
+    } else {
+      out.push({ id: s.id, qty: s.qty || 1 });
+    }
+  });
+  if (!found && myQty > 0) out.push({ id: myId, qty: myQty });
+  return out;
+}
+
+// LOCAL ESTIMATE ONLY — see myBreakdown(). Mirrors backend calc.py exactly
+// (not just its shape): both item modes' rounding remainder are distributed
+// the same way calc.py distributes them, instead of being floor()ed away, so
+// this number no longer ticks by a rupiah the moment the real response lands.
+// - free item: price // (others + me) per serving, then the leftover
+//   (eff - share*totalQty) round-robins across SELECTOR ENTRIES in order,
+//   one rupiah each, same as calc.py's `for i in range(rem): selectors[i %
+//   len(selectors)]` — a person with qty>1 only gets at most +1 from this,
+//   not +1 per unit.
+// - slot item: per-slot price (price // slot_count) * my qty, then — only
+//   once every slot is taken — the leftover (eff - per_slot*slot_count)
+//   hands out +1 per SLOT UNIT in order (a person holding qty>1 slots can
+//   get multiple), same as calc.py's nested slot loop. Uncovered items never
+//   get a remainder — that money sits in uncovered_idr, not in the tax base.
+// - tax proportional to total subtotal across ALL people, rounded down —
+//   exact for everyone except the bill owner, who additionally absorbs
+//   calc.py's leftover tax rounding rupiah (see note below).
+//
+// ORDERING ASSUMPTION: calc.py decides who gets the remainder by walking
+// identities in the order they first appear anywhere in the raw selection
+// rows, then that identity's items in the order they were first picked. The
+// API payload only gives per-item order (`sel_by_item[id]`, i.e. the order
+// selection rows for THIS item were inserted) — it doesn't expose the
+// cross-item global order calc.py actually uses. The two agree whenever
+// nobody's first-ever pick in the bill was on a DIFFERENT item than the one
+// being estimated (true for the common case: a single contested item, or
+// everyone picking items in the same order they joined). They can disagree
+// only when two people's relative order differs between "first item each of
+// them ever picked" and "order of rows on this specific item" — genuinely
+// rare, and not detectable from this payload without a backend change, which
+// is out of scope here (bill.js/index.html only).
 function computeMyBreakdown(data, selQty) {
   let sub = 0;
   let totalSelAll = 0;
@@ -830,35 +893,43 @@ function computeMyBreakdown(data, selQty) {
   const iAmOwner = data.owner_id === myId;
   data.items.forEach(it => {
     const myQty = selQty.get(it.id) || 0;
+    const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
     if (it.mode === "slot" && it.slot_count) {
-      const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
       const perSlot = Math.floor(eff / it.slot_count);
-      if (myQty > 0) sub += perSlot * myQty;
-      // total assigned subtotal for tax: all taken slots * perSlot. Use
-      // OTHERS from the snapshot + MY LIVE qty — the snapshot lacks my
-      // just-added slots after an optimistic tap (bug: all-slot bill + fresh
-      // pick → totalSelAll 0 → tax 0 → pay sheet understated the total by the
-      // whole tax). Empty slots stay uncovered_idr, never in the tax base.
-      const selList = (data.sel_by_item[it.id] || []);
-      let othersTaken = 0;
-      selList.forEach(s => {
-        const isMe = (s.id && s.id === myId) ? true : (!s.id && normName(s.name) === normName(myName));
-        if (!isMe) othersTaken += (s.qty || 1);
-      });
-      const taken = othersTaken + myQty;
-      totalSelAll += perSlot * taken;
+      const order = mergeLiveSelectors(data.sel_by_item[it.id], myId, myName, myQty);
+      const taken = order.reduce((s, x) => s + x.qty, 0);
+      order.forEach(x => { if (x.id === myId) sub += perSlot * x.qty; });
+      if (taken >= it.slot_count) {
+        // all slots taken: distribute eff - perSlot*slotCount across SLOTS
+        // (per unit, not per person) — mirrors calc.py's inner `for _ in
+        // range(qty)` loop
+        let rem = eff - perSlot * it.slot_count;
+        for (const x of order) {
+          for (let i = 0; i < x.qty && rem > 0; i++) {
+            if (x.id === myId) sub += 1;
+            rem -= 1;
+          }
+          if (rem <= 0) break;
+        }
+        totalSelAll += perSlot * taken + (eff - perSlot * it.slot_count);
+      } else {
+        // still uncovered: the leftover stays in uncovered_idr, never in
+        // anyone's subtotal or the tax base
+        totalSelAll += perSlot * taken;
+      }
       return;
     }
     // free item: per-serving split (my qty of total qty taken)
-    const selList = (data.sel_by_item[it.id] || []);
-    let othersQty = 0;
-    selList.forEach(s => {
-      const isMe = (s.id && s.id === myId) ? true : (!s.id && normName(s.name) === normName(myName));
-      if (!isMe) othersQty += (s.qty || 1);
-    });
-    const totalQty = othersQty + myQty;
-    const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
-    if (myQty > 0 && totalQty > 0) sub += Math.floor(eff / totalQty) * myQty;
+    const order = mergeLiveSelectors(data.sel_by_item[it.id], myId, myName, myQty);
+    const totalQty = order.reduce((s, x) => s + x.qty, 0);
+    if (myQty > 0 && totalQty > 0) {
+      const share = Math.floor(eff / totalQty);
+      sub += share * myQty;
+      const rem = eff - share * totalQty;
+      for (let i = 0; i < rem; i++) {
+        if (order[i % order.length].id === myId) sub += 1;
+      }
+    }
     // a free item NOBODY picked still belongs to someone — calc.py hands it to
     // the bill owner, so it stays in the tax denominator (and in the owner's own
     // subtotal). Dropping it inflated everyone else's tax share (bug: estimate
@@ -871,6 +942,13 @@ function computeMyBreakdown(data, selQty) {
   if (data.bill.tax_included) taxService = (data.bill.service_idr || 0);
   let tax = 0;
   if (totalSelAll > 0) tax = Math.floor(sub * taxService / totalSelAll);
+  // NOT mirrored: in proportional tax mode calc.py additionally hands the
+  // OWNER any leftover rupiah from truncating everyone's tax share (`diff`
+  // in calc.py's proportional branch) — computing that exactly here would
+  // mean re-deriving every other person's live subtotal, i.e. re-running the
+  // whole split client-side, which is what this function deliberately avoids.
+  // Only the owner's own dock can be off by that rounding rupiah until the
+  // server responds; every other participant's tax share above is exact.
   return { sub, tax, total: sub + tax };
 }
 

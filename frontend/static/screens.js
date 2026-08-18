@@ -949,6 +949,31 @@ function matchBrandNearNumber(line, number) {
   return matchBrand(lastWords) || matchBrand(after.split(/[\s/]+/).slice(0, 3).join(" "));
 }
 
+// G1: same account pasted twice (against what's already saved, or twice in
+// one block) used to silently create a duplicate row — these numbers are
+// what people copy to transfer money, so three identical BCA numbers in the
+// list is a hazard, not just clutter (bug: paste parser had no dup check at
+// all). Key on digits-only account number + brand so casing/spacing/"Bank "
+// prefixes can't dodge the check.
+function normAcctDigits(no) { return String(no || "").replace(/\D/g, ""); }
+function acctDupKey(brand, account_no) {
+  return String(brand || "").trim().toLowerCase() + "|" + normAcctDigits(account_no);
+}
+// Marks p._dup on every entry that matches an already-saved account OR an
+// earlier entry in this same paste — first occurrence of a combo stays
+// addable, later repeats are flagged. Recomputed on every render so editing
+// a row's brand (which can turn a dup into a new entry, or vice versa) stays
+// correct.
+function markAcctDuplicates(parsed, existing) {
+  const existingKeys = new Set((existing || []).map(a => acctDupKey(a.brand, a.account_no)));
+  const seen = new Set();
+  parsed.forEach(p => {
+    const key = acctDupKey(p.brand, p.account_no);
+    p._dup = existingKeys.has(key) || seen.has(key);
+    seen.add(key);
+  });
+}
+
 function openPasteAccountsSheet(identityId, onAdded) {
   const s = openSheet(`
     <div class="sheet-handle"></div>
@@ -963,14 +988,19 @@ function openPasteAccountsSheet(identityId, onAdded) {
     <div id="paste-result"></div>
     <button class="btn-outline" id="close-sheet">Tutup</button>`, { noAutofocus: true });
 
+  // fetched once per sheet open — used to catch a paste that repeats an
+  // account already saved from BEFORE this sheet opened, not just repeats
+  // within the pasted text itself
+  const existingP = api(`/api/identities/${identityId}/accounts`).catch(() => []);
+
   $("#close-sheet", s.sheet).addEventListener("click", s.close);
   $("#parse-acct-btn", s.sheet).addEventListener("click", () => {
     const parsed = parseAccountsText($("#paste-input", s.sheet).value);
-    renderParsedResult(s, parsed, identityId, onAdded);
+    existingP.then(existing => renderParsedResult(s, parsed, identityId, onAdded, existing));
   });
 }
 
-function renderParsedResult(s, parsed, identityId, onAdded) {
+function renderParsedResult(s, parsed, identityId, onAdded, existing) {
   const box = $("#paste-result", s.sheet);
   if (!box) return;
   if (!parsed.length) {
@@ -978,28 +1008,35 @@ function renderParsedResult(s, parsed, identityId, onAdded) {
       Cek formatnya: nama (opsional), nama bank, terus nomornya.</p>`;
     return;
   }
+  markAcctDuplicates(parsed, existing);
+  const addCount = parsed.filter(p => !p._dup).length;
+  const dupCount = parsed.length - addCount;
   box.innerHTML = `
     <div class="card card-flat" style="margin-top:12px;">
-      <div class="card-title"><span>Ketemu ${parsed.length} metode</span></div>
+      <div class="card-title"><span>Ketemu ${parsed.length} metode${dupCount ? `, ${dupCount} udah ada` : ""}</span></div>
       ${parsed.map((p, i) => `
-        <div class="account-row">
+        <div class="account-row" style="${p._dup ? "opacity:.55;" : ""}">
           <span class="paste-chip-wrap" data-i="${i}">${brandChipHtml(p.brand)}</span>
           <div style="flex:1;min-width:0;">
             <label class="sr-only" for="paste-brand-${i}">Bank / e-wallet buat ${esc(p.account_no)}</label>
             <select class="paste-brand-sel" id="paste-brand-${i}" data-i="${i}" style="font-size:13px;font-weight:600;padding:8px 32px 8px 10px;">
               ${BRANDS.map(b => `<option value="${esc(b.c)}" ${b.c === p.brand ? "selected" : ""}>${esc(b.c)}</option>`).join("")}
             </select>
-            <div class="muted" style="font-size:12px;margin-top:3px;">${esc(p.account_no)}${p.holder_name ? " · " + esc(p.holder_name) : ""}</div>
+            <div class="muted" style="font-size:12px;margin-top:3px;">${esc(p.account_no)}${p.holder_name ? " · " + esc(p.holder_name) : ""}${p._dup ? ` · <strong style="color:var(--text-2);">udah tersimpan</strong>` : ""}</div>
           </div>
           <button class="icon-btn ghost paste-rm" data-i="${i}" aria-label="Buang ${esc(p.account_no)} dari daftar">${ic("x")}</button>
         </div>`).join("")}
-      <button class="btn-green btn-sm" id="save-parsed" style="width:100%;margin-top:10px;">Tambah Semua</button>
+      <button class="btn-green btn-sm" id="save-parsed" style="width:100%;margin-top:10px;" ${addCount ? "" : "disabled"}>
+        ${addCount ? `Tambah ${addCount} Baru` : "Semua Udah Tersimpan"}
+      </button>
     </div>`;
 
   $$(".paste-brand-sel", box).forEach(sel => sel.addEventListener("change", () => {
     parsed[+sel.dataset.i].brand = sel.value;
-    const chip = box.querySelector(`.paste-chip-wrap[data-i="${sel.dataset.i}"]`);
-    if (chip) chip.innerHTML = brandChipHtml(sel.value);
+    // brand affects the dup key, so a re-render (not just a chip swap) is
+    // needed here — changing "Lainnya" to "BCA" can turn a fresh row into a
+    // duplicate of one already saved, or the other way round
+    renderParsedResult(s, parsed, identityId, onAdded, existing);
   }));
 
   $$(".paste-rm", box).forEach(btn => btn.addEventListener("click", () => {
@@ -1012,7 +1049,7 @@ function renderParsedResult(s, parsed, identityId, onAdded) {
       box.innerHTML = `<p class="muted" style="margin-top:10px;">Semua dibuang. Tempel teks lain kalau mau.</p>`;
       return;
     }
-    renderParsedResult(s, parsed, identityId, onAdded);
+    renderParsedResult(s, parsed, identityId, onAdded, existing);
   }));
 
   $("#save-parsed", box).addEventListener("click", (e) => {
@@ -1021,7 +1058,12 @@ function renderParsedResult(s, parsed, identityId, onAdded) {
     // double tap duplicated every account and a failure halfway left the user
     // with no idea what had been saved (bug: partial save reported as failure)
     withBusy(btn, "Nyimpen", async () => {
-      const queue = parsed.slice();
+      const dupCount = parsed.filter(p => p._dup).length;
+      const queue = parsed.filter(p => !p._dup);   // never POST what's flagged as a duplicate
+      if (!queue.length) {
+        toast(dupCount ? "Semua udah kesimpen, gak ada yang baru" : "Gak ada yang ditambah");
+        return;
+      }
       let saved = 0, failMsg = "";
       for (const p of queue) {
         try {
@@ -1029,18 +1071,23 @@ function renderParsedResult(s, parsed, identityId, onAdded) {
             brand: p.brand, account_no: p.account_no, holder_name: p.holder_name,
           });
           saved++;
-          parsed.shift(); // drop what's already saved so a retry can't duplicate it
+          // drop the exact saved entry (not shift() — the queue skips dup
+          // rows so it's no longer index-aligned with `parsed`) so a retry
+          // after a partial failure can't duplicate what already landed
+          const idx = parsed.indexOf(p);
+          if (idx >= 0) parsed.splice(idx, 1);
         } catch (err) { failMsg = err.message; break; }
       }
       if (onAdded) onAdded();   // refresh the list even on a partial failure
-      if (!parsed.length) {
+      const remaining = parsed.filter(p => !p._dup);
+      if (!remaining.length) {
         s.close();
-        toast(`Ditambah ${saved} metode`);
+        toast(dupCount ? `Ditambah ${saved} metode, ${dupCount} udah ada sebelumnya` : `Ditambah ${saved} metode`);
         return;
       }
-      if (saved > 0) toast(`${saved} kesimpen, ${parsed.length} gagal: ${failMsg}`);
+      if (saved > 0) toast(`${saved} kesimpen, ${remaining.length} gagal: ${failMsg}`);
       else toast(failMsg || "Gagal nyimpen");
-      renderParsedResult(s, parsed, identityId, onAdded);
+      renderParsedResult(s, parsed, identityId, onAdded, existing);
     });
   });
 }
@@ -1106,6 +1153,16 @@ function isCoarsePointer() {
 // photo gets OCR'd (default on); Kamera/Upload/Paste decide where it comes from.
 // Module-level so the global paste handlers honour the toggle too.
 let scanMode = true;
+// G2: scanMode is decided inside the photo-source sheet, but it governs the
+// dropzone the user is looking at when they're NOT inside that sheet — with
+// no hint on the dropzone itself, turning scanning off once meant the create
+// screen looked identical and the next camera tap silently skipped OCR
+// (bug: toggle state was invisible on the screen it actually affects).
+function dzScanStateHtml() {
+  return scanMode
+    ? `${ic("check")}<span>Baca otomatis aktif — item &amp; harga langsung kebaca</span>`
+    : `${ic("x")}<span>Baca otomatis nonaktif — item diisi manual</span>`;
+}
 function renderCreate(opts = {}) {
   const app = $("#app");
   const coarse = isCoarsePointer();
@@ -1121,7 +1178,12 @@ function renderCreate(opts = {}) {
                 here: uploadAndOcr's catch falls through to uploadAndAttach, which
                 re-uploads successfully and opens the manual editor instead (see the
                 warn-box inside renderVerify for that case). "Gagal Baca Struk" named
-                the wrong cause here (bug: headline blamed OCR for an upload failure). -->
+                the wrong cause here (bug: headline blamed OCR for an upload failure).
+                G3: "Coba Lagi" used to always retry via uploadAndOcr regardless of how
+                this card was reached — a plain no-scan upload (scanMode off) that
+                failed would silently retry WITH scanning on, overriding the toggle the
+                user had just set (bug: retry named the wrong flow, not just the wrong
+                title). opts.wasScan carries which flow actually failed. -->
            <div><strong>Gagal Upload Foto</strong>
              <p class="muted" style="margin-top:4px;">${esc(opts.ocrError)}</p></div>
          </div>
@@ -1143,6 +1205,7 @@ function renderCreate(opts = {}) {
         <div class="dropzone-icon">${ic("camera")}</div>
         <div style="font-weight:600;font-size:15.5px;color:var(--text);">Foto Struknya</div>
         <div class="muted">${hint}</div>
+        <div class="muted" id="dz-scan-state" style="margin-top:8px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:5px;">${dzScanStateHtml()}</div>
       </button>
       <input type="file" id="file-input" accept="image/*" class="hidden" tabindex="-1" aria-hidden="true">
       <button class="btn-outline" id="manual-btn" style="margin-top:12px;">${ic("pencil")} Bikin Manual (tanpa foto)</button>
@@ -1212,6 +1275,10 @@ function renderCreate(opts = {}) {
       tglDesc.textContent = scanMode
         ? "Item & harga dibaca dari foto — langsung masuk ke daftar"
         : "Foto cuma ditempel — item & harga diisi manual";
+      // the dropzone underneath this sheet must reflect the flip immediately
+      // — the sheet closes back onto it, not onto a fresh render
+      const dzState = document.getElementById("dz-scan-state");
+      if (dzState) dzState.innerHTML = dzScanStateHtml();
     });
     const cameraBtn = s.sheet.querySelector("#dz-camera");
     if (cameraBtn) cameraBtn.addEventListener("click", () => { s.close(); openPicker(true); });
@@ -1253,8 +1320,13 @@ function renderCreate(opts = {}) {
   $("#manual-btn").addEventListener("click", () => renderVerify(blankBill(), true));
   if (opts.ocrError) {
     $("#ocr-retry").addEventListener("click", () => {
-      if (opts.ocrFile) uploadAndOcr(opts.ocrFile);
-      else renderCreate();
+      if (!opts.ocrFile) { renderCreate(); return; }
+      // retry the SAME flow that failed: if this was the OCR-fallback upload
+      // (uploadAndOcr's catch, re-uploading after a scan failure) go back
+      // through OCR; if this was a plain no-scan upload, retry the plain
+      // upload — see the G3 comment on the card above
+      if (opts.wasScan) uploadAndOcr(opts.ocrFile);
+      else uploadAndAttach(opts.ocrFile);
     });
     $("#ocr-manual").addEventListener("click", () => renderVerify(blankBill(), true));
   }
@@ -1285,7 +1357,10 @@ async function uploadAndAttach(file, ocrReason) {
       ocrError: ocrReason || null, ocrRetryFile: ocrReason ? file : null }, true);
   } catch (e) {
     if (location.hash !== routeAtStart) return;
-    renderCreate({ ocrError: e.message, ocrFile: file });
+    // ocrReason set = this call came from uploadAndOcr's catch (scan failed,
+    // now the plain re-upload failed too); unset = this was always a plain
+    // no-scan upload. wasScan tells the retry button which flow to resume.
+    renderCreate({ ocrError: e.message, ocrFile: file, wasScan: !!ocrReason });
   }
 }
 

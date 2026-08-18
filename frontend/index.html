@@ -267,6 +267,10 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .item-info { flex:1; min-width:0; }
 .item-name { font-size:15px; font-weight:600; letter-spacing:-.01em; }
 .item-share { font-size:12.5px; color:var(--text-3); margin-top:2px; }
+/* manager's item-share line renders BOTH a full names list and a compact
+   "N orang" count; only one shows at a time (see the max-width:430px block
+   below) so the row never depends on JS re-rendering on resize. */
+.item-share .share-compact { display:none; }
 .item-price { font-size:15px; font-weight:700; flex-shrink:0; text-align:right; }
 .price-was { opacity:.5; text-decoration:line-through; font-weight:500; }
 .price-now { color:var(--green); }
@@ -277,6 +281,13 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
   .item-row { gap:10px; flex-wrap:wrap; }
   .price-was { display:block; font-size:12px; line-height:1.2; }
   .item-share { font-size:12px; }
+  /* "1/4 · Rp 13.750/bagian · Rina, Budi, Sari · 3 kosong" wrapped to three
+     lines on a 390px phone — names are the least useful part once there's
+     more than one (nobody reads a list of names in the manager's item row,
+     they read the count and the "kosong" warning), so swap to "N orang" here
+     and keep the full names for wider screens where there's room. */
+  .item-share .share-full { display:none; }
+  .item-share .share-compact { display:inline; }
   /* the stepper (98px) + price (90px) + checkbox left the name ~90px on a
      390px phone, so "Ayam Bakar Madu" broke onto three lines and the share
      line onto three more. Drop the stepper to its own row instead — the name
@@ -422,13 +433,20 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
            padding:12px 2px; border-bottom:1px solid var(--border); margin-bottom:6px; }
 .tgl-label { font-weight:700; font-size:15px; color:var(--text); }
 .tgl-desc { font-size:12.5px; line-height:1.4; }
-.switch { position:relative; width:48px; height:28px; border-radius:var(--r-full);
-          background:var(--border-strong); border:none; cursor:pointer; flex-shrink:0;
-          transition:background .16s var(--ease); padding:0; }
-.switch::after { content:""; position:absolute; top:3px; left:3px; width:22px; height:22px;
-                 border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25);
+/* 48x28 visually (unchanged) but a 40px-tall hit area — everything else in
+   this UI holds a 40px tap-target floor (.btn-sm, .icon-btn) and this was the
+   one 28px hole in a settings row people are meant to tap. The track moved
+   off the button's own background onto ::before so growing the button's box
+   doesn't grow the pill itself. */
+.switch { position:relative; width:48px; height:40px; background:none;
+          border:none; cursor:pointer; flex-shrink:0; padding:0; }
+.switch::before { content:""; position:absolute; top:50%; left:0; width:48px; height:28px;
+                   transform:translateY(-50%); border-radius:var(--r-full);
+                   background:var(--border-strong); transition:background .16s var(--ease); }
+.switch::after { content:""; position:absolute; top:50%; left:3px; width:22px; height:22px;
+                 margin-top:-11px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25);
                  transition:transform .16s var(--ease); }
-.switch[aria-checked="true"] { background:var(--accent); }
+.switch[aria-checked="true"]::before { background:var(--accent); }
 .switch[aria-checked="true"]::after { transform:translateX(20px); }
 .src-btn { width:100%; display:flex; flex-direction:column; align-items:flex-start;
            gap:3px; padding:12px 14px; }
@@ -513,6 +531,15 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .empty-state { text-align:center; padding:36px 16px; color:var(--text-2); }
 .empty-state svg { width:52px; height:52px; color:var(--border-strong); margin-bottom:12px; }
 .empty-state p + p { margin-top:4px; }
+
+/* fallback for a photo row that outlived its file (older data, failed
+   upload) — swapped in via <img onerror> instead of the browser's broken-
+   image glyph */
+.photo-missing { display:none; align-items:center; justify-content:center; flex-direction:column;
+                 gap:6px; background:var(--surface-2); border-radius:var(--r-xs); color:var(--text-3);
+                 text-align:center; padding:8px; }
+.photo-missing svg { width:26px; height:26px; }
+.photo-missing span { font-size:11.5px; line-height:1.3; }
 
 .pay-item { display:flex; align-items:center; gap:10px; padding:11px 0; border-bottom:1px solid var(--border);
             font-size:14px; cursor:pointer; }
