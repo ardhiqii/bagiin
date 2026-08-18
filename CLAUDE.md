@@ -155,13 +155,17 @@ tax + service`, `tax_included` implies `tax == 0`) and 400 rather than persist a
 split can never reconcile. `db.update_bill()` diffs items by id so existing selections survive
 an edit; ids not belonging to the bill are inserted as new rather than clobbering rows.
 
-**Frontend** (`frontend/static/vNN/`):
+**Frontend** (`frontend/static/`):
 
 - `app.js` — state, `localStorage` helpers (all wrapped in try/catch — private mode must not
   break the app), the `api()` fetch wrapper that injects `X-Identity-Id`, and a hash router
-  (`#/b/<bill_id>`, `#/history`, `#/settings`, `#/create`).
-- `screens.js` — onboarding, home, history, settings/payment accounts, create + OCR verify
-  editor, and the rupiah input helpers (`rupiahFmt`/`rupiahParse`/`bindRupiahInput` — inputs
+  (`#/b/<bill_id>`, `#/settings`, `#/create`, `#/create/verify`). `#/history` is gone (v68 —
+  home owns the one bill list, with filter/sort/paging) and redirects to `#/`. The router
+  also carries a leave-guard so a system Back out of the verify editor asks before
+  discarding a re-typed receipt.
+- `screens.js` — onboarding, home (the one bill list: status chips, year/month, sort and
+  paging — behind an "Atur" sheet on phones, inline at >=1040px), settings/payment accounts,
+  create + OCR verify editor, and the rupiah input helpers (`rupiahFmt`/`rupiahParse`/`bindRupiahInput` — inputs
   hold dot-formatted text, so **never `parseInt` an input value directly**).
 - `bill.js` — the bill screens: guest picker, creator view, edit bill, pay sheet, slot manager.
 

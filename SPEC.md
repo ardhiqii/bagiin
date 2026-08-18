@@ -438,6 +438,63 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Changelog
 
+### 2026-08-19 (v68) — satu daftar di menu utama + desktop yang gak melar
+
+**Riwayat dihapus, home yang pegang daftarnya**
+
+Home dan Riwayat itu daftar yang sama, dua kali. Sekarang tinggal home, dan `#/history`
+diarahin ke `#/` (bukan dimatiin — ada yang nyimpen bookmark / kebuka di tab).
+
+Kendala yang ngebentuk layoutnya: filter pernah ada di home dan bikin baris bill pertama
+kedorong ke bawah lipatan di HP 390px — itu justru alasan filternya dulu dipindah keluar.
+Jadi sekarang di HP cuma ada satu tombol kecil **⇅ Atur** di header kartu (ada penanda
+angka kalau lagi ada pilihan non-default) yang buka sheet; di ≥1040px kontrol yang sama
+digelar inline. Sakelarnya CSS, bukan cek lebar di JS, jadi resize gak pernah ninggalin
+layar di mode yang salah. Terukur: baris pertama nangkring di 336px pada layar 390×844.
+
+**Sortir (baru)**
+
+Terbaru · Terlama · Paling besar · Paling kecil · Belum beres dulu. Dua detail yang
+sengaja: sortir pakai tanggal yang **sama** dengan yang ditampilin baris dan dipakai
+header bulan (banding string mentah itu UTC dan beda sama dua-duanya), dan **header bulan
+ilang kalau sortirnya nominal** — "AGUSTUS 2026" di atas baris dari empat bulan itu bohong.
+
+Sortir disimpen antar-reload; filternya sengaja **enggak** — buka app langsung ketemu
+daftar kefilter bikin bill kelihatan kehapus.
+
+**Nominal 7 digit nabrak tombol hapus**
+
+`Rp 1.875.000` nembus keluar barisnya dan masuk ke kolom tombol hapus — terukur 59px
+tumpang tindih di 390px. Chip status sama nominal dua-duanya dikunci gak boleh mengecil;
+sekarang yang ngalah chip-nya, duitnya gak pernah dipotong.
+
+**Desktop: dikomposisi, bukan dimelarin**
+
+Di 1440 kotak "Judul Bill" selebar **920px** dan paragraf ngalir **136 karakter per
+baris** (nyaman itu 45–75), sementara home/settings dipusatin 680px — dua layout beda di
+satu app, gara-gara layar ber-rail bikin kolom kirinya ngisi semua sisa ruang.
+
+Motong kolomnya doang pernah dicoba dan dibalikin (rail-nya jadi ngambang jauh dari
+isinya). Jadi sekarang form + rail diperlakukan sebagai **satu komposisi yang dipusatin**
+(720 + 320): margin kiri-kanan seimbang, rail tetap nempel ke isinya. Topbar ikut
+disamain lebarnya.
+
+Lebarnya dipakai buat kepadatan: di desktop Judul + Tanggal sebaris, dan satu baris item
+muat nama | harga | potongan | hapus — potongan tadinya turun sendiri dan nyisain ~700px
+kosong. Teks berjalan dibatasi 65ch.
+
+Terukur di 1440: kolom utama 954 → **720**, input terlebar 920 → **567**, paragraf
+terpanjang 131 → **83** karakter. Sama persis di 1280/1440/1920.
+
+Sekalian: mepetin tiga field jadi satu baris bikin dua kotak "0" kembar tanpa penanda —
+label potongannya cuma kebaca screen reader. Desktop sekarang punya header kolom
+(Nama item · Harga · Potongan); di bawah 1040px header itu gak ada dan labelnya utuh.
+
+**Layout HP gak gerak sepiksel pun** — semua di dalam query ≥1040px, dibuktiin dengan
+diff gambar 390px sebelum/sesudah.
+
+184 tes + tiga suite browser lulus.
+
 ### 2026-08-19 (v67) — audit lanjutan 2 + deploy
 
 Pass ketiga, hasil audit paralel (undangan+foto, alur bikin bill, identitas/auth, sweep
