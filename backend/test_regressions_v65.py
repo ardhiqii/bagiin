@@ -202,7 +202,41 @@ def test_contact_check_is_not_capped_at_the_pickers_page_size():
     assert r.status_code == 200, r.text
 
 
-# ---------- 4. status agrees between the list and the bill ----------
+# ---------- 4. bad input is 4xx, never 5xx ----------
+
+def test_malformed_fields_are_400_not_500():
+    """Cloudflare replaces 5xx bodies with its own HTML error page, so a 500
+    reaches the user as "something went wrong" with no message. Anything a
+    client can send has to be rejected as 4xx."""
+    aufa = db.new_identity("Aufa65h", role="creator")
+    H = _H(aufa)
+    base = {"items": [{"name": "A", "price": 1000}], "subtotal": 1000,
+            "tax": 0, "service": 0, "total": 1000}
+
+    for field, value in [("title", {"x": 1}), ("merchant", ["a"]),
+                         ("transacted_at", {"y": 2}), ("tax_mode", {"z": 3}),
+                         ("paid_by_name", ["b"]), ("photo_path", {"p": 1})]:
+        r = c.post("/api/bills", json={**base, field: value}, headers=H)
+        assert r.status_code == 400, (field, r.status_code, r.text)
+
+    r = c.post("/api/bills", json={**base, "items": [{"name": {"n": 1}, "price": 1000}]}, headers=H)
+    assert r.status_code == 400, r.text
+    r = c.post("/api/bills", json={**base, "photos": [{"p": 1}]}, headers=H)
+    assert r.status_code in (200, 400), r.text   # must not explode in sqlite
+    if r.status_code == 200:
+        assert db.get_bill(r.json()["id"])["photos"] == []
+
+    bid = _mk_bill(aufa)
+    assert c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": {"a": 1}}, headers=H).status_code == 400
+    assert c.put(f"/api/bills/{bid}/paid_by", json={"name": ["a"]}, headers=H).status_code == 400
+    assert c.post(f"/api/bills/{bid}/invite", json={"identity_id": {"a": 1}}, headers=H).status_code == 400
+    assert c.post("/api/identities", json={"name": {"a": 1}}).status_code == 400
+    assert c.post(f"/api/identities/{aufa['id']}/name", json={"name": ["a"]}, headers=H).status_code == 400
+    assert c.post(f"/api/identities/{aufa['id']}/accounts",
+                  json={"brand": {"a": 1}, "account_no": "1"}, headers=H).status_code == 400
+
+
+# ---------- 5. status agrees between the list and the bill ----------
 
 def test_manually_settled_solo_bill_is_settled_in_the_list_too():
     """"Tandai Lunas" exists for bills that can never auto-settle. The list

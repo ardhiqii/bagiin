@@ -159,6 +159,26 @@ def _to_int(value, field: str, default=None, *, minv=None, maxv=None):
     return n
 
 
+def _to_str(value, field: str, *, maxlen: int | None = None) -> str:
+    """Text from user input, 400 on anything that isn't text.
+
+    A dict or a list here used to sail through `(x or "").strip()` (AttributeError)
+    or straight into sqlite3 (InterfaceError) — either way a 500, and Cloudflare
+    replaces 5xx bodies with its own error page, so the client saw HTML instead
+    of a message (bug: v65 audit).
+    """
+    if value is None:
+        return ""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        value = str(value)
+    if not isinstance(value, str):
+        raise HTTPException(400, f"{field} harus teks")
+    v = value.strip()
+    if maxlen is not None and len(v) > maxlen:
+        raise HTTPException(400, f"{field} maksimal {maxlen} karakter")
+    return v
+
+
 def generate_readable_code() -> str:
     """12-char code in 3 groups of 4, unambiguous alphabet (no 0/O/1/I/L)."""
     alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -302,7 +322,7 @@ async def _read_json(request: Request) -> dict:
 @limiter.limit("30/minute")
 async def create_identity(request: Request):
     data = await _read_json(request)
-    name = (data.get("name") or "").strip()
+    name = _to_str(data.get("name"), "Nama", maxlen=60)
     if not name:
         raise HTTPException(400, "Name required")
     ident = db.new_identity(name, role="creator" if data.get("creator") else "guest")
@@ -369,7 +389,7 @@ async def update_name(identity_id: str, request: Request):
     if identity_id != ident["id"]:
         raise HTTPException(403, "Identitas gak cocok")
     data = await _read_json(request)
-    name = (data.get("name") or "").strip()
+    name = _to_str(data.get("name"), "Nama", maxlen=60)
     if not name:
         raise HTTPException(400, "Nama wajib diisi")
     db.update_identity_name(identity_id, name)
@@ -445,11 +465,11 @@ async def add_account(identity_id: str, request: Request):
     if identity_id != ident["id"]:
         raise HTTPException(403, "Identitas gak cocok")
     data = await _read_json(request)
-    brand = (data.get("brand") or "").strip()
-    account_no = (data.get("account_no") or "").strip()
+    brand = _to_str(data.get("brand"), "Brand", maxlen=40)
+    account_no = _to_str(data.get("account_no"), "Nomor", maxlen=60)
     if not brand or not account_no:
         raise HTTPException(400, "Brand dan nomor wajib diisi")
-    holder = (data.get("holder_name") or "").strip() or None
+    holder = _to_str(data.get("holder_name"), "Nama pemilik", maxlen=60) or None
     return db.add_account(identity_id, brand, account_no, holder)
 
 
@@ -527,15 +547,15 @@ def my_bills(identity_id: str, request: Request):
 async def create_bill(request: Request):
     data = await _read_json(request)
     ident = _identity_from_request(request)
-    merchant = (data.get("merchant") or "").strip() or None
-    transacted_at = (data.get("transacted_at") or "").strip() or None
-    title = (data.get("title") or "").strip() or merchant or "Bill"
+    merchant = _to_str(data.get("merchant"), "Nama tempat", maxlen=120) or None
+    transacted_at = _to_str(data.get("transacted_at"), "Tanggal", maxlen=40) or None
+    title = _to_str(data.get("title"), "Judul bill", maxlen=120) or merchant or "Bill"
     items = data.get("items") or []
     if not isinstance(items, list) or not items:
         raise HTTPException(400, "Minimal 1 item")
     eff_sum = 0
     for i in items:
-        if not isinstance(i, dict) or not str(i.get("name") or "").strip():
+        if not isinstance(i, dict) or not _to_str(i.get("name"), "Nama item", maxlen=120):
             raise HTTPException(400, "Nama item wajib diisi")
         price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0)
         discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0)
@@ -552,7 +572,7 @@ async def create_bill(request: Request):
                 participants.append(p.strip())
     pc = data.get("participant_count")
     participant_count = _to_int(pc, "Jumlah orang", minv=0) if pc not in (None, "") else None
-    paid_by_name = (data.get("paid_by_name") or "").strip() or None
+    paid_by_name = _to_str(data.get("paid_by_name"), "Nama yang nalangin", maxlen=60) or None
     subtotal = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0)
     tax = _to_int(data.get("tax"), "Pajak", 0, minv=0)
     service = _to_int(data.get("service"), "Service", 0, minv=0)
@@ -579,7 +599,7 @@ async def create_bill(request: Request):
         title=title,
         merchant=merchant,
         transacted_at=transacted_at,
-        tax_mode=data.get("tax_mode", "proportional"),
+        tax_mode=_to_str(data.get("tax_mode"), "Cara bagi pajak", maxlen=20) or "proportional",
         participant_count=participant_count,
         tax_included=tax_included,
         subtotal=subtotal,
@@ -695,9 +715,9 @@ async def update_bill(bill_id: str, request: Request):
         raise HTTPException(400, f"Subtotal gak cocok sama isi item (harusnya Rp {eff_sum:,})")
     db.update_bill(
         bill_id,
-        title=(data.get("title") or "").strip() or bill_data["bill"]["title"],
-        merchant=(data.get("merchant") or "").strip() or None,
-        transacted_at=(data.get("transacted_at") or "").strip() or None,
+        title=_to_str(data.get("title"), "Judul bill", maxlen=120) or bill_data["bill"]["title"],
+        merchant=_to_str(data.get("merchant"), "Nama tempat", maxlen=120) or None,
+        transacted_at=_to_str(data.get("transacted_at"), "Tanggal", maxlen=40) or None,
         participants=participants,
         participant_count=participant_count,
         items=[{
@@ -729,8 +749,8 @@ async def set_paid_by(bill_id: str, request: Request):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup, gak bisa diubah")
-    identity_id = data.get("identity_id")
-    name = (data.get("name") or "").strip() or None
+    identity_id = _to_str(data.get("identity_id"), "Identity id", maxlen=64) or None
+    name = _to_str(data.get("name"), "Nama", maxlen=60) or None
     if identity_id:
         # validate identity exists & is part of this bill (roster)
         target = db.get_identity(identity_id)
@@ -825,7 +845,7 @@ async def invite_to_bill(bill_id: str, request: Request):
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
     data = await _read_json(request)
-    target_id = (data.get("identity_id") or "").strip()
+    target_id = _to_str(data.get("identity_id"), "Identity id", maxlen=64)
     if not target_id:
         raise HTTPException(400, "Identity id wajib diisi")
     target = db.get_identity(target_id)

@@ -310,6 +310,22 @@ function shortDate(iso) {
     return d.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
   } catch (e) { return iso; }
 }
+/** Year+month of a bill date AS RENDERED — same parse as shortDate/monthLabel.
+ *  The filters used to slice the raw ISO string, which is UTC for created_at:
+ *  a bill made at 01:00 WIB on 1 September sat under a "SEPTEMBER 2026" header
+ *  and then vanished when you filtered by September (bug: the list and its own
+ *  filter disagreed about which month a bill is in). */
+function localYM(iso) {
+  try {
+    const s = String(iso || "").trim();
+    if (!s) return null;
+    const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(s);
+    const d = dateOnly ? new Date(s + "T12:00:00") : new Date(s.replace(" ", "T") + "Z");
+    if (isNaN(d)) return null;
+    return { y: String(d.getFullYear()), m: String(d.getMonth() + 1).padStart(2, "0") };
+  } catch (e) { return null; }
+}
+
 function monthLabel(iso) {
   try {
     const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(String(iso).trim());

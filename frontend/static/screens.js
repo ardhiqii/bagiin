@@ -180,8 +180,10 @@ async function loadHomeInvites() {
     try {
       await apiJson(`/api/bills/${billId}/invites/${invId}/accept`, "POST", {});
       toast("Udah gabung 🎉");
-      row.remove();
-      if (!$(".invite-row", box)) { box.innerHTML = ""; }
+      // re-render the whole card, not just row.remove(): the footer line is
+      // written from invites.length, so removing one of two rows left "Kamu
+      // diundang ke beberapa bill" over a single invite
+      loadHomeInvites();
       loadHomeHistory(false);  // bill baru muncul di Riwayat — force refetch (useCache=true reused the pre-join list and the new bill stayed invisible)
     } catch (e) { toast(e.message); }
   }));
@@ -200,8 +202,7 @@ async function loadHomeInvites() {
     try {
       await apiJson(`/api/bills/${billId}/invites/${invId}/decline`, "POST", {});
       toast("Undangan ditolak");
-      row.remove();
-      if (!$(".invite-row", box)) { box.innerHTML = ""; }
+      loadHomeInvites();   // same reason as accept: the footer counts rows
     } catch (e) { toast(e.message); }
   }));
 }
@@ -397,16 +398,20 @@ function renderHistory() {
 function availableYears(bills) {
   const years = [];
   for (const b of bills) {
-    const y = String(b.transacted_at || b.created_at || "").slice(0, 4);
-    if (/^\d{4}$/.test(y) && !years.includes(y)) years.push(y);
+    const ym = localYM(b.transacted_at || b.created_at);
+    if (ym && !years.includes(ym.y)) years.push(ym.y);
   }
   return years.sort().reverse();
 }
 
 function passHistoryFilter(b) {
-  const iso = String(b.transacted_at || b.created_at || "");
-  if (histState.year !== "all" && iso.slice(0, 4) !== histState.year) return false;
-  if (histState.month !== "all" && iso.slice(5, 7) !== histState.month) return false;
+  // localYM, not a string slice: the month header is rendered in local time
+  // (see app.js), so slicing the raw UTC timestamp filed late-night bills under
+  // the previous month and the filter hid rows the list was still grouping
+  // under the month you picked
+  const ym = localYM(b.transacted_at || b.created_at);
+  if (histState.year !== "all" && (!ym || ym.y !== histState.year)) return false;
+  if (histState.month !== "all" && (!ym || ym.m !== histState.month)) return false;
   if (histState.filter === "all") return true;
   const tone = billListStatus(b).tone;
   // a closed bill wears "Selesai" (tone done), but if everyone settled it's
@@ -1219,8 +1224,12 @@ function renderCreate(opts = {}) {
     await handleImageFile(fileInput.files[0]);
   });
 
+  // one empty row, not zero: a manual bill always needs at least one item, and
+  // an empty card under a paragraph explaining "Bebas vs Slot" is an
+  // explanation with nothing to point at (see blankBillForVerify)
   const blankBill = () => ({
-    items: [], subtotal: 0, tax: 0, service: 0, total: 0,
+    items: [{ name: "", price: 0, mode: "free" }],
+    subtotal: 0, tax: 0, service: 0, total: 0,
     photo_path: null, photos: [], merchant: "", date: "",
   });
   $("#manual-btn").addEventListener("click", () => renderVerify(blankBill(), true));
@@ -1272,17 +1281,24 @@ function blankBillForVerify() {
 // already typed and push onto the existing photos array.
 async function verifyAttachPhoto(file) {
   if (file.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
+  // the button was looked up and never used, so a Ctrl+V on the editor spent
+  // several silent seconds uploading and a second paste queued a duplicate
   const btn = $("#verify-add-photo");
   const fd = new FormData();
   fd.append("file", file);
-  try {
-    const result = await api("/api/photos", { method: "POST", body: fd });
-    const next = { ...verifyState, photos: [...verifyState.photos, result.photo_path] };
-    next.photo_path = next.photos[0] || null;
-    renderVerify(next, verifyState.manual);
-  } catch (e) {
-    toast(e.message);
-  }
+  const upload = async () => {
+    try {
+      const result = await api("/api/photos", { method: "POST", body: fd });
+      const next = { ...verifyState, photos: [...verifyState.photos, result.photo_path] };
+      next.photo_path = next.photos[0] || null;
+      renderVerify(next, verifyState.manual);
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+  if (btn) return withBusy(btn, "Upload...", upload);
+  toast("Upload foto...");
+  return upload();
 }
 
 async function uploadAndOcr(file) {
@@ -1374,8 +1390,8 @@ async function readClipboardImage() {
     toast("Clipboard kamu gak ada gambarnya");
   } catch (e) {
     // a raw DOMException string ("NotAllowedError: ...") spliced into
-      // Indonesian copy helps nobody — say what to do instead
-      toast("Gak bisa baca clipboard. Coba tempel pakai Ctrl+V ya");
+    // Indonesian copy helps nobody — say what to do instead
+    toast("Gak bisa baca clipboard. Coba tempel pakai Ctrl+V ya");
   }
 }
 
