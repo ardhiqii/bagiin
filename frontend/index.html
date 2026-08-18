@@ -557,8 +557,11 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
   /* desktop: let the app fill the screen so the rail (and its action button)
      sits at the RIGHT EDGE of the window instead of floating in the middle
      of a centered 1060px column (bug: "Bikin Bill & Bagikan" looked pinned
-     center-right on wide monitors) */
-  #app { max-width:none; padding:12px clamp(16px,3vw,40px) 56px; }
+     center-right on wide monitors).
+     The 1400px stop is for very wide monitors only: at 1920 the same rule
+     stretched "Judul Bill" to 1440px and left the item name and its price a
+     screen apart. Below ~1480px viewport it changes nothing. */
+  #app { max-width:1400px; margin:0 auto; padding:12px clamp(16px,3vw,40px) 56px; }
   .topbar { margin-bottom:22px; }
   .shell { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:26px; align-items:start; }
   /* form fills its whole column so it sits right next to the rail —
