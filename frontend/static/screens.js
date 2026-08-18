@@ -1692,6 +1692,14 @@ const VERIFY_CSS = `<style>
   .vf-item input { padding:9px 10px; }
   .vf-item .icon-btn { width:40px; height:40px; min-height:40px; }
   .vf-full { grid-column:1 / -1; }
+  /* discount box: label + input + optional "→ bayar X" result, wrapping as
+     one unit on a phone — moved out of an inline style so the desktop rule
+     below (L3) can restyle just this wrapper without fighting specificity */
+  /* the column header only makes sense next to the compact desktop grid */
+  .vf-head { display:none; }
+  .vf-discount { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .vf-discount input { max-width:110px; }
+  .disc-bayar { color:var(--green); font-weight:700; }
   .vf-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
   .vf-photos { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
   .vf-photo-wrap { position:relative; }
@@ -1716,6 +1724,39 @@ const VERIFY_CSS = `<style>
      so every place it's used inside this screen needs it re-asserted here. */
   .item-mode-btn, .slot-dec, .slot-inc { min-height:40px; min-width:40px; justify-content:center; }
   #add-item-btn, #verify-paste-photo, #verify-add-photo { min-height:40px; }
+
+  /* L3 (v68, desktop only): the editor gets denser instead of wider. Nothing
+     here touches markup order in the DOM — .vf-item stays a CSS grid and
+     the "order" property does the reflow — so the phone layout above is
+     untouched byte for byte. */
+  @media (min-width:1040px) {
+    /* Judul Bill + Tanggal Transaksi share a row instead of each claiming
+       the full (now much narrower) card width on its own line */
+    .vf-field-pair { display:flex; gap:16px; align-items:flex-start; }
+    .vf-field-pair > .field { flex:1; min-width:0; margin-bottom:0; }
+
+    /* name | harga | potongan | delete on ONE line — the discount box used
+       to drop to its own row and leave ~700px empty next to a 110px input */
+    .vf-item { grid-template-columns:1fr 120px 130px 40px; }
+    .vf-item .vf-discount { order:2; grid-column:auto; flex-direction:column; align-items:stretch; gap:2px; }
+    .vf-item .vf-discount input { max-width:none; }
+    /* keep the label for screen readers (it's still the input's <label for>)
+       but out of the compact column visually — display:none would drop it
+       from the accessibility tree too, not just from view */
+    .vf-item .vf-discount-label {
+      position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+      clip:rect(0 0 0 0); white-space:nowrap; border:0;
+    }
+    .vf-item .disc-bayar { font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .vf-head { display:grid; grid-template-columns:1fr 120px 130px 40px; gap:8px;
+               padding:0 2px 2px; font-size:11.5px; font-weight:600;
+               color:var(--text-3); letter-spacing:.02em; }
+    .vf-head span:nth-child(2), .vf-head span:nth-child(3) { text-align:right; }
+    .vf-item [data-role="del"] { order:3; }
+    /* Cara Bagi stays on its own line (unchanged in spirit, just after the
+       four fields above instead of wherever DOM order would put it) */
+    .vf-item .vf-mode { order:4; }
+  }
 </style>`;
 
 function renderVerify(ocr, manual = false) {
@@ -1800,14 +1841,16 @@ function renderVerify(ocr, manual = false) {
     </div>` : "")}
 
     <div class="card">
-      <div class="field">
-        <label for="title-input">Judul Bill</label>
-        <input id="title-input" placeholder="Contoh: Makan Sushi" value="${esc(verifyState.title)}" maxlength="60">
-        ${!manual && verifyState.merchant ? `<p class="muted" style="margin-top:5px;">Dibaca dari struk: ${esc(verifyState.merchant)}</p>` : ""}
-      </div>
-      <div class="field" style="margin-bottom:0;">
-        <label for="date-input">Tanggal Transaksi</label>
-        <input type="date" id="date-input" value="${esc(verifyState.transacted_at)}">
+      <div class="vf-field-pair">
+        <div class="field">
+          <label for="title-input">Judul Bill</label>
+          <input id="title-input" placeholder="Contoh: Makan Sushi" value="${esc(verifyState.title)}" maxlength="60">
+          ${!manual && verifyState.merchant ? `<p class="muted" style="margin-top:5px;">Dibaca dari struk: ${esc(verifyState.merchant)}</p>` : ""}
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label for="date-input">Tanggal Transaksi</label>
+          <input type="date" id="date-input" value="${esc(verifyState.transacted_at)}">
+        </div>
       </div>
     </div>
 
@@ -1833,6 +1876,11 @@ function renderVerify(ocr, manual = false) {
       <p class="muted" style="margin:-4px 0 10px;"><strong style="color:var(--text-2);">Bebas</strong>
       = siapa pun boleh centang, harganya dibagi rata sesuai porsi yang keambil.
       <strong style="color:var(--text-2);">Slot</strong> = dibagi jadi N bagian tetap.</p>
+      ${/* desktop packs name/harga/potongan onto one line, which left two
+            identical "0" boxes with the discount's label visually clipped —
+            you could not tell which box was which. A column header restores
+            that, and only exists where the compact grid does. */ ""}
+      <div class="vf-head" aria-hidden="true"><span>Nama item</span><span>Harga</span><span>Potongan</span><span></span></div>
       <div id="items-list"></div>
       <button class="btn-outline btn-sm" id="add-item-btn" style="width:100%;margin-top:10px;">${ic("plus")} Tambah Item</button>
     </div>
@@ -2168,18 +2216,18 @@ function renderVerifyItems() {
       <button type="button" data-role="del" data-idx="${idx}" class="icon-btn ghost"
               aria-label="Hapus item baris ${idx + 1}" style="color:var(--red);">${ic("trash")}</button>
 
-      <div class="vf-full" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <label class="label-sm" for="disc-${idx}" style="margin:0;">Potongan (diskon)</label>
+      <div class="vf-full vf-discount">
+        <label class="label-sm vf-discount-label" for="disc-${idx}" style="margin:0;">Potongan (diskon)</label>
         <input id="disc-${idx}" data-role="discount" data-idx="${idx}" class="input-money" type="text"
-               inputmode="numeric" maxlength="16" value="${rupiahFmt(it.discount)}" placeholder="0" style="max-width:110px;">
+               inputmode="numeric" maxlength="16" value="${rupiahFmt(it.discount)}" placeholder="0">
         ${/* "harga asli − potongan = yang dibayar" used to sit next to every
               discount box: five copies of the same subtraction, four lines each
               on a phone. The green result below says it better, and only when
               there is actually a discount. */ ""}
-        ${it.discount > 0 ? `<span class="disc-bayar money-sm" style="color:var(--green);font-weight:700;">→ bayar ${rupiahFmt(eff)}</span>` : ""}
+        ${it.discount > 0 ? `<span class="disc-bayar money-sm">→ bayar ${rupiahFmt(eff)}</span>` : ""}
       </div>
 
-      <div class="vf-full">
+      <div class="vf-full vf-mode">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px;">
           <span class="label-sm">Cara Bagi</span>
           <button type="button" class="chip-btn item-mode-btn ${!isSlot ? "chip-active" : ""}" data-idx="${idx}" data-mode="free"

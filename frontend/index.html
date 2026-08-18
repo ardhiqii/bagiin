@@ -610,23 +610,38 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
   #toast { bottom:32px; }
 }
 @media (min-width:1040px) {
-  :root { --page:1060px; }
-  /* desktop: let the app fill the screen so the rail (and its action button)
-     sits at the RIGHT EDGE of the window instead of floating in the middle
-     of a centered 1060px column (bug: "Bikin Bill & Bagikan" looked pinned
-     center-right on wide monitors).
-     The 1400px stop is for very wide monitors only: at 1920 the same rule
-     stretched "Judul Bill" to 1440px and left the item name and its price a
-     screen apart. Below ~1480px viewport it changes nothing. */
+  :root {
+    --page:1060px;
+    /* L1 (v68): the form/rail pair is ONE centered composition, not a
+       full-bleed grid — every desktop layout rule below reads its width
+       from these three tokens instead of guessing. Before this, .shell let
+       the main column eat all remaining space (a bill-title input hit
+       920px, running text hit 136 chars/line) while shell-solo screens
+       (home, settings) sat in an unrelated, independently-centered 680px
+       column — two different layouts in one app. --content matches what
+       shell-solo used to hardcode; --rail is close to the old 340px rail. */
+    --content:720px; --rail:320px; --shell-gap:26px;
+    --composition:calc(var(--content) + var(--shell-gap) + var(--rail));
+  }
+  /* #app's 1400px cap is a safety net for absurdly wide monitors only — it
+     no longer does the centring. .shell/.shell-solo/.topbar below centre
+     themselves against --composition regardless of how wide #app is. */
   #app { max-width:1400px; margin:0 auto; padding:12px clamp(16px,3vw,40px) 56px; }
-  .topbar { margin-bottom:22px; }
-  .shell { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:26px; align-items:start; }
-  /* form fills its whole column so it sits right next to the rail —
-     capping it at 680px left a sea of empty space between the form and
-     the sticky action rail on wide monitors */
+  /* the topbar used to be full-bleed across #app (a title centered over
+     1400px, above cards that stop at ~1070px, looked broken) — constrain it
+     to the SAME composition width and centre it the same way */
+  .topbar { margin:0 auto 22px; max-width:var(--composition); }
+  .shell {
+    display:grid; grid-template-columns:var(--content) var(--rail);
+    gap:var(--shell-gap); align-items:start; justify-content:center;
+  }
+  /* the pair sits in the middle of the viewport with equal margins on both
+     sides — this is what removes the "sea of empty space" a flat 680px cap
+     used to leave between the form and the sticky action rail, without
+     letting the form stretch to fill whatever's left */
   .shell-main { max-width:none; }
   .shell-side { display:block; position:sticky; top:78px; }
-  .shell-solo { display:block; max-width:680px; margin:0 auto; }
+  .shell-solo { display:block; max-width:var(--content); margin:0 auto; }
 
   /* the dock stops being a fixed bar and becomes a card in the rail */
   .shell-side .dock,.shell-side .sticky-bar {
@@ -638,6 +653,14 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
   .shell-side .dock-total { flex-direction:column; align-items:flex-start; gap:2px; }
   .shell-side .dock-total .money { font-size:30px; }
   .hero-total { font-size:38px; }
+
+  /* L2: explanatory running text (the Bebas/Slot line, "Siapa yang Ikut"'s
+     help text, sheet subtitles, muted paragraphs inside cards) must not run
+     past a comfortable measure. ch tracks the font instead of guessing a
+     pixel width. Item rows (.item-share) and person rows (.person-sub) are
+     excluded on purpose — those are meant to span their container, not read
+     like prose. */
+  .sheet-sub, p.muted, div.muted { max-width:65ch; }
 }
 </style>
 </head>
