@@ -37,7 +37,7 @@ function photoThumbHtml(p, i, canManage) {
     <div class="bill-photo-wrap" style="position:relative;">
       <img src="/uploads/${esc(p.path.split("/").pop())}" alt="Struk ${i + 1}" loading="lazy"
            data-photo="${esc(p.path)}" data-idx="${i}" style="width:100%;height:110px;object-fit:cover;border-radius:var(--r-xs);display:block;">
-      ${canManage ? `<button class="bill-photo-del" data-id="${p.id}" aria-label="Hapus foto ${i + 1}" style="position:absolute;top:4px;right:4px;width:36px;height:36px;min-height:36px;padding:0;border-radius:var(--r-full);background:rgba(0,0,0,.62);color:#fff;border:none;display:flex;align-items:center;justify-content:center;">${ic("x")}</button>` : ""}
+      ${canManage ? `<button class="bill-photo-del" data-id="${p.id}" aria-label="Hapus foto ${i + 1}" style="position:absolute;top:4px;right:4px;width:40px;height:40px;min-height:40px;padding:0;border-radius:var(--r-full);background:rgba(0,0,0,.62);color:#fff;border:none;display:flex;align-items:center;justify-content:center;">${ic("x")}</button>` : ""}
     </div>`;
 }
 
@@ -139,6 +139,9 @@ function bindPhotoActions(data) {
     input.addEventListener("change", async () => {
       const f = input.files[0];
       if (!f) return;
+      // every other photo entry point checks first; without it a 12MB phone
+      // photo uploads in full over mobile data and is rejected on arrival
+      if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); input.value = ""; return; }
       const fd = new FormData();
       fd.append("file", f);
       await withBusy(ab, "Upload...", async () => {
@@ -1560,13 +1563,16 @@ function openInviteSheet(data) {
   const me = state.identity;
   const billId = data.bill.id;
   const onBill = new Set((data.people || []).map(p => p.identity_id));
-  onBill.add(data.bill.creator_identity_id);
+  // the creator is on the bill only while they are still in it — since v58
+  // they can walk out, and listing them under "Udah di bill ini" made the
+  // person who left un-re-invitable from the sheet (bug: v65 audit)
+  if (!data.bill.creator_left) onBill.add(data.bill.creator_identity_id);
   const s = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-title">Undang Orang</div>
     <p class="sheet-sub">Orang yang udah pernah share bill sama kamu. Yang auto-accept langsung masuk — yang lain nunggu mereka terima dari beranda.</p>
     <input id="invite-search" placeholder="Cari nama..." maxlength="30" autocomplete="off" style="margin-bottom:10px;">
-    <div id="invite-list" style="max-height:46vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+    <div id="invite-list" style="max-height:46vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">${skeletonRows(3)}</div>
     <button class="btn-outline" id="invite-cancel">Batal</button>`, { noAutofocus: true });
 
   const list = $("#invite-list", s.sheet);

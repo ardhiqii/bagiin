@@ -1232,17 +1232,32 @@ def delete_bill(bill_id: str, owner_id: str) -> bool:
             "SELECT path FROM bill_photo WHERE bill_id = ?", (bill_id,)
         ).fetchall()
     ]
-    conn.execute(
-        "DELETE FROM selection WHERE item_id IN (SELECT id FROM item WHERE bill_id = ?)",
-        (bill_id,),
-    )
-    conn.execute("DELETE FROM item WHERE bill_id = ?", (bill_id,))
-    conn.execute("DELETE FROM payment WHERE bill_id = ?", (bill_id,))
-    conn.execute("DELETE FROM bill_participant WHERE bill_id = ?", (bill_id,))
-    conn.execute("DELETE FROM bill_photo WHERE bill_id = ?", (bill_id,))
-    conn.execute("DELETE FROM bill WHERE id = ?", (bill_id,))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute(
+            "DELETE FROM selection WHERE item_id IN (SELECT id FROM item WHERE bill_id = ?)",
+            (bill_id,),
+        )
+        conn.execute("DELETE FROM item WHERE bill_id = ?", (bill_id,))
+        conn.execute("DELETE FROM payment WHERE bill_id = ?", (bill_id,))
+        conn.execute("DELETE FROM bill_participant WHERE bill_id = ?", (bill_id,))
+        conn.execute("DELETE FROM bill_photo WHERE bill_id = ?", (bill_id,))
+        # invites reference the bill too (v64). Missing this row meant every
+        # bill that had ever been invited to was UNDELETABLE: the FK check
+        # (foreign_keys is ON for every connection) raised IntegrityError, the
+        # 500 body got replaced by Cloudflare's error page, and — because the
+        # exception left this connection holding an open write transaction —
+        # the next writes anywhere in the app failed with "database is locked"
+        # until it was garbage-collected (bug: v65 audit).
+        conn.execute("DELETE FROM bill_invite WHERE bill_id = ?", (bill_id,))
+        conn.execute("DELETE FROM bill WHERE id = ?", (bill_id,))
+        conn.commit()
+    except Exception:
+        # never leave the write transaction open: one failed delete used to
+        # take unrelated requests down with it
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
     for p in photo_paths:
         _unlink_photo(p)
     if photo_path:

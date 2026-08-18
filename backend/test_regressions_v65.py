@@ -202,6 +202,30 @@ def test_contact_check_is_not_capped_at_the_pickers_page_size():
     assert r.status_code == 200, r.text
 
 
+def test_bill_with_invites_can_be_deleted():
+    """bill_invite references bill(id) and foreign_keys is ON, so a bill that
+    had ever been invited to could not be deleted at all: IntegrityError -> 500
+    (Cloudflare swallows the body) and the failed transaction stayed open, so
+    the next writes ANYWHERE failed with "database is locked"."""
+    aufa = db.new_identity("Aufa65i", role="creator")
+    rina = db.new_identity("Rina65i")
+    shared = _mk_bill(aufa, title="Shared")
+    c.post(f"/api/bills/{shared}/join", headers=_H(rina))     # kontak terbukti
+
+    for auto_accept in (True, False):
+        c.post(f"/api/identities/{rina['id']}/auto_accept",
+               json={"auto_accept": auto_accept}, headers=_H(rina))
+        bid = _mk_bill(aufa, title=f"Undang {auto_accept}")
+        assert c.post(f"/api/bills/{bid}/invite", json={"identity_id": rina["id"]},
+                      headers=_H(aufa)).status_code == 200
+        assert c.delete(f"/api/bills/{bid}", headers=_H(aufa)).status_code == 200
+        # the invite rows go with it, and nothing is left holding the write lock
+        assert db.get_bill(bid) is None
+        assert c.get(f"/api/identities/{aufa['id']}/bills", headers=_H(aufa)).status_code == 200
+        assert c.post(f"/api/bills/{shared}/close", headers=_H(aufa)).status_code == 200
+        assert c.post(f"/api/bills/{shared}/reopen", headers=_H(aufa)).status_code == 200
+
+
 # ---------- 4. bad input is 4xx, never 5xx ----------
 
 def test_malformed_fields_are_400_not_500():
