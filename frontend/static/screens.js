@@ -103,6 +103,15 @@ function renderOnboarding() {
 }
 
 // ---------- Home (dashboard) ----------
+// Home used to show only the last few bills, with a separate Riwayat screen
+// carrying the full list, four filter chips and two date selects. On a 390px
+// phone the Riwayat filter row alone pushed the first bill below the fold, so
+// filtering lived off home — but that left the app with two screens doing one
+// job and "which one has the bill I want" as a standing question. K1 (v67):
+// Riwayat is gone, home IS the list, and the filter/sort controls are folded
+// behind ONE control on phones (a sheet) so the first row still doesn't
+// scroll away — see the .list-controls-inline / #list-ctl-btn split below and
+// the matching CSS in index.html.
 function renderHome() {
   const app = $("#app");
   // esc() the name — it's user-typed and interpolated into innerHTML; without
@@ -113,7 +122,6 @@ function renderHome() {
     <div class="topbar">
       <div class="brand"><span class="brand-mark">${brandMark(26)}</span>Bagiin<span class="dot">.</span></div>
       <div class="right">
-        <button class="icon-btn" id="history-btn" aria-label="Riwayat bill">${ic("history")}</button>
         <button class="icon-btn" id="settings-btn" aria-label="Akun kamu">${ic("user")}</button>
       </div>
     </div>
@@ -126,24 +134,31 @@ function renderHome() {
     <button class="btn-primary" id="create-btn" style="margin-bottom:20px;">${ic("plus")} Buat Bill Baru</button>
     <div id="home-invites"></div>
     <div class="card">
-      <!-- Home used to carry the whole history screen: the same list, the same
-           four filter chips and the same two selects. On a 390px phone that
-           pushed the first bill below the fold, and the app had two screens
-           doing one job. Home = the last few bills; Riwayat owns the filters. -->
       <div class="card-title">
-        <span>Bill Terakhir</span>
-        <button type="button" class="link-btn" id="see-all-btn">Lihat Semua</button>
+        <span>Bill Kamu <span class="muted" id="list-summary"></span></span>
+        <!-- phone: the ONE control — opens a sheet with the chips + selects
+             below. Desktop hides this and shows .list-controls-inline instead
+             (CSS media query, not JS branching on width, so a resize can
+             never leave the screen showing both or neither — K2). -->
+        <button type="button" class="link-btn list-ctl-btn" id="list-ctl-btn" aria-haspopup="dialog">
+          ⇅ Atur<span id="list-ctl-count"></span>
+        </button>
       </div>
+      <div class="list-controls-inline" id="list-controls-inline"></div>
       <div id="home-history">${skeletonRows(4)}</div>
     </div>`);
   watchDock();
 
   $("#create-btn").addEventListener("click", () => location.hash = "#/create");
-  $("#history-btn").addEventListener("click", () => location.hash = "#/history");
   $("#settings-btn").addEventListener("click", () => location.hash = "#/settings");
-  $("#see-all-btn").addEventListener("click", () => location.hash = "#/history");
+  $("#list-ctl-btn").addEventListener("click", () => openListControlsSheet());
 
-  loadHomeHistory();
+  // paging is per-visit: leaving home at "80 rows shown" and coming back
+  // (from a bill, from settings) should start from the top page again. The
+  // filter/year/month/sort choices are NOT reset here — they live for the
+  // session (K5).
+  histState.limit = HIST_PAGE;
+  loadBillList(false);  // false: a fresh visit may follow a mutation (new bill, delete, join) — refetch
   loadHomeInvites();
 }
 
@@ -187,7 +202,7 @@ async function loadHomeInvites() {
         // written from invites.length, so removing one of two rows left "Kamu
         // diundang ke beberapa bill" over a single invite
         loadHomeInvites();
-        loadHomeHistory(false);  // bill baru muncul di Riwayat — force refetch (useCache=true reused the pre-join list and the new bill stayed invisible)
+        loadBillList(false);  // bill baru muncul di list — force refetch (useCache=true reused the pre-join list and the new bill stayed invisible)
       } catch (e) {
         toast(e.message);
         loadHomeInvites();  // failure used to leave the stale card inviting another tap (bug)
@@ -314,14 +329,28 @@ function bindBillRows(box, onDone) {
   }));
 }
 
-// ---------- History ----------
-// page size for history — renders in batches so a long list doesn't build one
-// giant string / thousands of nodes at once (bug: everything rendered at once)
+// ---------- Bill list (home) — filter, sort, paging (K1-K6, v67) ----------
+// page size — renders in batches so a long list doesn't build one giant
+// string / thousands of nodes at once (bug: everything rendered at once)
 const HIST_PAGE = 20;
-let histState = { filter: "all", year: "all", month: "all", limit: HIST_PAGE };
-// client-side bill cache so switching filters re-renders instantly instead of
-// refetching the whole list over the network every time (bug: sluggish filters)
+const DEFAULT_SORT = "date_desc";
+// sort persists across reloads (K5) — filter/year/month deliberately do NOT
+// (see resetListControls callers and the histState init below): opening the
+// app into a filtered list makes bills look missing, and that's a support
+// nightmare this codebase has already been burned by.
+let histState = {
+  filter: "all", year: "all", month: "all",
+  sort: lsGet(LS_KEYS.listSort, DEFAULT_SORT),
+  limit: HIST_PAGE,
+};
+// client-side bill cache so switching filters/sort re-renders instantly
+// instead of refetching the whole list over the network every time (bug:
+// sluggish filters)
 let histBills = null;
+// years available in the current histBills — recomputed on every fetch,
+// cached here so the sheet (opened on demand, no fetch of its own) can build
+// its year <select> from the same data the inline controls used
+let histYears = [];
 // month options are fixed (Januari..Desember) — only the year list is derived
 // from data, so a "all years + Juli" filter can span every July on record
 const MONTH_OPTS = [
@@ -329,18 +358,16 @@ const MONTH_OPTS = [
   ["05", "Mei"], ["06", "Juni"], ["07", "Juli"], ["08", "Agustus"],
   ["09", "September"], ["10", "Oktober"], ["11", "November"], ["12", "Desember"],
 ];
-
-const HIST_CSS = `<style>
-  .hist-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-  /* min-height:0 shrank these to ~37px next to 50px-tall selects — under the
-     thumb minimum and visibly out of line with the row */
-  .hist-filters .chip-btn { font-size:13px; padding:10px 14px; min-height:40px; }
-  /* status chips on one line, the two date selects on their own: mixed
-     together they wrapped unpredictably, and a 118px year select clipped its
-     own "Semua tahun" option down to "Semua t" */
-  .hist-selects { display:flex; gap:8px; margin-bottom:14px; }
-  .hist-selects select { flex:1 1 0; min-width:0; }
-</style>`;
+// K3: exact order and semantics. "date" always means transacted_at ?? created_at,
+// parsed the same way shortDate/localYM/monthLabel do (see _billTs below) — a
+// raw string compare is wrong (see the mixed date-only/datetime comment there).
+const SORT_OPTS = [
+  ["date_desc", "Terbaru"],
+  ["date_asc", "Terlama"],
+  ["amount_desc", "Paling besar"],
+  ["amount_asc", "Paling kecil"],
+  ["due_first", "Belum beres dulu"],
+];
 
 // filter options map to billListStatus tones so chip, filter and row can't
 // disagree about what "lunas" means
@@ -350,62 +377,6 @@ const HIST_FILTERS = [
   { v: "ok",  label: "Lunas" },
   { v: "idle", label: "Belum dipilih" },
 ];
-
-function renderHistory() {
-  const app = $("#app");
-  app.innerHTML = shell(`
-    ${HIST_CSS}
-    <div class="topbar">
-      <button class="icon-btn" id="back-btn" aria-label="Kembali ke beranda">${ic("back")}</button>
-      <div class="topbar-title">Riwayat</div>
-      <div style="width:42px;flex-shrink:0;" aria-hidden="true"></div>
-    </div>
-    <div class="hist-filters">
-      ${HIST_FILTERS.map(f =>
-        `<button type="button" class="chip-btn ${histState.filter === f.v ? "chip-active" : ""}" data-filter="${f.v}"
-                 aria-pressed="${histState.filter === f.v}">${esc(f.label)}</button>`).join("")}
-    </div>
-    <div class="hist-selects">
-      <select class="hist-year-sel" id="hist-year" aria-label="Filter tahun">
-        <option value="all">Semua tahun</option>
-      </select>
-      <select class="hist-month-sel" id="hist-month" aria-label="Filter bulan">
-        <option value="all">Semua bulan</option>
-        ${MONTH_OPTS.map(([v, l]) =>
-          `<option value="${v}" ${histState.month === v ? "selected" : ""}>${l}</option>`).join("")}
-      </select>
-    </div>
-    <div class="card" id="hist-list">${skeletonRows(4)}</div>`);
-  watchDock();
-  $("#back-btn").addEventListener("click", () => location.hash = "#/");
-  $$(".hist-filters .chip-btn").forEach(btn =>
-    btn.addEventListener("click", () => {
-      histState.filter = btn.dataset.filter;
-      histState.limit = HIST_PAGE;
-      $$(".hist-filters .chip-btn").forEach(b => {
-        const on = b === btn;
-        b.classList.toggle("chip-active", on);
-        b.setAttribute("aria-pressed", String(on));
-      });
-      loadHistoryList(true);
-    }));
-  const mSel = $("#hist-month");
-  if (mSel) mSel.addEventListener("change", () => {
-    histState.month = mSel.value;
-    histState.limit = HIST_PAGE;
-    loadHistoryList(true);
-  });
-  const ySel = $("#hist-year");
-  if (ySel) ySel.addEventListener("change", () => {
-    histState.year = ySel.value;
-    histState.limit = HIST_PAGE;
-    loadHistoryList(true);
-  });
-  // paging is per-visit: leaving the screen at "80 rows shown" and coming
-  // back should start from the top page again
-  histState.limit = HIST_PAGE;
-  loadHistoryList();
-}
 
 function availableYears(bills) {
   const years = [];
@@ -438,101 +409,247 @@ function passHistoryFilter(b) {
   return tone === histState.filter;
 }
 
-// shared list renderer for home + history — same filter/pagination behaviour,
-// different containers, so the two screens can't drift apart.
-// `useCache` = reuse the previously fetched list (filter clicks, month/year
-// changes); pass false when the data may have changed (initial load, delete).
-async function loadBillList(boxSel, yearSelId, monthSelId, moreId, emptyMsg, useCache, opts = {}) {
-  const box = $(boxSel);
+// The one "what date is this bill" value — shared by sorting, the month
+// headers (via monthLabel) and the row date (via shortDate) so none of them
+// can disagree. transacted_at is sometimes date-only ("2026-08-18") and
+// sometimes a datetime — comparing raw strings would order "2026-08-18"
+// before "2026-08-18 10:30:00" and shuffle same-day rows (bug: localeCompare
+// on mixed formats), so this always goes through Date.
+function _billTs(b) {
+  const iso = String(b.transacted_at || b.created_at || "");
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
+  const d = dateOnly ? new Date(iso + "T12:00:00") : new Date(iso.replace(" ", "T") + "Z");
+  return isNaN(d) ? 0 : d.getTime();
+}
+
+// K3: sorts a COPY of `bills`. Array#sort is stable in every engine this app
+// ships to, so "equal keys keep their relative order" falls out for free as
+// long as the comparator only returns 0 for a genuine tie — it's never forced.
+function sortBills(bills, sortMode) {
+  const dateDesc = (a, b) => _billTs(b) - _billTs(a);
+  if (sortMode === "date_asc") return bills.slice().sort((a, b) => _billTs(a) - _billTs(b));
+  if (sortMode === "amount_desc") return bills.slice().sort((a, b) => (b.total_idr - a.total_idr) || dateDesc(a, b));
+  if (sortMode === "amount_asc") return bills.slice().sort((a, b) => (a.total_idr - b.total_idr) || dateDesc(a, b));
+  if (sortMode === "due_first") {
+    // due first, then idle, then everything else (ok/done) — each group
+    // newest-first, same as the default sort
+    const rank = (b) => { const t = billListStatus(b).tone; return t === "due" ? 0 : t === "idle" ? 1 : 2; };
+    return bills.slice().sort((a, b) => (rank(a) - rank(b)) || dateDesc(a, b));
+  }
+  return bills.slice().sort(dateDesc);  // date_desc, the default
+}
+
+// ---------- controls: chips + selects, shared markup for the desktop inline
+// row and the phone sheet so they can never drift apart (K2) ----------
+function listFilterChipsHtml() {
+  return HIST_FILTERS.map(f =>
+    `<button type="button" class="chip-btn ${histState.filter === f.v ? "chip-active" : ""}"
+             data-role="list-filter" data-filter="${f.v}"
+             aria-pressed="${histState.filter === f.v}">${esc(f.label)}</button>`).join("");
+}
+function yearOptionsHtml(years) {
+  return `<option value="all"${histState.year === "all" ? " selected" : ""}>Semua tahun</option>`
+    + years.map(y => `<option value="${y}"${histState.year === y ? " selected" : ""}>${esc(y)}</option>`).join("");
+}
+function monthOptionsHtml() {
+  return `<option value="all"${histState.month === "all" ? " selected" : ""}>Semua bulan</option>`
+    + MONTH_OPTS.map(([v, l]) => `<option value="${v}"${histState.month === v ? " selected" : ""}>${l}</option>`).join("");
+}
+function sortOptionsHtml() {
+  return SORT_OPTS.map(([v, l]) => `<option value="${v}"${histState.sort === v ? " selected" : ""}>${l}</option>`).join("");
+}
+
+function activeControlsCount() {
+  let n = 0;
+  if (histState.filter !== "all") n++;
+  if (histState.year !== "all") n++;
+  if (histState.month !== "all") n++;
+  if (histState.sort !== DEFAULT_SORT) n++;
+  return n;
+}
+
+// keeps whichever chip/badge/reset-button instances currently exist (inline
+// AND, if open, the sheet) showing the same state — cheaper than re-rendering
+// either block on every tap
+function syncControlsDom() {
+  $$('[data-role="list-filter"]').forEach(btn => {
+    const on = btn.dataset.filter === histState.filter;
+    btn.classList.toggle("chip-active", on);
+    btn.setAttribute("aria-pressed", String(on));
+  });
+  const n = activeControlsCount();
+  const badge = $("#list-ctl-count");
+  if (badge) badge.textContent = n ? ` · ${n}` : "";
+  const resetBtn = $("#list-ctl-reset");
+  if (resetBtn) resetBtn.classList.toggle("hidden", n === 0);
+}
+
+function bindListControls(container) {
+  $$('[data-role="list-filter"]', container).forEach(btn =>
+    btn.addEventListener("click", () => setListFilter(btn.dataset.filter)));
+  const ySel = $('[data-role="list-year"]', container);
+  if (ySel) ySel.addEventListener("change", () => setListYear(ySel.value));
+  const mSel = $('[data-role="list-month"]', container);
+  if (mSel) mSel.addEventListener("change", () => setListMonth(mSel.value));
+  const sSel = $('[data-role="list-sort"]', container);
+  if (sSel) sSel.addEventListener("change", () => setListSort(sSel.value));
+}
+
+// every control change resets paging to page one (K4) — otherwise a filter
+// change silently kept rendering however many rows "Muat lagi" had already
+// grown the page to, and re-renders from the client cache, never refetching
+function setListFilter(v) {
+  if (histState.filter === v) return;
+  histState.filter = v; histState.limit = HIST_PAGE;
+  syncControlsDom(); loadBillList(true);
+}
+function setListYear(v) {
+  histState.year = v; histState.limit = HIST_PAGE;
+  syncControlsDom(); loadBillList(true);
+}
+function setListMonth(v) {
+  histState.month = v; histState.limit = HIST_PAGE;
+  syncControlsDom(); loadBillList(true);
+}
+function setListSort(v) {
+  histState.sort = v; histState.limit = HIST_PAGE;
+  lsSet(LS_KEYS.listSort, v);
+  syncControlsDom(); loadBillList(true);
+}
+function resetListControls() {
+  histState.filter = "all"; histState.year = "all"; histState.month = "all";
+  histState.sort = DEFAULT_SORT; lsSet(LS_KEYS.listSort, DEFAULT_SORT);
+  histState.limit = HIST_PAGE;
+  syncControlsDom(); loadBillList(true);
+}
+
+// Desktop (>=1040px, CSS-only switch — see index.html): chips on one row,
+// the three selects on the next, always visible, no sheet.
+function renderListControlsInline() {
+  const box = $("#list-controls-inline");
   if (!box) return;
-  // preview = the home card: newest few, no filters (a filter set on Riwayat
-  // must not silently hide bills on home), no month headers, no paging.
-  const preview = opts.preview || 0;
+  box.innerHTML = `
+    <div class="list-chip-row">${listFilterChipsHtml()}</div>
+    <div class="list-select-row">
+      <select data-role="list-year" aria-label="Filter tahun">${yearOptionsHtml(histYears)}</select>
+      <select data-role="list-month" aria-label="Filter bulan">${monthOptionsHtml()}</select>
+      <select data-role="list-sort" aria-label="Urutan">${sortOptionsHtml()}</select>
+    </div>`;
+  bindListControls(box);
+}
+
+// Phone (<1040px): the ONE control on the card header opens this. Chips +
+// selects apply live (same handlers as the inline row) so the list behind
+// the sheet updates as you tap; Terapkan just closes, Reset clears everything
+// back to default and closes too.
+function openListControlsSheet() {
+  const s = openSheet(`
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Filter &amp; Urutkan</div>
+    <div class="list-chip-row">${listFilterChipsHtml()}</div>
+    <div class="field">
+      <label for="list-year-sheet">Tahun</label>
+      <select id="list-year-sheet" data-role="list-year">${yearOptionsHtml(histYears)}</select>
+    </div>
+    <div class="field">
+      <label for="list-month-sheet">Bulan</label>
+      <select id="list-month-sheet" data-role="list-month">${monthOptionsHtml()}</select>
+    </div>
+    <div class="field">
+      <label for="list-sort-sheet">Urutan</label>
+      <select id="list-sort-sheet" data-role="list-sort">${sortOptionsHtml()}</select>
+    </div>
+    <button class="btn-primary" id="list-ctl-apply">Terapkan</button>
+    <button class="btn-outline ${activeControlsCount() ? "" : "hidden"}" id="list-ctl-reset">Reset</button>`);
+  bindListControls(s.sheet);
+  $("#list-ctl-apply", s.sheet).addEventListener("click", () => s.close());
+  $("#list-ctl-reset", s.sheet).addEventListener("click", () => { resetListControls(); s.close(); });
+}
+
+function updateListSummary(shown, total) {
+  const box = $("#list-summary");
+  if (!box) return;
+  box.textContent = total === 0 ? "" : (shown === total ? `${total} bill` : `${shown} dari ${total}`);
+}
+
+// the one list renderer — home is the only screen bills live on now (K1).
+// `useCache` = reuse the previously fetched list (filter/sort/paging
+// changes); pass false when the data may have changed (fresh visit, delete,
+// a join/accept elsewhere).
+async function loadBillList(useCache) {
+  const box = $("#home-history");
+  if (!box) return;
   try {
     if (!useCache || !histBills) {
       histBills = await api("/api/identities/" + state.identity.id + "/bills");
     }
     const bills = histBills;
+    const ctlBtn = $("#list-ctl-btn"), inlineBox = $("#list-controls-inline");
     if (!bills.length) {
+      // nothing to filter yet — hide the controls rather than show a live
+      // "Atur" button and an inline row over an empty card
+      if (ctlBtn) ctlBtn.classList.add("hidden");
+      if (inlineBox) inlineBox.innerHTML = "";
+      updateListSummary(0, 0);
       box.innerHTML = `<div class="empty-state">${ic("empty")}
-        <p>Belum ada bill.</p><p class="muted">${emptyMsg}</p></div>`;
+        <p>Belum ada bill.</p><p class="muted">Bill yang kamu buat atau kamu ikutin bakal nongol di sini.</p></div>`;
       return;
     }
-    const ySel = yearSelId ? $(yearSelId) : null;
-    // rebuild the year options on every fetch — a conditional append left
-    // stale years behind after a delete (bug: deleted bill's year stayed
-    // selectable and returned an empty result). Keep "Semua tahun" at the top:
-    // replacing the whole innerHTML wiped the static option, so the select
-    // read "2026" on an unfiltered list and there was no way back to all
-    // years once one was picked (bug: a filter you can't turn off).
-    if (ySel) {
-      const years = availableYears(bills);
-      if (histState.year !== "all" && !years.includes(histState.year)) histState.year = "all";
-      ySel.innerHTML = `<option value="all"${histState.year === "all" ? " selected" : ""}>Semua tahun</option>`
-        + years.map(y => `<option value="${y}"${histState.year === y ? " selected" : ""}>${esc(y)}</option>`).join("");
+    if (ctlBtn) ctlBtn.classList.remove("hidden");
+    // rebuild the year list on every fetch — a conditional append left stale
+    // years behind after a delete (bug: deleted bill's year stayed
+    // selectable and returned an empty result). Keep "Semua tahun" as an
+    // actual option (not a hardcoded default the select falls back to): once
+    // a specific year was picked there used to be no way back to "all" (bug:
+    // a filter you can't turn off).
+    histYears = availableYears(bills);
+    if (histState.year !== "all" && !histYears.includes(histState.year)) {
+      // the year the user had selected no longer exists (its bills got
+      // deleted) — fall back rather than strand them on a dead filter
+      histState.year = "all";
     }
-    // newest first, grouped by month so a long list stays scannable.
-    // transacted_at is sometimes date-only ("2026-08-18") and sometimes a
-    // datetime — comparing raw strings would order "2026-08-18" before
-    // "2026-08-18 10:30:00" and shuffle same-day rows (bug: localeCompare on
-    // mixed formats)
-    const _ts = (b) => {
-      const iso = String(b.transacted_at || b.created_at || "");
-      const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
-      const d = dateOnly ? new Date(iso + "T12:00:00") : new Date(iso.replace(" ", "T") + "Z");
-      return isNaN(d) ? 0 : d.getTime();
-    };
-    const sorted = bills.slice().sort((a, b) => _ts(b) - _ts(a));
-    if (preview) {
-      box.innerHTML = sorted.slice(0, preview).map(billRowHtml).join("");
-      bindBillRows(box, () => loadBillList(boxSel, yearSelId, monthSelId, moreId, emptyMsg, false, opts));
-      // the count lives on the card's own "Lihat Semua" link — a second
-      // full-width button underneath said the same thing twice
-      const seeAll = $("#see-all-btn");
-      if (seeAll && sorted.length > preview) seeAll.textContent = `Lihat Semua (${sorted.length})`;
-      return;
-    }
-    const filtered = sorted.filter(passHistoryFilter);
+    renderListControlsInline();
+    syncControlsDom();
+
+    const filtered = bills.filter(passHistoryFilter);
+    updateListSummary(filtered.length, bills.length);
     if (!filtered.length) {
       box.innerHTML = `<div class="empty-state">${ic("empty")}
-        <p>Gak ada bill yang cocok.</p><p class="muted">Coba ganti filter-nya.</p></div>`;
+        <p>Gak ada bill yang cocok.</p><p class="muted">Coba ganti filter-nya.</p>
+        <button type="button" class="btn-outline btn-sm" id="list-empty-reset" style="margin-top:14px;">Reset filter</button></div>`;
+      $("#list-empty-reset", box).addEventListener("click", resetListControls);
       return;
     }
-    const page = filtered.slice(0, histState.limit);
+    const sorted = sortBills(filtered, histState.sort);
+    const page = sorted.slice(0, histState.limit);
+    // month headers only mean something when the list is actually ordered by
+    // date — over an amount or status sort, a "AGUSTUS 2026" header sitting
+    // above rows from four different months would just be a lie (K3)
+    const showMonths = histState.sort === "date_desc" || histState.sort === "date_asc";
     let html = "", lastMonth = null;
     for (const b of page) {
-      const m = monthLabel(b.transacted_at || b.created_at) || "Tanpa tanggal";
-      if (m !== lastMonth) { html += `<div class="history-month">${esc(m)}</div>`; lastMonth = m; }
+      if (showMonths) {
+        const m = monthLabel(b.transacted_at || b.created_at) || "Tanpa tanggal";
+        if (m !== lastMonth) { html += `<div class="history-month">${esc(m)}</div>`; lastMonth = m; }
+      }
       html += billRowHtml(b);
     }
-    if (filtered.length > histState.limit) {
-      const rest = filtered.length - histState.limit;
-      html += `<button type="button" class="btn-outline btn-sm" id="${moreId}" style="width:100%;margin-top:12px;">Muat ${Math.min(rest, HIST_PAGE)} lagi (${rest} tersisa)</button>`;
+    if (sorted.length > histState.limit) {
+      const rest = sorted.length - histState.limit;
+      html += `<button type="button" class="btn-outline btn-sm" id="home-more" style="width:100%;margin-top:12px;">Muat ${Math.min(rest, HIST_PAGE)} lagi (${rest} tersisa)</button>`;
     }
     box.innerHTML = html;
-    bindBillRows(box, () => loadBillList(boxSel, yearSelId, monthSelId, moreId, emptyMsg, false));
-    const moreBtn = $( "#" + moreId);
+    bindBillRows(box, () => loadBillList(false));
+    const moreBtn = $("#home-more");
     if (moreBtn) moreBtn.addEventListener("click", () => {
       histState.limit += HIST_PAGE;
-      loadBillList(boxSel, yearSelId, monthSelId, moreId, emptyMsg, true);
+      loadBillList(true);
     });
   } catch (e) {
     box.innerHTML = identityErrorHtml(e);
     bindIdentityError(box);
     if (!e || e.status !== 404) toast(e.message);
   }
-}
-
-async function loadHistoryList(useCache = false) {
-  return loadBillList("#hist-list", "#hist-year", "#hist-month", "hist-more",
-    "Bill yang kamu buat atau kamu ikutin bakal nongol di sini.", useCache);
-}
-
-const HOME_PREVIEW = 4;
-async function loadHomeHistory(useCache = false) {
-  return loadBillList("#home-history", null, null, "home-more",
-    "Bill yang kamu buat atau kamu ikutin bakal nongol di sini.", useCache,
-    { preview: HOME_PREVIEW });
 }
 
 // ---------- Settings / Akun ----------
@@ -1593,8 +1710,8 @@ const VERIFY_CSS = `<style>
      slot +/- steppers were 37x27 and 34x32 (mismatched with each other, both
      under the floor), the Bebas/Slot mode chips were 32px tall, and the
      add-item / paste-from-clipboard buttons were 38px — small enough that a
-     thumb missed them (see the identical bug noted on .hist-filters .chip-btn
-     in HIST_CSS: under the floor next to full-size controls reads as broken,
+     thumb missed them (see the identical bug noted on .list-chip-row .chip-btn
+     in index.html: under the floor next to full-size controls reads as broken,
      not smaller). .chip-btn's own rule (index.html) has no min-height at all,
      so every place it's used inside this screen needs it re-asserted here. */
   .item-mode-btn, .slot-dec, .slot-inc { min-height:40px; min-width:40px; justify-content:center; }

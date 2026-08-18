@@ -7,7 +7,7 @@ const fmt = (n) => "Rp " + Number(n || 0).toLocaleString("id-ID");
 const el = (html) => { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
 
-const LS_KEYS = { ident: "bagiin_identity", name: "bagiin_name" };
+const LS_KEYS = { ident: "bagiin_identity", name: "bagiin_name", listSort: "bagiin_list_sort" };
 
 function lsGet(key, fallback) {
   try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
@@ -355,7 +355,11 @@ function render() {
   sheetDepth = 0;
   document.body.style.overflow = "";
   if (!state.identity) { renderOnboarding(); return; }
-  if (parts[0] === "history") { renderHistory(); return; }
+  // Riwayat was folded into home (K1, v67) — someone may still have the old
+  // URL open in a tab or bookmarked, so send them to the one list rather than
+  // falling through to the unconditional renderHome() below with a stale
+  // "#/history" sitting in the address bar (bug: URL and screen disagreeing).
+  if (parts[0] === "history") { location.hash = "#/"; return; }
   if (parts[0] === "settings") { renderSettings(); return; }
   if (parts[0] === "create") {
     // #/create/verify is the OCR/manual editor (see renderVerify in

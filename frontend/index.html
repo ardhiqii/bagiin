@@ -480,6 +480,31 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .dropzone-icon { color:var(--brand); margin-bottom:10px; }
 .dropzone-icon svg { width:38px; height:38px; }
 
+/* ---------- home bill-list controls (K1-K6, v67) ----------
+   Home is the only place bills live now (Riwayat is gone). The constraint
+   that shapes all of this: on a 390px phone the first bill row must be
+   visible without scrolling past a wall of controls — that's why the full
+   filter set was pulled off home earlier this year in the first place. So on
+   phones there is exactly ONE control in the card header (.list-ctl-btn,
+   "⇅ Atur"), which opens a sheet holding the status chips + the three
+   selects. Desktop has room, so the same chips/selects render inline in the
+   card instead — .list-controls-inline is a CSS-only swap (not JS branching
+   on width) so a resize can never leave both or neither visible. */
+.list-ctl-btn { display:inline-flex; align-items:center; gap:1px; white-space:nowrap; }
+.list-controls-inline { display:none; }
+.list-chip-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+/* min-height:0 shrank these to ~37px next to 50px-tall selects — under the
+   thumb minimum and visibly out of line with the row */
+.list-chip-row .chip-btn { font-size:13px; padding:10px 14px; min-height:40px; }
+.list-select-row { display:flex; gap:8px; }
+.list-select-row select { flex:1 1 0; min-width:0; }
+@media (min-width:1040px) {
+  /* desktop: inline controls replace the phone's single "Atur" button —
+     chips on their own row, the three selects on the next, always visible */
+  .list-controls-inline { display:block; margin:14px 0; }
+  .list-ctl-btn { display:none; }
+}
+
 .history-row { display:flex; align-items:center; gap:12px; padding:13px 10px 13px 16px; margin:0 -10px;
                border-radius:var(--r-sm); cursor:pointer; position:relative;
                transition:background .14s var(--ease); }
@@ -512,8 +537,13 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .row-title { display:flex; align-items:baseline; gap:8px; min-width:0; }
 .row-date { flex-shrink:0; margin-left:auto; }
 .row-meta { display:flex; align-items:center; gap:8px; margin-top:5px; min-width:0; }
-.row-meta .chip { flex-shrink:0; }
-.row-amount { margin-left:auto; flex-shrink:0; font-size:15px; font-weight:700; }
+/* the money never shrinks or wraps; the CHIP is what gives way. With both
+   pinned at flex-shrink:0 a 7-digit total ("Rp 1.875.000") pushed the row's
+   content past its own right edge and ran under the delete button's column
+   (bug: measured 59px of overlap at 390px). */
+.row-meta .chip { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.row-amount { margin-left:auto; flex-shrink:0; white-space:nowrap;
+              font-size:15px; font-weight:700; }
 .status-mark { color:var(--text-3); }
 .history-row.is-ok   .status-mark { background:var(--green-soft); color:var(--green);
                                     border-color:color-mix(in srgb, var(--green) 25%, transparent); }
