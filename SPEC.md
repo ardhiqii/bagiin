@@ -438,6 +438,58 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Changelog
 
+### 2026-08-18 (v66) — audit lanjutan: bill gak bisa dihapus, service charge ilang
+
+Pass kedua, hasil audit paralel per-fitur (undangan+foto, alur bikin bill/OCR,
+identitas). Yang di bawah ini yang udah masuk; sisanya nyusul di entri yang sama.
+
+**Bill yang pernah diundang gak bisa dihapus — dan sempat ngunci DB**
+
+`bill_invite` nunjuk ke `bill(id)` dan tiap koneksi jalan dengan `foreign_keys = ON`,
+tapi `delete_bill` gak pernah ngapus barisnya. Sekali tap "Hapus Bill" di bill yang
+pernah diundang (jalur `auto_accept` default nulis satu baris tiap undangan) →
+`IntegrityError` → 500 yang badannya diganti halaman error Cloudflare, dan billnya
+**gak bisa dihapus selamanya**. Lebih parah: exception-nya ninggalin koneksi dengan
+transaksi tulis kebuka, jadi request tulis lain di app ikut gagal "database is
+locked" sampai koneksinya di-GC. Sekarang undangannya ikut dihapus dan fungsinya
+exception-safe (rollback + close di `finally`).
+
+**OCR ngapus service charge di struk "termasuk pajak"**
+
+`_normalize` nge-nol-in `service` barengan `tax` waktu `tax_included`. Padahal
+`calc.py` sengaja **tetap** misahin service charge di bill tax-included, dan editor
+tetap nampilin field Service di bawah toggle-nya. Jadi Rp 10.000 SC ilang sebelum
+user sempat lihat formnya, dan diam-diam nempel ke yang nalangin. Sekarang cuma
+pajak yang di-nol-in; promptnya ikut dibenerin.
+
+**OCR: 500, tanggal hantu, dan request 7¾ menit**
+
+- Model kadang balikin JSON valid tapi bukan object (array telanjang, `null`, string).
+  `_normalize` langsung `.get()` → `AttributeError` di luar semua handler → HTTP 500.
+  Sekarang `RuntimeError`, yang emang udah ditangkep jadi 4xx.
+- Tanggal non-ISO ("08/08/2026") bikin `<input type="date">` kelihatan **kosong** tapi
+  nilainya tetap kebawa ke bill — lalu pengelompokan bulan dan filter tahun/bulan di
+  daftar bill gagal parse. Sekarang dibuang kalau bukan `YYYY-MM-DD`.
+- Satu request bisa jalan ~465 detik (Gemini 3×60s + backoff, lanjut fallback 3×90s).
+  Cloudflare mutus di 100 detik dan balikin 524-nya sendiri, jadi sisanya kerja buat
+  yang udah gak nunggu. Sekarang dua provider berbagi satu budget 45 detik.
+- Pesan gagalnya nyebut nama env var dalam bahasa Inggris ("Gemini: GEMINI_API_KEY not
+  set") di bawah judul yang bohong ("lagi penuh" padahal servernya belum disetel).
+  Detail teknis pindah ke log.
+
+**Lain-lain**
+
+- Layar 1920px: kolomnya melar sampai "Judul Bill" selebar 1440px dan nama item
+  kepisah sejauh layar dari harganya. Sekarang berhenti di 1400px — di bawah itu gak
+  ada yang berubah, rail-nya tetap nempel di kanan.
+- Creator yang udah keluar dari billnya masih kelihatan "Udah di bill ini" di sheet
+  undangan, jadi gak bisa diundang balik.
+- "Tambah Foto" di layar bill satu-satunya jalur foto tanpa cek 5MB — foto 12MB
+  keupload penuh dulu baru ditolak.
+- Sheet undangan nampilin kotak kosong selama kontak dimuat.
+- `.btn-sm` (dipakai "Gabung", "Undang", "Tandai Lunas") 38px dan tombol hapus foto
+  36px → 40px.
+
 ### 2026-08-18 (v65) — audit pass: takeover ditutup, UI dirapihin lagi
 
 Pass audit penuh setelah v59–v64 (filter+paging riwayat, undangan langsung,
