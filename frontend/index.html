@@ -506,9 +506,14 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 }
 @media (min-width:1040px) {
   :root { --page:1060px; }
-  #app { padding-bottom:56px; }
+  /* desktop: let the app fill the screen so the rail (and its action button)
+     sits at the RIGHT EDGE of the window instead of floating in the middle
+     of a centered 1060px column (bug: "Bikin Bill & Bagikan" looked pinned
+     center-right on wide monitors) */
+  #app { max-width:none; padding:12px clamp(16px,3vw,40px) 56px; }
   .topbar { margin-bottom:22px; }
   .shell { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:26px; align-items:start; }
+  .shell-main { max-width:680px; }
   .shell-side { display:block; position:sticky; top:78px; }
   .shell-solo { display:block; max-width:680px; margin:0 auto; }
 
