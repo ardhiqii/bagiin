@@ -307,7 +307,7 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .invite-row:first-of-type { border-top:none; }
 .invite-row-info { flex:1; min-width:0; }
 .invite-row .btn-primary.btn-sm { flex-shrink:0; }
-.invite-row .btn-ghost.btn-sm { flex-shrink:0; width:38px; }
+.invite-row .btn-ghost.btn-sm { flex-shrink:0; width:40px; min-height:40px; }
 
 /* ---------- forms ---------- */
 label { font-size:13px; color:var(--text-2); display:block; margin-bottom:5px; font-weight:500; }
@@ -456,7 +456,8 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .history-row.is-due  .status-mark { background:var(--red-soft); color:var(--red);
                                     border-color:color-mix(in srgb, var(--red) 25%, transparent); }
 .history-row.is-done .status-mark { background:var(--surface-3); color:var(--text-3); border-color:var(--border); }
-.history-row.is-idle .status-mark { background:var(--surface-2); color:var(--text-3); border-color:var(--border); }
+.history-row.is-idle .status-mark { background:var(--accent-soft); color:var(--accent);
+                                    border-color:color-mix(in srgb, var(--accent) 25%, transparent); }
 .history-month { font-size:12px; font-weight:700; color:var(--text-3); letter-spacing:.04em;
                  text-transform:uppercase; margin:16px -10px 4px 6px; }
 .history-month:first-child { margin-top:0; }

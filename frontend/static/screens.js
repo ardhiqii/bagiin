@@ -89,7 +89,7 @@ function renderOnboarding() {
     e.preventDefault();
     const code = $("#restore-code").value.trim();
     if (!code) { toast("Isi kodenya dulu"); return; }
-    withBusy($("#restore-btn"), "Mulihin...", async () => {
+    withBusy($("#restore-btn"), "Memulihkan...", async () => {
       try {
         const ident = await apiJson("/api/identities/restore", "POST", { code });
         state.identity = ident;
@@ -214,12 +214,21 @@ async function loadHomeInvites() {
       toast("Udah gabung 🎉");
       row.remove();
       if (!$(".invite-row", box)) { box.innerHTML = ""; }
-      loadHomeHistory(true);  // bill baru muncul di Riwayat
+      loadHomeHistory(false);  // bill baru muncul di Riwayat — force refetch (useCache=true reused the pre-join list and the new bill stayed invisible)
     } catch (e) { toast(e.message); }
   }));
   $$(".inv-decline", box).forEach(b => b.addEventListener("click", async (ev) => {
     const row = b.closest(".invite-row");
     const invId = row.dataset.invite, billId = row.dataset.bill;
+    // decline is permanent server-side with no undo — the X is small and easy
+    // to fat-finger, so ask first (bug: one tap on a 38px button destroyed an
+    // invite forever)
+    const ok = await confirmSheet({
+      title: "Tolak undangan?",
+      body: "Undangan ini bakal ilang — buat nerima lagi nanti, minta yang ngundang kirim ulang.",
+      confirmText: "Tolak", cancelText: "Kembali", danger: true,
+    });
+    if (!ok) return;
     try {
       await apiJson(`/api/bills/${billId}/invites/${invId}/decline`, "POST", {});
       toast("Undangan ditolak");
@@ -251,9 +260,12 @@ function billListStatusChip(b) {
 }
 
 // personal line for the CURRENT viewer — only meaningful while the bill is
-// open, has picks, and isn't fully settled ("Selesai"/"Lunas" say enough).
+// open (or closed-unsettled), has picks, and isn't fully settled.
+// NOTE closed bills are NOT excluded: a closed bill that still has an unpaid
+// share must keep telling the debtor "Kamu belum bayar" — hiding it made
+// closed debts invisible (bug: chip said "Selesai" while the user still owed).
 function personalStatusHtml(b) {
-  if (b.status === "closed" || b.settled || !b.has_picks) return "";
+  if (b.settled || !b.has_picks) return "";
   // the payer never "paid" — they fronted the money. Calling that "udah bayar"
   // is what made a fresh bill claim a payment that never happened.
   // personal lines are always neutral: the chip already owns the status colour,
@@ -421,6 +433,11 @@ function passHistoryFilter(b) {
   // still lunas — filter "Lunas" must find it (bug: closed & settled bills
   // vanished from the Lunas filter; "Kitchen & Dimsum" case, 2026-08)
   if (histState.filter === "ok") return tone === "ok" || (tone === "done" && b.settled);
+  if (histState.filter === "due")
+    // a closed bill with unpaid shares wears "Selesai" (tone done) but is
+    // still outstanding — "Belum lunas" must find it (bug: closed debts
+    // vanished from the red filter)
+    return tone === "due" || (tone === "done" && !b.settled);
   return tone === histState.filter;
 }
 
@@ -442,10 +459,22 @@ async function loadBillList(boxSel, yearSelId, monthSelId, moreId, emptyMsg, use
       return;
     }
     const ySel = $(yearSelId);
-    if (ySel && ySel.options.length <= 1) ySel.innerHTML += yearOptionsHtml(bills);
-    // newest first, grouped by month so a long list stays scannable
-    const sorted = bills.slice().sort((a, b) =>
-      String(b.transacted_at || b.created_at || "").localeCompare(String(a.transacted_at || a.created_at || "")));
+    // rebuild the year options on every fetch — a conditional append left
+    // stale years behind after a delete (bug: deleted bill's year stayed
+    // selectable and returned an empty result)
+    if (ySel) ySel.innerHTML = yearOptionsHtml(bills);
+    // newest first, grouped by month so a long list stays scannable.
+    // transacted_at is sometimes date-only ("2026-08-18") and sometimes a
+    // datetime — comparing raw strings would order "2026-08-18" before
+    // "2026-08-18 10:30:00" and shuffle same-day rows (bug: localeCompare on
+    // mixed formats)
+    const _ts = (b) => {
+      const iso = String(b.transacted_at || b.created_at || "");
+      const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
+      const d = dateOnly ? new Date(iso + "T12:00:00") : new Date(iso.replace(" ", "T") + "Z");
+      return isNaN(d) ? 0 : d.getTime();
+    };
+    const sorted = bills.slice().sort((a, b) => _ts(b) - _ts(a));
     const filtered = sorted.filter(passHistoryFilter);
     if (!filtered.length) {
       box.innerHTML = `<div class="empty-state">${ic("empty")}
@@ -484,7 +513,7 @@ async function loadHistoryList(useCache = false) {
 
 async function loadHomeHistory(useCache = false) {
   return loadBillList("#home-history", "#home-year", "#home-month", "home-more",
-    "Foto struknya, share linknya, terus semua milih item yang dia makan sendiri.", useCache);
+    "Bill yang kamu buat atau kamu ikutin bakal nongol di sini.", useCache);
 }
 
 // ---------- Settings / Akun ----------
@@ -770,7 +799,9 @@ function renderSettings() {
       title: "Keluar dari akun ini?",
       body: hasCode === true
         ? "Device ini bakal lupa siapa kamu. Semua bill kamu masih ada, tapi cuma bisa dibuka lagi pakai <strong>kode pemulihan</strong> kamu."
-        : "<strong>Kamu belum punya kode pemulihan.</strong> Kalau keluar sekarang, semua bill kamu gak bisa dibuka lagi — selamanya, di HP ini maupun di HP lain. Bikin kode pemulihan dulu kalau masih butuh billnya.",
+        : hasCode === false
+          ? "<strong>Kamu belum punya kode pemulihan.</strong> Kalau keluar sekarang, semua bill kamu gak bisa dibuka lagi — selamanya, di HP ini maupun di HP lain. Bikin kode pemulihan dulu kalau masih butuh billnya."
+          : "Device ini bakal lupa siapa kamu. Status kode pemulihan kamu belum sempat kecek (cek koneksi) — kalau ternyata kamu belum bikin kode, bill kamu gak bisa dibuka lagi. Amanin dulu di halaman ini kalau masih butuh billnya.",
       confirmText: "Keluar",
       danger: true,
     });
@@ -838,10 +869,15 @@ function parseAccountsText(text) {
   let holder = "";
   let pendingBrand = null;
   for (const line of lines) {
-    const brand = matchBrand(line);
     // number-like chunk on this line: digits, optionally grouped with spaces/dashes
     const numMatch = line.match(/(?:^|\s)([0-9][0-9\s\-]{5,})/);
     const number = numMatch ? numMatch[1].replace(/[\s\-]/g, "") : null;
+    // brand is only trusted next to its number ("Bank Jago 1042...") or on a
+    // bare brand line ("OVO", "Bank Mandiri"). A name like "DANA PRASETYO" or
+    // "JAGO CAFE" must NOT set the brand — mid-line tokens inside a person's
+    // name silently relabeled the next number (bug: "DANA PRASETYO / Bank
+    // Jago / 104276913799" got parsed as brand DANA with Jago's number)
+    const brand = number ? matchBrandNearNumber(line, number) : lineBrandOnly(line);
     if (brand && number) {
       out.push({ brand, account_no: number, holder_name: holder || null });
       pendingBrand = null;
@@ -857,6 +893,28 @@ function parseAccountsText(text) {
     }
   }
   return out;
+}
+
+// brand match for lines WITHOUT a number: only a bare brand ("OVO") or a
+// "Bank <brand>" line counts — anything longer is a person's name / cafe name.
+function lineBrandOnly(line) {
+  const stripped = String(line || "").toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  const words = stripped.split(" ").filter(w => w && w !== "bank");
+  if (words.length > 1) return null;
+  return matchBrand(line);
+}
+
+// brand match for lines WITH a number: look only in the few words adjacent to
+// the number ("Bank Jago 1042..." → Jago), never across the whole line, so a
+// name that contains a brand word ("DANA PRASETYO") can't hijack the brand.
+function matchBrandNearNumber(line, number) {
+  const idx = line.indexOf(number);
+  if (idx < 0) return matchBrand(line);
+  const before = String(line.slice(0, idx)).trim();
+  const lastWords = before.split(/[\s/]+/).filter(Boolean).slice(-3).join(" ");
+  const after = String(line.slice(idx + number.length)).trim();
+  return matchBrand(lastWords) || matchBrand(after.split(/[\s/]+/).slice(0, 3).join(" "));
 }
 
 function openPasteAccountsSheet(identityId, onAdded) {
@@ -1020,7 +1078,7 @@ function renderCreate(opts = {}) {
   const app = $("#app");
   const coarse = isCoarsePointer();
   const hint = coarse
-    ? "Ketuk buat ambil foto atau pilih dari galeri"
+    ? "Ketuk buat pilih kamera, galeri, atau tempel dari clipboard"
     : "Ketuk buat pilih file, tempel (Ctrl+V), atau tarik file ke sini";
   const errCard = opts.ocrError
     ? `<div class="warn-box">
@@ -1246,7 +1304,14 @@ function pasteImageHandler(e) {
       // manual verify screen has its own photo row — attach there too, not
       // just the dropzone (user pasted a screenshot while filling the form)
       if (document.getElementById("verify-add-photo")) { verifyAttachPhoto(f); return; }
-      if (!document.getElementById("dz")) return;
+      if (!document.getElementById("dz")) {
+        // create screen is mid-OCR (dropzone replaced by the spinner) or the
+        // screen changed; don't hijack paste elsewhere, but don't swallow it
+        // silently on the create flow (bug: paste during "Lagi baca struknya"
+        // did nothing, no feedback)
+        if (document.getElementById("create-body")) toast("Masih diproses — tunggu bentar");
+        return;
+      }
       if (scanMode) uploadAndOcr(f);
       else uploadAndAttach(f);
       return;
@@ -1344,7 +1409,15 @@ function renderVerify(ocr, manual = false) {
         merchant: ocr.merchant || "",
         transacted_at: ocr.transacted_at || ocr.date || "",
         manual,
-        paid_by_name: null,
+        paid_by_name: (ocr && ocr.paid_by_name) || null,
+        // explicit flag: re-renders (photo add/remove/paste) rebuild the whole
+        // state object, and reading "paid by me" off `paid_by_name` truthiness
+        // silently flipped an un-checked "Aku yang bayar" back to checked —
+        // the bill got recorded as paid-by-self even when the user picked
+        // someone else and typed a name (bug: state reset on re-render)
+        paidByMyself: (ocr && typeof ocr.paidByMyself === "boolean")
+          ? ocr.paidByMyself
+          : ((ocr && ocr.paid_by_name) == null),
         tax_included: !!(ocr.tax_included),
         // last PPN the user typed, so switching "termasuk pajak" off can put it
         // back (see the toggle handler)
@@ -1357,7 +1430,12 @@ function renderVerify(ocr, manual = false) {
   // (LLM missed an item line), keep the receipt value & show the warning —
   // otherwise let it follow the items so editing a price updates the total.
   const _sumItems = (verifyState.items || []).reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)), 0);
-  verifyState.subtotalTouched = !manual && _sumItems !== (verifyState.subtotal || 0);
+  // preserve the user's "I typed this" flag across re-renders instead of
+  // recomputing it — recomputing made a typed subtotal that happened to equal
+  // the item sum silently switch back to auto-follow (bug: user input ignored)
+  verifyState.subtotalTouched = (ocr && typeof ocr.subtotalTouched === "boolean")
+    ? ocr.subtotalTouched
+    : (!manual && _sumItems !== (verifyState.subtotal || 0));
 
   const main = `
     ${VERIFY_CSS}
@@ -1415,28 +1493,28 @@ function renderVerify(ocr, manual = false) {
       <div class="card-title"><span>Total</span></div>
       <div class="vf-grid">
         <div class="vf-sub">
-          <label for="subtotal-input">Subtotal</label>
-          <input class="input-money" type="text" inputmode="numeric" id="subtotal-input" value="${rupiahFmt(verifyState.subtotal)}">
+          <label for="subtotal-input">Subtotal (Rp)</label>
+          <input class="input-money" type="text" inputmode="numeric" id="subtotal-input" placeholder="0" value="${rupiahFmt(verifyState.subtotal)}">
         </div>
         <div>
-          <label for="tax-input">PPN</label>
+          <label for="tax-input">PPN (Rp)</label>
           <input class="input-money" type="text" inputmode="numeric" id="tax-input" placeholder="0" value="${rupiahFmt(verifyState.tax)}">
         </div>
         <div>
-          <label for="service-input">Service</label>
+          <label for="service-input">Service (Rp)</label>
           <input class="input-money" type="text" inputmode="numeric" id="service-input" placeholder="0" value="${rupiahFmt(verifyState.service)}">
         </div>
       </div>
       <label class="toggle-row" for="tax-included-toggle" style="margin-top:10px;">
         <span style="flex:1;">
           <span class="label-strong">Harga item sudah termasuk pajak</span>
-          <span class="muted" style="display:block;">Kalau struk nulis "termasuk pajak", harga tiap item udah kehitung pajaknya</span>
+          <span class="muted" style="display:block;">Angka item yang kamu isi SUDAH termasuk PPN — PPN gak dihitung lagi dari total.</span>
         </span>
         <input type="checkbox" id="tax-included-toggle" ${verifyState.tax_included ? "checked" : ""}>
       </label>
       <div id="tax-included-badge" class="info-box ${verifyState.tax_included ? "" : "hidden"}"
            style="margin:8px 0 0;display:flex;gap:8px;align-items:flex-start;">
-        ${ic("info")}<span>PPN dikosongin — service charge tetep dibagi</span>
+        ${ic("info")}<span>Total = subtotal + service aja — PPN udah masuk di harga item</span>
       </div>
       <div id="sum-warn" class="error-text hidden"></div>
     </div>
@@ -1448,9 +1526,9 @@ function renderVerify(ocr, manual = false) {
           <span class="label-strong">Aku yang bayar</span>
           <span class="muted" style="display:block;">Yang bayar dianggap udah lunas otomatis</span>
         </span>
-        <input type="checkbox" id="paid-by-me" ${verifyState.paid_by_name ? "" : "checked"}>
+        <input type="checkbox" id="paid-by-me" ${verifyState.paidByMyself ? "checked" : ""}>
       </label>
-      <div id="paid-by-other" class="${verifyState.paid_by_name ? "" : "hidden"}" style="margin-top:10px;">
+      <div id="paid-by-other" class="${verifyState.paidByMyself ? "hidden" : ""}" style="margin-top:10px;">
         <label for="paid-by-name-input">Nama Yang Bayar</label>
         <input id="paid-by-name-input" placeholder="Contoh: Budi" value="${esc(verifyState.paid_by_name || "")}" maxlength="30" autocomplete="off">
         <p class="muted" style="margin-top:5px;">Bisa diubah lagi nanti setelah orangnya join bill</p>
@@ -1643,6 +1721,7 @@ function renderVerify(ocr, manual = false) {
   if (paidByMe) {
     paidByMe.addEventListener("change", () => {
       $("#paid-by-other").classList.toggle("hidden", paidByMe.checked);
+      verifyState.paidByMyself = paidByMe.checked;
       if (paidByMe.checked) {
         // re-checking "aku yang bayar" must clear a stale typed name,
         // otherwise the old placeholder gets sent and ownership shifts to
@@ -1823,11 +1902,20 @@ function updateVerifyTotal() {
   const badge = $("#tax-included-badge");
   if (badge) badge.classList.toggle("hidden", !verifyState.tax_included);
 
-  const mismatch = sumItems !== subtotal;
+  // OCR that found no items (receipt unreadable) isn't the user's error —
+    // forcing them to "match" numbers they can't see blocked the CTA on a
+    // mistake they didn't make (bug: fake mismatch blamed the user)
+    const ocrEmpty = !verifyState.manual && verifyState.items.length === 0 && (verifyState.subtotal || 0) > 0;
+    const mismatch = sumItems !== subtotal && !ocrEmpty;
   const warn = $("#sum-warn");
   if (warn) {
-    if (mismatch) {
+    if (ocrEmpty) {
       warn.classList.remove("hidden");
+      warn.textContent = "OCR gak nemu item dari fotonya — tambah item manual aja, subtotal udah dibiarin dari struk.";
+      warn.style.color = "var(--accent)";
+    } else if (mismatch) {
+      warn.classList.remove("hidden");
+      warn.style.color = "";
       if (sumItems === total) {
         warn.textContent = `Harga item (${fmt(sumItems)}) kayaknya udah TERMASUK pajak, tapi kamu isi Subtotal ${fmt(subtotal)} + PPN. Aktifin toggle "Harga item sudah termasuk pajak" biar gak dobel.`;
       } else {
@@ -1874,6 +1962,15 @@ async function createBillFinal() {
     toast(badMsg);
     return;
   }
+  // paid-by-someone needs a name — sending null while the flag says "not me"
+  // would silently record the bill as paid by the creator (bug: un-checked
+  // "Aku yang bayar" with an empty name became self-paid)
+  if (!verifyState.paidByMyself && !String(verifyState.paid_by_name || "").trim()) {
+    toast("Tulis dulu nama yang bayar (atau centang Aku yang bayar)");
+    const inp = $("#paid-by-name-input");
+    if (inp) { inp.style.borderColor = "var(--red)"; inp.focus(); }
+    return;
+  }
 
   await withBusy(btn, "Bikin bill", async () => {
     try {
@@ -1895,7 +1992,7 @@ async function createBillFinal() {
         })),
         photo_path: verifyState.photo_path,
         photos: verifyState.photos || [],
-        paid_by_name: verifyState.paid_by_name || null,
+        paid_by_name: verifyState.paidByMyself ? null : (verifyState.paid_by_name || null),
         tax_included: verifyState.tax_included ? 1 : 0,
         // free-typed names become legacy participant placeholders; proven
         // contacts are NOT sent here (avoids double rows) — they're invited by
@@ -1904,17 +2001,24 @@ async function createBillFinal() {
       });
       // invite the proven-contacts picked on the create screen: auto-accept
       // joins instantly, others get a pending card on their home. Done as a
-      // chain because /invite needs an existing bill id.
+      // chain because /invite needs an existing bill id. In PARALLEL — the old
+      // sequential loop took N round-trips before the user even saw the bill
+      // (bug: N contacts = N slow RTTs on one button press).
       if (verifyState.participants.length) {
-        const invited = [];
-        for (const p of verifyState.participants) {
-          try {
-            const r = await apiJson(`/api/bills/${bill.id}/invite`, "POST", { identity_id: p.id });
-            invited.push(`${p.name} ${r.status === "joined" ? "langsung masuk" : "diundang"}`);
-          } catch (e) {
-            invited.push(`${p.name} gagal (${e.message})`);
-          }
-        }
+        const results = await Promise.allSettled(
+          verifyState.participants.map(p =>
+            apiJson(`/api/bills/${bill.id}/invite`, "POST", { identity_id: p.id })
+              .then(r => ({ name: p.name, status: r.status, ok: true }))
+              .catch(e => ({ name: p.name, status: e.message, ok: false }))
+          )
+        );
+        const invited = results.map(r => {
+          if (r.status === "rejected") return `${r.reason && r.reason.name ? r.reason.name : "Seseorang"} gagal`;
+          const v = r.value;
+          return v.ok
+            ? `${v.name} ${v.status === "joined" ? "langsung masuk" : "diundang"}`
+            : `${v.name} gagal (${v.status})`;
+        });
         if (invited.length) toast(invited.join(" · "));
       }
       location.hash = "#/b/" + bill.id;

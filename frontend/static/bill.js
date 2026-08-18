@@ -744,7 +744,14 @@ function openSlotPickerSheet(data, me, it) {
   if (rel) rel.addEventListener("click", (ev) =>
     withBusy(ev.currentTarget, "Melepas...", async () => {
       try {
-        await api(`/api/bills/${data.bill.id}/items/${it.id}/selections/${me.id}`, { method: "DELETE" });
+        // release must ride the same save chain as picks — a raw DELETE here
+        // could land BEFORE a queued optimistic POST that still contains this
+        // item, resurrecting a pick the user just released (bug: races)
+        const picks = [...state.selQty.entries()]
+          .filter(([iid]) => iid !== it.id)
+          .map(([iid, q]) => ({ item_id: iid, qty: q }));
+        state.selQty.delete(it.id);
+        await saveSelectionsViaChain(data, picks);
         s.close();
         toast("Slot dilepas ✓");
         loadBillView(data.bill.id);
@@ -836,7 +843,12 @@ function openFreePickerSheet(data, me, it) {
   if (rel) rel.addEventListener("click", (ev) =>
     withBusy(ev.currentTarget, "Melepas...", async () => {
       try {
-        await api(`/api/bills/${data.bill.id}/items/${it.id}/selections/${me.id}`, { method: "DELETE" });
+        // same chain requirement as slot release — see openSlotPickerSheet
+        const picks = [...state.selQty.entries()]
+          .filter(([iid]) => iid !== it.id)
+          .map(([iid, q]) => ({ item_id: iid, qty: q }));
+        state.selQty.delete(it.id);
+        await saveSelectionsViaChain(data, picks);
         s.close();
         toast("Pilihan dilepas ✓");
         loadBillView(data.bill.id);
@@ -950,6 +962,7 @@ function openPaySheet(data, me, alreadyPaid) {
     itemsBox.innerHTML = items.length ? `
       <div class="card card-flat">
         <div class="label-sm" style="margin-bottom:4px;">Item kamu (${items.length})</div>
+        <p class="muted" style="margin:-2px 0 6px;font-size:12px;">Angka per item perkiraan (≈) — total di bawah pakai hitungan final.</p>
         ${items.map(it => {
           const myQty = state.selQty.get(it.id) || 1;
           const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
@@ -978,7 +991,11 @@ function openPaySheet(data, me, alreadyPaid) {
               ${shareNote ? `<div class="item-share">${esc(shareNote)}</div>` : ""}
             </div>
             <div style="text-align:right;flex-shrink:0;">
-              <div class="money">${fmt(myPrice)}</div>
+              <!-- client-side per-item price can drift 1 rupiah from the
+                   backend's remainder distribution; the sheet total below is
+                   the server's number, so label the row as an estimate
+                   (bug: row said 33, subtotal said 34, same item) -->
+              <div class="money">≈ ${fmt(myPrice)}</div>
               ${it.discount_idr > 0 ? `<div class="muted" style="font-size:11px;">diskon ${fmt(it.discount_idr)} · dari ${fmt(it.price_idr)}</div>` : (it.mode !== "slot" && (data.sel_by_item[it.id] || []).length > 1 ? `<div class="muted" style="font-size:11px;">dari ${fmt(eff)}</div>` : "")}
             </div>
             <span class="pay-item-x" aria-hidden="true">${ic("x")}</span>
@@ -1084,6 +1101,43 @@ function openAccountsSheet(data) {
 }
 
 // ---------- Creator view: summary ----------
+// ONE creator-view status chip. source of truth order:
+// settled (manual "Tandai Lunas" wins) -> closed states -> all_paid ->
+// unpaid people -> uncovered slots -> fallback. The old code computed
+// `statusChipHtml` (settled-based) for the header AND a separate chip
+// (all_paid/totalUnpaid-based) for the second row, so one card could show
+// "Lunas" next to "Rp X belum dibayar" (bug: two status systems, one screen).
+function creatorStatusChip(data, closed, totalUnpaid, soloSoFar) {
+  if (soloSoFar) return `<span class="chip chip-grey">Belum ada yang gabung</span>`;
+  if (data.settled) {
+    return closed
+      ? `<span class="chip chip-green">${ic("check")}Ditutup · lunas</span>`
+      : `<span class="chip chip-green">${ic("check")}Lunas</span>`;
+  }
+  if (closed) {
+    // a closed bill nobody but the creator ever joined isn't "Belum Lunas" —
+    // nobody owes anybody anything (bug: solo closed bill said "Belum Lunas")
+    if ((data.people || []).length <= 1)
+      return `<span class="chip chip-grey">Ditutup · Selesai</span>`;
+    return totalUnpaid > 0 || data.uncovered_idr > 0
+      ? `<span class="chip chip-red">Ditutup · Belum Lunas</span>`
+      : `<span class="chip chip-grey">Ditutup · Selesai</span>`;
+  }
+  if (data.all_paid && data.uncovered_idr === 0)
+    return `<span class="chip chip-green">${ic("check")} Semua Lunas</span>`;
+  if (totalUnpaid > 0) {
+    // "belum dibayar" (orang) vs "belum keambil" (bagian kosong) vs "belum
+    // beres" (jumlah dua-duanya, di rail). Tiga angka ini pernah sama-sama
+    // dilabelin "belum lunas", jadi header bilang Rp 35.280 sementara rail
+    // bilang Rp 53.280 buat hal yang kelihatannya sama (bug: angka saling
+    // bantah di satu layar).
+    return `<span class="chip chip-red">${fmt(totalUnpaid)} belum dibayar</span>`;
+  }
+  if (data.uncovered_idr > 0)
+    return `<span class="chip chip-red">${fmt(data.uncovered_idr)} belum keambil</span>`;
+  return `<span class="chip chip-grey">Belum ada yang milih</span>`;
+}
+
 function renderCreatorView(data) {
   const app = $("#app");
   const me = state.identity;
@@ -1100,11 +1154,10 @@ function renderCreatorView(data) {
   const payerRow = data.people.find(p => p.identity_id === payerId);
   const notPicked = data.people.filter(p => !p.subtotal_idr && !hasPickedAny(data, p.identity_id) && p.identity_id !== me.id);
 
-  // status chip: all_paid, NOT settled — settled folds in uncovered slots and
-  // a closed bill is no longer settled by fiat (bug: "semua lunas" on a closed
-  // bill with unpaid people right below it)
-  let statusChip;
-  const allSettled = data.all_paid && data.uncovered_idr === 0;
+  // A manual "Tandai Lunas" settles the bill even if someone still shows
+  // unpaid — the creator decided it's done. The dock must follow that same
+  // flag or it yells "Belum beres Rp X" under a green Lunas chip.
+  const allSettled = data.settled || (data.all_paid && data.uncovered_idr === 0);
   // Nobody but the creator is on the bill yet. This is the moment right after
   // "Bikin Bill", and the whole product depends on the link being sent — so the
   // screen leads with sharing instead of with warnings about a bill that has
@@ -1112,22 +1165,7 @@ function renderCreatorView(data) {
   // and a red-ish card listing every item as "tidak dipilih siapa pun", while
   // the only primary button offered was "Tutup Bill").
   const soloSoFar = data.people.length <= 1 && !closed && !data.settled;
-  if (soloSoFar) {
-    statusChip = `<span class="chip chip-grey">Belum ada yang gabung</span>`;
-  } else if (data.all_paid && data.uncovered_idr === 0) {
-    statusChip = `<span class="chip chip-green">${ic("check")} Semua Lunas</span>`;
-  } else if (totalUnpaid > 0) {
-    // "belum dibayar" (orang) vs "belum keambil" (bagian kosong) vs "belum
-    // beres" (jumlah dua-duanya, di rail). Tiga angka ini pernah sama-sama
-    // dilabelin "belum lunas", jadi header bilang Rp 35.280 sementara rail
-    // bilang Rp 53.280 buat hal yang kelihatannya sama (bug: angka saling
-    // bantah di satu layar).
-    statusChip = `<span class="chip chip-red">${fmt(totalUnpaid)} belum dibayar</span>`;
-  } else if (data.uncovered_idr > 0) {
-    statusChip = `<span class="chip chip-red">${fmt(data.uncovered_idr)} belum keambil</span>`;
-  } else {
-    statusChip = `<span class="chip chip-grey">Belum ada yang milih</span>`;
-  }
+  const statusChip = creatorStatusChip(data, closed, totalUnpaid, soloSoFar);
   const closedNotSettled = closed && (totalUnpaid > 0 || data.uncovered_idr > 0);
 
   // consolidated "perhatian" rows (single card, one row each)
@@ -1201,10 +1239,10 @@ function renderCreatorView(data) {
           <div class="label-sm">Total bill</div>
           <div class="money hero-total">${fmt(data.bill.total_idr)}</div>
         </div>
-        <!-- one status per card: while nobody has joined, "Belum ada yang
-             gabung" IS the status, and the generic "Belum lunas" underneath it
-             only contradicted it -->
-        <span>${soloSoFar ? statusChip : statusChipHtml(data)}</span>
+        <!-- one status per card: solo, settled, closed, unpaid — all flow
+             through creatorStatusChip so the header and the row below can
+             never disagree -->
+        <span>${statusChip}</span>
       </div>
       ${data.bill.merchant ? `<div class="muted" style="margin-top:4px;">${esc(data.bill.merchant)}</div>` : ""}
       ${data.bill.transacted_at ? `<div class="muted">${esc(shortDate(data.bill.transacted_at))}</div>` : ""}
@@ -1621,15 +1659,26 @@ function openSetPayerSheet(data) {
     <button class="btn-primary" id="payer-name-save">Pakai Nama Ini</button>
     <button class="btn-outline" id="payer-cancel">Batal</button>`, { noAutofocus: true });
 
+  let payerSaving = false;
+  const setPayerBusy = (busy) => {
+    payerSaving = busy;
+    $$(".payer-opt", s.sheet).forEach(b => b.disabled = busy);
+    nameInput.disabled = busy;
+    saveBtn.disabled = busy;
+  };
   const savePayer = (btn, body, name) => withBusy(btn, "Nyimpen...", async () => {
+    if (payerSaving) return; // no in-flight guard before: two taps fired two racing PUTs
+    setPayerBusy(true);
     try {
       await apiJson(`/api/bills/${data.bill.id}/paid_by`, "PUT", body);
       s.close();
       toast(`${name} ditandai yang nalangin ✓`);
       loadBillView(data.bill.id);
-    } catch (e) { toast(e.message); }
+    } catch (e) {
+      setPayerBusy(false);
+      toast(e.message);
+    }
   });
-  // (bug: no in-flight guard — tapping two people fired two racing PUTs)
   $$(".payer-opt", s.sheet).forEach(b => b.addEventListener("click", () =>
     savePayer(b, { identity_id: b.dataset.id }, b.dataset.name)));
   const nameInput = $("#payer-name-input", s.sheet);
@@ -1972,7 +2021,9 @@ function updateEditTotal() {
 
 async function saveEditBill(billId) {
   const btn = $("#save-bill-btn");
-  const items = editState.items.filter(i => i.name && i.price > 0);
+  const items = editState.items.filter(i => i.name && String(i.name).trim());
+  // price 0 is legal (free item the backend accepts with minv=0) — only
+  // blank rows are dropped (bug: saving an edit silently deleted free items)
   if (!items.length) { toast("Minimal 1 item"); return; }
   await withBusy(btn, "Nyimpen...", async () => {
     try {
