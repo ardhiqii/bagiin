@@ -1024,19 +1024,28 @@ function openPaySheet(data, me, alreadyPaid) {
             myPrice = n > 1 ? Math.floor(eff / n) * myLive : eff;
             shareNote = n > 1 ? `dibagi ${n} porsi` : "";
           }
+          const priceNote = it.discount_idr > 0
+            ? `diskon ${fmt(it.discount_idr)} dari ${fmt(it.price_idr)}`
+            : (it.mode !== "slot" && (data.sel_by_item[it.id] || []).length > 1
+              ? `dari ${fmt(eff)}` : "");
           return `
           <div class="pay-item" data-item="${it.id}">
             <div style="flex:1;min-width:0;">
               <div class="item-name" style="font-size:14px;">${esc(it.name)}</div>
-              ${shareNote ? `<div class="item-share">${esc(shareNote)}</div>` : ""}
+              ${/* the price note used to sit in the RIGHT column, which is
+                    flex-shrink:0 — "diskon Rp 3.000 · dari Rp 38.000" then
+                    pinned that column ~180px wide and squeezed the name into
+                    one word per line on a 390px phone. It describes the
+                    item's price, so it belongs under the item's name where
+                    there is room to wrap (bug: v67 visual sweep). */ ""}
+              ${priceNote || shareNote ? `<div class="item-share">${esc([shareNote, priceNote].filter(Boolean).join(" · "))}</div>` : ""}
             </div>
-            <div style="text-align:right;flex-shrink:0;">
+            <div style="text-align:right;flex-shrink:0;min-width:0;">
               <!-- client-side per-item price can drift 1 rupiah from the
                    backend's remainder distribution; the sheet total below is
                    the server's number, so label the row as an estimate
                    (bug: row said 33, subtotal said 34, same item) -->
               <div class="money">≈ ${fmt(myPrice)}</div>
-              ${it.discount_idr > 0 ? `<div class="muted" style="font-size:11px;">diskon ${fmt(it.discount_idr)} · dari ${fmt(it.price_idr)}</div>` : (it.mode !== "slot" && (data.sel_by_item[it.id] || []).length > 1 ? `<div class="muted" style="font-size:11px;">dari ${fmt(eff)}</div>` : "")}
             </div>
             <span class="pay-item-x" aria-hidden="true">${ic("x")}</span>
           </div>`;
@@ -1735,7 +1744,11 @@ function openSetPayerSheet(data) {
     </div>
     <div style="height:1px;background:var(--border);margin:14px 0;"></div>
     <label for="payer-name-input">Atau ketik nama (buat yang belum join)</label>
-    <input id="payer-name-input" placeholder="Nama yang nalangin" value="${esc(data.paid_by_name || "")}" maxlength="30" autocomplete="off">
+    ${/* only prefill a name that ISN'T already one of the checked options
+          above — echoing the confirmed payer's name back into the "someone
+          who hasn't joined yet" box made the sheet look like it was asking
+          the same question twice (v67 visual sweep) */ ""}
+    <input id="payer-name-input" placeholder="Nama yang nalangin" value="${esc(data.paid_by_id ? "" : (data.paid_by_name || ""))}" maxlength="30" autocomplete="off">
     <button class="btn-primary" id="payer-name-save">Pakai Nama Ini</button>
     <button class="btn-outline" id="payer-cancel">Batal</button>`, { noAutofocus: true });
 
