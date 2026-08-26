@@ -1320,12 +1320,13 @@ function renderCreate(opts = {}) {
       ${errCard}
       <button type="button" class="dropzone" id="dz" style="width:100%;display:block;">
         <div class="dropzone-icon">${ic("camera")}</div>
-        <div style="font-weight:600;font-size:15.5px;color:var(--text);">Foto Struknya</div>
-        <div class="muted">${hint}</div>
+        <div style="font-weight:700;font-size:16px;color:var(--text);">Scan struk otomatis</div>
+        <div class="muted">Foto struk, lalu item dan harga dibaca otomatis</div>
+        <div class="muted" style="margin-top:4px;">${hint}</div>
         <div class="muted" id="dz-scan-state" style="margin-top:8px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:5px;">${dzScanStateHtml()}</div>
       </button>
       <input type="file" id="file-input" accept="image/*" class="hidden" tabindex="-1" aria-hidden="true">
-      <button class="btn-outline" id="manual-btn" style="margin-top:12px;">${ic("pencil")} Bikin Manual (tanpa foto)</button>
+      <button class="btn-outline" id="manual-btn" style="margin-top:12px;">${ic("pencil")} Isi manual tanpa scan</button>
     </div>`);
   watchDock();
   $("#back-btn").addEventListener("click", () => location.hash = "#/");
@@ -1382,7 +1383,7 @@ function renderCreate(opts = {}) {
     const s = openSheet(`
       <div class="sheet-handle"></div>
       <div class="sheet-title">Foto Struk</div>
-      <p class="sheet-sub">Mau difoto langsung atau pilih dari galeri — dua-duanya bisa, tinggal atur mau dibaca otomatis atau nggak.</p>
+      <p class="sheet-sub">Pilih sumber fotonya. Scan otomatis aktif secara default; matikan kalau mau mengisi item sendiri.</p>
       ${body}`, { noAutofocus: true });
     const tgl = s.sheet.querySelector("#dz-tgl");
     const tglDesc = s.sheet.querySelector("#dz-tgl-desc");
@@ -1701,6 +1702,13 @@ const VERIFY_CSS = `<style>
   .vf-discount input { max-width:110px; }
   .disc-bayar { color:var(--green); font-weight:700; }
   .vf-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
+  .vf-grid > .vf-sub { grid-column:1 / -1; }
+  .progressive-section { overflow:hidden; }
+  .progressive-section > summary { cursor:pointer; list-style:none; }
+  .progressive-section > summary::-webkit-details-marker { display:none; }
+  .progressive-section > summary::after { content:"＋"; float:right; color:var(--text-3); font-weight:700; }
+  .progressive-section[open] > summary::after { content:"−"; }
+  .progressive-section > summary + * { margin-top:12px; }
   .vf-photos { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
   .vf-photo-wrap { position:relative; }
   .vf-photo-wrap .photo-preview { width:100%; height:110px; object-fit:cover; border-radius:var(--r-xs); display:block; }
@@ -1847,7 +1855,8 @@ function renderVerify(ocr, manual = false) {
       <p class="muted" style="text-align:center;margin-top:6px;">Opsional — foto cuma ditempel, gak dibaca otomatis.</p>
     </div>` : "")}
 
-    <div class="card">
+    <details class="card progressive-section">
+      <summary class="card-title"><span>Detail Bill</span><span class="muted">(opsional)</span></summary>
       <div class="vf-field-pair">
         <div class="field">
           <label for="title-input">Judul Bill</label>
@@ -1859,7 +1868,7 @@ function renderVerify(ocr, manual = false) {
           <input type="date" id="date-input" value="${esc(verifyState.transacted_at)}">
         </div>
       </div>
-    </div>
+    </details>
 
     ${verifyState.ocrError ? `
     <div class="warn-box">
@@ -1880,9 +1889,7 @@ function renderVerify(ocr, manual = false) {
         <span>Item</span>
         <span class="muted">${manual ? "Ketik item &amp; harganya" : "cek ulang, edit kalau salah"}</span>
       </div>
-      <p class="muted" style="margin:-4px 0 10px;"><strong style="color:var(--text-2);">Bebas</strong>
-      = siapa pun boleh centang, harganya dibagi rata sesuai porsi yang keambil.
-      <strong style="color:var(--text-2);">Slot</strong> = dibagi jadi N bagian tetap.</p>
+      <div class="info-box" style="margin:0 0 10px;">Mulai dari <strong>item dan total</strong>. Pastikan keduanya cocok sebelum lanjut; cara bagi tiap item bisa diatur di bawah.</div>
       ${/* desktop packs name/harga/potongan onto one line, which left two
             identical "0" boxes with the discount's label visually clipped —
             you could not tell which box was which. A column header restores
@@ -1890,6 +1897,7 @@ function renderVerify(ocr, manual = false) {
       <div class="vf-head" role="presentation"><span>Nama item</span><span>Harga</span><span>Potongan</span><span></span></div>
       <div id="items-list"></div>
       <button class="btn-outline btn-sm" id="add-item-btn" style="width:100%;margin-top:10px;">${ic("plus")} Tambah Item</button>
+      <div id="sum-warn" class="error-text hidden" style="margin-top:8px;"></div>
     </div>
 
     <div class="card">
@@ -1899,27 +1907,32 @@ function renderVerify(ocr, manual = false) {
           <label for="subtotal-input">Subtotal (Rp)</label>
           <input class="input-money" type="text" inputmode="numeric" id="subtotal-input" placeholder="0" maxlength="16" value="${rupiahFmt(verifyState.subtotal)}">
         </div>
-        <div>
-          <label for="tax-input">PPN (Rp)</label>
-          <input class="input-money" type="text" inputmode="numeric" id="tax-input" placeholder="0" maxlength="16" value="${rupiahFmt(verifyState.tax)}">
-        </div>
-        <div>
-          <label for="service-input">Service (Rp)</label>
-          <input class="input-money" type="text" inputmode="numeric" id="service-input" placeholder="0" maxlength="16" value="${rupiahFmt(verifyState.service)}">
-        </div>
       </div>
-      <label class="toggle-row" for="tax-included-toggle" style="margin-top:10px;">
-        <span style="flex:1;">
-          <span class="label-strong">Harga item sudah termasuk pajak</span>
-          <span class="muted" style="display:block;">Angka item yang kamu isi SUDAH termasuk PPN — PPN gak dihitung lagi dari total.</span>
-        </span>
-        <input type="checkbox" id="tax-included-toggle" ${verifyState.tax_included ? "checked" : ""}>
-      </label>
-      <div id="tax-included-badge" class="info-box ${verifyState.tax_included ? "" : "hidden"}"
-           style="margin:8px 0 0;display:flex;gap:8px;align-items:flex-start;">
-        ${ic("info")}<span>Total = subtotal + service aja — PPN udah masuk di harga item</span>
-      </div>
-      <div id="sum-warn" class="error-text hidden"></div>
+      <details class="progressive-section" ${verifyState.tax || verifyState.service || verifyState.tax_included ? "open" : ""}>
+        <summary class="label-strong">PPN &amp; service <span class="muted">(opsional)</span></summary>
+        <div class="vf-grid">
+          <div>
+            <label for="tax-input">PPN (Rp)</label>
+            <input class="input-money" type="text" inputmode="numeric" id="tax-input" placeholder="0" maxlength="16" value="${rupiahFmt(verifyState.tax)}">
+          </div>
+          <div>
+            <label for="service-input">Service (Rp)</label>
+            <input class="input-money" type="text" inputmode="numeric" id="service-input" placeholder="0" maxlength="16" value="${rupiahFmt(verifyState.service)}">
+          </div>
+        </div>
+        <label class="toggle-row" for="tax-included-toggle" style="margin-top:10px;">
+          <span style="flex:1;">
+            <span class="label-strong">Harga item sudah termasuk pajak</span>
+            <span class="muted" style="display:block;">Angka item yang kamu isi SUDAH termasuk PPN — PPN gak dihitung lagi dari total.</span>
+          </span>
+          <input type="checkbox" id="tax-included-toggle" ${verifyState.tax_included ? "checked" : ""}>
+        </label>
+        <div id="tax-included-badge" class="info-box ${verifyState.tax_included ? "" : "hidden"}"
+             style="margin:8px 0 0;display:flex;gap:8px;align-items:flex-start;">
+          ${ic("info")}<span>Total = subtotal + service aja — PPN udah masuk di harga item</span>
+        </div>
+      </details>
+
     </div>
 
     <div class="card">
@@ -1927,27 +1940,28 @@ function renderVerify(ocr, manual = false) {
       <label class="toggle-row" for="paid-by-me">
         <span style="flex:1;">
           <span class="label-strong">Aku yang bayar</span>
-          <span class="muted" style="display:block;">Yang bayar dianggap udah lunas otomatis</span>
+          <span class="muted" style="display:block;">Kalau tidak dipilih, isi nama orang lain yang nalangin.</span>
         </span>
         <input type="checkbox" id="paid-by-me" ${verifyState.paidByMyself ? "checked" : ""}>
       </label>
       <div id="paid-by-other" class="${verifyState.paidByMyself ? "hidden" : ""}" style="margin-top:10px;">
         <label for="paid-by-name-input">Nama Yang Bayar</label>
         <input id="paid-by-name-input" placeholder="Contoh: Budi" value="${esc(verifyState.paid_by_name || "")}" maxlength="30" autocomplete="off">
-        <p class="muted" style="margin-top:5px;">Bisa diubah lagi nanti setelah orangnya join bill</p>
+        <p class="muted" style="margin-top:5px;">Orang ini yang dianggap nalangin bill dan menerima pembayaran.</p>
+        <p id="paid-by-name-error" class="error-text hidden" style="margin-top:5px;">Tulis nama orang yang bayar.</p>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-title"><span>Siapa yang Ikut</span></div>
-      <p class="muted" style="margin:-4px 0 10px;">Opsional, bisa diundang lagi nanti. Pilih dari orang yang pernah share bill sama kamu — yang auto-accept langsung masuk, sisanya dapat undangan di beranda. Nama lain bisa diketik manual.</p>
+    <details class="card progressive-section">
+      <summary class="card-title"><span>Siapa yang Ikut</span><span class="muted">(opsional)</span></summary>
+      <p class="muted" style="margin:-4px 0 10px;">Pilih kontak atau tambahkan nama. Mereka bisa diundang lagi nanti.</p>
       <div id="people-pick" style="display:flex;flex-direction:column;gap:6px;"></div>
       <div style="display:flex;gap:8px;margin-top:10px;">
         <input id="person-name-input" placeholder="Nama lainnya (opsional)" maxlength="30" autocomplete="off" style="flex:1;">
         <button class="btn-outline btn-sm" id="person-name-add" style="flex-shrink:0;">${ic("plus")} Tambah</button>
       </div>
       <div id="people-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
-    </div>`;
+    </details>`;
 
   const side = `
     <div class="dock"><div class="dock-inner">
@@ -1955,7 +1969,7 @@ function renderVerify(ocr, manual = false) {
         <span class="label-sm">Total</span>
         <span class="money" id="total-display">${fmt(verifyState.total)}</span>
       </div>
-      <button class="btn-primary" id="create-bill-btn">Bikin Bill &amp; Bagikan</button>
+      <button class="btn-primary" id="create-bill-btn">Bikin Bill</button>
     </div></div>`;
 
   $("#app").innerHTML = shell(main, side);
@@ -2173,6 +2187,8 @@ function renderVerify(ocr, manual = false) {
         const inp = $("#paid-by-name-input");
         if (inp) { verifyState.paid_by_name = inp.value; inp.focus(); }
       }
+      const nameError = $("#paid-by-name-error");
+      if (nameError) nameError.classList.toggle("hidden", paidByMe.checked || !!String(verifyState.paid_by_name || "").trim());
     });
   }
   const paidByNameInput = $("#paid-by-name-input");
@@ -2180,6 +2196,9 @@ function renderVerify(ocr, manual = false) {
     paidByNameInput.addEventListener("input", (e) => {
       if (paidByMe && paidByMe.checked) return; // ignore while "aku" checked
       verifyState.paid_by_name = e.target.value;
+      e.target.style.borderColor = "";
+      const nameError = $("#paid-by-name-error");
+      if (nameError) nameError.classList.toggle("hidden", !!String(e.target.value || "").trim());
     });
   }
 
@@ -2238,9 +2257,9 @@ function renderVerifyItems() {
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px;">
           <span class="label-sm">Cara Bagi</span>
           <button type="button" class="chip-btn item-mode-btn ${!isSlot ? "chip-active" : ""}" data-idx="${idx}" data-mode="free"
-                  aria-pressed="${!isSlot}">${ic("people")} Bebas</button>
+                  aria-pressed="${!isSlot}">${ic("people")} Bagi rata</button>
           <button type="button" class="chip-btn item-mode-btn ${isSlot ? "chip-active" : ""}" data-idx="${idx}" data-mode="slot"
-                  aria-pressed="${isSlot}">${ic("slot")} Slot</button>
+                  aria-pressed="${isSlot}">${ic("slot")} Bagi per porsi</button>
           ${isSlot ? `
           <span style="display:inline-flex;align-items:center;gap:6px;margin-left:auto;">
             <button type="button" class="chip-btn slot-dec" data-idx="${idx}" aria-label="Kurangi jumlah bagian"><span aria-hidden="true">−</span></button>
@@ -2384,7 +2403,7 @@ function updateVerifyTotal() {
   const cta = $("#create-bill-btn");
   if (cta) {
     cta.disabled = mismatch;
-    cta.textContent = mismatch ? "Subtotal belum cocok sama item" : "Bikin Bill & Bagikan";
+    cta.textContent = mismatch ? "Subtotal belum cocok sama item" : "Bikin Bill";
   }
 }
 
@@ -2421,9 +2440,11 @@ async function createBillFinal() {
   // would silently record the bill as paid by the creator (bug: un-checked
   // "Aku yang bayar" with an empty name became self-paid)
   if (!verifyState.paidByMyself && !String(verifyState.paid_by_name || "").trim()) {
-    toast("Tulis dulu nama yang bayar (atau centang Aku yang bayar)");
+    toast("Tulis nama orang yang bayar atau pilih Aku yang bayar");
     const inp = $("#paid-by-name-input");
+    const nameError = $("#paid-by-name-error");
     if (inp) { inp.style.borderColor = "var(--red)"; inp.focus(); }
+    if (nameError) nameError.classList.remove("hidden");
     return;
   }
 

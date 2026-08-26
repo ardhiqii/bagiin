@@ -548,7 +548,7 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
     <div class="item-row${isSel ? " selected" : ""}${!readOnly && !isFull ? " item-tappable" : ""}${isFull ? " item-full" : ""}" data-item="${it.id}"${a11y}>
       ${!readOnly || isSel ? (isFull ? `<div class="item-check item-check-full">${ic("x")}</div>` : `<div class="item-check">${ic("check")}</div>`) : ""}
       <div class="item-info">
-        <div class="item-name">${esc(it.name)}${isSlot ? ` <span class="slot-badge">Slot</span>` : ""}</div>
+        <div class="item-name">${esc(it.name)}${isSlot ? ` <span class="slot-badge">Bagi per porsi</span>` : ""}</div>
         <div class="item-share">${shareText}</div>
       </div>
       ${!readOnly ? `
@@ -593,7 +593,7 @@ function bindItemRows(data, me, root) {
           state.selQty.set(id, 1);
           updateGuestSelection(data, me);
         } else {
-          toast("Slot item ini udah abis");
+          toast("Bagian item ini udah abis");
         }
       } else if (myQty > 0) {
         state.selQty.delete(id);
@@ -611,7 +611,7 @@ function bindItemRows(data, me, root) {
       if (next <= 0) {
         state.selQty.delete(id);
       } else if (isSlot && next > slotsLeft()) {
-        toast("Slot item ini udah abis");
+        toast("Bagian item ini udah abis");
         return;
       } else {
         state.selQty.set(id, next);
@@ -763,19 +763,19 @@ function openSlotPickerSheet(data, me, it) {
     <p class="muted" style="margin:4px 0 14px;">${leftEmpty > 0 ? `Sisa bagian kosong: ${leftEmpty}` : "Bagian udah abis"}</p>
     ${max > 0 ? `
     <div style="display:flex;align-items:center;justify-content:center;gap:20px;margin-bottom:16px;">
-      <button class="btn-outline slot-qty-dec" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Kurangi slot">−</button>
+      <button class="btn-outline slot-qty-dec" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Kurangi bagian">−</button>
       <div style="text-align:center;">
         <div style="font-size:40px;font-weight:800;" class="slot-qty">${qty}</div>
-        <div class="muted" style="font-size:12px;">Slot Kamu</div>
+        <div class="muted" style="font-size:12px;">Bagian kamu</div>
       </div>
-      <button class="btn-outline slot-qty-inc" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Tambah slot">＋</button>
+      <button class="btn-outline slot-qty-inc" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Tambah bagian">＋</button>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;">
       <span class="label">Total kamu</span>
       <span class="money slot-total" style="font-size:24px;font-weight:800;">${fmt(perSlot * qty)}</span>
     </div>
-    <button class="btn-primary" id="slot-confirm">Ambil ${qty} slot</button>` : ""}
-    ${myQty > 0 ? `<button class="btn-danger-ghost" id="slot-release">${ic("x")} Lepas Slot (${myQty})</button>` : ""}
+    <button class="btn-primary" id="slot-confirm">Ambil ${qty} bagian</button>` : ""}
+    ${myQty > 0 ? `<button class="btn-danger-ghost" id="slot-release">${ic("x")} Lepas bagian (${myQty})</button>` : ""}
     <button class="btn-outline" id="slot-close">${max > 0 ? "Batal" : "Tutup"}</button>`, { noAutofocus: true });
 
   const sync = () => {
@@ -784,7 +784,7 @@ function openSlotPickerSheet(data, me, it) {
     $(".slot-total", s.sheet).textContent = fmt(perSlot * qty);
     $(".slot-qty-inc", s.sheet).disabled = qty >= max;
     $(".slot-qty-dec", s.sheet).disabled = qty <= 1;
-    $("#slot-confirm", s.sheet).textContent = `Ambil ${qty} slot`;
+    $("#slot-confirm", s.sheet).textContent = `Ambil ${qty} bagian`;
   };
   if (max > 0) {
     $(".slot-qty-dec", s.sheet).addEventListener("click", () => { qty = Math.max(1, qty - 1); sync(); });
@@ -816,7 +816,7 @@ function openSlotPickerSheet(data, me, it) {
         state.selQty.delete(it.id);
         await saveSelectionsViaChain(data, picks);
         s.close();
-        toast("Slot dilepas ✓");
+        toast("Bagian dilepas ✓");
         loadBillView(data.bill.id);
       } catch (e) { toast(e.message); }
     }));
@@ -1011,7 +1011,7 @@ function openPaySheet(data, me, alreadyPaid) {
           if (it.mode === "slot" && it.slot_count) {
             const perSlot = Math.floor(eff / it.slot_count);
             myPrice = perSlot * myQty;
-            shareNote = `${myQty} slot · ${fmt(perSlot)}/slot`;
+            shareNote = `${myQty} bagian · ${fmt(perSlot)}/bagian`;
           } else {
             // free item: split by total portions taken (others + mine), like
             // the backend and like computeMyBreakdown — NOT by selector count.
@@ -1422,7 +1422,7 @@ function renderCreatorView(data) {
         return `
         <div class="item-row">
           <div class="item-info">
-            <div class="item-name">${esc(it.name)}${isSlot ? ` <span class="slot-badge">Slot</span>` : ""}</div>
+            <div class="item-name">${esc(it.name)}${isSlot ? ` <span class="slot-badge">Bagi per porsi</span>` : ""}</div>
             <div class="item-share">${shareText}</div>
           </div>
           <div class="money item-price">${priceHtml}</div>
@@ -1922,9 +1922,9 @@ function renderEditBill(data) {
     </div>
     <div class="card" id="items-card">
       <div class="card-title">Item <span class="muted">(edit kalau salah)</span></div>
-      <p class="muted" style="margin:-4px 0 10px;"><strong style="color:var(--text-2);">Bebas</strong>
+      <p class="muted" style="margin:-4px 0 10px;"><strong style="color:var(--text-2);">Bagi rata</strong>
       = siapa pun boleh centang, harganya dibagi rata sesuai porsi yang keambil.
-      <strong style="color:var(--text-2);">Slot</strong> = dibagi jadi N bagian tetap.</p>
+      <strong style="color:var(--text-2);">Bagi per porsi</strong> = dibagi jadi N bagian tetap.</p>
       <div id="items-list"></div>
       <button class="btn-outline btn-sm" id="add-item-btn" style="width:100%;margin-top:8px;">${ic("plus")} Tambah Item</button>
     </div>
@@ -2007,8 +2007,8 @@ function renderEditItems() {
       <div style="flex-basis:100%;padding:2px 0 8px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
           <span class="label-sm" style="flex-shrink:0;">Cara Bagi:</span>
-          <button class="btn-outline btn-sm item-mode-btn ${it.mode !== "slot" ? "chip-active" : ""}" data-idx="${idx}" data-mode="free">Bebas</button>
-          <button class="btn-outline btn-sm item-mode-btn ${it.mode === "slot" ? "chip-active" : ""}" data-idx="${idx}" data-mode="slot">Slot</button>
+          <button class="btn-outline btn-sm item-mode-btn ${it.mode !== "slot" ? "chip-active" : ""}" data-idx="${idx}" data-mode="free">Bagi rata</button>
+          <button class="btn-outline btn-sm item-mode-btn ${it.mode === "slot" ? "chip-active" : ""}" data-idx="${idx}" data-mode="slot">Bagi per porsi</button>
           ${it.mode === "slot" ? `
           <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
             <span class="muted">bagi</span>
