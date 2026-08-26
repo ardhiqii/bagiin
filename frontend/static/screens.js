@@ -1270,6 +1270,12 @@ function isCoarsePointer() {
 // photo gets OCR'd (default on); Kamera/Upload/Paste decide where it comes from.
 // Module-level so the global paste handlers honour the toggle too.
 let scanMode = true;
+let createFlowSession = 0;
+function newCreateFlow() {
+  createFlowSession += 1;
+  scanMode = true;
+  return createFlowSession;
+}
 // G2: scanMode is decided inside the photo-source sheet, but it governs the
 // dropzone the user is looking at when they're NOT inside that sheet — with
 // no hint on the dropzone itself, turning scanning off once meant the create
@@ -1281,6 +1287,8 @@ function dzScanStateHtml() {
     : `${ic("x")}<span>Baca otomatis nonaktif — item diisi manual</span>`;
 }
 function renderCreate(opts = {}) {
+  if (!opts.preserveSession) newCreateFlow();
+  const session = createFlowSession;
   const app = $("#app");
   const coarse = isCoarsePointer();
   const hint = coarse
@@ -1346,8 +1354,8 @@ function renderCreate(opts = {}) {
     if (!f) return;
     if (!f.type || !f.type.startsWith("image/")) { toast("File harus gambar"); return; }
     if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
-    if (scanMode) await uploadAndOcr(f);
-    else await uploadAndAttach(f);
+    if (scanMode) await uploadAndOcr(f, session);
+    else await uploadAndAttach(f, undefined, session);
   };
 
   dz.addEventListener("click", () => {
@@ -1438,13 +1446,13 @@ function renderCreate(opts = {}) {
   $("#manual-btn").addEventListener("click", () => renderVerify(blankBill(), true));
   if (opts.ocrError) {
     $("#ocr-retry").addEventListener("click", () => {
-      if (!opts.ocrFile) { renderCreate(); return; }
+      if (!opts.ocrFile) { renderCreate({ preserveSession: true }); return; }
       // retry the SAME flow that failed: if this was the OCR-fallback upload
       // (uploadAndOcr's catch, re-uploading after a scan failure) go back
       // through OCR; if this was a plain no-scan upload, retry the plain
       // upload — see the G3 comment on the card above
-      if (opts.wasScan) uploadAndOcr(opts.ocrFile);
-      else uploadAndAttach(opts.ocrFile);
+      if (opts.wasScan) uploadAndOcr(opts.ocrFile, session);
+      else uploadAndAttach(opts.ocrFile, undefined, session);
     });
     $("#ocr-manual").addEventListener("click", () => renderVerify(blankBill(), true));
   }
@@ -1456,7 +1464,7 @@ function renderCreate(opts = {}) {
 // `ocrReason`, when set, is why OCR failed upstream (see uploadAndOcr's
 // catch) — carried through so the manual editor that opens can explain
 // itself instead of just appearing blank with no context.
-async function uploadAndAttach(file, ocrReason) {
+async function uploadAndAttach(file, ocrReason, session = createFlowSession, preserved = null) {
   const body = $("#create-body");
   if (body) {
     body.innerHTML = `<div class="card" style="text-align:center;padding:40px 16px;">
@@ -1469,16 +1477,16 @@ async function uploadAndAttach(file, ocrReason) {
     const fd = new FormData();
     fd.append("file", file);
     const result = await api("/api/photos", { method: "POST", body: fd });
-    if (location.hash !== routeAtStart) return;
+    if (location.hash !== routeAtStart || session !== createFlowSession) return;
     // keep the photo; items are filled manually
-    renderVerify({ ...blankBillForVerify(), photos: [result.photo_path],
+    renderVerify({ ...blankBillForVerify(), ...(preserved || {}), photos: [result.photo_path],
       ocrError: ocrReason || null, ocrRetryFile: ocrReason ? file : null }, true);
   } catch (e) {
-    if (location.hash !== routeAtStart) return;
+    if (location.hash !== routeAtStart || session !== createFlowSession) return;
     // ocrReason set = this call came from uploadAndOcr's catch (scan failed,
     // now the plain re-upload failed too); unset = this was always a plain
     // no-scan upload. wasScan tells the retry button which flow to resume.
-    renderCreate({ ocrError: e.message, ocrFile: file, wasScan: !!ocrReason });
+    renderCreate({ ocrError: e.message, ocrFile: file, wasScan: !!ocrReason, preserveSession: true });
   }
 }
 
@@ -1499,11 +1507,14 @@ async function verifyAttachPhoto(file) {
   // the button was looked up and never used, so a Ctrl+V on the editor spent
   // several silent seconds uploading and a second paste queued a duplicate
   const btn = $("#verify-add-photo");
+  const routeAtStart = location.hash;
+  const session = createFlowSession;
   const fd = new FormData();
   fd.append("file", file);
   const upload = async () => {
     try {
       const result = await api("/api/photos", { method: "POST", body: fd });
+      if (location.hash !== routeAtStart || session !== createFlowSession) return;
       const next = { ...verifyState, photos: [...verifyState.photos, result.photo_path] };
       next.photo_path = next.photos[0] || null;
       renderVerify(next, verifyState.manual);
@@ -1538,7 +1549,7 @@ function releaseAbandonedPhotos(paths) {
   (paths || []).forEach(releaseAbandonedPhoto);
 }
 
-async function uploadAndOcr(file) {
+async function uploadAndOcr(file, session = createFlowSession, preserved = null) {
   const body = $("#create-body");
   if (body) {
     body.innerHTML = `<div class="card" style="text-align:center;padding:40px 16px;">
@@ -1555,10 +1566,10 @@ async function uploadAndOcr(file) {
     const fd = new FormData();
     fd.append("file", file);
     const result = await api("/api/ocr", { method: "POST", body: fd });
-    if (location.hash !== routeAtStart) return;
-    renderVerify(result);
+    if (location.hash !== routeAtStart || session !== createFlowSession) return;
+    renderVerify(preserved ? { ...result, ...preserved, photos: result.photos || (result.photo_path ? [result.photo_path] : []) } : result);
   } catch (e) {
-    if (location.hash !== routeAtStart) return;
+    if (location.hash !== routeAtStart || session !== createFlowSession) return;
     // v61: OCR failed — keep the photo anyway and drop into the manual
     // editor with it attached (before, the photo was thrown away and the
     // user had to re-pick it on the create screen). The reason used to only
@@ -1567,7 +1578,7 @@ async function uploadAndOcr(file) {
     // 2.6s toast had usually already expired and nobody knew why they were
     // suddenly looking at "Bikin Manual" (bug). Carry it into the editor
     // instead, where it can't disappear before it's read.
-    await uploadAndAttach(file, e.message);
+    await uploadAndAttach(file, e.message, session, preserved);
   }
 }
 
@@ -1774,6 +1785,15 @@ const VERIFY_CSS = `<style>
   }
 </style>`;
 
+function normalizeTransactionDate(value) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})/);
+  if (!match) return "";
+  const candidate = `${match[1]}-${match[2]}-${match[3]}`;
+  const d = new Date(`${candidate}T12:00:00`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === candidate ? candidate : "";
+}
+
 function renderVerify(ocr, manual = false) {
   // v61: photos is an array now; legacy single photo_path folds in so OCR
   // results (which still carry photo_path) keep working
@@ -1789,7 +1809,7 @@ function renderVerify(ocr, manual = false) {
         photos,
         title: ocr.title || ocr.merchant || "",
         merchant: ocr.merchant || "",
-        transacted_at: ocr.transacted_at || ocr.date || "",
+        transacted_at: normalizeTransactionDate(ocr.transacted_at || ocr.date || ""),
         manual,
         paid_by_name: (ocr && ocr.paid_by_name) || null,
         // explicit flag: re-renders (photo add/remove/paste) rebuild the whole
@@ -1937,18 +1957,21 @@ function renderVerify(ocr, manual = false) {
 
     <div class="card">
       <div class="card-title"><span>Yang Bayar</span></div>
-      <label class="toggle-row" for="paid-by-me">
-        <span style="flex:1;">
-          <span class="label-strong">Aku yang bayar</span>
-          <span class="muted" style="display:block;">Kalau tidak dipilih, isi nama orang lain yang nalangin.</span>
-        </span>
-        <input type="checkbox" id="paid-by-me" ${verifyState.paidByMyself ? "checked" : ""}>
-      </label>
+      <div role="radiogroup" aria-label="Pilih yang membayar" style="display:grid;gap:8px;">
+        <label class="account-row" for="paid-by-myself-choice" style="cursor:pointer;border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;">
+          <input type="radio" id="paid-by-myself-choice" name="payer-choice" value="me" ${verifyState.paidByMyself ? "checked" : ""}>
+          <span style="flex:1;"><strong>Aku yang bayar</strong><span class="muted" style="display:block;">Aku nalangin bill ini.</span></span>
+        </label>
+        <label class="account-row" for="paid-by-other-choice" style="cursor:pointer;border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;">
+          <input type="radio" id="paid-by-other-choice" name="payer-choice" value="other" ${verifyState.paidByMyself ? "" : "checked"}>
+          <span style="flex:1;"><strong>Orang lain yang bayar</strong><span class="muted" style="display:block;">Tulis nama orang yang nalangin.</span></span>
+        </label>
+      </div>
+      <input type="checkbox" id="paid-by-me" class="hidden" ${verifyState.paidByMyself ? "checked" : ""} aria-hidden="true" tabindex="-1">
       <div id="paid-by-other" class="${verifyState.paidByMyself ? "hidden" : ""}" style="margin-top:10px;">
         <label for="paid-by-name-input">Nama Yang Bayar</label>
         <input id="paid-by-name-input" placeholder="Contoh: Budi" value="${esc(verifyState.paid_by_name || "")}" maxlength="30" autocomplete="off">
-        <p class="muted" style="margin-top:5px;">Orang ini yang dianggap nalangin bill dan menerima pembayaran.</p>
-        <p id="paid-by-name-error" class="error-text hidden" style="margin-top:5px;">Tulis nama orang yang bayar.</p>
+        <p id="paid-by-name-error" class="error-text ${verifyState.paidByMyself || String(verifyState.paid_by_name || "").trim() ? "hidden" : ""}" style="margin-top:5px;">Tulis nama orang yang bayar.</p>
       </div>
     </div>
 
@@ -2023,7 +2046,20 @@ function renderVerify(ocr, manual = false) {
   const retryScanBtn = $("#verify-retry-scan");
   if (retryScanBtn) retryScanBtn.addEventListener("click", async () => {
     const f = verifyState.ocrRetryFile;
-    // only rendered when ocrRetryFile is truthy (see the warn-box above), but
+    const preserved = { title: verifyState.title, merchant: verifyState.merchant,
+      transacted_at: verifyState.transacted_at, items: verifyState.items.map(i => ({ ...i })),
+      subtotal: verifyState.subtotal, tax: verifyState.tax, service: verifyState.service,
+      total: verifyState.total, subtotalTouched: verifyState.subtotalTouched,
+      tax_included: verifyState.tax_included, taxSaved: verifyState.taxSaved,
+      paidByMyself: verifyState.paidByMyself, paid_by_name: verifyState.paid_by_name,
+      photos: verifyState.photos.slice(), participants: verifyState.participants.slice(),
+      extraNames: verifyState.extraNames.slice(), manual: verifyState.manual };
+    if (verifyHasTypedContent()) {
+      const ok = await confirmSheet({ title: "Coba baca ulang struk?",
+        body: "Koreksi item, judul, pembayaran, biaya, dan peserta akan tetap dipakai.",
+        confirmText: "Baca ulang", cancelText: "Batal" });
+      if (!ok) return;
+    }
     // a File held across a bfcache restore or a stale re-render could still
     // end up here empty — never leave the button silently dead (J3)
     if (!f) { toast("Foto aslinya udah gak ada — upload ulang ya"); return; }
@@ -2041,8 +2077,8 @@ function renderVerify(ocr, manual = false) {
     // claims its own route above.
     clearHashGuard();
     history.replaceState(null, "", "#/create");
-    renderCreate();
-    await uploadAndOcr(f);
+    renderCreate({ preserveSession: true });
+    await uploadAndOcr(f, createFlowSession, preserved);
     // uploadAndOcr always ends by replacing verifyState wholesale (success:
     // renderVerify(result); OCR-fail-again: uploadAndAttach's own re-upload)
     // with a FRESH upload — the file(s) attached before this retry are now
@@ -2061,10 +2097,13 @@ function renderVerify(ocr, manual = false) {
       if (!f) return;
       if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
       await withBusy(addPhotoBtn, "Upload...", async () => {
+        const routeAtStart = location.hash;
+        const session = createFlowSession;
         try {
           const fd = new FormData();
           fd.append("file", f);
           const result = await api("/api/photos", { method: "POST", body: fd });
+          if (location.hash !== routeAtStart || session !== createFlowSession) return;
           verifyState.photos.push(result.photo_path);
           renderVerify({ ...verifyState, photos: verifyState.photos, paid_by_name: verifyState.paid_by_name }, verifyState.manual);
         } catch (e) { toast(e.message); }
@@ -2107,7 +2146,8 @@ function renderVerify(ocr, manual = false) {
     const addName = () => {
       const v = (personNameInput.value || "").trim();
       if (!v) return;
-      if (verifyState.extraNames.includes(v)) { toast("Nama itu udah kepilih"); return; }
+      if (verifyState.extraNames.some(n => normName(n) === normName(v)) ||
+          verifyState.participants.some(p => normName(p.name) === normName(v))) { toast("Nama itu udah kepilih"); return; }
       verifyState.extraNames.push(v);
       personNameInput.value = "";
       renderPeopleChips();
@@ -2142,6 +2182,7 @@ function renderVerify(ocr, manual = false) {
             const id = cb.id.slice(6); // strip "pp-cb-"
             if (cb.checked) {
               if (!verifyState.participants.some(p => p.id === id)) verifyState.participants.push({ id, name });
+              verifyState.extraNames = verifyState.extraNames.filter(n => normName(n) !== normName(name));
             } else {
               verifyState.participants = verifyState.participants.filter(p => p.id !== id);
             }
@@ -2174,29 +2215,31 @@ function renderVerify(ocr, manual = false) {
   bindRupiahInput($("#service-input"), () => updateVerifyTotal());
 
   const paidByMe = $("#paid-by-me");
-  if (paidByMe) {
-    paidByMe.addEventListener("change", () => {
-      $("#paid-by-other").classList.toggle("hidden", paidByMe.checked);
-      verifyState.paidByMyself = paidByMe.checked;
-      if (paidByMe.checked) {
-        // re-checking "aku yang bayar" must clear a stale typed name,
-        // otherwise the old placeholder gets sent and ownership shifts to
-        // someone who never should have it
-        verifyState.paid_by_name = null;
-      } else {
-        const inp = $("#paid-by-name-input");
-        if (inp) { verifyState.paid_by_name = inp.value; inp.focus(); }
-      }
-      const nameError = $("#paid-by-name-error");
-      if (nameError) nameError.classList.toggle("hidden", paidByMe.checked || !!String(verifyState.paid_by_name || "").trim());
-    });
-  }
+  const payerChoices = $$("input[name=payer-choice]");
+  const setPayer = (isMe, focusOther = false) => {
+    if (paidByMe) paidByMe.checked = isMe;
+    verifyState.paidByMyself = isMe;
+    $("#paid-by-other").classList.toggle("hidden", isMe);
+    if (isMe) verifyState.paid_by_name = null;
+    const inp = $("#paid-by-name-input");
+    const nameError = $("#paid-by-name-error");
+    if (nameError) nameError.classList.toggle("hidden", isMe || !!String(verifyState.paid_by_name || "").trim());
+    if (!isMe && focusOther && inp) inp.focus();
+  };
+  payerChoices.forEach(choice => choice.addEventListener("change", () => setPayer(choice.value === "me", choice.value !== "me")));
+  if (paidByMe) paidByMe.addEventListener("change", () => setPayer(paidByMe.checked, !paidByMe.checked));
   const paidByNameInput = $("#paid-by-name-input");
   if (paidByNameInput) {
     paidByNameInput.addEventListener("input", (e) => {
       if (paidByMe && paidByMe.checked) return; // ignore while "aku" checked
       verifyState.paid_by_name = e.target.value;
       e.target.style.borderColor = "";
+      const nameError = $("#paid-by-name-error");
+      if (nameError) nameError.classList.toggle("hidden", !!String(e.target.value || "").trim());
+    });
+    paidByNameInput.addEventListener("change", (e) => {
+      if (paidByMe && paidByMe.checked) return;
+      verifyState.paid_by_name = e.target.value;
       const nameError = $("#paid-by-name-error");
       if (nameError) nameError.classList.toggle("hidden", !!String(e.target.value || "").trim());
     });
@@ -2473,44 +2516,24 @@ async function createBillFinal() {
         // free-typed names become legacy participant placeholders; proven
         // contacts are NOT sent here (avoids double rows) — they're invited by
         // identity right after the bill exists, below
-        participants: verifyState.extraNames || [],
+        participants: [...new Map((verifyState.extraNames || []).map(n => [normName(n), n])).values()]
+          .filter(n => !(verifyState.participants || []).some(p => normName(p.name) === normName(n))),
       });
-      // invite the proven-contacts picked on the create screen: auto-accept
-      // joins instantly, others get a pending card on their home. Done as a
-      // chain because /invite needs an existing bill id. In PARALLEL — the old
-      // sequential loop took N round-trips before the user even saw the bill
-      // (bug: N contacts = N slow RTTs on one button press).
-      if (verifyState.participants.length) {
-        const results = await Promise.allSettled(
-          verifyState.participants.map(p =>
-            apiJson(`/api/bills/${bill.id}/invite`, "POST", { identity_id: p.id })
-              .then(r => ({ name: p.name, status: r.status, ok: true }))
-              .catch(e => ({ name: p.name, status: e.message, ok: false }))
-          )
-        );
-        const values = results.map(r => r.status === "fulfilled" ? r.value
-          : { name: (r.reason && r.reason.name) || "Seseorang", status: "error", ok: false });
-        const joined = values.filter(v => v.ok && v.status === "joined");
-        const pending = values.filter(v => v.ok && v.status !== "joined");
-        const failed = values.filter(v => !v.ok);
-        // five picked contacts used to join `invited.join(" · ")` into ONE
-        // toast — ~100 chars in a pill capped at min(90%, 420px), gone after
-        // 2.6s while the app was already navigating to the new bill (bug:
-        // nobody could read it in time). Report counts instead — always
-        // legible at a glance — plus a taste of who, not the full roster.
-        const named = [...joined, ...pending].map(v => v.name).slice(0, 2);
-        const extra = values.length - named.length;
-        let msg = `${values.length} orang diundang`;
-        if (joined.length) msg += ` · ${joined.length} langsung masuk`;
-        if (named.length) msg += ` (${named.join(", ")}${extra > 0 ? ` +${extra} lagi` : ""})`;
-        if (failed.length) msg += ` · ${failed.length} gagal`;
-        toast(msg);
-      }
-      // a successful submit is not a "leave" the guard should question —
-      // without this the router's leave-guard (armed on entry) would pop
-      // "Buang isian ini?" right after the bill was already saved
+      // Navigate as soon as the bill exists. Invites are a follow-up and must
+      // not make the creator wait for every contact request.
       clearHashGuard();
       location.hash = "#/b/" + bill.id;
+      toast("Bill udah jadi. Bagikan linknya ke teman kamu.");
+      if (verifyState.participants.length) {
+        const inviteWork = Promise.allSettled(verifyState.participants.map(p =>
+          apiJson(`/api/bills/${bill.id}/invite`, "POST", { identity_id: p.id })));
+        const timed = Promise.race([inviteWork, new Promise(resolve => setTimeout(() => resolve(null), 8000))]);
+        timed.then(results => {
+          if (!results) { toast("Bill udah jadi. Sebagian undangan masih diproses, cek lagi nanti."); return; }
+          const failed = results.filter(r => r.status === "rejected");
+          if (failed.length) toast(`Bill udah jadi, tapi ${failed.length} undangan gagal. Coba undang lagi dari bill.`);
+        });
+      }
     } catch (e) {
       toast(e.message);
     }
