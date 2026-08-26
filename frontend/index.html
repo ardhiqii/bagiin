@@ -406,6 +406,14 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .dock-inner,.sticky-inner { max-width:var(--page); margin:0 auto; display:flex; flex-direction:column; gap:10px; }
 .dock-total { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
 .dock-total .money { font-size:23px; font-weight:800; letter-spacing:-.02em; }
+/* The create dock is an action aid, not a second card. Keep it compact on phones
+   while preserving the 44px minimum tap target. */
+@media (max-width:1039px) {
+  .dock { padding:8px 16px calc(env(safe-area-inset-bottom) + 8px); }
+  .dock-inner { gap:6px; }
+  .dock-total .money { font-size:20px; }
+  .dock .btn-primary { min-height:44px; padding:10px 16px; }
+}
 .dock-split {
   display:flex; justify-content:space-between; gap:10px; font-size:12.5px;
   background:var(--surface-2); border-radius:var(--r-sm); padding:8px 11px;
