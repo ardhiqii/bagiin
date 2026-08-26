@@ -1680,7 +1680,7 @@ function confirmDiscardVerify() {
    - .vf-grid: Subtotal/PPN/Service side by side is unreadable under ~380px,
      so Subtotal takes its own line and PPN/Service share the next one. */
 const VERIFY_CSS = `<style>
-  .vf-item { display:grid; grid-template-columns:1fr 110px 40px; gap:8px; align-items:center;
+  .vf-item { display:grid; grid-template-columns:minmax(0,1fr) minmax(96px,110px) 40px; gap:8px; align-items:center;
              padding:12px 2px; border-bottom:1px solid var(--border); }
   /* "Nasi Goreng Spesial" in a 1fr column next to a 110px price box reads
      "Nasi Goreng Spe:" — give the name the whole width on a phone */
@@ -1737,7 +1737,7 @@ const VERIFY_CSS = `<style>
 
     /* name | harga | potongan | delete on ONE line — the discount box used
        to drop to its own row and leave ~700px empty next to a 110px input */
-    .vf-item { grid-template-columns:1fr 120px 130px 40px; }
+    .vf-item { grid-template-columns:minmax(0,1fr) minmax(104px,120px) minmax(112px,130px) 40px; }
     .vf-item .vf-discount { order:2; grid-column:auto; flex-direction:column; align-items:stretch; gap:2px; }
     .vf-item .vf-discount input { max-width:none; }
     /* keep the label for screen readers (it's still the input's <label for>)
@@ -1748,7 +1748,7 @@ const VERIFY_CSS = `<style>
       clip:rect(0 0 0 0); white-space:nowrap; border:0;
     }
     .vf-item .disc-bayar { font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .vf-head { display:grid; grid-template-columns:1fr 120px 130px 40px; gap:8px;
+    .vf-head { display:grid; grid-template-columns:minmax(0,1fr) minmax(104px,120px) minmax(112px,130px) 40px; gap:8px;
                padding:0 2px 2px; font-size:11.5px; font-weight:600;
                color:var(--text-3); letter-spacing:.02em; }
     .vf-head span:nth-child(2), .vf-head span:nth-child(3) { text-align:right; }
@@ -1756,6 +1756,13 @@ const VERIFY_CSS = `<style>
     /* Cara Bagi stays on its own line (unchanged in spirit, just after the
        four fields above instead of wherever DOM order would put it) */
     .vf-item .vf-mode { order:4; }
+  }
+  @media (min-width:1040px) and (max-width:1199px) {
+    /* The shell gives this card less room at medium desktop widths. Keep the
+       two metadata fields readable without changing the phone layout. */
+    .vf-field-pair { gap:12px; }
+    .vf-item { grid-template-columns:minmax(0,1fr) minmax(96px,112px) minmax(104px,120px) 40px; }
+    .vf-head { grid-template-columns:minmax(0,1fr) minmax(96px,112px) minmax(104px,120px) 40px; }
   }
 </style>`;
 
@@ -1880,7 +1887,7 @@ function renderVerify(ocr, manual = false) {
             identical "0" boxes with the discount's label visually clipped —
             you could not tell which box was which. A column header restores
             that, and only exists where the compact grid does. */ ""}
-      <div class="vf-head" aria-hidden="true"><span>Nama item</span><span>Harga</span><span>Potongan</span><span></span></div>
+      <div class="vf-head" role="presentation"><span>Nama item</span><span>Harga</span><span>Potongan</span><span></span></div>
       <div id="items-list"></div>
       <button class="btn-outline btn-sm" id="add-item-btn" style="width:100%;margin-top:10px;">${ic("plus")} Tambah Item</button>
     </div>

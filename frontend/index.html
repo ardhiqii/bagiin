@@ -100,7 +100,10 @@ body {
            clip:rect(0 0 0 0); white-space:nowrap; border:0; }
 
 /* ---------- app shell ---------- */
-#app { max-width:var(--page); margin:0 auto; padding:12px 16px calc(env(safe-area-inset-bottom) + 120px); }
+#app { max-width:var(--page); margin:0 auto; padding:12px 16px calc(env(safe-area-inset-bottom) + 32px); }
+/* Screens with a fixed bottom action dock need room for it; screens without
+   one should not inherit a large, unexplained blank tail on short pages. */
+#app:has(.dock, .sticky-bar) { padding-bottom:calc(env(safe-area-inset-bottom) + 120px); }
 .shell { display:block; }
 .shell-main { min-width:0; }
 .shell-side { display:contents; }
@@ -620,20 +623,28 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
        (home, settings) sat in an unrelated, independently-centered 680px
        column — two different layouts in one app. --content matches what
        shell-solo used to hardcode; --rail is close to the old 340px rail. */
-    --content:720px; --rail:320px; --shell-gap:26px;
-    --composition:calc(var(--content) + var(--shell-gap) + var(--rail));
+    /* Keep the composition inside the actual padded viewport. The previous
+       fixed 720 + 26 + 320px pair overflowed at the first desktop breakpoint
+       (1040px), even though the page itself had horizontal gutters. */
+    --page-gutter:clamp(16px,3vw,40px);
+    --rail:clamp(240px,25vw,320px);
+    --shell-gap:clamp(16px,2vw,26px);
+    --composition:min(1066px, calc(100vw - (2 * var(--page-gutter))));
+    --content:min(720px, calc(var(--composition) - var(--shell-gap) - var(--rail)));
   }
   /* #app's 1400px cap is a safety net for absurdly wide monitors only — it
      no longer does the centring. .shell/.shell-solo/.topbar below centre
      themselves against --composition regardless of how wide #app is. */
-  #app { max-width:1400px; margin:0 auto; padding:12px clamp(16px,3vw,40px) 56px; }
+  #app { max-width:1400px; margin:0 auto; padding:12px var(--page-gutter) 56px; }
+  #app:has(.dock, .sticky-bar) { padding-bottom:56px; }
   /* the topbar used to be full-bleed across #app (a title centered over
      1400px, above cards that stop at ~1070px, looked broken) — constrain it
      to the SAME composition width and centre it the same way */
   .topbar { margin:0 auto 22px; max-width:var(--composition); }
   .shell {
     display:grid; grid-template-columns:var(--content) var(--rail);
-    gap:var(--shell-gap); align-items:start; justify-content:center;
+    width:100%; max-width:var(--composition); gap:var(--shell-gap);
+    align-items:start; justify-content:center; margin:0 auto;
   }
   /* the pair sits in the middle of the viewport with equal margins on both
      sides — this is what removes the "sea of empty space" a flat 680px cap
@@ -661,6 +672,15 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
      excluded on purpose — those are meant to span their container, not read
      like prose. */
   .sheet-sub, p.muted, div.muted { max-width:65ch; }
+}
+/* Medium desktop: give the form the remaining space rather than allowing a
+   fixed content column to force the rail beyond the viewport. The rail stays
+   beside the form, but becomes a little narrower while both columns retain
+   usable minimums. */
+@media (min-width:1040px) and (max-width:1199px) {
+  :root { --rail:clamp(240px,24vw,280px); --shell-gap:clamp(16px,2vw,22px); }
+  .shell { grid-template-columns:minmax(0,1fr) var(--rail); }
+  .shell-main, .shell-side { min-width:0; }
 }
 </style>
 </head>
