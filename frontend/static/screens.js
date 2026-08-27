@@ -247,9 +247,15 @@ function billListStatus(b) {
 }
 
 function billListStatusChip(b) {
-  // List rows expose only summary fields: map them to the shared helper's detail shape; pick-state remains unknown here.
+  // List rows expose only summary fields; pending_names supplies the picker
+  // identity shim so the shared helper can keep its single status decision.
+  const pendingNames = Array.isArray(b.pending_names) ? b.pending_names : [];
   const data = {
-    bill: { total_idr: b.total_idr || 0 }, people: [], sel_by_item: {},
+    bill: { total_idr: b.total_idr || 0 },
+    people: pendingNames.length
+      ? pendingNames.map((name, i) => ({ identity_id: `__pending_${i}`, name, subtotal_idr: 0 }))
+      : [],
+    sel_by_item: {},
     paid_by_id: b.paid_by_identity_id, settled: b.settled,
     all_paid: b.all_paid, uncovered_idr: b.uncovered_idr,
   };

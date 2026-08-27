@@ -575,6 +575,38 @@ def delete_account(account_id: int, request: Request):
     return {"ok": True}
 
 
+def _list_pick_state(bill_data: dict) -> tuple[list[str], int]:
+    """Return pick-state summary needed by bill-list status chips."""
+    bill = bill_data["bill"]
+    result = calc.compute(
+        bill=bill, items=bill_data["items"], selections=bill_data["selections"],
+        participants=bill_data["participants"], fallback_id=_owner_id(bill_data),
+    )
+    people = list(result["people"])
+    joined_ids = {p["identity_id"] for p in bill_data["payments"]}
+    known_ids = {p["identity_id"] for p in people}
+    for jid in joined_ids - known_ids:
+        people.append({"identity_id": jid, "subtotal_idr": 0, "total_idr": 0})
+    creator_id = bill["creator_identity_id"]
+    if not bill.get("creator_left") and creator_id not in {p["identity_id"] for p in people}:
+        people.append({"identity_id": creator_id, "subtotal_idr": 0, "total_idr": 0})
+    claimed = {p["identity_id"]: p["name"] for p in bill_data["participants"]
+               if p.get("identity_id")}
+    names = _names_for_identities([p["identity_id"] for p in people])
+    for p in people:
+        p["name"] = claimed.get(p["identity_id"]) or names.get(p["identity_id"], "?")
+    paid_by_id, _ = db.resolve_payer(bill_data)
+    selected_ids = {s["identity_id"] for s in bill_data["selections"]}
+    paid_ids = {p["identity_id"] for p in bill_data["payments"] if p["status"] == "paid"}
+    if paid_by_id:
+        paid_ids.add(paid_by_id)
+    pending = [p["name"] for p in people
+               if p["identity_id"] != paid_by_id and p["identity_id"] not in selected_ids]
+    total_unpaid = sum(max(0, p.get("total_idr", 0)) for p in people
+                       if p.get("identity_id") not in paid_ids)
+    return pending, total_unpaid
+
+
 @app.get("/api/identities/{identity_id}/bills")
 def my_bills(identity_id: str, request: Request):
     ident = _identity_from_request(request)
@@ -585,15 +617,16 @@ def my_bills(identity_id: str, request: Request):
     # show owner-only actions (delete) — mirrors _owner_id, including the
     # placeholder-name resolution that paid_by_identity_id alone misses
     #
-    # bill_data rides in on row["_bill_data"] (v67) — get_bills_for_identity
-    # already loaded it once (for the settled flag); re-fetching it here too
-    # meant every bill on this list opened a fresh sqlite connection twice
-    # over, on top of what the list query itself and _bill_settled used
-    # (measured 242 connections for 60 bills). Pop it so it never reaches the
-    # JSON response — the payload must stay byte-identical.
+    # private key `_bill_data` — get_bills_for_identity already loaded it once
+    # (for the settled flag); re-fetching it here too meant every bill on this
+    # list opened a fresh sqlite connection twice over, on top of what the list
+    # query itself and _bill_settled used. Pop it so it never reaches the JSON
+    # response — the existing summary fields remain unchanged while the
+    # additive pick-state fields below are populated from the same snapshot.
     for row in rows:
         bill_data = row.pop("_bill_data", None)
         if bill_data:
+            row["pending_names"], row["total_unpaid"] = _list_pick_state(bill_data)
             row["owner_id"] = _owner_id(bill_data)
             row["can_manage"] = _can_manage(bill_data, identity_id)
             # personal payment state for THIS viewer: the resolved payer is
@@ -627,6 +660,8 @@ def my_bills(identity_id: str, request: Request):
             row["my_paid"] = False
             row["i_am_payer"] = False
             row["has_picks"] = False
+            row["pending_names"] = []
+            row["total_unpaid"] = 0
     return rows
 
 
