@@ -1187,6 +1187,18 @@ function openAccountsSheet(data) {
 // "Lunas" next to "Rp X belum dibayar" (bug: two status systems, one screen).
 function creatorStatusChip(data, closed, totalUnpaid, soloSoFar) {
   if (soloSoFar) return `<span class="chip chip-grey">Belum ada yang gabung</span>`;
+  // A settled/all-paid read is WRONG while invited members still idle on
+  // selection: backend marks the bill money-complete because unclaimed items
+  // fall through to the payer, yet participants who never picked anything can
+  // still reshuffle every split. Report that honestly instead of a green
+  // claim (bug: fresh 2-person bill showed Lunas while Amel had Rp 0 items).
+  const pendingPickers = !closed ? (data.people || []).filter((p) =>
+    p.identity_id !== data.paid_by_id &&
+    !p.subtotal_idr && !hasPickedAny(data, p.identity_id)) : [];
+  if ((data.settled || data.all_paid) && pendingPickers.length) {
+    const names = pendingPickers.map((p) => esc(p.name)).join(", ");
+    return `<span class="chip chip-grey">Menunggu ${names} memilih item</span>`;
+  }
   if (data.settled) {
     return closed
       ? `<span class="chip chip-green">${ic("check")}Ditutup · lunas</span>`
@@ -1919,6 +1931,44 @@ function renderCreatorPick(data) {
 // ---------- Creator edit bill ----------
 let editState = { items: [], subtotal: 0, tax: 0, service: 0, total: 0, title: "", transacted_at: "", merchant: "", tax_included: false };
 
+// Full-screen editors are pseudo-layers: they hijack the whole app shell but
+// have NO route of their own, so a raw system Back popped the real previous
+// entry and dumped the user onto the home list (bug: tap Ubah, swipe back,
+// land on list). One history sentinel mirrors the sheet scheme: gesture pops
+// it, fires this listener, and the detail summary is restored instead.
+// UI exits (back button / save) consume the sentinel first so no ghost
+// entries linger behind them.
+function beginEditorLayer(billId) {
+  try { history.pushState({ bagiinEdit: true }, ""); } catch (e) {}
+  let done = false;
+  const listen = "popstate";
+  const onPop = () => {
+    if (done) return;
+    done = true;
+    removeEventListener(listen, onPop);
+    loadBillView(billId).catch(() => {});
+  };
+  addEventListener(listen, onPop);
+  return {
+    // gesture-path: popstate already fired; just stop listening and restore
+    // ui-path: consume the sentinel with one silent back(), then restore
+    finish(viaPopstate) {
+      if (done) return;
+      done = true;
+      removeEventListener(listen, onPop);
+      if (!viaPopstate) {
+        try { history.back(); } catch (e) {}
+        setTimeout(() => { try { loadBillView(billId); } catch (e) {} }, 0);
+      }
+    },
+    finishQuiet() {          // caller will restore the view itself (save flow)
+      done = true;
+      removeEventListener(listen, onPop);
+      try { history.back(); } catch (e) {}
+    },
+  };
+}
+
 function renderEditBill(data) {
   const app = $("#app");
   editState = {
@@ -1932,6 +1982,7 @@ function renderEditBill(data) {
     merchant: data.bill.merchant || "",
     tax_included: !!(data.bill.tax_included),
   };
+  editState._layer = beginEditorLayer(data.bill.id);
   const main = `
     <div class="card">
       <div class="field" style="margin-bottom:0;">
@@ -1991,7 +2042,7 @@ function renderEditBill(data) {
     </div>
     ${shell(main, side)}`;
 
-  $("#back-btn").addEventListener("click", () => loadBillView(data.bill.id));
+  $("#back-btn").addEventListener("click", () => editState._layer.finish(false));
   renderEditItems();
   updateEditTotal();
   bindRupiahInput($("#subtotal-input"), () => updateEditTotal());
@@ -2162,6 +2213,7 @@ async function saveEditBill(billId) {
         })),
       });
       toast("Bill diupdate ✓");
+      editState._layer.finishQuiet();
       loadBillView(billId);
     } catch (e) { toast(e.message); }
   });
