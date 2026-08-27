@@ -1144,7 +1144,7 @@ function openPaySheet(data, me, alreadyPaid) {
         await api(`/api/bills/${data.bill.id}/payments/${me.id}/unpaid`, { method: "POST" });
         buzz(10);
         s.close();
-        toast("Status bayar dibatalin");
+        toast("Status bayar dibatalkan");
         loadBillView(data.bill.id);
       } catch (e) { toast(e.message); }
     }));
@@ -1225,6 +1225,10 @@ function renderCreatorView(data) {
     .filter(p => p.paid === "paid" && p.identity_id !== payerId)
     .reduce((s, p) => s + p.total_idr, 0);
   const totalUnpaid = data.people.filter(p => p.paid !== "paid").reduce((s, p) => s + p.total_idr, 0);
+  // The collect bar only makes sense while money is genuinely outstanding.
+  // For settled/waiting states it lied (payer's own fronted share never
+  // counts as "masuk", so a fully-settled bill showed a half-empty bar).
+  const moneyOutstanding = totalUnpaid > 0 || data.uncovered_idr > 0;
   const payerRow = data.people.find(p => p.identity_id === payerId);
   const notPicked = data.people.filter(p => !p.subtotal_idr && !hasPickedAny(data, p.identity_id) && p.identity_id !== me.id);
 
@@ -1323,13 +1327,13 @@ function renderCreatorView(data) {
       ${data.bill.title || data.bill.merchant ? `<div style="margin-top:4px;">${esc((data.bill.title || "").trim() || data.bill.merchant)}</div>` : ""}
       ${data.bill.transacted_at ? `<div class="muted">${esc(shortDate(data.bill.transacted_at))}</div>` : ""}
       ${!closed && data.all_paid && data.uncovered_idr === 0 ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua sudah menandai lunas, bill otomatis selesai.</p>` : ""}
-      <div class="collect" style="margin-top:12px;">
+      ${moneyOutstanding ? `<div class="collect" style="margin-top:12px;">
         <div class="collect-track"><div class="collect-fill" style="width:${data.bill.total_idr > 0 ? Math.min(100, Math.round(totalPaid * 100 / data.bill.total_idr)) : 0}%;"></div></div>
         <div class="collect-line" style="margin-top:6px;">
           <span class="muted">Sudah masuk <b class="money-sm${totalPaid > 0 ? " collect-in" : ""}">${fmt(totalPaid)}</b></span>
           <span class="muted">dari <b class="money-sm">${fmt(data.bill.total_idr)}</b></span>
         </div>
-      </div>
+      </div>` : ""}
       ${data.bill.tax_included ? `<div class="muted" style="margin-top:4px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — tidak ada PPN tambahan</div>` : ""}
       ${closedNotSettled ? `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} Bill sudah ditutup, tetapi ${totalUnpaid > 0 ? `masih ada ${fmt(totalUnpaid)} yang belum dibayar` : `masih ada ${fmt(data.uncovered_idr)} bagian yang tidak terambil`}. Buka lagi kalau ingin memperbaikinya.</p>` : ""}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;">
@@ -1346,13 +1350,6 @@ function renderCreatorView(data) {
         <button class="btn-outline btn-sm" id="pay-methods-btn">${ic("wallet")} Metode Bayar</button>
         ${photoAddBtnHtml(data)}
       </div>
-      ${!closed && !data.settled ? `
-      <button class="btn-outline btn-sm" id="settle-all-btn" style="width:100%;margin-top:8px;">
-        ${ic("check")} Tandai semua lunas
-      </button>` : data.settled_manual ? `
-      <button class="btn-outline btn-sm" id="unsettle-all-btn" style="width:100%;margin-top:8px;">
-        ${ic("refresh")} Batalin Lunas
-      </button>` : ""}
     </div>
     ${warnHtml}
     ${payerConfirmHtml}
@@ -1529,12 +1526,8 @@ function renderCreatorView(data) {
   if (editBtn) editBtn.addEventListener("click", () => renderEditBill(data));
   const reopenBtn = $("#reopen-bill-btn");
   if (reopenBtn) reopenBtn.addEventListener("click", () => openReopenConfirm(data));
-  // v60: bill-level settle — one click marks the whole bill lunas (cash
-  // settled outside the app, or a solo bill that can never auto-settle)
-  const settleAllBtn = $("#settle-all-btn");
-  if (settleAllBtn) settleAllBtn.addEventListener("click", () => toggleSettleAll(data, settleAllBtn));
-  const unsettleAllBtn = $("#unsettle-all-btn");
-  if (unsettleAllBtn) unsettleAllBtn.addEventListener("click", () => toggleSettleAll(data, unsettleAllBtn));
+  // v60 bill-level settle buttons removed 2026-08-27: status is derived from
+  // per-person Tandai Lunas now, no bulk manual flag (derived-only model).
   $$(".slot-mgr").forEach(b => b.addEventListener("click", () => {
     const it = data.items.find(x => x.id === parseInt(b.dataset.item, 10));
     if (it) openSlotManagerSheet(data, it);
@@ -1560,22 +1553,7 @@ async function togglePaidByCreator(data, btn) {
   await withBusy(btn, "Bentar...", async () => {
     try {
       await api(`/api/bills/${data.bill.id}/payments/${identityId}/${action}`, { method: "POST" });
-      toast(currentlyPaid ? `${name} dibatalin lunasnya` : `${name} ditandai lunas ✓`);
-      loadBillView(data.bill.id);
-    } catch (e) { toast(e.message); }
-  });
-}
-
-// ---------- Bill-level settle (v60): whole bill lunas in one click ----------
-// For cash settlements outside the app (no need to tap each person), or a
-// genuinely solo bill that can never auto-settle because nobody joined.
-async function toggleSettleAll(data, btn) {
-  const currentlySettled = !!data.settled_manual;
-  const action = currentlySettled ? "unsettle" : "settle";
-  await withBusy(btn, "Bentar...", async () => {
-    try {
-      const fresh = await api(`/api/bills/${data.bill.id}/${action}`, { method: "POST" });
-      toast(currentlySettled ? "Lunas dibatalin" : "Bill ditandai lunas ✓");
+      toast(currentlyPaid ? `Lunas ${name} dibatalkan` : `${name} ditandai lunas ✓`);
       loadBillView(data.bill.id);
     } catch (e) { toast(e.message); }
   });
