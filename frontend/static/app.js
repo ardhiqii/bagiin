@@ -103,8 +103,12 @@ function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
     !p.subtotal_idr && !Object.values(data.sel_by_item || {}).some(list =>
       list.some(s => s.id === p.identity_id))) : [];
   if ((data.settled || data.all_paid) && pendingPickers.length) {
-    const names = pendingPickers.map((p) => esc(p.name)).join(", ");
-    return `<span class="chip chip-grey">Menunggu ${names} memilih item</span>`;
+    if (pendingPickers.length === 1) {
+      const name = String(pendingPickers[0].name || "");
+      const displayName = name.length > 14 ? `${name.slice(0, 14)}…` : name;
+      return `<span class="chip chip-grey">Menunggu ${esc(displayName)} memilih item</span>`;
+    }
+    return `<span class="chip chip-grey">Menunggu ${pendingPickers.length} orang memilih item</span>`;
   }
   if (data.settled) {
     return closed
