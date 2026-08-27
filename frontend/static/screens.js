@@ -1891,8 +1891,8 @@ function renderVerify(ocr, manual = false) {
       <p class="muted" style="text-align:center;margin-top:6px;">Opsional — foto hanya dilampirkan, tidak dibaca otomatis.</p>
     </div>` : "")}
 
-    <details class="card progressive-section">
-      <summary class="card-title"><span>Detail Bill</span><span class="muted">(opsional)</span></summary>
+    <div class="card">
+      <div class="card-title"><span>Detail Bill</span></div>
       <div class="vf-field-pair">
         <div class="field">
           <label for="title-input">Judul Bill</label>
@@ -1904,7 +1904,7 @@ function renderVerify(ocr, manual = false) {
           <input type="date" id="date-input" value="${esc(verifyState.transacted_at)}">
         </div>
       </div>
-    </details>
+    </div>
 
     ${verifyState.ocrError ? `
     <div class="warn-box">
