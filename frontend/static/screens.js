@@ -1648,6 +1648,48 @@ async function readClipboardImage() {
 }
 
 // ---------- Verify OCR result ----------
+let __photoLayerActive = false;
+let __photoLayerConsumeNextPop = false;
+
+function collapseExpandedPhoto(fromHistory = false) {
+  const expanded = document.querySelector(".vf-photo-wrap .photo-preview.expanded");
+  if (expanded) expanded.classList.remove("expanded");
+  if (!__photoLayerActive) return;
+  __photoLayerActive = false;
+  if (fromHistory) {
+    __photoLayerConsumeNextPop = false;
+    window.removeEventListener("popstate", __photoLayerPopstate);
+    return;
+  }
+  // UI close: consume the same-URL sentinel without allowing it to reach the router.
+  __photoLayerConsumeNextPop = true;
+  try { history.back(); } catch (e) {
+    __photoLayerConsumeNextPop = false;
+    window.removeEventListener("popstate", __photoLayerPopstate);
+  }
+}
+
+function __photoLayerPopstate() {
+  if (__photoLayerConsumeNextPop) {
+    __photoLayerConsumeNextPop = false;
+    window.removeEventListener("popstate", __photoLayerPopstate);
+    return;
+  }
+  collapseExpandedPhoto(true);
+}
+
+function expandPhoto(img) {
+  if (__photoLayerActive) {
+    // A re-render can replace the node while its sentinel is still live.
+    img.classList.add("expanded");
+    return;
+  }
+  img.classList.add("expanded");
+  try { history.pushState({ bagiinPhoto: true }, ""); } catch (e) {}
+  __photoLayerActive = true;
+  window.addEventListener("popstate", __photoLayerPopstate);
+}
+
 let verifyState = {
   items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null,
   title: "", merchant: "", transacted_at: "", manual: false, paid_by_name: null,
@@ -2046,7 +2088,10 @@ function renderVerify(ocr, manual = false) {
 
   // v61: multi-photo preview — tap to zoom, ✕ to remove, + to add more
   const photoImgs = $$(".vf-photo-wrap .photo-preview");
-  photoImgs.forEach(img => img.addEventListener("click", () => img.classList.toggle("expanded")));
+  photoImgs.forEach(img => img.addEventListener("click", () => {
+    if (img.classList.contains("expanded")) collapseExpandedPhoto();
+    else expandPhoto(img);
+  }));
   $$(".vf-photo-del").forEach(btn => btn.addEventListener("click", () => {
     const idx = parseInt(btn.dataset.idx, 10);
     if (!Number.isFinite(idx)) return;
