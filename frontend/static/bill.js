@@ -27,7 +27,7 @@ function statusChipHtml(data) {
 function uncoveredNoteHtml(data) {
   if (!(data.uncovered_idr > 0)) return "";
   const n = (data.uncovered_slots || []).reduce((s, u) => s + u.empty, 0);
-  const what = n > 0 ? `${n} bagian kosong belum keambil` : "ada bagian yang belum keambil";
+  const what = n > 0 ? `${n} bagian kosong belum terambil` : "ada bagian yang belum terambil";
   return `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} ${what} (${fmt(data.uncovered_idr)})</p>`;
 }
 
@@ -41,7 +41,7 @@ function photoThumbHtml(p, i, canManage) {
       <img src="/uploads/${esc(p.path.split("/").pop())}" alt="Struk ${i + 1}" loading="lazy"
            data-photo="${esc(p.path)}" data-idx="${i}" style="width:100%;height:110px;object-fit:cover;border-radius:var(--r-xs);display:block;"
            onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
-      <div class="photo-missing" style="width:100%;height:110px;">${ic("image")}<span>Foto gak ketemu</span></div>
+      <div class="photo-missing" style="width:100%;height:110px;">${ic("image")}<span>Foto tidak ditemukan</span></div>
       ${canManage ? `<button class="bill-photo-del" data-id="${p.id}" aria-label="Hapus foto ${i + 1}" style="position:absolute;top:4px;right:4px;width:40px;height:40px;min-height:40px;padding:0;border-radius:var(--r-full);background:rgba(0,0,0,.62);color:#fff;border:none;display:flex;align-items:center;justify-content:center;">${ic("x")}</button>` : ""}
     </div>`;
 }
@@ -103,7 +103,7 @@ function openPhotoSheet(bill, photos, idx) {
     <img src="/uploads/${encodeURIComponent(list[start].path.split("/").pop())}" alt="Foto struk asli bill ini"
          style="width:100%;border-radius:var(--r-sm);" loading="lazy"
          onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
-    <div class="photo-missing" style="width:100%;height:220px;">${ic("image")}<span>Foto struk gak ketemu</span></div>
+    <div class="photo-missing" style="width:100%;height:220px;">${ic("image")}<span>Foto struk tidak ditemukan</span></div>
     <div class="btn-row" style="margin-top:10px;">
       ${list.length > 1 ? `<button class="btn-outline btn-sm" id="ph-prev" style="margin-top:0;">${ic("chevron")} Sebelumnya</button>
       <button class="btn-outline btn-sm" id="ph-next" style="margin-top:0;">Berikutnya</button>` : ""}
@@ -127,7 +127,7 @@ function bindPhotoActions(data) {
     if (!Number.isFinite(pid)) return;
     const ok = await confirmSheet({
       title: "Hapus foto ini?",
-      body: "Fotonya ilang dari bill. Item & pembagiannya gak berubah.",
+      body: "Foto akan dihapus dari bill. Item & pembagiannya tidak berubah.",
       confirmText: "Hapus",
       danger: true,
     });
@@ -282,7 +282,7 @@ async function loadBillView(billId) {
       <div class="card">
         <div class="empty-state">
           ${ic(notFound ? "empty" : "alert")}
-          <p style="font-weight:700;color:var(--text);">${notFound ? "Bill gak ketemu" : "Gagal muat bill"}</p>
+          <p style="font-weight:700;color:var(--text);">${notFound ? "Bill tidak ditemukan" : "Gagal memuat bill"}</p>
           <p class="muted">${esc(e.message)}</p>
         </div>
         <div class="btn-row" style="margin-top:4px;">
@@ -313,14 +313,14 @@ function renderGuestNamePrompt(billId, data) {
     </div>
     ${shell(`
       <div class="card">
-        <div class="label-sm">Kamu diajak bagi bill</div>
+        <div class="label-sm">Kamu diundang untuk membagi bill</div>
         <div style="font-size:21px;font-weight:800;margin-top:4px;letter-spacing:-.02em;">${esc(data.bill.title)}</div>
         <div class="money hero-total" style="margin-top:6px;">${fmt(data.bill.total_idr)}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
           <span class="chip chip-grey">${ic("receipt")}${data.items.length} item</span>
-          <span class="chip chip-grey">${ic("people")}${joined} orang udah gabung</span>
+          <span class="chip chip-grey">${ic("people")}${joined} orang sudah bergabung</span>
         </div>
-        ${data.bill.tax_included ? `<p class="muted" style="color:var(--green);margin-top:10px;">${ic("check")} Harga item sudah termasuk pajak — gak ada PPN tambahan</p>` : ""}
+        ${data.bill.tax_included ? `<p class="muted" style="color:var(--green);margin-top:10px;">${ic("check")} Harga item sudah termasuk pajak — tidak ada PPN tambahan</p>` : ""}
         <p class="muted" style="margin-top:10px;">${payerName === data.creator_name
           ? `Dibuat <strong style="color:var(--text);">${esc(data.creator_name)}</strong> — nanti bayarnya ke dia`
           : `Dibuat ${esc(data.creator_name)} · nanti bayarnya ke <strong style="color:var(--text);">${esc(payerName)}</strong>`}</p>
@@ -332,9 +332,9 @@ function renderGuestNamePrompt(billId, data) {
             <input id="guest-name" name="name" placeholder="Nama kamu" value="${esc(saved)}"
                    maxlength="30" autocomplete="name">
           </div>
-          <button class="btn-primary" type="submit" id="guest-go">Lanjut, Milih Item</button>
+          <button class="btn-primary" type="submit" id="guest-go">Lanjut, Pilih Item</button>
         </form>
-        <p class="muted" style="margin-top:12px;">Tanpa akun. Namamu cuma buat nandain item yang kamu ambil, dan cuma kesimpen di HP ini.</p>
+        <p class="muted" style="margin-top:12px;">Tanpa akun. Namamu hanya untuk menandai item yang kamu ambil, dan hanya tersimpan di perangkat ini.</p>
       </div>`)}`;
   $("#guest-back").addEventListener("click", () => location.hash = "#/");
   const input = $("#guest-name");
@@ -374,6 +374,7 @@ function renderGuestView(data, me) {
     || (myPeople.length ? myPeople[0].paid === "paid" : false);
   const iAmPayer = data.paid_by_id === me.id;
   const payerName = data.paid_by_name || data.creator_name;
+  const payment = payerPayment(data);
   // nobody but the creator is on the bill yet — the product moment is
   // "share the link", not "belum lunas". Mirror the creator view's guard so
   // a fresh solo bill never wears a misleading status (bug: "blom ada yg
@@ -406,17 +407,22 @@ function renderGuestView(data, me) {
           // one line, and the fact a guest actually needs: who fronted the
           // money. "Dikelola oleh" was manager jargon on a screen with no
           // manager actions on it
-          ? ` · nalangin ${esc(payerName)}` : ""}</p>
-      ${data.bill.tax_included ? `<p class="muted" style="margin-top:6px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — gak ada PPN tambahan</p>` : ""}
+          ? ` · membayar dahulu: ${esc(payerName)}` : ""}</p>
+      ${data.bill.tax_included ? `<p class="muted" style="margin-top:6px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — tidak ada PPN tambahan</p>` : ""}
       ${photoBtnHtml(data)}
       ${uncoveredNoteHtml(data)}
-      ${data.all_paid && !closed && !soloSoFar ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua yang milih item udah lunas 🎉</p>` : ""}
+      ${data.all_paid && !closed && !soloSoFar ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua yang memilih item sudah lunas 🎉</p>` : ""}
     </div>
-    <button class="btn-outline" id="pay-methods-btn" style="margin-bottom:12px;">
-      ${ic("wallet")} Metode Bayar ${esc(payerName)}
+    <div class="card card-flat payment-destination">
+      <div class="card-title">Bayar ke ${esc(payment.name)}</div>
+      <p class="muted" style="margin-top:4px;">Bagian kamu: <strong style="color:var(--text);">${fmt(bd.total)}</strong>. Transfer ke ${esc(payment.name)} lewat kanal berikut:</p>
+      <div style="margin-top:10px;">${accountRowsHtml(payment.name, payment.accounts)}</div>
+    </div>
+    <button class="btn-outline btn-sm" id="pay-methods-btn" style="margin-bottom:12px;">
+      ${ic("wallet")} Lihat metode bayar lagi
     </button>
     ${closed ? `
-    <div class="info-box">Bill ini udah ditutup. Pembagiannya final dan gak bisa diubah lagi.</div>
+    <div class="info-box">Bill ini sudah ditutup. Pembagiannya final dan tidak bisa diubah lagi.</div>
     <div class="card card-flat">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
         <div>
@@ -424,8 +430,8 @@ function renderGuestView(data, me) {
           <div class="money" style="font-size:23px;font-weight:800;">${fmt(bd.total)}</div>
         </div>
         ${iAmPayer
-          ? `<span class="chip chip-grey">Kamu yang nalangin</span>`
-          : `<span class="chip ${myPaid ? "chip-green" : "chip-red"}">${myPaid ? `${ic("check")} Udah bayar` : "Belum bayar"}</span>`}
+          ? `<span class="chip chip-grey">Kamu yang membayar dahulu</span>`
+          : `<span class="chip ${myPaid ? "chip-green" : "chip-red"}">${myPaid ? `${ic("check")} Sudah bayar` : "Belum bayar"}</span>`}
       </div>
       ${hasTax ? `
       <div class="dock-split" style="margin-top:10px;flex-wrap:wrap;background:var(--surface-3);">
@@ -433,13 +439,14 @@ function renderGuestView(data, me) {
         <span>Pajak &amp; service <b class="money-sm" style="color:var(--accent);">${fmt(bd.tax)}</b></span>
       </div>` : ""}
       ${!iAmPayer && !myPaid ? `
-      <p class="muted" style="margin-top:10px;">Status bayar gak bisa diubah lagi di bill yang udah ditutup.
-      Kalau kamu udah transfer, kabarin ${esc(payerName)} langsung ya — dia yang bisa nandain.</p>` : ""}
-      ${iAmPayer ? `<p class="muted" style="margin-top:10px;">Kamu yang nalangin bill ini, jadi yang lain transfer ke kamu.</p>` : ""}
+      <p class="muted" style="margin-top:10px;">Status bayar tidak bisa diubah lagi di bill yang sudah ditutup.
+      Kalau kamu sudah transfer, beri tahu ${esc(payerName)} langsung ya — dia yang bisa menandai.</p>` : ""}
+      ${iAmPayer ? `<p class="muted" style="margin-top:10px;">Kamu yang membayar dahulu untuk bill ini, jadi yang lain transfer ke kamu.</p>` : ""}
+      ${closed && !iAmPayer ? `<p class="muted" style="margin-top:10px;">${esc(payerName)} membayar dahulu; transfer pembayaran ke ${esc(payerName)} sesuai kanal yang ditentukan.</p>` : ""}
     </div>` : ""}
     <div class="card">
       <div class="card-title">${closed ? "Item yang kamu tanggung" : "Centang yang kamu tanggung"}</div>
-      ${closed ? `<p class="muted" style="margin:-4px 0 8px;">Bill udah ditutup — daftar ini cuma buat dibaca.</p>` : ""}
+      ${closed ? `<p class="muted" style="margin:-4px 0 8px;">Bill sudah ditutup — daftar ini hanya untuk dibaca.</p>` : ""}
       <div id="pick-items">${data.items.map(it => itemRowHtml(it, data, mySel, me.name, me, closed)).join("")}</div>
     </div>
     ${!closed && data.owner_id !== me.id ? `
@@ -459,8 +466,8 @@ function renderGuestView(data, me) {
         <span>Pajak &amp; service <b class="money-sm" id="my-tax" style="color:var(--accent);">${fmt(bd.tax)}</b></span>
       </div>
       ${iAmPayer
-        ? `<div class="chip chip-grey" style="justify-content:center;padding:10px;">${ic("wallet")} Kamu yang Nalangin Bill Ini</div>`
-        : `<button class="${myPaid ? "btn-green" : "btn-primary"}" id="pay-btn">${myPaid ? `${ic("check")} Udah bayar` : "Tandai Udah Bayar"}</button>`}
+        ? `<div class="chip chip-grey" style="justify-content:center;padding:10px;">${ic("wallet")} Kamu yang membayar dahulu</div>`
+        : `<button class="${myPaid ? "btn-green" : "btn-primary"}" id="pay-btn">${myPaid ? `${ic("check")} Sudah bayar` : "Tandai sudah bayar"}</button>`}
     </div></div>`;
 
   app.innerHTML = `
@@ -483,9 +490,9 @@ function renderGuestView(data, me) {
     const iMadeIt = data.bill.creator_identity_id === me.id;
     const ok = await confirmSheet({
       title: "Keluar dari bill ini?",
-      body: "Pilihan item kamu dihapus dan bill ini ilang dari daftar kamu. Masih bisa gabung lagi lewat link selama billnya belum ditutup."
+      body: "Pilihan item kamu dihapus dan bill ini tidak lagi muncul di daftar kamu. Kamu masih bisa bergabung lagi lewat link selama billnya belum ditutup."
         // confirmSheet renders `body` as markup, so the typed name needs esc()
-        + (iMadeIt ? ` Billnya tetep jalan, sekarang dipegang ${esc(data.paid_by_name || "yang nalangin")}.` : ""),
+        + (iMadeIt ? ` Billnya tetap berjalan, sekarang dipegang ${esc(data.paid_by_name || "yang membayar dahulu")}.` : ""),
       confirmText: "Keluar",
       danger: true,
     });
@@ -493,7 +500,7 @@ function renderGuestView(data, me) {
     withBusy(leaveBtn, "Bentar...", async () => {
       try {
         await apiJson(`/api/bills/${data.bill.id}/leave`, "POST", {});
-        toast("Kamu udah keluar dari bill");
+        toast("Kamu sudah keluar dari bill");
         if (location.hash === "#/") render(); else location.hash = "#/";
       } catch (e) { toast(e.message); }
     });
@@ -512,16 +519,21 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
   const isSel = myQty > 0;
   const isSlot = it.mode === "slot" && it.slot_count;
   const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
+  const modeLabel = isSlot ? "Bagi per porsi" : "Dibagi rata";
   let shareText;
   // "kamu N×" only where there is no stepper to read it off (closed bills).
   // On an open bill the stepper sits right there showing the same number, and
   // on a 390px phone that duplicate pushed the detail line onto three rows.
   if (isSlot) {
     const perSlot = Math.floor(eff / it.slot_count);
+    const perSlotMax = Math.ceil(eff / it.slot_count);
+    const shareLabel = perSlot === perSlotMax
+      ? `${fmt(perSlot)}/bagian`
+      : `${fmt(perSlot)}–${fmt(perSlotMax).replace(/^Rp\s*/, "")}/bagian`;
     const taken = selList.reduce((s, x) => s + (x.qty || 1), 0);
     const empty = Math.max(0, it.slot_count - taken);
     const mineTxt = readOnly && myQty > 0 ? ` · kamu ${myQty}×` : "";
-    shareText = `${taken}/${it.slot_count} bagian · ${fmt(perSlot)}/bagian${mineTxt}${empty > 0 ? ` · ${empty} kosong` : ""}`;
+    shareText = `${taken}/${it.slot_count} bagian · ${shareLabel}${mineTxt}${empty > 0 ? ` · ${empty} kosong` : ""}`;
   } else if (selList.length === 0) {
     shareText = "belum dipilih";
   } else {
@@ -548,13 +560,13 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
     <div class="item-row${isSel ? " selected" : ""}${!readOnly && !isFull ? " item-tappable" : ""}${isFull ? " item-full" : ""}" data-item="${it.id}"${a11y}>
       ${!readOnly || isSel ? (isFull ? `<div class="item-check item-check-full">${ic("x")}</div>` : `<div class="item-check">${ic("check")}</div>`) : ""}
       <div class="item-info">
-        <div class="item-name">${esc(it.name)}${isSlot ? ` <span class="slot-badge">Bagi per porsi</span>` : ""}</div>
+        <div class="item-name">${esc(it.name)} <span class="slot-badge">${modeLabel}</span></div>
         <div class="item-share">${shareText}</div>
       </div>
       ${!readOnly ? `
       <!-- the +/- disabled state used to be set only by renderPickRows, i.e.
            AFTER the first tap: a maxed-out slot row painted an enabled "+"
-           that could only toast "slot abis" (bug: dead button that looked
+           that could only toast "slot sudah penuh" (bug: dead button that looked
            alive until you touched something else) -->
       <div class="item-stepper" data-step-for="${it.id}">
         <button type="button" class="step-btn step-dec" aria-label="Kurangi"${myQty <= 0 ? " disabled" : ""}>−</button>
@@ -593,7 +605,7 @@ function bindItemRows(data, me, root) {
           state.selQty.set(id, 1);
           updateGuestSelection(data, me);
         } else {
-          toast("Bagian item ini udah abis");
+          toast("Bagian item ini sudah habis");
         }
       } else if (myQty > 0) {
         state.selQty.delete(id);
@@ -611,7 +623,7 @@ function bindItemRows(data, me, root) {
       if (next <= 0) {
         state.selQty.delete(id);
       } else if (isSlot && next > slotsLeft()) {
-        toast("Bagian item ini udah abis");
+        toast("Bagian item ini sudah habis");
         return;
       } else {
         state.selQty.set(id, next);
@@ -672,21 +684,21 @@ function renderPickRows(data, me, useServer) {
     row.classList.toggle("selected", sel);
     if (row.hasAttribute("role")) row.setAttribute("aria-checked", sel ? "true" : "false");
     const it = data.items.find(x => x.id === id);
-    const share = $(".item-share", row);
+    const shareEl = $(".item-share", row);
     const isSlot = it && it.mode === "slot" && it.slot_count;
     const selList = othersSel(data.sel_by_item[id], me);
-    if (share && it) {
+    if (shareEl && it) {
       if (isSlot) {
         const taken = selList.reduce((s, x) => s + (x.qty || 1), 0) + qty;
         const empty = Math.max(0, it.slot_count - taken);
-        share.textContent = `${taken}/${it.slot_count} bagian${empty > 0 ? ` · ${empty} kosong` : ""}`;
+        shareEl.textContent = `${taken}/${it.slot_count} bagian${empty > 0 ? ` · ${empty} kosong` : ""}`;
       } else if (sel || selList.length > 0) {
         const totalQty = selList.reduce((s, x) => s + (x.qty || 1), 0) + qty;
         const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
         const perServing = Math.floor(eff / totalQty);
-        share.textContent = `${totalQty} porsi · ${fmt(perServing)}/porsi`;
+        shareEl.textContent = `${totalQty} porsi · ${fmt(perServing)}/porsi`;
       } else {
-        share.textContent = "belum dipilih";
+        shareEl.textContent = "belum dipilih";
       }
     }
     // stepper live state: qty number, minus dead only at 0, plus dead when a
@@ -758,9 +770,9 @@ function openSlotPickerSheet(data, me, it) {
   const s = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-title">${esc(it.name)}</div>
-    <p class="muted">${fmt(perSlot)}/bagian · ${it.slot_count} bagian · ${othersTaken} keambil orang lain</p>
+    <p class="muted">${fmt(perSlot)}/bagian · ${it.slot_count} bagian · ${othersTaken} terambil oleh orang lain</p>
     <p class="muted" style="margin-top:4px;">Item ini dibagi ${it.slot_count} bagian tetap. Kamu bisa ambil lebih dari 1 kalau pesennya lebih dari satu.</p>
-    <p class="muted" style="margin:4px 0 14px;">${leftEmpty > 0 ? `Sisa bagian kosong: ${leftEmpty}` : "Bagian udah abis"}</p>
+    <p class="muted" style="margin:4px 0 14px;">${leftEmpty > 0 ? `Sisa bagian kosong: ${leftEmpty}` : "Bagian sudah habis"}</p>
     ${max > 0 ? `
     <div style="display:flex;align-items:center;justify-content:center;gap:20px;margin-bottom:16px;">
       <button class="btn-outline slot-qty-dec" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Kurangi bagian">−</button>
@@ -923,9 +935,9 @@ function computeMyBreakdown(data, selQty) {
     const order = mergeLiveSelectors(data.sel_by_item[it.id], myId, myName, myQty);
     const totalQty = order.reduce((s, x) => s + x.qty, 0);
     if (myQty > 0 && totalQty > 0) {
-      const share = Math.floor(eff / totalQty);
-      sub += share * myQty;
-      const rem = eff - share * totalQty;
+      const portion = Math.floor(eff / totalQty);
+      sub += portion * myQty;
+      const rem = eff - portion * totalQty;
       for (let i = 0; i < rem; i++) {
         if (order[i % order.length].id === myId) sub += 1;
       }
@@ -976,8 +988,8 @@ function openPaySheet(data, me, alreadyPaid) {
     <div class="sheet-handle"></div>
     <div class="sheet-title">${iAmPayer ? "Bagian kamu" : `Bayar ke ${esc(pay.name)}`}</div>
     <p class="sheet-sub">${iAmPayer
-      ? "Kamu yang nalangin bill ini — ini bagian kamu sendiri."
-      : "Cek item kamu, transfer, terus tandai udah bayar. Ketuk item buat batalin."}</p>
+      ? "Kamu yang membayar dahulu untuk bill ini — ini bagian kamu sendiri."
+      : "Cek item kamu, transfer, lalu tandai sudah bayar. Ketuk item untuk membatalkan."}</p>
     <div id="pay-items"></div>
     <div id="pay-total"></div>
     ${iAmPayer ? "" : `
@@ -986,7 +998,7 @@ function openPaySheet(data, me, alreadyPaid) {
       ${accountRowsHtml(pay.name, pay.accounts)}
     </div>`}
     <button class="${alreadyPaid ? "btn-green" : "btn-primary"}" id="confirm-pay">
-      ${alreadyPaid ? `${ic("check")} Udah bayar` : "Tandai Udah Bayar"}
+      ${alreadyPaid ? `${ic("check")} Sudah bayar` : "Tandai sudah bayar"}
     </button>
     ${alreadyPaid ? `<button class="btn-danger-ghost" id="undo-pay">${ic("refresh")} Batalin Status Bayar</button>` : ""}
     <button class="btn-outline" id="close-sheet">Batal</button>`, { noAutofocus: true });
@@ -1098,7 +1110,7 @@ function openPaySheet(data, me, alreadyPaid) {
         await api(`/api/bills/${data.bill.id}/payments/${me.id}/paid`, { method: "POST" });
         buzz(20);
         s.close();
-        toast("Udah dicatat! 🎉");
+        toast("Sudah dicatat! 🎉");
         loadBillView(data.bill.id);
       } catch (e) { toast(e.message); }
     }));
@@ -1191,6 +1203,12 @@ function creatorStatusChip(data, closed, totalUnpaid, soloSoFar) {
   }
   if (data.all_paid && data.uncovered_idr === 0)
     return `<span class="chip chip-green">${ic("check")} Semua lunas</span>`;
+  const total = Math.max(0, data.bill.total_idr || 0);
+  const collected = Math.max(0, Math.min(total, data.people
+    .filter(p => p.paid === "paid" && p.identity_id !== data.paid_by_id)
+    .reduce((sum, p) => sum + (p.total_idr || 0), 0)));
+  if (collected > 0 && collected < total)
+    return `<span class="chip chip-red">Sebagian lunas<br><small>Sudah masuk ${fmt(collected)} · Belum ${fmt(total - collected)}</small></span>`;
   if (totalUnpaid > 0) {
     // "belum dibayar" (orang) vs "belum keambil" (bagian kosong) vs "belum
     // beres" (jumlah dua-duanya, di rail). Tiga angka ini pernah sama-sama
@@ -1200,8 +1218,8 @@ function creatorStatusChip(data, closed, totalUnpaid, soloSoFar) {
     return `<span class="chip chip-red">${fmt(totalUnpaid)} belum dibayar</span>`;
   }
   if (data.uncovered_idr > 0)
-    return `<span class="chip chip-red">${fmt(data.uncovered_idr)} belum keambil</span>`;
-  return `<span class="chip chip-grey">Belum ada yang milih</span>`;
+    return `<span class="chip chip-red">${fmt(data.uncovered_idr)} belum terambil</span>`;
+  return `<span class="chip chip-grey">Belum ada yang memilih</span>`;
 }
 
 function renderCreatorView(data) {
@@ -1225,7 +1243,7 @@ function renderCreatorView(data) {
   // flag or it yells "Belum beres Rp X" under a green Lunas chip.
   const allSettled = data.settled || (data.all_paid && data.uncovered_idr === 0);
   // Nobody but the creator is on the bill yet. This is the moment right after
-  // "Bikin Bill", and the whole product depends on the link being sent — so the
+  // "Buat Tagihan", and the whole product depends on the link being sent — so the
   // screen leads with sharing instead of with warnings about a bill that has
   // not started (bug: a 3-second-old bill opened on "Belum lunas", a Rp 0 chip,
   // and a red-ish card listing every item as "tidak dipilih siapa pun", while
@@ -1244,7 +1262,7 @@ function renderCreatorView(data) {
       icon: "slot",
       // per_slot × empty != amount when eff % slot_count has a remainder —
       // show the honest total instead of misleading arithmetic
-      text: `Bagian kosong belum keambil: ${data.uncovered_slots.map(u => `${esc(u.name)} (${u.empty} bagian kosong = ${fmt(u.amount_idr)})`).join(", ")}`,
+      text: `Bagian kosong belum terambil: ${data.uncovered_slots.map(u => `${esc(u.name)} (${u.empty} bagian kosong = ${fmt(u.amount_idr)})`).join(", ")}`,
       red: true,
     });
   }
@@ -1281,7 +1299,7 @@ function renderCreatorView(data) {
     && !lsGet(`bagiin_payer_dismiss_${data.bill.id}`, false);
   const payerConfirmHtml = payerPendingConfirm ? `
     <div class="warn-card" style="margin-top:10px;">
-      <div class="warn-row">${ic("alert")}<span><strong style="color:var(--text);">${esc(payerName)}</strong> udah join & ditandai yang nalangin. Konfirmasi biar dia bisa edit bill ini.</span></div>
+      <div class="warn-row">${ic("alert")}<span><strong style="color:var(--text);">${esc(payerName)}</strong> sudah bergabung dan ditandai sebagai yang membayar dahulu. Konfirmasi agar dia bisa mengedit bill ini.</span></div>
       <div class="btn-row" style="margin-top:8px;">
         <button class="btn-primary btn-sm" id="confirm-payer-btn">${ic("check")} Konfirmasi</button>
         <button class="btn-outline btn-sm" id="dismiss-payer-btn">Nanti aja</button>
@@ -1291,8 +1309,8 @@ function renderCreatorView(data) {
   const inviteHtml = soloSoFar ? `
     <div class="card invite-card">
       <div class="invite-head">${ic("share")}<div>
-        <div class="invite-title">Share linknya sekarang</div>
-        <div class="muted">Temen kamu tinggal buka link, tulis nama, terus centang item yang dia makan. Gak usah bikin akun.</div>
+        <div class="invite-title">Bagikan linknya sekarang</div>
+        <div class="muted">Temen kamu tinggal buka link, tulis nama, terus centang item yang dia makan. Tidak perlu membuat akun.</div>
       </div></div>
       <div class="btn-row" style="margin-top:14px;">
         <button class="btn-primary" id="invite-share-btn">${ic("share")} Bagikan Link</button>
@@ -1315,7 +1333,7 @@ function renderCreatorView(data) {
       </div>
       ${data.bill.merchant ? `<div class="muted" style="margin-top:4px;">${esc(data.bill.merchant)}</div>` : ""}
       ${data.bill.transacted_at ? `<div class="muted">${esc(shortDate(data.bill.transacted_at))}</div>` : ""}
-      ${data.bill.tax_included ? `<div class="muted" style="margin-top:4px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — gak ada PPN tambahan</div>` : ""}
+      ${data.bill.tax_included ? `<div class="muted" style="margin-top:4px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — tidak ada PPN tambahan</div>` : ""}
       ${soloSoFar ? "" : `
       <!-- progress, not a second status: the chip above already names the
            state. This row used to reprint that same chip next to "udah
@@ -1323,16 +1341,17 @@ function renderCreatorView(data) {
            (bug: the dedup that stopped the two disagreeing made them identical) -->
       <div class="collect" style="margin-top:12px;">
         <div class="collect-line">
-          <span class="muted">Udah masuk</span>
+          <span class="muted">Sudah masuk</span>
           <span><b class="money-sm${totalPaid > 0 ? " collect-in" : ""}">${fmt(totalPaid)}</b> <span class="muted">dari ${fmt(data.bill.total_idr)}</span></span>
         </div>
         <div class="collect-track"><div class="collect-fill" style="width:${data.bill.total_idr > 0 ? Math.min(100, Math.round(totalPaid * 100 / data.bill.total_idr)) : 0}%;"></div></div>
       </div>`}
-      ${closedNotSettled ? `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} Bill udah ditutup tapi ${totalUnpaid > 0 ? `masih ada ${fmt(totalUnpaid)} yang belum dibayar` : `masih ada ${fmt(data.uncovered_idr)} bagian yang gak keambil`}. Buka lagi kalau mau dibenerin.</p>` : ""}
+      ${closedNotSettled ? `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} Bill sudah ditutup, tetapi ${totalUnpaid > 0 ? `masih ada ${fmt(totalUnpaid)} yang belum dibayar` : `masih ada ${fmt(data.uncovered_idr)} bagian yang tidak terambil`}. Buka lagi kalau ingin memperbaikinya.</p>` : ""}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;">
-        <span class="muted">Yang nalangin: <strong style="color:var(--text);">${esc(payerName)}</strong>${payerRow && payerRow.total_idr > 0 ? ` · bagian dia ${fmt(payerRow.total_idr)}` : ""}</span>
+        <span class="muted">Yang membayar dahulu: <strong style="color:var(--text);">${esc(payerName)}</strong>${payerRow && payerRow.total_idr > 0 ? ` · bagian dia ${fmt(payerRow.total_idr)}` : ""}</span>
         ${!closed ? `<button class="btn-outline btn-sm" id="set-payer-btn" style="flex-shrink:0;">${ic("pencil")} Ubah</button>` : ""}
       </div>
+      ${closed ? `<p class="muted" style="margin:8px 0 0;">${esc(payerName)} membayar dahulu; transfer pembayaran ke ${esc(payerName)} sesuai kanal yang ditentukan.</p>` : ""}
       <!-- the card used to stack three identical full-width buttons: settle
            the whole bill, attach a photo, show payment methods — same weight,
            no hierarchy, with the most consequential one on top. Utilities go
@@ -1344,7 +1363,7 @@ function renderCreatorView(data) {
       </div>
       ${!closed && !data.settled ? `
       <button class="btn-outline btn-sm" id="settle-all-btn" style="width:100%;margin-top:8px;">
-        ${ic("check")} Tandai Lunas Semua
+        ${ic("check")} Tandai semua lunas
       </button>` : data.settled_manual ? `
       <button class="btn-outline btn-sm" id="unsettle-all-btn" style="width:100%;margin-top:8px;">
         ${ic("refresh")} Batalin Lunas
@@ -1368,10 +1387,10 @@ function renderCreatorView(data) {
             : "belum pilih item";
           // the payer never "bayar" themselves — they fronted the money
           const statusHtml = isPayer
-            ? `<span class="chip chip-grey">${ic("wallet")} Nalangin</span>`
+            ? `<span class="chip chip-grey">${ic("wallet")} Membayar dahulu</span>`
             : (!closed
               ? `<button class="${paid ? "btn-sm" : "btn-outline btn-sm"} toggle-paid" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}" data-paid="${paid ? "1" : "0"}"
-                   style="${paid ? "background:var(--green-soft);color:var(--green);border:1px solid color-mix(in srgb, var(--green) 28%, transparent);" : ""}">${paid ? `${ic("check")} Lunas` : "Tandai Lunas"}</button>`
+                   style="${paid ? "background:var(--green-soft);color:var(--green);border:1px solid color-mix(in srgb, var(--green) 28%, transparent);" : ""}">${paid ? `${ic("check")} Lunas` : "Tandai lunas"}</button>`
               : `<span class="chip ${paid ? "chip-green" : "chip-red"}">${paid ? `${ic("check")} Lunas` : "Belum lunas"}</span>`);
           return `
           <div class="person-row">
@@ -1405,15 +1424,20 @@ function renderCreatorView(data) {
         const selList = (data.sel_by_item[it.id] || []);
         const isSlot = it.mode === "slot" && it.slot_count;
         const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
+        const modeLabel = isSlot ? "Bagi per porsi" : "Dibagi rata";
         const priceHtml = it.discount_idr > 0
           ? `<span class="price-was">${fmt(it.price_idr)}</span> <span class="price-now">${fmt(eff)}</span>`
           : fmt(eff);
         let shareText;
         if (isSlot) {
           const perSlot = Math.floor(eff / it.slot_count);
+          const perSlotMax = Math.ceil(eff / it.slot_count);
+          const shareLabel = perSlot === perSlotMax
+            ? `${fmt(perSlot)}/bagian`
+            : `${fmt(perSlot)}–${fmt(perSlotMax).replace(/^Rp\s*/, "")}/bagian`;
           const taken = selList.reduce((s, x) => s + (x.qty || 1), 0);
           const empty = Math.max(0, it.slot_count - taken);
-          shareText = `${taken}/${it.slot_count} · ${fmt(perSlot)}/bagian`
+          shareText = `${taken}/${it.slot_count} · ${shareLabel}`
             + (selList.length ? ` · ${selList.map(s => `${esc(s.name)}${(s.qty || 1) > 1 ? ` ×${s.qty}` : ""}`).join(", ")}` : "")
             + (empty > 0 ? ` · <span style="color:var(--red);">${empty} kosong</span>` : "");
         } else {
@@ -1422,7 +1446,7 @@ function renderCreatorView(data) {
         return `
         <div class="item-row">
           <div class="item-info">
-            <div class="item-name">${esc(it.name)}${isSlot ? ` <span class="slot-badge">Bagi per porsi</span>` : ""}</div>
+            <div class="item-name">${esc(it.name)} <span class="slot-badge">${modeLabel}</span></div>
             <div class="item-share">${shareText}</div>
           </div>
           <div class="money item-price">${priceHtml}</div>
@@ -1440,18 +1464,18 @@ function renderCreatorView(data) {
         <span class="label">Nunggu temen kamu gabung</span>
       </div>` : `
       <div class="dock-total">
-        <span class="label">${allSettled ? "Semua" : "Belum beres"}</span>
+        <span class="label">${allSettled ? "Semua" : "Sisa pembayaran"}</span>
         <span class="money" id="my-total">${allSettled ? "Lunas" : fmt(totalUnpaid + data.uncovered_idr)}</span>
       </div>`}
       ${soloSoFar ? "" : allSettled ? `
       <div class="dock-split" style="flex-wrap:wrap;">
-        <span>Udah masuk <b class="money-sm">${fmt(totalPaid)}</b></span>
+        <span>Sudah masuk <b class="money-sm">${fmt(totalPaid)}</b></span>
         <span>${data.people.length} orang</span>
       </div>`
       : `<div class="dock-split" style="flex-direction:column;gap:4px;align-items:stretch;">
         ${totalUnpaid > 0 ? `<span style="display:flex;justify-content:space-between;gap:8px;">Belum dibayar <b class="money-sm">${fmt(totalUnpaid)}</b></span>` : ""}
         ${data.uncovered_idr > 0 ? `<span style="display:flex;justify-content:space-between;gap:8px;">Bagian kosong <b class="money-sm">${fmt(data.uncovered_idr)}</b></span>` : ""}
-        <span style="display:flex;justify-content:space-between;gap:8px;color:var(--text-3);">Udah masuk <b class="money-sm">${fmt(totalPaid)}</b></span>
+        <span style="display:flex;justify-content:space-between;gap:8px;color:var(--text-3);">Sudah masuk <b class="money-sm">${fmt(totalPaid)}</b></span>
       </div>`}
       ${closed
         ? `<button class="btn-outline" id="reopen-bill-btn" style="color:var(--accent);border-color:var(--accent);">${ic("refresh")} Buka Bill Lagi</button>`
@@ -1500,7 +1524,7 @@ function renderCreatorView(data) {
       try {
         await apiJson(`/api/bills/${data.bill.id}/paid_by`, "PUT", { identity_id: data.paid_by_id });
         lsSet(`bagiin_payer_dismiss_${data.bill.id}`, true);
-        toast(`${data.paid_by_name} dikonfirmasi yang nalangin ✓`);
+        toast(`${data.paid_by_name} dikonfirmasi sebagai yang membayar dahulu ✓`);
         loadBillView(data.bill.id);
       } catch (e) { toast(e.message); }
     }));
@@ -1579,7 +1603,7 @@ function openSlotManagerSheet(data, it) {
   const s = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-title">Atur bagian: ${esc(it.name)}</div>
-    <p class="sheet-sub">${it.discount_idr > 0 ? `<s style="opacity:.5">${fmt(it.price_idr)}</s> → ${fmt(eff)}` : fmt(eff)} · ${fmt(perSlot)}/bagian · ${taken}/${n} keambil</p>
+    <p class="sheet-sub">${it.discount_idr > 0 ? `<s style="opacity:.5">${fmt(it.price_idr)}</s> → ${fmt(eff)}` : fmt(eff)} · ${fmt(perSlot)}/bagian · ${taken}/${n} terambil</p>
     <div style="display:flex;align-items:center;justify-content:center;gap:20px;margin-bottom:12px;">
       <button class="btn-outline mgr-dec" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Kurangi bagian">−</button>
       <div style="text-align:center;">
@@ -1588,7 +1612,7 @@ function openSlotManagerSheet(data, it) {
       </div>
       <button class="btn-outline mgr-inc" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Tambah bagian">＋</button>
     </div>
-    <p class="muted" style="margin-bottom:6px;">Minimal ${taken} bagian (yang udah keambil). Harga per bagian ngikut total bagian.</p>
+    <p class="muted" style="margin-bottom:6px;">Minimal ${taken} bagian (yang sudah terambil). Harga per bagian sesuai total bagian.</p>
     <button class="btn-primary" id="mgr-save">Simpan</button>
     ${selList.length ? `<div class="label-sm" style="margin:16px 0 4px;">Pemegang Bagian</div>` : ""}
     ${selList.map(p => `
@@ -1657,7 +1681,7 @@ function openInviteSheet(data) {
   const s = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-title">Undang Orang</div>
-    <p class="sheet-sub">Orang yang udah pernah share bill sama kamu. Yang auto-accept langsung masuk — yang lain nunggu mereka terima dari beranda.</p>
+    <p class="sheet-sub">Orang yang sudah pernah berbagi bill bersama kamu. Yang auto-accept langsung masuk — yang lain menunggu mereka menerimanya dari beranda.</p>
     <input id="invite-search" placeholder="Cari nama..." maxlength="30" autocomplete="off" style="margin-bottom:10px;">
     <div id="invite-list" style="max-height:46vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">${skeletonRows(3)}</div>
     <button class="btn-outline" id="invite-cancel">Batal</button>`, { noAutofocus: true });
@@ -1675,12 +1699,12 @@ function openInviteSheet(data) {
           <div class="avatar" style="flex:0 0 auto;">${esc(initials(c.name))}</div>
           <div style="flex:1;min-width:0;">
             <div class="item-name">${esc(c.name)}</div>
-            <div class="muted">${c.last_shared ? "pernah share bill" : "kontak"}</div>
+            <div class="muted">${c.last_shared ? "pernah berbagi bill" : "kontak"}</div>
           </div>
           <button class="btn-primary btn-sm inv-send" data-id="${esc(c.id)}" data-name="${esc(c.name)}">${ic("plus")} Undang</button>
         </div>`).join("")
-      : `<div class="empty-state" style="padding:14px 8px;">${ic("empty")}<p class="muted">${search.value.trim() ? "Gak ketemu. Coba nama lain." : "Belum ada kontak. Ajak orang lewat link dulu — abis dia join sekali, dia bakal muncul di sini."}</p></div>`}
-      ${already.length ? `<p class="muted" style="margin-top:8px;font-size:12px;">Udah di bill ini: ${already.map(c => esc(c.name)).join(", ")}</p>` : ""}`;
+      : `<div class="empty-state" style="padding:14px 8px;">${ic("empty")}<p class="muted">${search.value.trim() ? "Tidak ditemukan. Coba nama lain." : "Belum ada kontak. Undang orang lewat link dulu — setelah dia bergabung sekali, dia akan muncul di sini."}</p></div>`}
+      ${already.length ? `<p class="muted" style="margin-top:8px;font-size:12px;">Sudah ada di bill ini: ${already.map(c => esc(c.name)).join(", ")}</p>` : ""}`;
     $$(".inv-send", s.sheet).forEach(b => b.addEventListener("click", () =>
       withBusy(b, "Ngundang...", async () => {
         try {
@@ -1730,15 +1754,15 @@ function openSetPayerSheet(data) {
   });
   const s = openSheet(`
     <div class="sheet-handle"></div>
-    <div class="sheet-title">Siapa yang nalangin bill ini?</div>
-    <p class="sheet-sub">Yang dipilih dianggap udah lunas otomatis (dia yang keluar duit duluan), dan metode bayar yang ditampilin ke orang lain pake akun dia.</p>
-    <div style="display:flex;flex-direction:column;gap:8px;">
-      <button class="btn-outline payer-opt" data-id="${esc(data.bill.creator_identity_id)}" data-name="${esc(data.creator_name)}" style="text-align:left;justify-content:flex-start;">
+    <div class="sheet-title">Siapa yang membayar dahulu untuk bill ini?</div>
+    <p class="sheet-sub">Yang dipilih dianggap sudah lunas otomatis (dia yang mengeluarkan uang lebih dahulu), dan metode bayar yang ditampilkan ke orang lain menggunakan akun dia.</p>
+    <div role="radiogroup" aria-label="Pilih orang yang membayar dahulu" style="display:flex;flex-direction:column;gap:8px;">
+      <button class="btn-outline payer-opt" role="radio" aria-checked="${data.paid_by_id === data.bill.creator_identity_id}" data-id="${esc(data.bill.creator_identity_id)}" data-name="${esc(data.creator_name)}" style="text-align:left;justify-content:flex-start;">
         ${data.paid_by_id === data.bill.creator_identity_id ? ic("check") : ""}<strong>${esc(data.creator_name)}</strong>
         <span class="muted">(${state.identity && data.bill.creator_identity_id === state.identity.id ? "kamu, pembuat" : "pembuat"})</span>
       </button>
       ${roster.filter(p => p.identity_id !== data.bill.creator_identity_id).map(p => `
-        <button class="btn-outline payer-opt" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}" style="text-align:left;justify-content:flex-start;">
+        <button class="btn-outline payer-opt" role="radio" aria-checked="${data.paid_by_id === p.identity_id}" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}" style="text-align:left;justify-content:flex-start;">
           ${data.paid_by_id === p.identity_id ? ic("check") : ""}<strong>${esc(p.name)}</strong>
         </button>`).join("")}
     </div>
@@ -1748,7 +1772,7 @@ function openSetPayerSheet(data) {
           above — echoing the confirmed payer's name back into the "someone
           who hasn't joined yet" box made the sheet look like it was asking
           the same question twice (v67 visual sweep) */ ""}
-    <input id="payer-name-input" placeholder="Nama yang nalangin" value="${esc(data.paid_by_id ? "" : (data.paid_by_name || ""))}" maxlength="30" autocomplete="off">
+    <input id="payer-name-input" placeholder="Nama yang membayar dahulu" value="${esc(data.paid_by_id ? "" : (data.paid_by_name || ""))}" maxlength="30" autocomplete="off">
     <button class="btn-primary" id="payer-name-save">Pakai Nama Ini</button>
     <button class="btn-outline" id="payer-cancel">Batal</button>`, { noAutofocus: true });
 
@@ -1765,7 +1789,7 @@ function openSetPayerSheet(data) {
     try {
       await apiJson(`/api/bills/${data.bill.id}/paid_by`, "PUT", body);
       s.close();
-      toast(`${name} ditandai yang nalangin ✓`);
+      toast(`${name} ditandai sebagai yang membayar dahulu ✓`);
       loadBillView(data.bill.id);
     } catch (e) {
       setPayerBusy(false);
@@ -1813,7 +1837,7 @@ function openDeleteBillConfirm(billId, title, onDone) {
     <div class="sheet-handle"></div>
     <div class="sheet-title">Hapus bill ini?</div>
     <p class="sheet-sub"><strong style="color:var(--text);">${esc(title)}</strong> — semua item, pembagian, dan catatan bayar di bill ini bakal kehapus permanen.</p>
-    <p class="sheet-sub">Gak bisa dibatalin. Orang lain yang udah join juga gak bakal bisa liat bill ini lagi.</p>
+    <p class="sheet-sub">Tidak bisa dibatalkan. Orang lain yang sudah bergabung juga tidak akan bisa melihat bill ini lagi.</p>
     <button class="btn-danger" id="confirm-delete-bill">Hapus Selamanya</button>
     <button class="btn-outline" id="cancel-delete-bill">Batal</button>`, { noAutofocus: true });
   $("#cancel-delete-bill", s.sheet).addEventListener("click", s.close);
@@ -1858,7 +1882,7 @@ function renderCreatorPick(data) {
         <span class="chip chip-accent">Kamu pembuat</span>
       </div>
       ${data.bill.merchant ? `<p class="muted" style="margin-top:6px;">${esc(data.bill.merchant)}</p>` : ""}
-      <p class="muted" style="margin-top:8px;">Ketuk item yang kamu tanggung. Item slot bisa diambil lebih dari 1 bagian. Item bebas yang gak dicentang siapa-siapa masuk ke kamu; bagian slot yang kosong tetep keliatan buat diambil.</p>
+      <p class="muted" style="margin-top:8px;">Ketuk item yang kamu tanggung. Item slot bisa diambil lebih dari 1 bagian. Item bebas yang tidak dicentang siapa pun masuk ke kamu; bagian slot yang kosong tetap terlihat untuk diambil.</p>
     </div>
     <div class="card">
       <div class="card-title">Centang yang kamu tanggung</div>
@@ -1923,7 +1947,7 @@ function renderEditBill(data) {
     <div class="card" id="items-card">
       <div class="card-title">Item <span class="muted">(edit kalau salah)</span></div>
       <p class="muted" style="margin:-4px 0 10px;"><strong style="color:var(--text-2);">Bagi rata</strong>
-      = siapa pun boleh centang, harganya dibagi rata sesuai porsi yang keambil.
+      = siapa pun boleh centang, harganya dibagi rata sesuai porsi yang terambil.
       <strong style="color:var(--text-2);">Bagi per porsi</strong> = dibagi jadi N bagian tetap.</p>
       <div id="items-list"></div>
       <button class="btn-outline btn-sm" id="add-item-btn" style="width:100%;margin-top:8px;">${ic("plus")} Tambah Item</button>
@@ -1938,11 +1962,11 @@ function renderEditBill(data) {
       <label class="toggle-row" style="margin-top:10px;">
         <span style="flex:1;">
           <span class="label-strong">Harga item sudah termasuk pajak</span>
-          <span class="muted">Kalau struk nulis "termasuk pajak", harga item udah kehitung pajaknya</span>
+          <span class="muted">Kalau struk menulis "termasuk pajak", harga item sudah menghitung pajaknya</span>
         </span>
         <input type="checkbox" id="tax-included-toggle" ${editState.tax_included ? "checked" : ""}>
       </label>
-      <div id="tax-included-badge" class="info-box ${editState.tax_included ? "" : "hidden"}" style="margin-top:8px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — PPN &amp; service dikosongin, total ngikut item</div>
+      <div id="tax-included-badge" class="info-box ${editState.tax_included ? "" : "hidden"}" style="margin-top:8px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — PPN &amp; service tidak diisi, total mengikuti item</div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;">
         <span class="label-sm">Total</span>
         <span class="money" style="font-size:22px;font-weight:800;" id="total-display">${fmt(editState.total)}</span>
@@ -2103,7 +2127,7 @@ function updateEditTotal() {
       if (editState.tax_included) {
         warn.textContent = `Total item (${fmt(sumItems)}) beda dari subtotal (${fmt(subtotal)}). Total item ini yang dipakai — cek harga & diskon tiap item.`;
       } else if (sumItems === total) {
-        warn.textContent = `Harga item (${fmt(sumItems)}) kayaknya udah TERMASUK pajak, tapi kamu isi subtotal ${fmt(subtotal)} + PPN. Aktifin toggle "Harga item sudah termasuk pajak" biar gak dobel.`;
+        warn.textContent = `Harga item (${fmt(sumItems)}) tampaknya sudah TERMASUK pajak, tetapi kamu mengisi subtotal ${fmt(subtotal)} + PPN. Aktifkan toggle "Harga item sudah termasuk pajak" agar tidak dihitung ganda.`;
       } else {
         warn.textContent = `Total item (${fmt(sumItems)}) beda dari subtotal (${fmt(subtotal)}). Cek kolom diskon tiap item.`;
       }
@@ -2155,11 +2179,11 @@ function shareBill(billId, title) {
   const s = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-title">Bagikan bill</div>
-    <p class="sheet-sub">Siapa pun yang pegang link ini bisa milih itemnya sendiri — gak perlu bikin akun.</p>
+    <p class="sheet-sub">Siapa pun yang memegang link ini bisa memilih itemnya sendiri — tidak perlu membuat akun.</p>
     <div class="code-display" style="font-size:13px;letter-spacing:0;word-break:break-all;">${esc(url)}</div>
     <button class="btn-primary" id="share-copy">${ic("copy")} Salin Link</button>
     <button class="btn-outline" id="share-wa">${ic("share")} Kirim Lewat WhatsApp</button>
-    ${navigator.share ? `<button class="btn-outline" id="share-native">${ic("share")} Bagikan Lewat Aplikasi Lain</button>` : ""}
+    ${navigator["share"] ? `<button class="btn-outline" id="share-native">${ic("share")} Bagikan Lewat Aplikasi Lain</button>` : ""}
     <button class="btn-ghost" id="share-close">Tutup</button>`, { noAutofocus: true });
 
   // desktop rarely has navigator.share, and copying is what people actually
@@ -2213,8 +2237,8 @@ function openCloseConfirm(data) {
   const s = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-title">Tutup bill?</div>
-    <p class="sheet-sub">Setelah ditutup, pembagian jadi final dan status bayar gak bisa diubah lagi. Kamu masih bisa buka lagi kapan pun.</p>
-    ${emptySlots.length ? `<div class="warn-box"><strong>Bagian kosong belum keambil:</strong><ul>
+    <p class="sheet-sub">Setelah ditutup, pembagian menjadi final dan status bayar tidak bisa diubah lagi. Kamu masih bisa membukanya lagi kapan pun.</p>
+    ${emptySlots.length ? `<div class="warn-box"><strong>Bagian kosong belum terambil:</strong><ul>
       ${emptySlots.map(u => `<li>${esc(u.name)} — ${u.empty} bagian (${fmt(u.amount_idr)})</li>`).join("")}
     </ul></div>` : ""}
     ${notPicked.length ? `<div class="warn-box"><strong>Belum pilih item:</strong><ul>${notPicked.map(m => `<li>${esc(m.name)}</li>`).join("")}</ul></div>` : ""}
