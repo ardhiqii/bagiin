@@ -110,59 +110,6 @@ function brandLogoHtml(code) {
     onerror="this.parentElement.classList.add('logo-miss');this.remove()"></span>`;
 }
 
-// v68b: swipe-to-delete reveal, deletable rows only. WCAG 2.5.1 needs a
-// single-pointer alternative for path gestures, so the kebab (with its real
-// menu item) stays; triggering that hidden menu item from the swipe zone
-// reuses the exact confirm flow — gesture and button can never diverge.
-// Rows the viewer can't delete get an EMPTY reserved slot: a control that
-// opens a "you can't do this" menu was a dead control (user feedback).
-function bindSwipeDelete(row) {
-  const front = row.querySelector(".swipe-front");
-  const menuItem = row.querySelector(".row-menu-item.danger");
-  if (!front || !menuItem) return;
-  const OPEN = 84, MAX = 100, THRESHOLD = 60;
-  let x0 = 0, y0 = 0, dx = 0, dragging = false, locked = null, openPx = 0, hideT = 0;
-  const setX = (px) => { front.style.transform = px ? `translateX(${px}px)` : ""; };
-  const showUnder = (on) => {
-    clearTimeout(hideT);
-    if (on) row.classList.add("swipe-active");
-    else hideT = setTimeout(() => row.classList.remove("swipe-active"), 180);
-  };
-  front.addEventListener("pointerdown", (e) => {
-    if (e.pointerType !== "touch") return;
-    x0 = e.clientX; y0 = e.clientY; dx = 0; locked = null; dragging = true;
-    showUnder(true);
-  });
-  front.addEventListener("pointermove", (e) => {
-    if (!dragging) return;
-    const mx = e.clientX - x0, my = e.clientY - y0;
-    if (locked === null && (Math.abs(mx) > 8 || Math.abs(my) > 8))
-      locked = Math.abs(mx) > Math.abs(my) ? "h" : "v";
-    if (locked !== "h") return;
-    dx = Math.max(0, Math.min(MAX, mx));
-    front.style.transition = "none";
-    setX(dx);
-  });
-  const end = () => {
-    if (!dragging) return;
-    dragging = false;
-    front.style.transition = "";
-    openPx = dx >= THRESHOLD ? OPEN : 0;
-    setX(openPx);
-    showUnder(openPx > 0);
-  };
-  front.addEventListener("pointerup", end);
-  front.addEventListener("pointercancel", end);
-  // capture: when the row sits open, a tap on the front swallows the row's
-  // own navigation handler; tapping the red zone fires the real menu item
-  row.addEventListener("click", (e) => {
-    if (!openPx) return;
-    openPx = 0; setX(0); showUnder(false);
-    if (!e.target.closest(".swipe-del")) { e.stopPropagation(); e.preventDefault(); }
-    else menuItem.click();
-  }, true);
-}
-
 // Shared bill status source of truth. app.js loads before screen-specific scripts.
 function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
   const pendingPickers = (data.people || []).filter((p) =>

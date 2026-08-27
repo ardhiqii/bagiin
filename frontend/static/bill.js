@@ -1381,9 +1381,7 @@ function renderCreatorView(data) {
               : `<span class="chip ${paid ? "chip-green" : "chip-red"}">${paid ? `${ic("check")} Lunas` : "Belum lunas"}</span>`);
           const canDelete = !!data.can_manage && !closed && !isMe;
           return `
-          <div class="person-row swipe-row">
-            <div class="swipe-under" aria-hidden="true"><span class="swipe-del">${ic("trash")} Hapus</span></div>
-            <div class="swipe-front">
+          <div class="person-row">
             <div class="avatar${isMe ? " avatar-me" : ""}">${esc(initials(p.name))}</div>
             <div class="person-info">
               <div class="person-name">${esc(p.name)}${isMe ? ' <span class="muted">(kamu)</span>' : ""}</div>
@@ -1393,13 +1391,9 @@ function renderCreatorView(data) {
               <div class="money person-total">${fmt(p.total_idr)}</div>
               ${statusHtml}
             </div>
-            <span class="person-actions">
-              ${canDelete ? `<button class="icon-btn ghost kebab-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Aksi ${esc(p.name)}">${ic("kebab")}</button>
-              <span class="row-menu" role="menu">
-                <button class="row-menu-item danger remove-person" role="menuitem" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}">Hapus dari bill</button>
-              </span>` : ""}
-            </span>
-            </div>
+            ${canDelete ? `
+            <span aria-hidden="true" style="width:1px;align-self:stretch;background:var(--border);margin-left:8px;flex-shrink:0;"></span>
+            <button class="person-remove remove-person" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}" aria-label="Hapus ${esc(p.name)} dari bill">${ic("trash")}</button>` : ""}
           </div>`;
         }).join("")}
       </div>
@@ -1544,17 +1538,6 @@ function renderCreatorView(data) {
     const it = data.items.find(x => x.id === parseInt(b.dataset.item, 10));
     if (it) openSlotManagerSheet(data, it);
   }));
-  $$(".person-actions .kebab-btn").forEach(b => b.addEventListener("click", (ev) => {
-    ev.stopPropagation();
-    const menu = b.parentElement.querySelector(".row-menu");
-    const open = menu.classList.contains("is-open");
-    $$(".row-menu.is-open").forEach(m => m.classList.remove("is-open"));
-    $$(".kebab-btn[aria-expanded=true]").forEach(x => x.setAttribute("aria-expanded", "false"));
-    menu.classList.toggle("is-open", !open);
-    b.setAttribute("aria-expanded", String(!open));
-  }));
-  // swipe reveal binds only to rows that can actually delete (menu item exists)
-  $$(".person-row.swipe-row").forEach(row => bindSwipeDelete(row));
   $$(".remove-person").forEach(b => b.addEventListener("click", (ev) => {
     ev.stopPropagation();
     openRemovePersonConfirm(data, b.dataset.id, b.dataset.name);

@@ -299,10 +299,8 @@ function billRowHtml(b) {
   // give the eye something to scan, and both come from the same status object
   // as the chip so they can never disagree.
   return `
-    <div class="history-row is-${s.tone} swipe-row" role="button" tabindex="0" data-id="${esc(b.id)}"
+    <div class="history-row is-${s.tone}" role="button" tabindex="0" data-id="${esc(b.id)}"
          aria-label="Buka bill ${esc(b.title)}, ${esc(s.label)}">
-      <div class="swipe-under" aria-hidden="true"><span class="swipe-del">${ic("trash")} Hapus bill</span></div>
-      <div class="swipe-front">
       <div class="avatar status-mark" aria-hidden="true">${ic(s.icon)}</div>
       <div class="row-body">
         <div class="row-title">
@@ -315,13 +313,7 @@ function billRowHtml(b) {
         </div>
         ${personalStatusHtml(b)}
       </div>
-      <span class="row-actions">
-        ${b.can_manage ? `<button class="icon-btn ghost kebab-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Aksi bill ${esc(b.title)}">${ic("kebab")}</button>
-        <span class="row-menu" role="menu">
-          <button class="row-menu-item danger delete-bill" role="menuitem" data-id="${esc(b.id)}" data-title="${esc(b.title)}">Hapus bill</button>
-        </span>` : ""}
-      </span>
-      </div>
+      ${b.can_manage ? `<button class="icon-btn ghost delete-bill" data-id="${esc(b.id)}" data-title="${esc(b.title)}" aria-label="Hapus bill ${esc(b.title)}">${ic("trash")}</button>` : ""}
     </div>`;
 }
 
@@ -329,18 +321,6 @@ function bindBillRows(box, onDone) {
   $$(".history-row", box).forEach(r => {
     const open = () => location.hash = "#/b/" + r.dataset.id;
     r.addEventListener("click", (e) => {
-      if (e.target.closest(".row-menu")) { e.stopPropagation(); return; }
-      const kebab = e.target.closest(".kebab-btn");
-      if (kebab) {
-        e.stopPropagation();
-        const menu = r.querySelector(".row-menu");
-        const open = menu.classList.contains("is-open");
-        $$(".row-menu.is-open").forEach(m => m.classList.remove("is-open"));
-        $$(".kebab-btn[aria-expanded=true]").forEach(b => b.setAttribute("aria-expanded", "false"));
-        menu.classList.toggle("is-open", !open);
-        kebab.setAttribute("aria-expanded", String(!open));
-        return;
-      }
       const deleteButton = e.target.closest(".delete-bill");
       if (deleteButton) {
         e.stopPropagation();
@@ -349,8 +329,6 @@ function bindBillRows(box, onDone) {
       }
       open();
     });
-    // swipe reveal binds only to rows the viewer can actually delete
-    if (r.querySelector(".row-menu-item.danger")) bindSwipeDelete(r);
     // the row is a div (it contains its own delete <button>, so it can't BE a
     // button) — give it real keyboard semantics instead
     r.addEventListener("keydown", (e) => {

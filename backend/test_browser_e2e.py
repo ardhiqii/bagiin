@@ -56,18 +56,6 @@ async function pageFor(ctx, id, tag) {
 }
 async function ready(p, selector, timeout=8000) { await p.waitForSelector(selector, {state:'visible', timeout}); }
 async function text(p, selector) { return p.locator(selector).allTextContents(); }
-async function swipeLeft(p, rowSel) {
-  await p.evaluate(sel => {
-    const row=[...document.querySelectorAll(sel)].find(x=>x.innerText.includes('E2E Guest')) || document.querySelector(sel), front=row && row.querySelector('.swipe-front');
-    if (!front) throw new Error('swipe front missing');
-    const r=front.getBoundingClientRect(), y=r.top+r.height/2, x0=r.left+30;
-    const mk=(type,x)=>new PointerEvent(type,{bubbles:true,cancelable:true,pointerType:'touch',isPrimary:true,clientX:x,clientY:y});
-    front.dispatchEvent(mk('pointerdown',x0));
-    for(let i=1;i<=6;i++) front.dispatchEvent(mk('pointermove',x0+i*18));
-    front.dispatchEvent(mk('pointerup',x0+108));
-  }, rowSel);
-  await sleep(300);
-}
 async function clickAndWait(p, sel, waitSel) { await p.locator(sel).click(); await ready(p, waitSel); }
 (async () => {
   const owner=await identity('E2E Owner', true), guest=await identity('E2E Guest');
@@ -95,11 +83,11 @@ async function clickAndWait(p, sel, waitSel) { await p.locator(sel).click(); awa
     // Ensure the seeded identity is a member of the journey bill.
     await api(`/api/bills/${billId}/join`,{method:'POST',headers:auth(guest)}).catch(()=>{});
     await ownerPage.reload({waitUntil:'networkidle'}); await ready(ownerPage,'#people-list');
-    const rows=await ownerPage.locator('.person-row').evaluateAll(rs=>rs.map(r=>({name:r.querySelector('.person-name')?.innerText||'',kebabs:r.querySelectorAll('.kebab-btn').length,body:r.innerText})));
+    const rows=await ownerPage.locator('.person-row').evaluateAll(rs=>rs.map(r=>({name:r.querySelector('.person-name')?.innerText||'',trash:r.querySelectorAll('.remove-person').length,body:r.innerText})));
     const own=rows.find(r=>r.name.includes('E2E Owner')), gro=rows.find(r=>r.name.includes('E2E Guest'));
     check('owner.detail-renders', await ownerPage.locator('text=UI Dinner').count()>0);
-    check('owner.own-row-nalangin-no-kebab', !!own && own.body.includes('Nalangin') && own.kebabs===0, JSON.stringify(own));
-    check('owner.guest-row-kebab', !!gro && gro.kebabs===1, JSON.stringify(gro));
+    check('owner.own-row-nalangin-no-trash', !!own && own.body.includes('Nalangin') && own.trash===0, JSON.stringify(own));
+    check('owner.guest-row-trash', !!gro && gro.trash===1, JSON.stringify(gro));
 
     const guestCtx=await browser.newContext({viewport:{width:390,height:844}}), guestPage=await pageFor(guestCtx,guest,'guest');
     await guestPage.goto(BASE+`/#/b/${billId}`,{waitUntil:'networkidle'}); await ready(guestPage,'.item-row');
@@ -116,10 +104,7 @@ async function clickAndWait(p, sel, waitSel) { await p.locator(sel).click(); awa
     const unpaid=await ownerPage.locator('.person-row').filter({hasText:'E2E Guest'}).innerText();
     check('owner.unmarks-guest-paid', unpaid.includes('Tandai lunas'), unpaid);
 
-    await swipeLeft(ownerPage,'.person-row.swipe-row');
-    const swipe=await ownerPage.locator('.person-row.swipe-row:has-text("E2E Guest") .swipe-front').evaluate(e=>({transform:e.style.transform,active:e.closest('.person-row').classList.contains('swipe-active')}));
-    check('owner.swipe-reveals-delete', swipe.transform.includes('84px') && swipe.active, JSON.stringify(swipe));
-    await ownerPage.locator('.person-row.swipe-row:has-text("E2E Guest") .swipe-del').evaluate(e=>e.click()); await ready(ownerPage,'.sheet');
+    await ownerPage.locator('.person-row:has-text("E2E Guest") .remove-person').click(); await ready(ownerPage,'.sheet');
     check('owner.delete-confirm-sheet', (await ownerPage.locator('.sheet').innerText()).includes('E2E Guest'));
     await ownerPage.locator('.sheet .btn-ghost, .sheet button:has-text("Batal")').first().click(); await sleep(250);
     check('owner.cancel-delete-keeps-bill', await ownerPage.locator('#people-list').count()===1 && (await ownerPage.locator('body').innerText()).includes('UI Dinner'));
