@@ -240,7 +240,8 @@ async function loadHomeInvites() {
 function billListStatus(b) {
   const paid = !!(b.settled || b.all_paid);
   const pendingPickers = Array.isArray(b.pending_names) ? b.pending_names.length : 0;
-  if (paid && pendingPickers) {
+  // v68: pending pickers block settle server-side now — show it first.
+  if (pendingPickers) {
     return { tone: "idle", label: "Menunggu memilih item", icon: "people" };
   }
   if (Number(b.total_unpaid) > 0 || Number(b.uncovered_idr) > 0) {
@@ -284,7 +285,7 @@ function personalStatusHtml(b) {
   // is what made a fresh bill claim a payment that never happened.
   // personal lines are always neutral: the chip already owns the status colour,
   // so colouring the line too makes one row scream two messages at once.
-  if (b.i_am_payer) return `<div class="item-share">Kamu yang membayar dahulu</div>`;
+  if (b.i_am_payer) return `<div class="item-share">Kamu yang nalangin</div>`;
   return b.my_paid
     ? `<div class="item-share">Kamu sudah bayar</div>`
     : `<div class="item-share">Kamu belum bayar</div>`;
@@ -298,8 +299,10 @@ function billRowHtml(b) {
   // give the eye something to scan, and both come from the same status object
   // as the chip so they can never disagree.
   return `
-    <div class="history-row is-${s.tone}" role="button" tabindex="0" data-id="${esc(b.id)}"
+    <div class="history-row is-${s.tone} swipe-row" role="button" tabindex="0" data-id="${esc(b.id)}"
          aria-label="Buka bill ${esc(b.title)}, ${esc(s.label)}">
+      <div class="swipe-under" aria-hidden="true"><span class="swipe-del">${ic("trash")} Hapus bill</span></div>
+      <div class="swipe-front">
       <div class="avatar status-mark" aria-hidden="true">${ic(s.icon)}</div>
       <div class="row-body">
         <div class="row-title">
@@ -312,11 +315,13 @@ function billRowHtml(b) {
         </div>
         ${personalStatusHtml(b)}
       </div>
-      <!-- Every row gets the same trash affordance. Ownership is checked on
-           click so guests get a clear explanation without an API request. -->
-      <button class="icon-btn ghost delete-bill" data-id="${esc(b.id)}"
-            data-title="${esc(b.title)}" data-manageable="${b.can_manage ? 1 : 0}"
-            aria-label="Hapus bill ${esc(b.title)}">${ic("trash")}</button>
+      <span class="row-actions">
+        ${b.can_manage ? `<button class="icon-btn ghost kebab-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Aksi bill ${esc(b.title)}">${ic("kebab")}</button>
+        <span class="row-menu" role="menu">
+          <button class="row-menu-item danger delete-bill" role="menuitem" data-id="${esc(b.id)}" data-title="${esc(b.title)}">Hapus bill</button>
+        </span>` : ""}
+      </span>
+      </div>
     </div>`;
 }
 
@@ -324,18 +329,28 @@ function bindBillRows(box, onDone) {
   $$(".history-row", box).forEach(r => {
     const open = () => location.hash = "#/b/" + r.dataset.id;
     r.addEventListener("click", (e) => {
+      if (e.target.closest(".row-menu")) { e.stopPropagation(); return; }
+      const kebab = e.target.closest(".kebab-btn");
+      if (kebab) {
+        e.stopPropagation();
+        const menu = r.querySelector(".row-menu");
+        const open = menu.classList.contains("is-open");
+        $$(".row-menu.is-open").forEach(m => m.classList.remove("is-open"));
+        $$(".kebab-btn[aria-expanded=true]").forEach(b => b.setAttribute("aria-expanded", "false"));
+        menu.classList.toggle("is-open", !open);
+        kebab.setAttribute("aria-expanded", String(!open));
+        return;
+      }
       const deleteButton = e.target.closest(".delete-bill");
       if (deleteButton) {
         e.stopPropagation();
-        if (deleteButton.dataset.manageable !== "1") {
-          toast("Hanya pemilik bill yang bisa menghapus");
-          return;
-        }
         openDeleteBillConfirm(deleteButton.dataset.id, deleteButton.dataset.title, onDone);
         return;
       }
       open();
     });
+    // swipe reveal binds only to rows the viewer can actually delete
+    if (r.querySelector(".row-menu-item.danger")) bindSwipeDelete(r);
     // the row is a div (it contains its own delete <button>, so it can't BE a
     // button) — give it real keyboard semantics instead
     r.addEventListener("keydown", (e) => {
@@ -890,7 +905,7 @@ function renderSettings() {
       }
       box.innerHTML = accts.map(a => `
         <div class="account-row">
-          ${brandChipHtml(a.brand)}
+          ${brandLogoHtml(a.brand)}
           <div style="flex:1;min-width:0;">
             <div class="item-name">${esc(brandLabel(a.brand))}</div>
             <div class="muted">${esc(a.account_no)}${a.holder_name ? " · " + esc(a.holder_name) : ""}</div>
@@ -1142,7 +1157,7 @@ function renderParsedResult(s, parsed, identityId, onAdded, existing) {
       <div class="card-title"><span>Ditemukan ${parsed.length} metode${dupCount ? `, ${dupCount} sudah ada` : ""}</span></div>
       ${parsed.map((p, i) => `
         <div class="account-row" style="${p._dup ? "opacity:.55;" : ""}">
-          <span class="paste-chip-wrap" data-i="${i}">${brandChipHtml(p.brand)}</span>
+          <span class="paste-chip-wrap" data-i="${i}">${brandLogoHtml(p.brand)}</span>
           <div style="flex:1;min-width:0;">
             <label class="sr-only" for="paste-brand-${i}">Bank / e-wallet buat ${esc(p.account_no)}</label>
             <select class="paste-brand-sel" id="paste-brand-${i}" data-i="${i}" style="font-size:13px;font-weight:600;padding:8px 32px 8px 10px;">
@@ -2030,11 +2045,11 @@ function renderVerify(ocr, manual = false) {
       <div role="radiogroup" aria-label="Pilih yang membayar" style="display:grid;gap:8px;">
         <label class="account-row" for="paid-by-myself-choice" style="cursor:pointer;border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;">
           <input type="radio" id="paid-by-myself-choice" name="payer-choice" value="me" ${verifyState.paidByMyself ? "checked" : ""}>
-          <span style="flex:1;"><strong>Aku yang bayar</strong><span class="muted" style="display:block;">Aku yang membayar dahulu.</span></span>
+          <span style="flex:1;"><strong>Aku yang bayar</strong><span class="muted" style="display:block;">Aku yang nalangin.</span></span>
         </label>
         <label class="account-row" for="paid-by-other-choice" style="cursor:pointer;border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;">
           <input type="radio" id="paid-by-other-choice" name="payer-choice" value="other" ${verifyState.paidByMyself ? "" : "checked"}>
-          <span style="flex:1;"><strong>Orang lain yang bayar</strong><span class="muted" style="display:block;">Tulis nama orang yang membayar dahulu.</span></span>
+          <span style="flex:1;"><strong>Orang lain yang bayar</strong><span class="muted" style="display:block;">Tulis nama orang yang nalangin.</span></span>
         </label>
       </div>
       <input type="checkbox" id="paid-by-me" class="hidden" ${verifyState.paidByMyself ? "checked" : ""} aria-hidden="true" tabindex="-1">

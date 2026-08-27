@@ -309,6 +309,7 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .collect-line { display:flex; justify-content:space-between; align-items:baseline;
                 gap:10px; font-size:13px; margin-bottom:6px; }
 .collect-in { color:var(--green); }
+.collect-success { color:var(--green); font-weight:600; }
 .collect-track { height:6px; border-radius:var(--r-full); background:var(--surface-2);
                  overflow:hidden; }
 .collect-fill { height:100%; border-radius:var(--r-full); background:var(--green);
@@ -326,9 +327,34 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .person-sub { font-size:12.5px; color:var(--text-3); margin-top:2px; }
 .person-right { text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:5px; flex-shrink:0; }
 .person-total { font-size:15px; font-weight:700; }
-.person-remove { width:44px; height:44px; min-height:44px; border-radius:var(--r-xs); background:transparent; color:var(--text-3);
-                 display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-.person-remove svg { width:16px; height:16px; }
+.person-actions,.row-actions { position:relative; width:40px; min-width:40px; height:44px; flex:0 0 40px; display:flex; align-items:center; justify-content:center; }
+.person-actions .kebab-btn,.row-actions .kebab-btn { width:40px; height:44px; min-height:44px; }
+.row-menu { display:none; position:absolute; z-index:var(--z-header); right:0; top:46px; min-width:220px; max-width:calc(100vw - 32px); padding:5px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-sm); box-shadow:var(--shadow-2); }
+.row-menu.is-open { display:block; }
+.row-menu-item,.row-menu-hint { display:block; width:100%; min-height:40px; padding:9px 11px; text-align:left; border-radius:7px; font-size:13px; line-height:1.35; }
+.row-menu-item { background:transparent; color:var(--text); }
+.row-menu-item.danger { color:var(--red); }
+.row-menu-hint { color:var(--text-3); }
+@media (hover:hover) { .row-menu-item:hover { background:var(--surface-2); } .row-menu-item.danger:hover { background:var(--red-soft); } }
+@media (hover:hover) { .history-row:hover .swipe-front { background:var(--surface-2); } }
+/* ----- v68b swipe-to-delete: reveal zone under the row front ----- */
+.swipe-row { position:relative; overflow:hidden; }
+.swipe-under { position:absolute; inset:0; display:none; align-items:center; justify-content:flex-end;
+               padding:0 18px; background:var(--red-soft); color:var(--red);
+               font-weight:700; font-size:13px; }
+.swipe-row.swipe-active .swipe-under { display:flex; }
+.swipe-under .swipe-del { display:inline-flex; align-items:center; gap:6px; }
+/* the front replaces the row as the flex container — inherit the row's gap so
+   the original layout survives the wrapper (bug: front collapsed to one
+   174px flex item, stacking the avatar/info/amount vertically) */
+.swipe-front { position:relative; background:var(--surface); touch-action:pan-y; will-change:transform;
+               display:flex; align-items:center; gap:inherit; flex:1; min-width:0; }
+/* ----- v68b brand logos: one uniform pill box so every logo matches ----- */
+.brand-logo { width:48px; height:28px; flex:0 0 48px; background:#fff; border:1px solid var(--border);
+              border-radius:8px; display:inline-flex; align-items:center; justify-content:center;
+              padding:4px 6px; box-sizing:border-box; }
+.brand-logo img { max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; display:block; }
+.brand-logo.logo-miss { display:none; }
 /* On phones keep identity and amount/status on one baseline row. The reserved
    right column prevents the remove control from colliding with the amount. */
 @media (max-width:430px) {
@@ -338,7 +364,7 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
                   align-items:center; justify-content:flex-end; gap:6px; }
   .person-total { white-space:nowrap; }
 }
-@media (hover:hover) { .person-remove:hover { background:var(--red-soft); color:var(--red); } }
+@media (hover:hover) { .person-actions .kebab-btn:hover,.row-actions .kebab-btn:hover { background:var(--surface-2); color:var(--text); } }
 
 /* ---------- attention card ---------- */
 .warn-card { background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:var(--r-md);
@@ -518,9 +544,7 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
                border-radius:var(--r-sm); cursor:pointer; position:relative;
                transition:background .14s var(--ease); }
 .history-row + .history-row { border-top:1px solid var(--border); border-radius:0; }
-.history-row .delete-bill svg { width:18px; height:18px; }
-.history-row .delete-bill.is-disabled { opacity:.35; pointer-events:none; }
-@media (hover:hover) { .history-row .delete-bill:not(.is-disabled):hover { color:var(--red); background:var(--red-soft); } }
+
 @media (hover:hover) { .history-row:hover { background:var(--surface-2); } }
 /* status colour anchor: a bar at the head of the row plus a tinted icon, so a
    long list is scannable without reading every chip */
