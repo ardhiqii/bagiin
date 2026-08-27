@@ -120,6 +120,20 @@ def _owner_id(bill_data: dict) -> str:
     return bill["creator_identity_id"]
 
 
+def _ensure_editable(bill_data: dict) -> None:
+    """Freeze contract (v68): a SETTLED bill is money-final.
+
+    Auto-settle is computed, not persisted (the status field stays "open"),
+    so a status-only guard let picks/joins/invites silently change amounts
+    under a settled banner (regression: test_pick_after_settle_must_be_
+    rejected_or_noop in test_e2e_users.py). Reopen paths stay open on
+    purpose: mark_paid is idempotent, unpaid IS the reopen, unsettle clears
+    the manual flag.
+    """
+    if _compute_response(bill_data)["settled"]:
+        raise HTTPException(409, "Bill udah lunas semua. Buka tanda lunas dulu kalau mau ubah.")
+
+
 def _can_manage(bill_data: dict, ident_id: str) -> bool:
     """Management powers: the CONFIRMED payer is the sole manager (v57).
 
@@ -308,7 +322,17 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
     # auto-settle). Manual override wins — it says "bill ini udah beres",
     # regardless of the roster/paid math below.
     settled_manual = bool(bill.get("settled_manual"))
-    auto_all_paid = bool(sel_ids) and len(result["people"]) > 1 and owed_ids <= paid_ids
+    # v68: a joined non-payer must have picked before the bill may
+    # auto-settle. A non-picker owes 0 only because unclaimed money falls
+    # back to the payer — counting that as "all paid" settled bills while
+    # someone was still choosing, and their later pick silently changed
+    # amounts under a settled banner (freeze regression in test_e2e_users).
+    # Payers are exempt: fronting the money IS their participation. Guests
+    # who will never pick still have the manual settle / leave / remove paths.
+    joined_roster = {p["identity_id"] for p in result["people"]}
+    non_payer_ids = joined_roster - ({paid_by_id} if paid_by_id else set())
+    auto_all_paid = (bool(sel_ids) and len(result["people"]) > 1
+                     and owed_ids <= paid_ids and non_payer_ids <= sel_ids)
     all_paid = settled_manual or auto_all_paid
     settled = settled_manual or (auto_all_paid and result["uncovered_idr"] == 0)
     # who may edit/close/delete (v57): the CONFIRMED payer is the sole
@@ -795,6 +819,7 @@ async def update_bill(bill_id: str, request: Request):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup, tidak dapat diedit")
+    _ensure_editable(bill_data)
     items = data.get("items") or []
     if not isinstance(items, list) or not items:
         raise HTTPException(400, "Minimal 1 item")
@@ -990,6 +1015,7 @@ def join_bill_via_link(bill_id: str, request: Request):
     bill_data = _bill_or_404(bill_id)
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
+    _ensure_editable(bill_data)
     ident = _identity_from_request(request)
     db.join_bill(bill_id, ident["id"], ident["name"])
     # joining through the link is accepting — void any pending invite for this
@@ -1014,6 +1040,7 @@ async def invite_to_bill(bill_id: str, request: Request):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
+    _ensure_editable(bill_data)
     data = await _read_json(request)
     target_id = _to_str(data.get("identity_id"), "Identity id", maxlen=64)
     if not target_id:
@@ -1060,6 +1087,7 @@ def accept_invite(bill_id: str, invite_id: int, request: Request):
     bill_data = _bill_or_404(bill_id)
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
+    _ensure_editable(bill_data)
     ident = _identity_from_request(request)
     inv = db.get_invite(invite_id)
     if not inv or inv["bill_id"] != bill_id or inv["identity_id"] != ident["id"]:
@@ -1120,6 +1148,7 @@ def remove_person(bill_id: str, identity_id: str, request: Request):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
+    _ensure_editable(bill_data)
     if identity_id == ident["id"]:
         raise HTTPException(400, "Tidak dapat menghapus diri sendiri (owner bill)")
     # the creator used to be unremovable. Since v57 they're a regular
@@ -1153,6 +1182,7 @@ def leave_bill(bill_id: str, request: Request):
     bill = bill_data["bill"]
     if bill["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
+    _ensure_editable(bill_data)
     ident = _identity_from_request(request)
     if _can_manage(bill_data, ident["id"]):
         raise HTTPException(400, "Owner bill tidak dapat keluar — pindahkan pembayar atau hapus bill")
@@ -1179,6 +1209,7 @@ async def set_selections(bill_id: str, request: Request):
     bill_data = _bill_or_404(bill_id)
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
+    _ensure_editable(bill_data)
     ident = _identity_from_request(request)
     raw_picks = data.get("picks") or []
     # legacy: bare item_ids list (qty 1 each)
@@ -1235,6 +1266,7 @@ async def set_item_slots(bill_id: str, item_id: int, request: Request):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup, tidak dapat diubah")
+    _ensure_editable(bill_data)
     item = next((i for i in bill_data["items"] if i["id"] == item_id), None)
     if not item:
         raise HTTPException(404, "Item tidak ditemukan")
@@ -1262,6 +1294,7 @@ async def release_selection(bill_id: str, item_id: int, identity_id: str, reques
     ident = _identity_from_request(request)
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
+    _ensure_editable(bill_data)
     if ident["id"] != identity_id and not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Hanya pemilik slot atau pembuat bill yang dapat melepasnya")
     item = next((i for i in bill_data["items"] if i["id"] == item_id), None)

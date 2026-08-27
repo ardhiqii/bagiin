@@ -114,12 +114,13 @@ def test_guest_picks_and_pays_still_settles():
     assert data["settled"] is True, f"normal flow must settle: {data['settled']}"
 
 
-def test_guest_joined_but_only_payer_has_share_settles():
-    """Guest joined but picked nothing -> the bill has started, the payer
-    (fallback creator) holds the only share and is auto-paid -> settled.
-    Mirrors test_features.test_paid_by's "settled immediately if only payer
-    selected items": a 2-person bill CAN be lunas even when only the payer
-    has a share; the solo-bill rule is about nobody having joined at all."""
+def test_guest_pending_blocks_settle_until_they_act():
+    """v68 (reverses the v59 rule): a guest who joined but picked nothing does
+    NOT settle the bill — their pick can still change amounts, so settling
+    under them froze money that wasn't final (the settled-bill-mutable bug).
+    The bill settles once they act: pick + pay. Escape hatches for a guest
+    who will never pick: they leave, the payer removes them, or manual settle.
+    Mirrors test_features.test_paid_by's pending-picker section."""
     aufa = db.new_identity("Aufa59d", role="creator")
     amel = db.new_identity("Amel59d")
     bid = _mk_bill(aufa, items=[{"name": "A", "price": 100000}],
@@ -127,17 +128,21 @@ def test_guest_joined_but_only_payer_has_share_settles():
                    participants=["Aufa59d", "Amel59d"])
     c.post(f"/api/bills/{bid}/join", headers=_H(amel))
     iid = _item_ids(bid)[0]
-    # only the creator (fallback payer) has a share
+    # only the creator (fallback payer) has a share, guest pending -> not settled
     c.post(f"/api/bills/{bid}/selections", headers=_H(aufa),
            json={"picks": [{"item_id": iid, "qty": 1}]})
-
     data = _detail(bid, aufa)
-    assert data["settled"] is True, f"2-person bill with payer-only share settles: {data['settled']}"
+    assert data["settled"] is False, "pending picker must block auto-settle"
+    # guest acts: picks and pays -> settles
+    c.post(f"/api/bills/{bid}/selections", headers=_H(amel),
+           json={"picks": [{"item_id": iid, "qty": 1}]})
+    c.post(f"/api/bills/{bid}/payments/{amel['id']}/paid", headers=_H(amel))
+    assert _detail(bid, aufa)["settled"] is True
 
 
 if __name__ == "__main__":
     test_solo_creator_picked_everything_not_settled()
     test_solo_bill_nothing_picked_not_settled()
     test_guest_picks_and_pays_still_settles()
-    test_guest_joined_but_only_payer_has_share_settles()
+    test_guest_pending_blocks_settle_until_they_act()
     print("PASS settled-not-solo tests")

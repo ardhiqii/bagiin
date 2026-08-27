@@ -164,7 +164,7 @@ def test_payer_placeholder_resolves_on_join():
     bid = _mk_bill(creator, paid_by_name="Budi", items=[{"name": "A", "price": 60000}],
                    subtotal=60000, tax=6000, total=66000)
     ids = _ids(bid)
-    # Budi joins + picks -> payer resolves to him, he's auto-paid, settled
+    # Budi joins + picks -> payer resolves to him, he's auto-paid
     c.post(f"/api/bills/{bid}/join", headers=_H(budi["id"]))
     r = c.post(f"/api/bills/{bid}/selections", headers=_H(budi["id"]),
                json={"picks": [ids["A"]]})
@@ -173,7 +173,13 @@ def test_payer_placeholder_resolves_on_join():
     assert data["paid_by_name"] == "Budi"
     budi_p = next(p for p in data["people"] if p["identity_id"] == budi["id"])
     assert budi_p["paid"] == "paid"
-    assert data["settled"] is True
+    # v68: the creator (non-payer) hasn't picked -> pending picker blocks
+    # auto-settle; once they pick and pay, the bill settles
+    assert data["settled"] is False
+    c.post(f"/api/bills/{bid}/selections", headers=_H(creator["id"]),
+           json={"picks": [ids["A"]]})
+    c.post(f"/api/bills/{bid}/payments/{creator['id']}/paid", headers=_H(creator["id"]))
+    assert c.get(f"/api/bills/{bid}", headers=_H(creator["id"])).json()["settled"] is True
     print("PASS payer placeholder resolves on join + auto-paid")
 
 

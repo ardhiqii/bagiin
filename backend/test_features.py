@@ -333,6 +333,13 @@ def test_paid_by():
     # settled immediately if only payer selected items
     data2 = db.get_bill(bid2)
     db.set_selections(bid2, guest["id"], [data2["items"][0]["id"]])
+    # v68: the creator (non-payer) hasn't picked yet — a pending picker
+    # BLOCKS auto-settle even though unclaimed money falls back to the payer
+    resp2 = _compute_response(db.get_bill(bid2))
+    assert resp2["settled"] is False, "pending picker must block auto-settle"
+    db.set_selections(bid2, creator["id"], [data2["items"][0]["id"]])
+    assert _compute_response(db.get_bill(bid2))["settled"] is False  # picked, unpaid
+    db.mark_paid(bid2, creator["id"])
     assert _compute_response(db.get_bill(bid2))["settled"] is True
 
     # set_paid_by: creator re-assigns payer by identity (must be in roster)

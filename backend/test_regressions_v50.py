@@ -138,12 +138,18 @@ def test_my_paid_false_for_creator_without_share():
     _pick(bid, amel, item_id)
     _pick(bid, budi, item_id)
 
-    # payer paid; both guests paid; creator has NO share -> settled
+    # payer paid; both guests paid; creator has NO share and hasn't picked
     r = c.post(f"/api/bills/{bid}/payments/{budi['id']}/paid", headers=HB)
     assert r.status_code == 200, r.text
     row = _row_for(aufa, bid)
     assert row["my_paid"] is False, row
-    assert row["settled"] is True, f"guests settled everything: {row}"
+    # v68: creator is a pending picker (picked nothing) — they BLOCK settle
+    # even though their unclaimed share falls back to the payer
+    assert row["settled"] is False, f"pending picker must block settle: {row}"
+    _pick(bid, aufa, item_id)
+    c.post(f"/api/bills/{bid}/payments/{aufa['id']}/paid", headers=_H(aufa["id"]))
+    row = _row_for(aufa, bid)
+    assert row["settled"] is True, f"everyone picked+paid settles: {row}"
 
 
 def test_bills_list_exposes_idle_joined_picker_name():

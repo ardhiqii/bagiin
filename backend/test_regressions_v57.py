@@ -101,6 +101,9 @@ def test_leaver_paid_record_dropped():
            headers=_H(bob))
     c.post(f"/api/bills/{bid}/payments/{bob['id']}/paid", headers=_H(bob))
 
+    # v68 freeze: a paid member can't leave a settled bill (the ledger must
+    # never lose their payment record while money is final) — unmark first.
+    c.post(f"/api/bills/{bid}/payments/{bob['id']}/unpaid", headers=_H(bob))
     r = c.post(f"/api/bills/{bid}/leave", headers=_H(bob))
     assert r.status_code == 200, r.text
     assert all(p["identity_id"] != bob["id"] for p in r.json()["people"])
