@@ -97,11 +97,10 @@ function ic(name, cls) {
 
 // Shared bill status source of truth. app.js loads before screen-specific scripts.
 function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
-  if (soloSoFar) return `<span class="chip chip-grey">Belum ada yang gabung</span>`;
-  const pendingPickers = !closed ? (data.people || []).filter((p) =>
+  const pendingPickers = (data.people || []).filter((p) =>
     p.identity_id !== data.paid_by_id &&
     !p.subtotal_idr && !Object.values(data.sel_by_item || {}).some(list =>
-      list.some(s => s.id === p.identity_id))) : [];
+      list.some(s => s.id === p.identity_id)));
   if ((data.settled || data.all_paid) && pendingPickers.length) {
     if (pendingPickers.length === 1) {
       const name = String(pendingPickers[0].name || "");
@@ -110,27 +109,19 @@ function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
     }
     return `<span class="chip chip-grey">Menunggu ${pendingPickers.length} orang memilih item</span>`;
   }
-  if (data.settled) {
-    return closed
-      ? `<span class="chip chip-green">${ic("check")}Ditutup · lunas</span>`
-      : `<span class="chip chip-green">${ic("check")}Lunas</span>`;
-  }
-  if (closed) {
-    if ((data.people || []).length <= 1) return `<span class="chip chip-grey">Ditutup · selesai</span>`;
-    return totalUnpaid > 0 || data.uncovered_idr > 0
-      ? `<span class="chip chip-red">Ditutup · belum lunas</span>`
-      : `<span class="chip chip-grey">Ditutup · selesai</span>`;
-  }
-  if (data.all_paid && data.uncovered_idr === 0)
-    return `<span class="chip chip-green">${ic("check")} Semua lunas</span>`;
   const total = Math.max(0, data.bill.total_idr || 0);
   const collected = Math.max(0, Math.min(total, (data.people || [])
     .filter(p => p.paid === "paid" && p.identity_id !== data.paid_by_id)
     .reduce((sum, p) => sum + (p.total_idr || 0), 0)));
-  if (collected > 0 && collected < total)
-    return `<span class="chip chip-red">Sebagian lunas<br><small>Sudah masuk ${fmt(collected)} · Belum ${fmt(total - collected)}</small></span>`;
-  if (totalUnpaid > 0) return `<span class="chip chip-red">${fmt(totalUnpaid)} belum dibayar</span>`;
+  if (totalUnpaid > 0) {
+    if (collected > 0 && collected < total)
+      return `<span class="chip chip-red">Sebagian lunas<br><small>Sudah masuk ${fmt(collected)} · Belum ${fmt(total - collected)}</small></span>`;
+    return `<span class="chip chip-red">${fmt(totalUnpaid)} belum dibayar</span>`;
+  }
   if (data.uncovered_idr > 0) return `<span class="chip chip-red">${fmt(data.uncovered_idr)} belum terambil</span>`;
+  if (data.settled || data.all_paid)
+    return `<span class="chip chip-green">${ic("check")}Lunas</span>`;
+  if (soloSoFar) return `<span class="chip chip-grey">Belum ada yang gabung</span>`;
   return `<span class="chip chip-grey">Belum ada yang memilih</span>`;
 }
 
