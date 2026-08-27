@@ -1525,7 +1525,14 @@ function renderCreatorView(data) {
     }
   });
   const pickBtn = $("#pick-mine-btn");
-  if (pickBtn) pickBtn.addEventListener("click", () => renderCreatorPick(data));
+  if (pickBtn) pickBtn.addEventListener("click", () => {
+    // Creator pick is a full-shell pseudo-layer on the same hash.
+    if (pickLayer) pickLayer.finishQuiet();
+    pickLayer = beginEditorLayer(data.bill.id);
+    const layer = pickLayer;
+    addEventListener("popstate", () => { if (pickLayer === layer) pickLayer = null; }, { once: true });
+    renderCreatorPick(data);
+  });
   const setPayerBtn = $("#set-payer-btn");
   if (setPayerBtn) setPayerBtn.addEventListener("click", () => openSetPayerSheet(data));
   // v62: confirm the name-resolved payer — same PUT the sheet uses, one tap.
@@ -1870,6 +1877,8 @@ function openDeleteBillConfirm(billId, title, onDone) {
 }
 
 // ---------- Creator pick mode: pick your own items ----------
+let pickLayer = null;
+
 function renderCreatorPick(data) {
   const app = $("#app");
   const me = state.identity;
@@ -1922,9 +1931,19 @@ function renderCreatorPick(data) {
     </div>
     ${shell(main, side)}`;
 
-  $("#back-btn").addEventListener("click", () => loadBillView(data.bill.id));
+  $("#back-btn").addEventListener("click", () => {
+    const layer = pickLayer;
+    pickLayer = null;
+    if (layer) layer.finish(false);
+    else loadBillView(data.bill.id);
+  });
   bindItemRows(data, me);
-  $("#done-btn").addEventListener("click", () => loadBillView(data.bill.id));
+  $("#done-btn").addEventListener("click", () => {
+    const layer = pickLayer;
+    pickLayer = null;
+    if (layer) layer.finishQuiet();
+    loadBillView(data.bill.id);
+  });
   watchDock();
 }
 
