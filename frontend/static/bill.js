@@ -296,7 +296,22 @@ async function loadBillView(billId) {
   }
 }
 
+let guestLayer = null;
+
+function enterGuestViewFromName(billId, data, me) {
+  if (guestLayer) guestLayer.finishQuiet();
+  guestLayer = beginEditorLayer(billId);
+  const layer = guestLayer;
+  addEventListener("popstate", () => { if (guestLayer === layer) guestLayer = null; }, { once: true });
+  renderGuestView(data, me);
+}
+
 function renderGuestNamePrompt(billId, data) {
+  // A gesture-pop reloads the bill; the session then decides whether gate or picker is valid.
+  if (guestLayer) guestLayer.finishQuiet();
+  guestLayer = beginEditorLayer(billId);
+  const layer = guestLayer;
+  addEventListener("popstate", () => { if (guestLayer === layer) guestLayer = null; }, { once: true });
   const app = $("#app");
   const saved = lsGet(LS_KEYS.name, "");
   const payerName = data.paid_by_name || data.creator_name;
@@ -336,7 +351,12 @@ function renderGuestNamePrompt(billId, data) {
         </form>
         <p class="muted" style="margin-top:12px;">Tanpa akun. Namamu hanya untuk menandai item yang kamu ambil, dan hanya tersimpan di perangkat ini.</p>
       </div>`)}`;
-  $("#guest-back").addEventListener("click", () => location.hash = "#/");
+  $("#guest-back").addEventListener("click", () => {
+    const layer = guestLayer;
+    guestLayer = null;
+    if (layer) layer.finishQuiet();
+    location.hash = "#/";
+  });
   const input = $("#guest-name");
   input.focus();
   $("#guest-form").addEventListener("submit", (e) => {
@@ -344,17 +364,20 @@ function renderGuestNamePrompt(billId, data) {
     withBusy($("#guest-go"), "Bentar...", async () => {
       const name = input.value.trim();
       if (!name) { toast("Isi nama dulu"); input.focus(); return; }
+      const layer = guestLayer;
+      guestLayer = null;
+      if (layer) layer.finishQuiet();
       try {
         await ensureIdentity(name);
         const fresh = await apiJson("/api/bills/" + billId + "/join", "POST", {});
-        renderGuestView(fresh, state.identity);
+        enterGuestViewFromName(billId, fresh, state.identity);
       } catch (e2) {
         toast(e2.message);
         // A closed bill still 403s on join — that guest should see the final
         // split anyway. But if we never got an identity (the create call
         // itself failed), renderGuestView would blow up on me.id, so stay put
         // and let them retry (bug: offline at this step = white screen).
-        if (state.identity) renderGuestView(data, state.identity);
+        if (state.identity) enterGuestViewFromName(billId, data, state.identity);
       }
     });
   });
