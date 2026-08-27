@@ -246,17 +246,14 @@ function billListStatus(b) {
   return { tone: "due", label: "Belum lunas", icon: "receipt" };
 }
 
-// Colour means MONEY here: green = beres, red = masih ada yang belum dibayar,
-// abu = tidak ada yang ketagih (selesai / belum jalan). "Belum dipilih" used to
-// wear the accent, so a normal list came up with four orange rows shouting the
-// same colour as the "Buat Bill Baru" button — nothing stood out any more.
-const STATUS_CHIP = { ok: "chip-green", due: "chip-red", done: "chip-grey", idle: "chip-grey" };
-
 function billListStatusChip(b) {
-  // text-only chips: the row avatar already carries the status icon, so an icon
-  // on SOME chips but not others is just noise.
-  const s = billListStatus(b);
-  return `<span class="chip ${STATUS_CHIP[s.tone]}">${esc(s.label)}</span>`;
+  // List rows expose only summary fields: map them to the shared helper's detail shape; pick-state remains unknown here.
+  const data = {
+    bill: { total_idr: b.total_idr || 0 }, people: [], sel_by_item: {},
+    paid_by_id: b.paid_by_identity_id, settled: b.settled,
+    all_paid: b.all_paid, uncovered_idr: b.uncovered_idr,
+  };
+  return renderBillStatusChip(data, b.status === "closed", b.total_unpaid || 0, false);
 }
 
 // personal line for the CURRENT viewer — only meaningful while the bill is
