@@ -9,15 +9,22 @@ pointed at /var/www/bagiin-uploads — a PermissionError here, and test JPEGs
 written into the live directory on the VPS.
 """
 import os
+import shutil
 import tempfile
+import atexit
 from pathlib import Path
 
 import pytest
 
-os.environ.setdefault(
-    "BAGIIN_UPLOAD_DIR",
-    str(Path(tempfile.mkdtemp(prefix="bagiin-test-uploads-"))),
-)
+_UPLOAD_TMP = Path(tempfile.mkdtemp(prefix="bagiin-test-uploads-"))
+os.environ.setdefault("BAGIIN_UPLOAD_DIR", str(_UPLOAD_TMP))
+
+
+@atexit.register
+def _rm_upload_tmp():
+    """Every pytest session used to leak one bagiin-test-uploads-XXXX dir into
+    /tmp forever (700+ accumulated). Removed when the process exits cleanly."""
+    shutil.rmtree(_UPLOAD_TMP, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True, scope="session")
