@@ -95,6 +95,41 @@ function ic(name, cls) {
     stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 }
 
+// Shared bill status source of truth. app.js loads before screen-specific scripts.
+function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
+  if (soloSoFar) return `<span class="chip chip-grey">Belum ada yang gabung</span>`;
+  const pendingPickers = !closed ? (data.people || []).filter((p) =>
+    p.identity_id !== data.paid_by_id &&
+    !p.subtotal_idr && !Object.values(data.sel_by_item || {}).some(list =>
+      list.some(s => s.id === p.identity_id))) : [];
+  if ((data.settled || data.all_paid) && pendingPickers.length) {
+    const names = pendingPickers.map((p) => esc(p.name)).join(", ");
+    return `<span class="chip chip-grey">Menunggu ${names} memilih item</span>`;
+  }
+  if (data.settled) {
+    return closed
+      ? `<span class="chip chip-green">${ic("check")}Ditutup · lunas</span>`
+      : `<span class="chip chip-green">${ic("check")}Lunas</span>`;
+  }
+  if (closed) {
+    if ((data.people || []).length <= 1) return `<span class="chip chip-grey">Ditutup · selesai</span>`;
+    return totalUnpaid > 0 || data.uncovered_idr > 0
+      ? `<span class="chip chip-red">Ditutup · belum lunas</span>`
+      : `<span class="chip chip-grey">Ditutup · selesai</span>`;
+  }
+  if (data.all_paid && data.uncovered_idr === 0)
+    return `<span class="chip chip-green">${ic("check")} Semua lunas</span>`;
+  const total = Math.max(0, data.bill.total_idr || 0);
+  const collected = Math.max(0, Math.min(total, (data.people || [])
+    .filter(p => p.paid === "paid" && p.identity_id !== data.paid_by_id)
+    .reduce((sum, p) => sum + (p.total_idr || 0), 0)));
+  if (collected > 0 && collected < total)
+    return `<span class="chip chip-red">Sebagian lunas<br><small>Sudah masuk ${fmt(collected)} · Belum ${fmt(total - collected)}</small></span>`;
+  if (totalUnpaid > 0) return `<span class="chip chip-red">${fmt(totalUnpaid)} belum dibayar</span>`;
+  if (data.uncovered_idr > 0) return `<span class="chip chip-red">${fmt(data.uncovered_idr)} belum terambil</span>`;
+  return `<span class="chip chip-grey">Belum ada yang memilih</span>`;
+}
+
 // ---------- API ----------
 async function api(path, opts = {}) {
   const headers = Object.assign({}, opts.headers || {});

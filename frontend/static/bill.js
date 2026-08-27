@@ -1209,52 +1209,7 @@ function openAccountsSheet(data) {
 // (all_paid/totalUnpaid-based) for the second row, so one card could show
 // "Lunas" next to "Rp X belum dibayar" (bug: two status systems, one screen).
 function creatorStatusChip(data, closed, totalUnpaid, soloSoFar) {
-  if (soloSoFar) return `<span class="chip chip-grey">Belum ada yang gabung</span>`;
-  // A settled/all-paid read is WRONG while invited members still idle on
-  // selection: backend marks the bill money-complete because unclaimed items
-  // fall through to the payer, yet participants who never picked anything can
-  // still reshuffle every split. Report that honestly instead of a green
-  // claim (bug: fresh 2-person bill showed Lunas while Amel had Rp 0 items).
-  const pendingPickers = !closed ? (data.people || []).filter((p) =>
-    p.identity_id !== data.paid_by_id &&
-    !p.subtotal_idr && !hasPickedAny(data, p.identity_id)) : [];
-  if ((data.settled || data.all_paid) && pendingPickers.length) {
-    const names = pendingPickers.map((p) => esc(p.name)).join(", ");
-    return `<span class="chip chip-grey">Menunggu ${names} memilih item</span>`;
-  }
-  if (data.settled) {
-    return closed
-      ? `<span class="chip chip-green">${ic("check")}Ditutup · lunas</span>`
-      : `<span class="chip chip-green">${ic("check")}Lunas</span>`;
-  }
-  if (closed) {
-    // a closed bill nobody but the creator ever joined isn't "Belum Lunas" —
-    // nobody owes anybody anything (bug: solo closed bill said "Belum Lunas")
-    if ((data.people || []).length <= 1)
-      return `<span class="chip chip-grey">Ditutup · selesai</span>`;
-    return totalUnpaid > 0 || data.uncovered_idr > 0
-      ? `<span class="chip chip-red">Ditutup · belum lunas</span>`
-      : `<span class="chip chip-grey">Ditutup · selesai</span>`;
-  }
-  if (data.all_paid && data.uncovered_idr === 0)
-    return `<span class="chip chip-green">${ic("check")} Semua lunas</span>`;
-  const total = Math.max(0, data.bill.total_idr || 0);
-  const collected = Math.max(0, Math.min(total, data.people
-    .filter(p => p.paid === "paid" && p.identity_id !== data.paid_by_id)
-    .reduce((sum, p) => sum + (p.total_idr || 0), 0)));
-  if (collected > 0 && collected < total)
-    return `<span class="chip chip-red">Sebagian lunas<br><small>Sudah masuk ${fmt(collected)} · Belum ${fmt(total - collected)}</small></span>`;
-  if (totalUnpaid > 0) {
-    // "belum dibayar" (orang) vs "belum keambil" (bagian kosong) vs "belum
-    // beres" (jumlah dua-duanya, di rail). Tiga angka ini pernah sama-sama
-    // dilabelin "belum lunas", jadi header bilang Rp 35.280 sementara rail
-    // bilang Rp 53.280 buat hal yang kelihatannya sama (bug: angka saling
-    // bantah di satu layar).
-    return `<span class="chip chip-red">${fmt(totalUnpaid)} belum dibayar</span>`;
-  }
-  if (data.uncovered_idr > 0)
-    return `<span class="chip chip-red">${fmt(data.uncovered_idr)} belum terambil</span>`;
-  return `<span class="chip chip-grey">Belum ada yang memilih</span>`;
+  return renderBillStatusChip(data, closed, totalUnpaid, soloSoFar);
 }
 
 function renderCreatorView(data) {
@@ -1366,21 +1321,16 @@ function renderCreatorView(data) {
              never disagree -->
         <span>${statusChip}</span>
       </div>
-      ${data.bill.merchant ? `<div class="muted" style="margin-top:4px;">${esc(data.bill.merchant)}</div>` : ""}
+      ${data.bill.title || data.bill.merchant ? `<div style="margin-top:4px;">${esc((data.bill.title || "").trim() || data.bill.merchant)}</div>` : ""}
       ${data.bill.transacted_at ? `<div class="muted">${esc(shortDate(data.bill.transacted_at))}</div>` : ""}
-      ${data.bill.tax_included ? `<div class="muted" style="margin-top:4px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — tidak ada PPN tambahan</div>` : ""}
-      ${soloSoFar ? "" : `
-      <!-- progress, not a second status: the chip above already names the
-           state. This row used to reprint that same chip next to "udah
-           masuk", so "Rp 88.975 belum dibayar" was printed twice in one card
-           (bug: the dedup that stopped the two disagreeing made them identical) -->
       <div class="collect" style="margin-top:12px;">
-        <div class="collect-line">
-          <span class="muted">Sudah masuk</span>
-          <span><b class="money-sm${totalPaid > 0 ? " collect-in" : ""}">${fmt(totalPaid)}</b> <span class="muted">dari ${fmt(data.bill.total_idr)}</span></span>
-        </div>
         <div class="collect-track"><div class="collect-fill" style="width:${data.bill.total_idr > 0 ? Math.min(100, Math.round(totalPaid * 100 / data.bill.total_idr)) : 0}%;"></div></div>
-      </div>`}
+        <div class="collect-line" style="margin-top:6px;">
+          <span class="muted">Sudah masuk <b class="money-sm${totalPaid > 0 ? " collect-in" : ""}">${fmt(totalPaid)}</b></span>
+          <span class="muted">dari <b class="money-sm">${fmt(data.bill.total_idr)}</b></span>
+        </div>
+      </div>
+      ${data.bill.tax_included ? `<div class="muted" style="margin-top:4px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — tidak ada PPN tambahan</div>` : ""}
       ${closedNotSettled ? `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} Bill sudah ditutup, tetapi ${totalUnpaid > 0 ? `masih ada ${fmt(totalUnpaid)} yang belum dibayar` : `masih ada ${fmt(data.uncovered_idr)} bagian yang tidak terambil`}. Buka lagi kalau ingin memperbaikinya.</p>` : ""}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;">
         <span class="muted">Yang membayar dahulu: <strong style="color:var(--text);">${esc(payerName)}</strong>${payerRow && payerRow.total_idr > 0 ? ` · bagian dia ${fmt(payerRow.total_idr)}` : ""}</span>
