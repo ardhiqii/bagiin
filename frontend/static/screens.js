@@ -15,7 +15,7 @@
 function identityErrorHtml(e) {
   if (e && e.status === 404) {
     return `<div class="empty-state">${ic("alert")}
-      <p><strong>Sesi kamu udah gak dikenal server.</strong></p>
+      <p><strong>Sesi kamu sudah tidak dikenal server.</strong></p>
       <p class="muted">Biasanya ini kejadian kalau data device kamu kehapus atau kepindah.
         Mulai ulang buat bikin identitas baru.</p>
       <button class="btn-primary stale-identity-reset" style="margin-top:14px;">Mulai Ulang</button>
@@ -37,8 +37,8 @@ function renderOnboarding() {
     <div style="min-height:66dvh;display:flex;flex-direction:column;justify-content:center;max-width:420px;margin:0 auto;">
       <div style="margin-bottom:14px;">${brandMark(52)}</div>
       <div class="brand" style="font-size:24px;margin-bottom:10px;">Bagiin<span class="dot">.</span></div>
-      <h1>Bagi bill bareng jadi gak ribet.</h1>
-      <p class="muted" style="margin:8px 0 22px;">Foto struk, share link, semua milih itemnya sendiri. Pajaknya kebagi otomatis.</p>
+      <h1>Bagi bill dengan teman jadi lebih mudah.</h1>
+      <p class="muted" style="margin:8px 0 22px;">Foto struk, bagikan tautan, semua orang memilih itemnya sendiri. Pajak otomatis ikut terbagi.</p>
       <form id="onboard-form" novalidate>
         <div class="field">
           <label for="name-input">Siapa nama kamu?</label>
@@ -47,7 +47,7 @@ function renderOnboarding() {
         </div>
         <button class="btn-primary" type="submit" id="onboard-btn">Masuk</button>
       </form>
-      <p class="muted" style="margin-top:14px;text-align:center;">Tanpa akun. Nama kamu cuma disimpen di device ini.</p>
+      <p class="muted" style="margin-top:14px;text-align:center;">Tanpa akun. Nama kamu hanya disimpen di device ini.</p>
       <p style="margin-top:6px;text-align:center;">
         <button class="btn-ghost btn-sm btn-auto" id="restore-link" aria-expanded="false" aria-controls="restore-box">
           Punya kode pemulihan?
@@ -187,17 +187,17 @@ async function loadHomeInvites() {
           <button class="btn-primary btn-sm inv-accept">${ic("check")} Gabung</button>
           <button class="btn-ghost btn-sm inv-decline" aria-label="Tolak undangan">${ic("x")}</button>
         </div>`).join("")}
-      <p class="muted" style="margin-top:8px;font-size:12.5px;">${invites.length > 1 ? "Kamu diundang ke beberapa bill. Terima yang mau kamu ikutin." : "Kamu diundang langsung — gak perlu link lagi."}</p>
+      <p class="muted" style="margin-top:8px;font-size:12.5px;">${invites.length > 1 ? "Kamu diundang ke beberapa bill. Terima yang mau kamu ikutin." : "Kamu diundang langsung — tidak perlu link lagi."}</p>
     </div>`;
   $$(".inv-accept", box).forEach(b => b.addEventListener("click", async (ev) => {
     const row = b.closest(".invite-row");
     const invId = row.dataset.invite, billId = row.dataset.bill;
     // no busy lock meant a double-tap fired two accepts, and the second's
-    // 400 replaced "Udah gabung 🎉" with "Undangan ini udah diproses" (bug)
+    // 400 replaced "Udah gabung 🎉" with "Undangan ini sudah diproses" (bug)
     await withBusy(b, "Gabung...", async () => {
       try {
         await apiJson(`/api/bills/${billId}/invites/${invId}/accept`, "POST", {});
-        toast("Udah gabung 🎉");
+        toast("Sudah bergabung 🎉");
         // re-render the whole card, not just row.remove(): the footer line is
         // written from invites.length, so removing one of two rows left "Kamu
         // diundang ke beberapa bill" over a single invite
@@ -217,7 +217,7 @@ async function loadHomeInvites() {
     // invite forever)
     const ok = await confirmSheet({
       title: "Tolak undangan?",
-      body: "Undangan ini bakal ilang — buat nerima lagi nanti, minta yang ngundang kirim ulang.",
+      body: "Undangan ini akan terhapus — untuk menerimanya lagi nanti, minta pengundangnya mengirim ulang.",
       confirmText: "Tolak", cancelText: "Kembali", danger: true,
     });
     if (!ok) return;
@@ -240,14 +240,14 @@ function billListStatus(b) {
   if (b.status === "closed") return { tone: "done", label: "Selesai", icon: "check" };
   if (b.settled) return { tone: "ok", label: "Lunas", icon: "check" };
   // a bill nobody has picked from isn't "belum lunas" — nobody owes anything
-  // yet. Saying so put a red chip next to a green "Kamu udah bayar" on a bill
+  // yet. Saying so put a red chip next to a green "Kamu sudah bayar" on a bill
   // where literally nothing had happened (bug: chips contradicted each other).
   if (!b.has_picks) return { tone: "idle", label: "Belum ada yang milih", icon: "receipt" };
   return { tone: "due", label: "Belum lunas", icon: "receipt" };
 }
 
 // Colour means MONEY here: green = beres, red = masih ada yang belum dibayar,
-// abu = gak ada yang ketagih (selesai / belum jalan). "Belum dipilih" used to
+// abu = tidak ada yang ketagih (selesai / belum jalan). "Belum dipilih" used to
 // wear the accent, so a normal list came up with four orange rows shouting the
 // same colour as the "Buat Bill Baru" button — nothing stood out any more.
 const STATUS_CHIP = { ok: "chip-green", due: "chip-red", done: "chip-grey", idle: "chip-grey" };
@@ -266,13 +266,13 @@ function billListStatusChip(b) {
 // closed debts invisible (bug: chip said "Selesai" while the user still owed).
 function personalStatusHtml(b) {
   if (b.settled || !b.has_picks) return "";
-  // the payer never "paid" — they fronted the money. Calling that "udah bayar"
+  // the payer never "paid" — they fronted the money. Calling that "sudah bayar"
   // is what made a fresh bill claim a payment that never happened.
   // personal lines are always neutral: the chip already owns the status colour,
   // so colouring the line too makes one row scream two messages at once.
-  if (b.i_am_payer) return `<div class="item-share">Kamu yang nalangin</div>`;
+  if (b.i_am_payer) return `<div class="item-share">Kamu yang membayar dahulu</div>`;
   return b.my_paid
-    ? `<div class="item-share">Kamu udah bayar</div>`
+    ? `<div class="item-share">Kamu sudah bayar</div>`
     : `<div class="item-share">Kamu belum bayar</div>`;
 }
 
@@ -592,7 +592,7 @@ async function loadBillList(useCache) {
       if (inlineBox) inlineBox.innerHTML = "";
       updateListSummary(0, 0);
       box.innerHTML = `<div class="empty-state">${ic("empty")}
-        <p>Belum ada bill.</p><p class="muted">Bill yang kamu buat atau kamu ikutin bakal nongol di sini.</p></div>`;
+        <p>Belum ada bill.</p><p class="muted">Bill yang kamu buat atau kamu ikuti akan muncul di sini.</p></div>`;
       return;
     }
     if (ctlBtn) ctlBtn.classList.remove("hidden");
@@ -615,7 +615,7 @@ async function loadBillList(useCache) {
     updateListSummary(filtered.length, bills.length);
     if (!filtered.length) {
       box.innerHTML = `<div class="empty-state">${ic("empty")}
-        <p>Gak ada bill yang cocok.</p><p class="muted">Coba ganti filter-nya.</p>
+        <p>Tidak ada bill yang cocok.</p><p class="muted">Coba ganti filternya.</p>
         <button type="button" class="btn-outline btn-sm" id="list-empty-reset" style="margin-top:14px;">Reset filter</button></div>`;
       $("#list-empty-reset", box).addEventListener("click", resetListControls);
       return;
@@ -721,7 +721,7 @@ function renderSettings() {
     <div class="card">
       <div class="card-title"><span>Kode Pemulihan</span></div>
       <p class="muted" style="margin-bottom:12px;">
-        Kode buat mindahin akun kamu ke browser atau HP lain. Kodenya cuma ditampilin sekali
+        Kode untuk memindahkan akun kamu ke browser atau perangkat lain. Kode ini hanya ditampilkan sekali
         — pas dibuat. Kalau kamu bikin kode baru, kode lama langsung mati.
       </p>
       <div id="code-box"><div class="sk sk-line" style="height:44px;"></div></div>
@@ -732,11 +732,11 @@ function renderSettings() {
       <div class="toggle-row" style="padding:10px 0;">
         <div>
           <span class="label-strong">Langsung masuk bill</span>
-          <span class="muted" style="font-size:12.5px;display:block;margin-top:2px;">Kalau ada yang undang kamu ke bill, kamu langsung ikut — gak perlu klik apa-apa, kayak grup WA.</span>
+          <span class="muted" style="font-size:12.5px;display:block;margin-top:2px;">Kalau ada yang undang kamu ke bill, kamu langsung ikut — tidak perlu klik apa-apa, kayak grup WA.</span>
         </div>
         <button class="switch" id="auto-accept-switch" role="switch" aria-checked="true" aria-label="Langsung masuk bill pas diundang" disabled></button>
       </div>
-      <p class="muted" style="font-size:12.5px;">Matiin kalau kamu mau liat dulu siapa yang ngundang sebelum ikut. Undangan bakal muncul di beranda buat diterima atau ditolak.</p>
+      <p class="muted" style="font-size:12.5px;">Nonaktifkan kalau kamu ingin melihat dulu siapa yang mengundang sebelum ikut. Undangan akan muncul di beranda untuk diterima atau ditolak.</p>
     </div>
 
     <div class="card">
@@ -801,7 +801,7 @@ function renderSettings() {
       <div class="btn-row" style="margin-top:10px;">
         <button class="btn-primary btn-sm" id="copy-code">${ic("copy")} Salin</button>
       </div>
-      <p class="muted" style="margin-top:8px;">Catat sekarang — kode ini gak bakal ditampilin lagi.
+      <p class="muted" style="margin-top:8px;">Catat sekarang — kode ini tidak bakal ditampilin lagi.
         Kalau kamu bikin kode baru nanti, yang ini langsung mati.</p>`;
     $("#copy-code").addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(code); toast("Kode disalin"); }
@@ -822,7 +822,7 @@ function renderSettings() {
     hasCode = has;
     box.innerHTML = has
       ? `<div class="info-box" style="display:flex;gap:9px;align-items:flex-start;margin-bottom:10px;">
-           ${ic("check")}<span>Kamu udah punya kode pemulihan. Simpan baik-baik ya — itu satu-satunya
+           ${ic("check")}<span>Kamu sudah punya kode pemulihan. Simpan baik-baik ya — itu satu-satunya
            cara balik ke akun ini kalau data browser kamu kehapus.</span>
          </div>
          <button class="btn-outline btn-sm" id="regen-code" style="width:100%;">${ic("refresh")} Bikin Kode Baru</button>`
@@ -833,7 +833,7 @@ function renderSettings() {
     if (regen) regen.addEventListener("click", async () => {
       const ok = await confirmSheet({
         title: "Bikin kode baru?",
-        body: "Kode pemulihan yang lama <strong>langsung mati</strong> begitu kode baru dibuat. Kalau kamu udah nyatet yang lama, catatan itu jadi gak kepake.",
+        body: "Kode pemulihan yang lama <strong>langsung mati</strong> begitu kode baru dibuat. Kalau kamu sudah nyatet yang lama, catatan itu jadi tidak kepake.",
         confirmText: "Bikin kode baru",
         danger: true,
       });
@@ -897,7 +897,7 @@ function renderSettings() {
         const acc = accts.find(x => String(x.id) === String(b.dataset.del));
         const ok = await confirmSheet({
           title: "Hapus metode bayar?",
-          body: acc ? `${esc(acc.brand)} · ${esc(acc.account_no)} bakal ilang dari semua bill kamu.` : "",
+          body: acc ? `${esc(acc.brand)} · ${esc(acc.account_no)} akan terhapus dari semua bill kamu.` : "",
           confirmText: "Hapus", danger: true,
         });
         if (!ok) return;
@@ -947,10 +947,10 @@ function renderSettings() {
     const ok = await confirmSheet({
       title: "Keluar dari akun ini?",
       body: hasCode === true
-        ? "Device ini bakal lupa siapa kamu. Semua bill kamu masih ada, tapi cuma bisa dibuka lagi pakai <strong>kode pemulihan</strong> kamu."
+        ? "Device ini bakal lupa siapa kamu. Semua bill kamu masih ada, tapi hanya bisa dibuka lagi pakai <strong>kode pemulihan</strong> kamu."
         : hasCode === false
-          ? "<strong>Kamu belum punya kode pemulihan.</strong> Kalau keluar sekarang, semua bill kamu gak bisa dibuka lagi — selamanya, di HP ini maupun di HP lain. Bikin kode pemulihan dulu kalau masih butuh billnya."
-          : "Device ini bakal lupa siapa kamu. Status kode pemulihan kamu belum sempat kecek (cek koneksi) — kalau ternyata kamu belum bikin kode, bill kamu gak bisa dibuka lagi. Amanin dulu di halaman ini kalau masih butuh billnya.",
+          ? "<strong>Kamu belum punya kode pemulihan.</strong> Kalau keluar sekarang, semua bill kamu tidak bisa dibuka lagi — selamanya, di HP ini maupun di HP lain. Bikin kode pemulihan dulu kalau masih butuh billnya."
+          : "Device ini bakal lupa siapa kamu. Status kode pemulihan kamu belum sempat kecek (cek koneksi) — kalau ternyata kamu belum bikin kode, bill kamu tidak bisa dibuka lagi. Amanin dulu di halaman ini kalau masih butuh billnya.",
       confirmText: "Keluar",
       danger: true,
     });
@@ -978,7 +978,7 @@ function levenshtein(a, b) {
 }
 function matchBrand(line) {
   const lower = String(line || "").toLowerCase();
-  // 1) token exact (word boundary), longest first — "Bowo" gak jadi OVO
+  // 1) token exact (word boundary), longest first — "Bowo" tidak jadi OVO
   const sorted = BRANDS.slice().sort((x, y) => y.c.length - x.c.length);
   for (const b of sorted) {
     const tok = b.c.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -1121,7 +1121,7 @@ function renderParsedResult(s, parsed, identityId, onAdded, existing) {
   const box = $("#paste-result", s.sheet);
   if (!box) return;
   if (!parsed.length) {
-    box.innerHTML = `<p class="error-text" style="margin-top:10px;">Gak nemu metode bayar.
+    box.innerHTML = `<p class="error-text" style="margin-top:10px;">Metode bayar tidak ditemukan.
       Cek formatnya: nama (opsional), nama bank, terus nomornya.</p>`;
     return;
   }
@@ -1130,7 +1130,7 @@ function renderParsedResult(s, parsed, identityId, onAdded, existing) {
   const dupCount = parsed.length - addCount;
   box.innerHTML = `
     <div class="card card-flat" style="margin-top:12px;">
-      <div class="card-title"><span>Ketemu ${parsed.length} metode${dupCount ? `, ${dupCount} udah ada` : ""}</span></div>
+      <div class="card-title"><span>Ditemukan ${parsed.length} metode${dupCount ? `, ${dupCount} sudah ada` : ""}</span></div>
       ${parsed.map((p, i) => `
         <div class="account-row" style="${p._dup ? "opacity:.55;" : ""}">
           <span class="paste-chip-wrap" data-i="${i}">${brandChipHtml(p.brand)}</span>
@@ -1139,12 +1139,12 @@ function renderParsedResult(s, parsed, identityId, onAdded, existing) {
             <select class="paste-brand-sel" id="paste-brand-${i}" data-i="${i}" style="font-size:13px;font-weight:600;padding:8px 32px 8px 10px;">
               ${BRANDS.map(b => `<option value="${esc(b.c)}" ${b.c === p.brand ? "selected" : ""}>${esc(b.c)}</option>`).join("")}
             </select>
-            <div class="muted" style="font-size:12px;margin-top:3px;">${esc(p.account_no)}${p.holder_name ? " · " + esc(p.holder_name) : ""}${p._dup ? ` · <strong style="color:var(--text-2);">udah tersimpan</strong>` : ""}</div>
+            <div class="muted" style="font-size:12px;margin-top:3px;">${esc(p.account_no)}${p.holder_name ? " · " + esc(p.holder_name) : ""}${p._dup ? ` · <strong style="color:var(--text-2);">sudah tersimpan</strong>` : ""}</div>
           </div>
           <button class="icon-btn ghost paste-rm" data-i="${i}" aria-label="Buang ${esc(p.account_no)} dari daftar">${ic("x")}</button>
         </div>`).join("")}
       <button class="btn-green btn-sm" id="save-parsed" style="width:100%;margin-top:10px;" ${addCount ? "" : "disabled"}>
-        ${addCount ? `Tambah ${addCount} Baru` : "Semua Udah Tersimpan"}
+        ${addCount ? `Tambah ${addCount} Baru` : "Semua Sudah Tersimpan"}
       </button>
     </div>`;
 
@@ -1178,7 +1178,7 @@ function renderParsedResult(s, parsed, identityId, onAdded, existing) {
       const dupCount = parsed.filter(p => p._dup).length;
       const queue = parsed.filter(p => !p._dup);   // never POST what's flagged as a duplicate
       if (!queue.length) {
-        toast(dupCount ? "Semua udah kesimpen, gak ada yang baru" : "Gak ada yang ditambah");
+        toast(dupCount ? "Semua sudah tersimpan, tidak ada yang baru" : "Tidak ada yang ditambahkan");
         return;
       }
       let saved = 0, failMsg = "";
@@ -1199,11 +1199,11 @@ function renderParsedResult(s, parsed, identityId, onAdded, existing) {
       const remaining = parsed.filter(p => !p._dup);
       if (!remaining.length) {
         s.close();
-        toast(dupCount ? `Ditambah ${saved} metode, ${dupCount} udah ada sebelumnya` : `Ditambah ${saved} metode`);
+        toast(dupCount ? `Ditambah ${saved} metode, ${dupCount} sudah ada sebelumnya` : `Ditambah ${saved} metode`);
         return;
       }
-      if (saved > 0) toast(`${saved} kesimpen, ${remaining.length} gagal: ${failMsg}`);
-      else toast(failMsg || "Gagal nyimpen");
+      if (saved > 0) toast(`${saved} tersimpan, ${remaining.length} gagal: ${failMsg}`);
+      else toast(failMsg || "Gagal menyimpan");
       renderParsedResult(s, parsed, identityId, onAdded, existing);
     });
   });
@@ -1226,7 +1226,7 @@ function openEditAccountSheet(acct, onDone) {
       <div class="field">
         <label for="edit-acct-holder">Atas Nama (Opsional)</label>
         <input id="edit-acct-holder" name="holder_name" maxlength="40" autocomplete="off">
-        <p class="muted" style="margin-top:6px;">Nama pemilik gak wajib — boleh dikosongin kalau kamu mau anonim.</p>
+        <p class="muted" style="margin-top:6px;">Nama pemilik tidak wajib — boleh dikosongin kalau kamu mau anonim.</p>
       </div>
       <div class="btn-row">
         <button class="btn-primary btn-sm" type="submit" id="edit-save">Simpan</button>
@@ -1371,7 +1371,7 @@ function renderCreate(opts = {}) {
           <div class="tgl-label">Baca Otomatis</div>
           <div class="muted tgl-desc" id="dz-tgl-desc">${scanMode
             ? "Item &amp; harga dibaca dari foto — langsung masuk ke daftar"
-            : "Foto cuma ditempel — item &amp; harga diisi manual"}</div>
+            : "Foto hanya ditempel — item &amp; harga diisi manual"}</div>
         </div>
         <button type="button" class="switch" id="dz-tgl" role="switch" aria-checked="${scanMode}" aria-label="Baca otomatis"></button>
       </div>
@@ -1400,7 +1400,7 @@ function renderCreate(opts = {}) {
       tgl.setAttribute("aria-checked", String(scanMode));
       tglDesc.textContent = scanMode
         ? "Item & harga dibaca dari foto — langsung masuk ke daftar"
-        : "Foto cuma ditempel — item & harga diisi manual";
+        : "Foto hanya ditempel — item & harga diisi manual";
       // the dropzone underneath this sheet must reflect the flip immediately
       // — the sheet closes back onto it, not onto a fresh render
       const dzState = document.getElementById("dz-scan-state");
@@ -1555,7 +1555,7 @@ async function uploadAndOcr(file, session = createFlowSession, preserved = null)
     body.innerHTML = `<div class="card" style="text-align:center;padding:40px 16px;">
       <div class="spinner" style="width:32px;height:32px;border-width:3px;"></div>
       <p style="margin-top:16px;font-weight:600;">Lagi baca struknya...</p>
-      <p class="muted">Biasanya cuma butuh beberapa detik</p>
+      <p class="muted">Biasanya hanya butuh beberapa detik</p>
     </div>`;
   }
   // OCR takes seconds; if the user navigates away meanwhile, the verify editor
@@ -1576,7 +1576,7 @@ async function uploadAndOcr(file, session = createFlowSession, preserved = null)
     // go out as a toast, started before the extra /api/photos round-trip
     // below even began — by the time the (blank-looking) form appeared, the
     // 2.6s toast had usually already expired and nobody knew why they were
-    // suddenly looking at "Bikin Manual" (bug). Carry it into the editor
+    // suddenly looking at "Isi Manual" (bug). Carry it into the editor
     // instead, where it can't disappear before it's read.
     await uploadAndAttach(file, e.message, session, preserved);
   }
@@ -1623,8 +1623,8 @@ async function readClipboardImage() {
   try {
     if (!navigator.clipboard || !navigator.clipboard.read) {
       toast(isCoarsePointer()
-        ? "Browser kamu gak bisa baca clipboard — long-press terus pilih Paste"
-        : "Browser kamu gak bisa baca clipboard — tekan Ctrl+V aja");
+        ? "Browser kamu tidak bisa baca clipboard — long-press terus pilih Paste"
+        : "Browser kamu tidak bisa baca clipboard — tekan Ctrl+V aja");
       return;
     }
     const items = await navigator.clipboard.read();
@@ -1639,11 +1639,11 @@ async function readClipboardImage() {
       else await uploadAndAttach(f);
       return;
     }
-    toast("Clipboard kamu gak ada gambarnya");
+    toast("Clipboard kamu tidak ada gambarnya");
   } catch (e) {
     // a raw DOMException string ("NotAllowedError: ...") spliced into
     // Indonesian copy helps nobody — say what to do instead
-    toast("Gak bisa baca clipboard. Coba tempel pakai Ctrl+V ya");
+    toast("Tidak bisa membaca clipboard. Coba tempel menggunakan Ctrl+V ya");
   }
 }
 
@@ -1680,7 +1680,7 @@ function verifyHasTypedContent() {
 function confirmDiscardVerify() {
   return confirmSheet({
     title: "Buang isian ini?",
-    body: "Semua yang udah kamu ketik di sini — item, harga, judul — bakal ilang.",
+    body: "Semua yang sudah kamu ketik di sini — item, harga, judul — akan terhapus.",
     confirmText: "Buang aja", cancelText: "Lanjut isi", danger: true,
   });
 }
@@ -1692,26 +1692,34 @@ function confirmDiscardVerify() {
    - .vf-grid: Subtotal/PPN/Service side by side is unreadable under ~380px,
      so Subtotal takes its own line and PPN/Service share the next one. */
 const VERIFY_CSS = `<style>
-  .vf-item { display:grid; grid-template-columns:minmax(0,1fr) minmax(96px,110px) 40px; gap:8px; align-items:center;
+  /* Fixed mobile dock reservation: keep the final controls reachable. */
+  #app:has(#create-bill-btn) { padding-bottom:calc(124px + env(safe-area-inset-bottom)); scroll-padding-bottom:calc(124px + env(safe-area-inset-bottom)); }
+  .vf-item { display:grid; grid-template-columns:minmax(0,1fr) minmax(96px,110px) 44px; gap:8px; align-items:center;
              padding:12px 2px; border-bottom:1px solid var(--border); }
   /* "Nasi Goreng Spesial" in a 1fr column next to a 110px price box reads
      "Nasi Goreng Spe:" — give the name the whole width on a phone */
   @media (max-width:430px) {
-    .vf-item { grid-template-columns:1fr 40px; }
+    .vf-item { grid-template-columns:1fr 44px; }
     .vf-item [data-role=name] { grid-column:1 / -1; }
   }
   .vf-item:last-child { border-bottom:none; }
   .vf-item input { padding:9px 10px; }
-  .vf-item .icon-btn { width:40px; height:40px; min-height:40px; }
+  .vf-item .icon-btn { width:44px; height:44px; min-width:44px; min-height:44px; }
   .vf-full { grid-column:1 / -1; }
   /* discount box: label + input + optional "→ bayar X" result, wrapping as
      one unit on a phone — moved out of an inline style so the desktop rule
      below (L3) can restyle just this wrapper without fighting specificity */
   /* the column header only makes sense next to the compact desktop grid */
   .vf-head { display:none; }
-  .vf-discount { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .vf-mobile-label { display:block; font-size:11.5px; font-weight:600; color:var(--text-3); margin:0 0 3px; }
+  .vf-discount { display:block; }
+  .vf-discount-fields { display:flex; align-items:center; gap:8px; min-width:0; }
   .vf-discount input { max-width:110px; }
-  .disc-bayar { color:var(--green); font-weight:700; }
+  .disc-bayar { color:var(--green); font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .vf-mode-label { display:block; margin-bottom:5px; }
+  .vf-mode-options { display:flex; flex-wrap:nowrap; align-items:center; gap:6px; min-width:0; }
+  .vf-mode-options .item-mode-btn { flex:0 1 auto; white-space:nowrap; }
+  .vf-mode-options > span { margin-left:auto; }
   .vf-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
   .vf-grid > .vf-sub { grid-column:1 / -1; }
   .progressive-section { overflow:hidden; }
@@ -1725,7 +1733,7 @@ const VERIFY_CSS = `<style>
   .vf-photo-wrap .photo-preview { width:100%; height:110px; object-fit:cover; border-radius:var(--r-xs); display:block; }
   .vf-photo-wrap .photo-preview.expanded { position:fixed; inset:0; z-index:60; width:100%; height:100%;
     object-fit:contain; background:rgba(0,0,0,.86); border-radius:0; }
-  .vf-photo-del { position:absolute; top:4px; right:4px; width:40px; height:40px; min-height:40px; padding:0;
+  .vf-photo-del { position:absolute; top:4px; right:4px; width:44px; height:44px; min-width:44px; min-height:44px; padding:0;
     border-radius:var(--r-full); background:rgba(0,0,0,.62); color:#fff; border:none; display:flex;
     align-items:center; justify-content:center; }
   @media (max-width:399px) {
@@ -1733,7 +1741,10 @@ const VERIFY_CSS = `<style>
     .vf-grid > .vf-sub { grid-column:1 / -1; }
     .vf-photos { grid-template-columns:repeat(2, minmax(0,1fr)); }
   }
-  /* Same 40px floor as .vf-item .icon-btn above, applied consistently: the
+  @media (min-width:720px) {
+    #app:has(#create-bill-btn) { padding-bottom:56px; scroll-padding-bottom:56px; }
+  }
+  /* Same 44px floor as .vf-item .icon-btn above, applied consistently: the
      slot +/- steppers were 37x27 and 34x32 (mismatched with each other, both
      under the floor), the Bebas/Slot mode chips were 32px tall, and the
      add-item / paste-from-clipboard buttons were 38px — small enough that a
@@ -1741,14 +1752,18 @@ const VERIFY_CSS = `<style>
      in index.html: under the floor next to full-size controls reads as broken,
      not smaller). .chip-btn's own rule (index.html) has no min-height at all,
      so every place it's used inside this screen needs it re-asserted here. */
-  .item-mode-btn, .slot-dec, .slot-inc { min-height:40px; min-width:40px; justify-content:center; }
-  #add-item-btn, #verify-paste-photo, #verify-add-photo { min-height:40px; }
+  .item-mode-btn, .slot-dec, .slot-inc { min-height:44px; min-width:44px; justify-content:center; }
+  #add-item-btn, #verify-paste-photo, #verify-add-photo { min-height:44px; }
+  .people-empty-action { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .people-empty-action .btn-sm { min-height:44px; flex:0 0 auto; }
+  #create-bill-helper { margin:0; font-size:12px; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-3); }
 
   /* L3 (v68, desktop only): the editor gets denser instead of wider. Nothing
      here touches markup order in the DOM — .vf-item stays a CSS grid and
      the "order" property does the reflow — so the phone layout above is
      untouched byte for byte. */
   @media (min-width:1040px) {
+    .vf-price .vf-mobile-label { display:none; }
     /* Judul Bill + Tanggal Transaksi share a row instead of each claiming
        the full (now much narrower) card width on its own line */
     .vf-field-pair { display:flex; gap:16px; align-items:flex-start; }
@@ -1756,8 +1771,9 @@ const VERIFY_CSS = `<style>
 
     /* name | harga | potongan | delete on ONE line — the discount box used
        to drop to its own row and leave ~700px empty next to a 110px input */
-    .vf-item { grid-template-columns:minmax(0,1fr) minmax(104px,120px) minmax(112px,130px) 40px; }
-    .vf-item .vf-discount { order:2; grid-column:auto; flex-direction:column; align-items:stretch; gap:2px; }
+    .vf-item { grid-template-columns:minmax(0,1fr) minmax(104px,120px) minmax(112px,130px) 44px; }
+    .vf-item .vf-discount { order:2; grid-column:auto; }
+    .vf-item .vf-discount-fields { flex-direction:column; align-items:stretch; gap:2px; }
     .vf-item .vf-discount input { max-width:none; }
     /* keep the label for screen readers (it's still the input's <label for>)
        but out of the compact column visually — display:none would drop it
@@ -1767,7 +1783,7 @@ const VERIFY_CSS = `<style>
       clip:rect(0 0 0 0); white-space:nowrap; border:0;
     }
     .vf-item .disc-bayar { font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .vf-head { display:grid; grid-template-columns:minmax(0,1fr) minmax(104px,120px) minmax(112px,130px) 40px; gap:8px;
+    .vf-head { display:grid; grid-template-columns:minmax(0,1fr) minmax(104px,120px) minmax(112px,130px) 44px; gap:8px;
                padding:0 2px 2px; font-size:11.5px; font-weight:600;
                color:var(--text-3); letter-spacing:.02em; }
     .vf-head span:nth-child(2), .vf-head span:nth-child(3) { text-align:right; }
@@ -1780,8 +1796,8 @@ const VERIFY_CSS = `<style>
     /* The shell gives this card less room at medium desktop widths. Keep the
        two metadata fields readable without changing the phone layout. */
     .vf-field-pair { gap:12px; }
-    .vf-item { grid-template-columns:minmax(0,1fr) minmax(96px,112px) minmax(104px,120px) 40px; }
-    .vf-head { grid-template-columns:minmax(0,1fr) minmax(96px,112px) minmax(104px,120px) 40px; }
+    .vf-item { grid-template-columns:minmax(0,1fr) minmax(96px,112px) minmax(104px,120px) 44px; }
+    .vf-head { grid-template-columns:minmax(0,1fr) minmax(96px,112px) minmax(104px,120px) 44px; }
   }
 </style>`;
 
@@ -1851,7 +1867,7 @@ function renderVerify(ocr, manual = false) {
     ${VERIFY_CSS}
     <div class="topbar">
       <button class="icon-btn" id="back-btn" aria-label="Kembali">${ic("back")}</button>
-      <div class="topbar-title">${manual ? "Bikin Manual" : "Periksa Hasil"}</div>
+      <div class="topbar-title">${manual ? "Isi Manual" : "Periksa Hasil"}</div>
       <div style="width:42px;flex-shrink:0;" aria-hidden="true"></div>
     </div>
     ${verifyState.photos.length ? `
@@ -1872,7 +1888,7 @@ function renderVerify(ocr, manual = false) {
     <div class="card" style="padding:8px;">
       <button class="btn-outline" id="verify-add-photo" style="width:100%;">${ic("camera")} Tambah Foto Struk</button>
       <button class="btn-outline btn-sm" id="verify-paste-photo" style="width:100%;margin-top:8px;">${ic("clipboard")} Tempel dari Clipboard</button>
-      <p class="muted" style="text-align:center;margin-top:6px;">Opsional — foto cuma ditempel, gak dibaca otomatis.</p>
+      <p class="muted" style="text-align:center;margin-top:6px;">Opsional — foto hanya dilampirkan, tidak dibaca otomatis.</p>
     </div>` : "")}
 
     <details class="card progressive-section">
@@ -1896,7 +1912,7 @@ function renderVerify(ocr, manual = false) {
         <span style="color:var(--red);display:flex;">${ic("alert")}</span>
         <div><strong>Struknya Gagal Dibaca Otomatis</strong>
           <p class="muted" style="margin-top:4px;">${esc(verifyState.ocrError)}</p>
-          <p class="muted" style="margin-top:4px;">Fotonya kesimpen kok — isi manual di bawah, atau coba baca otomatis lagi.</p></div>
+          <p class="muted" style="margin-top:4px;">Foto tersimpan — isi secara manual di bawah, atau coba baca otomatis lagi.</p></div>
       </div>
       ${verifyState.ocrRetryFile ? `
       <div class="btn-row" style="margin-top:12px;">
@@ -1943,13 +1959,13 @@ function renderVerify(ocr, manual = false) {
         <label class="toggle-row" for="tax-included-toggle" style="margin-top:10px;">
           <span style="flex:1;">
             <span class="label-strong">Harga item sudah termasuk pajak</span>
-            <span class="muted" style="display:block;">Angka item yang kamu isi SUDAH termasuk PPN — PPN gak dihitung lagi dari total.</span>
+            <span class="muted" style="display:block;">Angka item yang kamu isi SUDAH termasuk PPN — PPN tidak dihitung ulang dari total.</span>
           </span>
           <input type="checkbox" id="tax-included-toggle" ${verifyState.tax_included ? "checked" : ""}>
         </label>
         <div id="tax-included-badge" class="info-box ${verifyState.tax_included ? "" : "hidden"}"
              style="margin:8px 0 0;display:flex;gap:8px;align-items:flex-start;">
-          ${ic("info")}<span>Total = subtotal + service aja — PPN udah masuk di harga item</span>
+          ${ic("info")}<span>Total = subtotal + service aja — PPN sudah masuk di harga item</span>
         </div>
       </details>
 
@@ -1960,11 +1976,11 @@ function renderVerify(ocr, manual = false) {
       <div role="radiogroup" aria-label="Pilih yang membayar" style="display:grid;gap:8px;">
         <label class="account-row" for="paid-by-myself-choice" style="cursor:pointer;border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;">
           <input type="radio" id="paid-by-myself-choice" name="payer-choice" value="me" ${verifyState.paidByMyself ? "checked" : ""}>
-          <span style="flex:1;"><strong>Aku yang bayar</strong><span class="muted" style="display:block;">Aku nalangin bill ini.</span></span>
+          <span style="flex:1;"><strong>Aku yang bayar</strong><span class="muted" style="display:block;">Aku yang membayar dahulu.</span></span>
         </label>
         <label class="account-row" for="paid-by-other-choice" style="cursor:pointer;border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;">
           <input type="radio" id="paid-by-other-choice" name="payer-choice" value="other" ${verifyState.paidByMyself ? "" : "checked"}>
-          <span style="flex:1;"><strong>Orang lain yang bayar</strong><span class="muted" style="display:block;">Tulis nama orang yang nalangin.</span></span>
+          <span style="flex:1;"><strong>Orang lain yang bayar</strong><span class="muted" style="display:block;">Tulis nama orang yang membayar dahulu.</span></span>
         </label>
       </div>
       <input type="checkbox" id="paid-by-me" class="hidden" ${verifyState.paidByMyself ? "checked" : ""} aria-hidden="true" tabindex="-1">
@@ -1992,7 +2008,8 @@ function renderVerify(ocr, manual = false) {
         <span class="label-sm">Total</span>
         <span class="money" id="total-display">${fmt(verifyState.total)}</span>
       </div>
-      <button class="btn-primary" id="create-bill-btn">Bikin Bill</button>
+      <button class="btn-primary" id="create-bill-btn" disabled>Buat Tagihan</button>
+      <p id="create-bill-helper" aria-live="polite">Isi nama item dan total untuk lanjut.</p>
     </div></div>`;
 
   $("#app").innerHTML = shell(main, side);
@@ -2062,7 +2079,7 @@ function renderVerify(ocr, manual = false) {
     }
     // a File held across a bfcache restore or a stale re-render could still
     // end up here empty — never leave the button silently dead (J3)
-    if (!f) { toast("Foto aslinya udah gak ada — upload ulang ya"); return; }
+    if (!f) { toast("Foto aslinya sudah tidak ada — upload ulang ya"); return; }
     const staleOnRetry = verifyState.photos.slice();
     // route through #/create first (clearing the guard on the way): this is
     // a deliberate hop back into the OCR flow, not a "leave and lose data"
@@ -2147,7 +2164,7 @@ function renderVerify(ocr, manual = false) {
       const v = (personNameInput.value || "").trim();
       if (!v) return;
       if (verifyState.extraNames.some(n => normName(n) === normName(v)) ||
-          verifyState.participants.some(p => normName(p.name) === normName(v))) { toast("Nama itu udah kepilih"); return; }
+          verifyState.participants.some(p => normName(p.name) === normName(v))) { toast("Nama itu sudah kepilih"); return; }
       verifyState.extraNames.push(v);
       personNameInput.value = "";
       renderPeopleChips();
@@ -2164,7 +2181,19 @@ function renderVerify(ocr, manual = false) {
           const contacts = await api(`/api/identities/${me.id}/contacts`);
           if (!document.getElementById("people-pick")) return; // left the screen
           if (!contacts || !contacts.length) {
-            peoplePick.innerHTML = `<p class="muted" style="padding:2px 0;">Belum ada kontak — undang orang lewat link dulu, nanti dia muncul di sini.</p>`;
+            peoplePick.innerHTML = `<div class="people-empty-action"><p class="muted" style="margin:0;">Belum ada kontak — undang orang lewat tautan agar mereka muncul di sini.</p><button type="button" class="btn-outline btn-sm" id="copy-invite-link">${ic("copy")} Salin tautan undangan</button></div>`;
+            const copyInvite = $("#copy-invite-link");
+            if (copyInvite) copyInvite.addEventListener("click", async () => {
+              const url = location.origin + location.pathname;
+              try {
+                if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(url);
+                else {
+                  const ta = document.createElement("textarea"); ta.value = url; ta.style.position = "fixed"; ta.style.opacity = "0";
+                  document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove();
+                }
+                toast("Tautan undangan disalin");
+              } catch (e) { toast("Gagal menyalin tautan"); }
+            });
             return;
           }
           peoplePick.innerHTML = contacts.map(c => `
@@ -2173,7 +2202,7 @@ function renderVerify(ocr, manual = false) {
               <div class="avatar" style="flex:0 0 auto;">${esc(initials(c.name))}</div>
               <div style="flex:1;min-width:0;">
                 <div class="item-name">${esc(c.name)}</div>
-                <div class="muted">${c.last_shared ? "pernah share bill" : "kontak"}</div>
+                <div class="muted">${c.last_shared ? "pernah berbagi bill" : "kontak"}</div>
               </div>
             </label>`).join("");
           $$("#people-pick input[type=checkbox]").forEach(cb => cb.addEventListener("change", () => {
@@ -2280,25 +2309,30 @@ function renderVerifyItems() {
     <div class="vf-item" data-idx="${idx}">
       <input data-role="name" data-idx="${idx}" value="${esc(it.name)}" placeholder="Nama Item"
              maxlength="60" aria-label="Nama item baris ${idx + 1}">
-      <input data-role="price" data-idx="${idx}" class="input-money" type="text" inputmode="numeric" maxlength="16"
-             value="${rupiahFmt(it.price)}" placeholder="0" aria-label="Harga item baris ${idx + 1}">
+      <div class="vf-price">
+        <label class="vf-mobile-label" for="price-${idx}">Harga</label>
+        <input id="price-${idx}" data-role="price" data-idx="${idx}" class="input-money" type="text" inputmode="numeric" maxlength="16"
+               value="${rupiahFmt(it.price)}" placeholder="0" aria-label="Harga item baris ${idx + 1}">
+      </div>
       <button type="button" data-role="del" data-idx="${idx}" class="icon-btn ghost"
               aria-label="Hapus item baris ${idx + 1}" style="color:var(--red);">${ic("trash")}</button>
 
       <div class="vf-full vf-discount">
-        <label class="label-sm vf-discount-label" for="disc-${idx}" style="margin:0;">Potongan (diskon)</label>
-        <input id="disc-${idx}" data-role="discount" data-idx="${idx}" class="input-money" type="text"
-               inputmode="numeric" maxlength="16" value="${rupiahFmt(it.discount)}" placeholder="0">
-        ${/* "harga asli − potongan = yang dibayar" used to sit next to every
-              discount box: five copies of the same subtraction, four lines each
-              on a phone. The green result below says it better, and only when
-              there is actually a discount. */ ""}
-        ${it.discount > 0 ? `<span class="disc-bayar money-sm">→ bayar ${rupiahFmt(eff)}</span>` : ""}
+        <label class="label-sm vf-discount-label vf-mobile-label" for="disc-${idx}" style="margin:0;">Potongan</label>
+        <div class="vf-discount-fields">
+          <input id="disc-${idx}" data-role="discount" data-idx="${idx}" class="input-money" type="text"
+                 inputmode="numeric" maxlength="16" value="${rupiahFmt(it.discount)}" placeholder="0">
+          ${/* "harga asli − potongan = yang dibayar" used to sit next to every
+                discount box: five copies of the same subtraction, four lines each
+                on a phone. The green result below says it better, and only when
+                there is actually a discount. */ ""}
+          ${it.discount > 0 ? `<span class="disc-bayar money-sm">→ bayar ${rupiahFmt(eff)}</span>` : ""}
+        </div>
       </div>
 
       <div class="vf-full vf-mode">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px;">
-          <span class="label-sm">Cara Bagi</span>
+        <span class="label-sm vf-mode-label">Cara Bagi</span>
+        <div class="vf-mode-options">
           <button type="button" class="chip-btn item-mode-btn ${!isSlot ? "chip-active" : ""}" data-idx="${idx}" data-mode="free"
                   aria-pressed="${!isSlot}">${ic("people")} Bagi rata</button>
           <button type="button" class="chip-btn item-mode-btn ${isSlot ? "chip-active" : ""}" data-idx="${idx}" data-mode="slot"
@@ -2325,6 +2359,7 @@ function renderVerifyItems() {
   $$("[data-role=name]", elList).forEach(inp => inp.addEventListener("input", (e) => {
     verifyState.items[+e.target.dataset.idx].name = e.target.value;
     e.target.style.borderColor = "";   // clear the "row rejected" marker
+    updateVerifyTotal();
   }));
   $$("[data-role=price]", elList).forEach(inp => bindRupiahInput(inp, (v) => {
     verifyState.items[+inp.dataset.idx].price = v;
@@ -2428,13 +2463,13 @@ function updateVerifyTotal() {
   if (warn) {
     if (ocrEmpty) {
       warn.classList.remove("hidden");
-      warn.textContent = "Struknya gak kebaca jelas — tambah item manual aja, subtotal udah dibiarin dari struk.";
+      warn.textContent = "Struknya tidak terbaca jelas — tambahkan item manual saja, subtotal dipertahankan dari struk.";
       warn.style.color = "var(--accent)";
     } else if (mismatch) {
       warn.classList.remove("hidden");
       warn.style.color = "";
       if (sumItems === total) {
-        warn.textContent = `Harga item (${fmt(sumItems)}) kayaknya udah TERMASUK pajak, tapi kamu isi Subtotal ${fmt(subtotal)} + PPN. Aktifin toggle "Harga item sudah termasuk pajak" biar gak dobel.`;
+        warn.textContent = `Harga item (${fmt(sumItems)}) tampaknya sudah TERMASUK pajak, tetapi kamu mengisi Subtotal ${fmt(subtotal)} + PPN. Aktifkan toggle "Harga item sudah termasuk pajak" agar tidak dihitung ganda.`;
       } else {
         warn.textContent = `Total item (${fmt(sumItems)}) beda dari Subtotal (${fmt(subtotal)}). Samain dulu — cek harga & kolom Diskon tiap item.`;
       }
@@ -2445,8 +2480,18 @@ function updateVerifyTotal() {
   // with a raw error toast). Block the button until the numbers reconcile.
   const cta = $("#create-bill-btn");
   if (cta) {
-    cta.disabled = mismatch;
-    cta.textContent = mismatch ? "Subtotal belum cocok sama item" : "Bikin Bill";
+    const hasNamedItem = verifyState.items.some(i => String(i.name || "").trim());
+    const hasTotal = total > 0;
+    const payerChosen = !!verifyState.paidByMyself || !!String(verifyState.paid_by_name || "").trim();
+    const missing = [];
+    if (!hasNamedItem) missing.push("nama item");
+    if (!hasTotal) missing.push("total");
+    if (!payerChosen) missing.push("pembayar");
+    cta.disabled = mismatch || !hasNamedItem || !hasTotal || !payerChosen;
+    cta.textContent = mismatch ? "Subtotal belum cocok sama item" : "Buat Tagihan";
+    const helper = $("#create-bill-helper");
+    if (helper) helper.textContent = mismatch ? "Samakan subtotal dengan total item untuk lanjut." :
+      (missing.length ? `Lengkapi ${missing.join(", ")} untuk lanjut.` : "Siap membuat tagihan.");
   }
 }
 
@@ -2491,7 +2536,7 @@ async function createBillFinal() {
     return;
   }
 
-  await withBusy(btn, "Bikin bill", async () => {
+  await withBusy(btn, "Buat tagihan", async () => {
     try {
       const bill = await apiJson("/api/bills", "POST", {
         title: verifyState.title || verifyState.merchant || "Bill",
@@ -2523,15 +2568,15 @@ async function createBillFinal() {
       // not make the creator wait for every contact request.
       clearHashGuard();
       location.hash = "#/b/" + bill.id;
-      toast("Bill udah jadi. Bagikan linknya ke teman kamu.");
+      toast("Bill sudah jadi. Bagikan linknya ke teman kamu.");
       if (verifyState.participants.length) {
         const inviteWork = Promise.allSettled(verifyState.participants.map(p =>
           apiJson(`/api/bills/${bill.id}/invite`, "POST", { identity_id: p.id })));
         const timed = Promise.race([inviteWork, new Promise(resolve => setTimeout(() => resolve(null), 8000))]);
         timed.then(results => {
-          if (!results) { toast("Bill udah jadi. Sebagian undangan masih diproses, cek lagi nanti."); return; }
+          if (!results) { toast("Bill sudah jadi. Sebagian undangan masih diproses, cek lagi nanti."); return; }
           const failed = results.filter(r => r.status === "rejected");
-          if (failed.length) toast(`Bill udah jadi, tapi ${failed.length} undangan gagal. Coba undang lagi dari bill.`);
+          if (failed.length) toast(`Bill sudah jadi, tapi ${failed.length} undangan gagal. Coba undang lagi dari bill.`);
         });
       }
     } catch (e) {
