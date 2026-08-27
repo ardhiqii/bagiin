@@ -1771,6 +1771,9 @@ const VERIFY_CSS = `<style>
   .progressive-section[open] > summary::after { content:"−"; }
   .progressive-section > summary + * { margin-top:12px; }
   .vf-photos { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
+  .vf-photo-actions { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; margin-top:8px; }
+  .vf-photo-actions > button { width:100%; margin-top:0 !important; }
+  .vf-photo-actions > p { grid-column:1 / -1; margin:0; text-align:left; line-height:1.25; }
   .vf-photo-wrap { position:relative; }
   .vf-photo-wrap .photo-preview { width:100%; height:110px; object-fit:cover; border-radius:var(--r-xs); display:block; }
   .vf-photo-wrap .photo-preview.expanded { position:fixed; inset:0; z-index:60; width:100%; height:100%;
@@ -1921,10 +1924,10 @@ function renderVerify(ocr, manual = false) {
           <button class="vf-photo-del" data-idx="${i}" aria-label="Hapus foto ${i + 1}">${ic("x")}</button>
         </div>`).join("")}
       </div>
-      <div class="btn-row" style="margin-top:8px;">
-        <button class="btn-outline btn-sm" id="verify-add-photo" style="margin-top:0;">${ic("camera")} Tambah Foto</button>
-        <button class="btn-outline btn-sm" id="verify-paste-photo" style="margin-top:0;">${ic("clipboard")} Tempel</button>
-        <span class="muted btn-auto" style="align-self:center;">Ketuk foto buat perbesar</span>
+      <div class="vf-photo-actions">
+        <button class="btn-outline btn-sm" id="verify-add-photo">${ic("camera")} Tambah Foto</button>
+        <button class="btn-outline btn-sm" id="verify-paste-photo">${ic("clipboard")} Tempel</button>
+        <p class="muted">Ketuk foto untuk memperbesar.</p>
       </div>
     </div>` : (manual ? `
     <div class="card" style="padding:8px;">
