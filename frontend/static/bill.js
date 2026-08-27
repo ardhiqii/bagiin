@@ -513,7 +513,7 @@ function renderGuestView(data, me) {
     const iMadeIt = data.bill.creator_identity_id === me.id;
     const ok = await confirmSheet({
       title: "Keluar dari bill ini?",
-      body: "Pilihan item kamu dihapus dan bill ini tidak lagi muncul di daftar kamu. Kamu masih bisa bergabung lagi lewat link selama billnya belum ditutup."
+      body: "Pilihan item kamu dihapus dan bill ini tidak lagi muncul di daftar kamu. Kamu masih bisa bergabung lagi lewat link selama bill masih aktif."
         // confirmSheet renders `body` as markup, so the typed name needs esc()
         + (iMadeIt ? ` Billnya tetap berjalan, sekarang dipegang ${esc(data.paid_by_name || "yang membayar dahulu")}.` : ""),
       confirmText: "Keluar",
@@ -1228,16 +1228,15 @@ function renderCreatorView(data) {
   const payerRow = data.people.find(p => p.identity_id === payerId);
   const notPicked = data.people.filter(p => !p.subtotal_idr && !hasPickedAny(data, p.identity_id) && p.identity_id !== me.id);
 
-  // A manual "Tandai Lunas" settles the bill even if someone still shows
-  // unpaid — the creator decided it's done. The dock must follow that same
-  // flag or it yells "Belum beres Rp X" under a green Lunas chip.
+  // A bill is automatically selesai when everyone has marked their payment
+  // and no item portions remain unclaimed. The dock follows that same derived
+  // state so its copy and the status chip never disagree.
   const allSettled = data.settled || (data.all_paid && data.uncovered_idr === 0);
   // Nobody but the creator is on the bill yet. This is the moment right after
   // "Buat Tagihan", and the whole product depends on the link being sent — so the
   // screen leads with sharing instead of with warnings about a bill that has
   // not started (bug: a 3-second-old bill opened on "Belum lunas", a Rp 0 chip,
-  // and a red-ish card listing every item as "tidak dipilih siapa pun", while
-  // the only primary button offered was "Tutup Bill").
+  // and a red-ish card listing every item as "tidak dipilih siapa pun".
   const soloSoFar = data.people.length <= 1 && !closed && !data.settled;
   const statusChip = creatorStatusChip(data, closed, totalUnpaid, soloSoFar);
   // !data.settled: a closed bill the owner marked lunas by hand is done —
@@ -1323,6 +1322,7 @@ function renderCreatorView(data) {
       </div>
       ${data.bill.title || data.bill.merchant ? `<div style="margin-top:4px;">${esc((data.bill.title || "").trim() || data.bill.merchant)}</div>` : ""}
       ${data.bill.transacted_at ? `<div class="muted">${esc(shortDate(data.bill.transacted_at))}</div>` : ""}
+      ${!closed && data.all_paid && data.uncovered_idr === 0 ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua sudah menandai lunas, bill otomatis selesai.</p>` : ""}
       <div class="collect" style="margin-top:12px;">
         <div class="collect-track"><div class="collect-fill" style="width:${data.bill.total_idr > 0 ? Math.min(100, Math.round(totalPaid * 100 / data.bill.total_idr)) : 0}%;"></div></div>
         <div class="collect-line" style="margin-top:6px;">
@@ -1465,10 +1465,8 @@ function renderCreatorView(data) {
       ${closed
         ? `<button class="btn-outline" id="reopen-bill-btn" style="color:var(--accent);border-color:var(--accent);">${ic("refresh")} Buka Bill Lagi</button>`
         : soloSoFar
-          // closing a bill nobody has joined is never the next thing you want
-          ? `<button class="btn-primary" id="dock-share-btn">${ic("share")} Bagikan Link</button>
-             <button class="btn-ghost btn-sm" id="close-bill-btn" style="width:100%;">Tutup Bill</button>`
-          : `<button class="btn-primary" id="close-bill-btn">Tutup Bill</button>`}
+          ? `<button class="btn-primary" id="dock-share-btn">${ic("share")} Bagikan Link</button>`
+          : ""}
     </div></div>`;
 
   app.innerHTML = `
@@ -1529,8 +1527,6 @@ function renderCreatorView(data) {
   if (methodsBtn) methodsBtn.addEventListener("click", () => openAccountsSheet(data));
   const editBtn = $("#edit-bill-btn");
   if (editBtn) editBtn.addEventListener("click", () => renderEditBill(data));
-  const closeBtn = $("#close-bill-btn");
-  if (closeBtn) closeBtn.addEventListener("click", () => openCloseConfirm(data));
   const reopenBtn = $("#reopen-bill-btn");
   if (reopenBtn) reopenBtn.addEventListener("click", () => openReopenConfirm(data));
   // v60: bill-level settle — one click marks the whole bill lunas (cash
@@ -1974,6 +1970,17 @@ function renderEditBill(data) {
     merchant: data.bill.merchant || "",
     tax_included: !!(data.bill.tax_included),
   };
+  editState._hadPayments = data.people.some(p => p.paid === "paid" && p.total_idr > 0);
+  editState._originalTotals = {
+    subtotal: editState.subtotal,
+    tax: editState.tax,
+    service: editState.service,
+  };
+  editState._originalItems = editState.items.map(it => ({
+    id: it.id,
+    price: it.price,
+    discount: it.discount,
+  }));
   editState._layer = beginEditorLayer(data.bill.id);
   const main = `
     <div class="card">
@@ -2186,6 +2193,28 @@ async function saveEditBill(billId) {
   if (!items.length) { toast("Minimal 1 item"); return; }
   await withBusy(btn, "Nyimpen...", async () => {
     try {
+      const originalTotals = editState._originalTotals;
+      const originalItems = editState._originalItems;
+      const totalsChanged = editState.subtotal !== originalTotals.subtotal
+        || editState.tax !== originalTotals.tax
+        || editState.service !== originalTotals.service;
+      const originalById = new Map(originalItems.filter(i => i.id != null).map(i => [i.id, i]));
+      const currentById = new Map(items.filter(i => i.id != null).map(i => [i.id, i]));
+      const itemsChanged = originalItems.length !== items.length
+        || originalItems.some(original => {
+          const current = original.id == null ? null : currentById.get(original.id);
+          return !current || current.price !== original.price || (current.discount || 0) !== (original.discount || 0);
+        })
+        || items.some(current => current.id == null || !originalById.has(current.id));
+      if (editState._hadPayments && (totalsChanged || itemsChanged)) {
+        const ok = await confirmSheet({
+          title: "Perubahan menyentuh pembayaran",
+          body: "Ada orang yang sudah ditandai lunas. Mengubah jumlah akan menggeser pembagian yang sudah dibayar.",
+          confirmText: "Tetap Simpan",
+          cancelText: "Batal",
+        });
+        if (!ok) return;
+      }
       await apiJson(`/api/bills/${billId}`, "PUT", {
         title: editState.title || editState.merchant || "Bill",
         merchant: editState.merchant || null,
@@ -2274,28 +2303,3 @@ function openReopenConfirm(data) {
     }));
 }
 
-function openCloseConfirm(data) {
-  const ownerish = new Set([data.paid_by_id, data.bill.creator_identity_id].filter(Boolean));
-  const notPicked = data.people.filter(p => !p.subtotal_idr && !hasPickedAny(data, p.identity_id) && !ownerish.has(p.identity_id));
-  const emptySlots = data.uncovered_slots || [];
-  const s = openSheet(`
-    <div class="sheet-handle"></div>
-    <div class="sheet-title">Tutup bill?</div>
-    <p class="sheet-sub">Setelah ditutup, pembagian menjadi final dan status bayar tidak bisa diubah lagi. Kamu masih bisa membukanya lagi kapan pun.</p>
-    ${emptySlots.length ? `<div class="warn-box"><strong>Bagian kosong belum terambil:</strong><ul>
-      ${emptySlots.map(u => `<li>${esc(u.name)} — ${u.empty} bagian (${fmt(u.amount_idr)})</li>`).join("")}
-    </ul></div>` : ""}
-    ${notPicked.length ? `<div class="warn-box"><strong>Belum pilih item:</strong><ul>${notPicked.map(m => `<li>${esc(m.name)}</li>`).join("")}</ul></div>` : ""}
-    <button class="btn-primary" id="confirm-close">Tutup Bill Sekarang</button>
-    <button class="btn-outline" id="cancel-close">Batal, Tunggu yang Lain</button>`, { noAutofocus: true });
-  $("#cancel-close", s.sheet).addEventListener("click", s.close);
-  $("#confirm-close", s.sheet).addEventListener("click", (ev) =>
-    withBusy(ev.currentTarget, "Bentar...", async () => {
-      try {
-        await api(`/api/bills/${data.bill.id}/close`, { method: "POST" });
-        s.close();
-        toast("Bill ditutup");
-        loadBillView(data.bill.id);
-      } catch (e) { toast(e.message); }
-    }));
-}
