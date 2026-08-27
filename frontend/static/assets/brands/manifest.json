@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "purpose": "Bagiin payment-method picker brand logos",
+  "source": {
+    "name": "idn-finlogos",
+    "url": "https://github.com/hafidznoor/idn-finlogos",
+    "commit": "fe7e2a23f7a078036f9b898f47be91d0db6b2b6c",
+    "asset_license": "CC BY-NC 4.0",
+    "notice": "https://github.com/hafidznoor/idn-finlogos/blob/main/NOTICE"
+  },
+  "normalization": [
+    "responsive width/height set to 100%",
+    "viewBox retained",
+    "SVG XML parsed and validated",
+    "no external image/font references"
+  ],
+  "trademark_notice": "Logos are displayed solely to identify payment methods. All trademarks remain property of their respective owners; no endorsement implied. Confirm CC BY-NC/commercial permissions with trademark holders before commercial distribution.",
+  "logos": [
+    {
+      "code": "BCA",
+      "file": "bca.svg",
+      "upstream_file": "bca.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "BNI",
+      "file": "bni.svg",
+      "upstream_file": "bni.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "BRI",
+      "file": "bri.svg",
+      "upstream_file": "bri.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Mandiri",
+      "file": "mandiri.svg",
+      "upstream_file": "mandiri.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "BTN",
+      "file": "btn.svg",
+      "upstream_file": "btn.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "CIMB",
+      "file": "cimb.svg",
+      "upstream_file": "cimb-niaga.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Permata",
+      "file": "permata.svg",
+      "upstream_file": "permata.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "BSI",
+      "file": "bsi.svg",
+      "upstream_file": "bsi.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Danamon",
+      "file": "danamon.svg",
+      "upstream_file": "danamon.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Maybank",
+      "file": "maybank.svg",
+      "upstream_file": "maybank.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Panin",
+      "file": "panin.svg",
+      "upstream_file": "paninbank.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Mega",
+      "file": "mega.svg",
+      "upstream_file": "mega.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "OCBC",
+      "file": "ocbc.svg",
+      "upstream_file": "ocbc-nisp.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "BTPN",
+      "file": "btpn.svg",
+      "upstream_file": "btpn.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "UOB",
+      "file": "uob.svg",
+      "upstream_file": "uob.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Jatim",
+      "file": "jatim.svg",
+      "upstream_file": "bank-bpd-jatim.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "DKI",
+      "file": "dki.svg",
+      "upstream_file": "bank-jakarta.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "BJB",
+      "file": "bjb.svg",
+      "upstream_file": "bank-bjb.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Sinarmas",
+      "file": "sinarmas.svg",
+      "upstream_file": "sinarmas.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Jago",
+      "file": "jago.svg",
+      "upstream_file": "jago.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Jenius",
+      "file": "jenius.svg",
+      "upstream_file": "jenius.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "SeaBank",
+      "file": "seabank.svg",
+      "upstream_file": "seabank.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "BNC",
+      "file": "bnc.svg",
+      "upstream_file": "bnc.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Superbank",
+      "file": "superbank.svg",
+      "upstream_file": "superbank.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Allo",
+      "file": "allo.svg",
+      "upstream_file": "allo.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Blu",
+      "file": "blu.svg",
+      "upstream_file": "blu-bca.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Krom",
+      "file": "krom.svg",
+      "upstream_file": "krom.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "LINE",
+      "file": "line.svg",
+      "upstream_file": "line-bank.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "GoPay",
+      "file": "gopay.svg",
+      "upstream_file": "gopay.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "OVO",
+      "file": "ovo.svg",
+      "upstream_file": "ovo.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "DANA",
+      "file": "dana.svg",
+      "upstream_file": "dana.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "ShopeePay",
+      "file": "shopeepay.svg",
+      "upstream_file": "shopee-pay.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "LinkAja",
+      "file": "linkaja.svg",
+      "upstream_file": "linkaja.svg",
+      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
+    },
+    {
+      "code": "Lainnya",
+      "file": "lainnya.svg",
+      "upstream_file": null,
+      "license": "Original generic payment-card icon; no brand mark"
+    }
+  ]
+}
