@@ -158,6 +158,22 @@ def test_bills_list_exposes_idle_joined_picker_name():
     assert "Guest50c" in row["pending_names"], row
 
 
+def test_bills_list_exposes_viewer_total_for_debtor_and_payer():
+    payer = db.new_identity("Payer50d")
+    debtor = db.new_identity("Debtor50d")
+    bid = _mk_bill(payer, subtotal=100000, total=100000,
+                   items=[{"name": "A", "price": 100000}],
+                   participants=["Payer50d", "Debtor50d"],
+                   paid_by_name="Payer50d")
+    c.post(f"/api/bills/{bid}/join", headers=_H(debtor), json={})
+    item_id = db.get_bill(bid)["items"][0]["id"]
+    _pick(bid, payer, item_id)
+    _pick(bid, debtor, item_id)
+
+    assert _row_for(debtor, bid)["my_total_idr"] == 50000
+    assert _row_for(payer, bid)["my_total_idr"] == 50000
+
+
 if __name__ == "__main__":
     test_my_paid_personal_status_in_list()
     test_my_paid_false_for_creator_without_share()

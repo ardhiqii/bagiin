@@ -575,8 +575,8 @@ def delete_account(account_id: int, request: Request):
     return {"ok": True}
 
 
-def _list_pick_state(bill_data: dict) -> tuple[list[str], int]:
-    """Return pick-state summary needed by bill-list status chips."""
+def _list_pick_state(bill_data: dict) -> tuple[list[str], int, list[dict]]:
+    """Return pick-state summary and computed people for bill-list fields."""
     bill = bill_data["bill"]
     result = calc.compute(
         bill=bill, items=bill_data["items"], selections=bill_data["selections"],
@@ -604,7 +604,7 @@ def _list_pick_state(bill_data: dict) -> tuple[list[str], int]:
                if p["identity_id"] != paid_by_id and p["identity_id"] not in selected_ids]
     total_unpaid = sum(max(0, p.get("total_idr", 0)) for p in people
                        if p.get("identity_id") not in paid_ids)
-    return pending, total_unpaid
+    return pending, total_unpaid, people
 
 
 @app.get("/api/identities/{identity_id}/bills")
@@ -626,7 +626,7 @@ def my_bills(identity_id: str, request: Request):
     for row in rows:
         bill_data = row.pop("_bill_data", None)
         if bill_data:
-            row["pending_names"], row["total_unpaid"] = _list_pick_state(bill_data)
+            row["pending_names"], row["total_unpaid"], people = _list_pick_state(bill_data)
             row["owner_id"] = _owner_id(bill_data)
             row["can_manage"] = _can_manage(bill_data, identity_id)
             # personal payment state for THIS viewer: the resolved payer is
@@ -639,6 +639,11 @@ def my_bills(identity_id: str, request: Request):
             row["my_paid"] = (payer_id == identity_id) or any(
                 p["identity_id"] == identity_id and p["status"] == "paid"
                 for p in bill_data["payments"]
+            )
+            row["my_total_idr"] = next(
+                (p.get("total_idr", 0) for p in people
+                 if p.get("identity_id") == identity_id),
+                0,
             )
             # a bill nobody has picked from is neither settled nor "unpaid" —
             # without this the list showed a red "Belum lunas" next to a green
@@ -658,6 +663,7 @@ def my_bills(identity_id: str, request: Request):
             row["owner_id"] = owner_id
             row["can_manage"] = owner_id == identity_id
             row["my_paid"] = False
+            row["my_total_idr"] = 0
             row["i_am_payer"] = False
             row["has_picks"] = False
             row["pending_names"] = []
