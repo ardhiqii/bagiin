@@ -190,7 +190,35 @@ function logout() {
 // One helper for every bottom sheet / dialog: role, Esc, background scroll
 // lock, focus handling, and a click-outside close. Replaces the mix of
 // hand-rolled overlays and native confirm() dialogs.
+//
+// History integration: each opened sheet pushes ONE same-URL "sentinel"
+// entry, so the Android system back gesture / browser Back dismisses the
+// top-most sheet first instead of blasting straight through the dialog to
+// whatever route happens to sit under it (bug: back gesture while the
+// payer/guest sheet was open landed on the home list). Because the sentinel
+// keeps the current URL, popping it fires only `popstate` — never
+// `hashchange` — so closing a sheet costs zero router churn. A real route
+// pop fires BOTH events; we detect that by comparing hashes and let the
+// normal leave-guard/render pipeline win.
 let sheetDepth = 0;
+const sheetStack = [];       // live sheet handles, LIFO
+let consumeNextSelfPop = false; // one self-initiated history.back() in flight
+let pendingSelfPops = 0;        // unconsumed sentinels owed after UI closes
+let drainingPops = false;
+
+function drainSelfPops() {
+  // Closing sheets from UI owes one back() per opened-but-unconsumed
+  // sentinel. Confirms stacked ON another sheet bury their inner sentinel,
+  // so more than one may be owed. Drain strictly sequentially: the next
+  // back() only goes out after the previous one's popstate landed.
+  if (consumeNextSelfPop) return;    // one already in flight
+  if (sheetStack.length > 0) return; // finish live sheets first
+  if (pendingSelfPops <= 0) { drainingPops = false; return; }
+  drainingPops = true;
+  consumeNextSelfPop = true;
+  try { history.back(); } catch (e) { consumeNextSelfPop = false; drainingPops = false; }
+}
+
 function openSheet(html, opts = {}) {
   const overlay = el(`<div class="sheet-overlay" role="dialog" aria-modal="true">
     <div class="sheet" role="document">${html}</div></div>`);
@@ -200,15 +228,38 @@ function openSheet(html, opts = {}) {
   sheetDepth++;
   document.body.style.overflow = "hidden";
 
-  const close = () => {
+  // One handle holds everything the popstate machinery needs. Pushing THIS
+  // object (not a look-alike) into the stack is what makes top-sheet close
+  // dispatch work — earlier version pushed a bare {overlay} twin while the
+  // close method lived on another object, so popstate crashed calling
+  // undefined and left overlays/scroll-lock stranded.
+  const handle = {};
+  const bornAtHash = location.hash;
+  const close = (fromHistory) => {
     if (!overlay.isConnected) return;
+    const idx = sheetStack.indexOf(handle);
+    if (idx !== -1) sheetStack.splice(idx, 1);
     overlay.remove();
     sheetDepth = Math.max(0, sheetDepth - 1);
     if (!sheetDepth) document.body.style.overflow = "";
     document.removeEventListener("keydown", onKey);
     if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch (e) {} }
     if (opts.onClose) opts.onClose();
+    if (!fromHistory) {
+      // Closing from UI: this sheet's sentinel becomes an owed back().
+      // Top-most single-sheet case drains immediately; buried ones (cancel
+      // a confirm sitting on another sheet) join the queue.
+      pendingSelfPops++;
+      drainSelfPops();
+    }
   };
+  handle.overlay = overlay;
+  handle.close = close;
+  handle.bornAtHash = bornAtHash;
+
+  sheetStack.push(handle);
+  try { history.pushState({ bagiinSheet: true }, ""); } catch (e) {}
+
   const onKey = (e) => {
     if (e.key === "Escape") { e.stopPropagation(); close(); }
   };
@@ -221,6 +272,42 @@ function openSheet(html, opts = {}) {
   }, 30);
   return { overlay, sheet, close };
 }
+
+// Fires on back gesture / browser Back. A sentinel pop keeps the SAME URL
+// (pushState was called with an unchanged href), so we detect it purely by
+// comparing against the bornAtHash of the live top sheet — do NOT trust
+// e.state here, because popstate reports the DESTINATION entry's state,
+// not the marker of the entry being discarded. Sentinel pop -> close top
+// sheet and swallow the rest of the navigation. Any other pop changes the
+// URL underneath -> it is a genuine route move; drop remaining sheets
+// silently and let the hashchange/leave-guard pipeline own the transition.
+if (typeof window !== "undefined" && window.__bagiinBackWired !== true) {
+  window.__bagiinBackWired = true;
+  window.addEventListener("popstate", () => {
+    if (consumeNextSelfPop) {
+      // Our own sentinel consumption landed — settle one debt unit and keep
+      // draining if stacked confirms left more buried sentinels behind.
+      consumeNextSelfPop = false;
+      if (pendingSelfPops > 0) {
+        pendingSelfPops--;
+        if (sheetStack.length === 0 && pendingSelfPops > 0) setTimeout(drainSelfPops, 0);
+        else if (pendingSelfPops === 0) drainingPops = false;
+      } else { drainingPops = false; }
+      return;
+    }
+    if (!sheetStack.length) return;
+    const top = sheetStack[sheetStack.length - 1];
+    if (top && top.bornAtHash !== null && location.hash === top.bornAtHash) {
+      top.close(true);
+      return;
+    }
+    while (sheetStack.length) {
+      sheetStack[sheetStack.length - 1].close(true);
+    }
+  });
+}
+// Debug/test surface (read-only introspection).
+window.__sheets = { isOpen: () => sheetStack.length > 0, size: () => sheetStack.length };
 
 /** Styled replacement for window.confirm(). Resolves true/false. */
 function confirmSheet({ title, body, confirmText = "Lanjut", cancelText = "Batal", danger = false }) {
@@ -364,7 +451,20 @@ function render() {
   // browser-back while a sheet was open + sheet confirm yanked the user back
   // into the bill while the URL said home)
   state.currentBillId = null;
-  $$(".sheet-overlay").forEach(s => s.remove());
+  // Route render tears overlays down wholesale — sync the sheet registry too
+  // so no orphan handle eats a later legitimate back press. Sentinel history
+  // entries left behind are harmless: they duplicate the current URL, so
+  // popping them changes nothing visually.
+  $$(".sheet-overlay").forEach((s) => {
+    const idx = sheetStack.findIndex((h) => h.overlay === s);
+    if (idx !== -1) {
+      const [dead] = sheetStack.splice(idx, 1);
+      dead.overlay = null; // mark detached; its close() is a safe no-op now
+      pendingSelfPops++;   // its sentinel is now an orphaned duplicate entry
+    }
+    s.remove();
+  });
+  if (pendingSelfPops > 0) drainSelfPops();
   sheetDepth = 0;
   document.body.style.overflow = "";
   app.classList.remove("settings-page");
