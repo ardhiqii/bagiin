@@ -242,7 +242,7 @@ def test_slot_oversubscription_blocked():
     r = c.post(f"/api/bills/{bid}/selections", headers=Hb,
                json={"picks": [{"item_id": ids["Teh"], "qty": 1}]})
     assert r.status_code == 400, (r.status_code, r.text)
-    assert "tinggal" in r.json().get("detail", ""), r.text
+    assert "tersisa" in r.json().get("detail", ""), r.text
     # also qty > slot_count alone -> 400
     r = c.post(f"/api/bills/{bid}/selections", headers=Ha,
                json={"picks": [{"item_id": ids["Teh"], "qty": 2}]})
@@ -307,7 +307,7 @@ def test_unassigned_items_go_to_creator():
     assert by[creator["id"]]["subtotal_idr"] == 30000  # Ayam unpicked -> creator
     assert data["total_ok"] is True
     assert data["remaining_to_creator"] == 0
-    assert any("masuk ke yang nalangin" in w for w in data["warnings"])
+    assert any("otomatis dibebankan ke pembayar dahulu" in w for w in data["warnings"])
     print("PASS unpicked items default to creator + warning matches split")
 
 

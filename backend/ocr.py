@@ -48,7 +48,7 @@ def ocr_receipt(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
     # user cuma liat kalimat pendek yang jujur, dan "belum disetel" dibedain dari
     # "lagi penuh / gagal baca".)
     if not GEMINI_API_KEY and not OR_API_KEY:
-        log.error("OCR gak jalan: GEMINI_API_KEY dan OPENROUTER_API_KEY dua-duanya kosong")
+        log.error("OCR tidak berjalan: GEMINI_API_KEY dan OPENROUTER_API_KEY sama-sama kosong")
         raise RuntimeError("Fitur baca struk otomatis belum disetel di server. Isi manual dulu ya.")
 
     deadline = time.monotonic() + OCR_BUDGET_SECONDS
@@ -69,11 +69,11 @@ def ocr_receipt(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
             errors.append(f"cadangan: {e}")
             log.warning("OpenRouter OCR gagal: %s", e)
     else:
-        log.warning("OPENROUTER_API_KEY kosong, gak ada fallback")
+        log.warning("OPENROUTER_API_KEY kosong, tidak ada fallback")
 
     log.error("OCR gagal total: %s", "; ".join(errors) or "no provider berhasil dipanggil")
     raise RuntimeError(
-        "AI gratis lagi penuh atau gangguan. Coba lagi beberapa menit atau isi manual aja."
+        "Layanan AI gratis sedang penuh atau mengalami gangguan. Coba lagi beberapa menit kemudian atau isi secara manual."
     )
 
 
@@ -107,7 +107,7 @@ def _gemini_ocr(image_bytes: bytes, mime_type: str, deadline: float) -> dict:
         remaining = deadline - time.monotonic()
         if remaining < _MIN_ATTEMPT_SECONDS:
             log.warning(
-                "Gemini: budget waktu abis sebelum attempt %d/%d (sisa %.1fs)",
+                "budget waktu habis sebelum attempt %d/%d (sisa %.1fs)",
                 attempt + 1, MAX_ATTEMPTS, remaining,
             )
             break
@@ -133,9 +133,9 @@ def _gemini_ocr(image_bytes: bytes, mime_type: str, deadline: float) -> dict:
             if attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
                 time.sleep(backoff)
                 continue
-            raise RuntimeError(f"request gagal: {e}")
+            raise RuntimeError(f"Permintaan gagal: {e}")
     if data is None:
-        raise RuntimeError("gagal setelah beberapa percobaan (waktu abis)")
+        raise RuntimeError("Kegagalan setelah beberapa percobaan (waktu habis)")
 
     try:
         text = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -173,7 +173,7 @@ def _openrouter_ocr(image_bytes: bytes, deadline: float) -> dict:
         remaining = deadline - time.monotonic()
         if remaining < _MIN_ATTEMPT_SECONDS:
             log.warning(
-                "OpenRouter: budget waktu abis sebelum attempt %d/%d (sisa %.1fs)",
+                "budget waktu habis sebelum attempt %d/%d (sisa %.1fs)",
                 attempt + 1, MAX_ATTEMPTS, remaining,
             )
             break
@@ -199,9 +199,9 @@ def _openrouter_ocr(image_bytes: bytes, deadline: float) -> dict:
             if attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
                 time.sleep(backoff)
                 continue
-            raise RuntimeError(f"request gagal: {e}")
+            raise RuntimeError(f"Permintaan gagal: {e}")
     if data is None:
-        raise RuntimeError("gagal setelah beberapa percobaan (waktu abis)")
+        raise RuntimeError("Kegagalan setelah beberapa percobaan (waktu habis)")
 
     try:
         content = data["choices"][0]["message"]["content"]
@@ -216,7 +216,7 @@ def _openrouter_ocr(image_bytes: bytes, deadline: float) -> dict:
 
 
 def _downscale(image_bytes: bytes, max_side: int = 1280) -> bytes:
-    """Kecilin gambar biar request lebih cepat & gak ditolak model gratis."""
+    """Kecilkan gambar agar permintaan lebih cepat dan tidak ditolak model gratis."""
     try:
         from PIL import Image
     except ImportError:
@@ -251,7 +251,7 @@ def _normalize(parsed) -> dict:
     # jadi AttributeError yang gak ketangkep RuntimeError manapun -> lolos ke luar
     # semua try/except pemanggil dan jadi HTTP 500 mentah ke client.)
     if not isinstance(parsed, dict):
-        raise RuntimeError("Hasil baca AI-nya gak sesuai format, coba foto ulang atau isi manual aja.")
+        raise RuntimeError("Hasil pembacaan AI tidak sesuai format, coba foto ulang atau isi secara manual.")
     raw_items = parsed.get("items") or []
     if not isinstance(raw_items, list):
         raw_items = []

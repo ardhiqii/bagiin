@@ -257,7 +257,7 @@ def test_invite_requires_kontak_terbukti():
     r = client.post(f"/api/bills/{b1['id']}/invite",
                     json={"identity_id": stranger["id"]}, headers=_H(aufa))
     assert r.status_code == 400, r.text
-    assert "share bill" in r.json()["detail"].lower(), r.json()
+    assert "berbagi bill" in r.json()["detail"].lower(), r.json()
     # belum jadi peserta
     assert not db.identity_on_bill(b1["id"], stranger["id"])
     # setelah stranger share bill sekali (join bill Aufa), bisa di-invite

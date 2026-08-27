@@ -1140,7 +1140,7 @@ def set_selections(bill_id: str, identity_id: str, picks) -> None:
                 (item_id, bill_id),
             ).fetchone()
             if not it:
-                raise ValueError("Item invalid")
+                raise ValueError("Item tidak valid")
             if it["mode"] == "slot" and it["slot_count"]:
                 taken = conn.execute(
                     "SELECT COALESCE(SUM(qty), 0) AS t FROM selection "
@@ -1149,7 +1149,7 @@ def set_selections(bill_id: str, identity_id: str, picks) -> None:
                 ).fetchone()["t"]
                 if taken + qty > it["slot_count"]:
                     left = it["slot_count"] - taken
-                    raise ValueError(f"Slot tinggal {left}")
+                    raise ValueError(f"Slot tersisa {left}")
         conn.execute(
             """DELETE FROM selection WHERE identity_id = ? AND item_id IN
                (SELECT id FROM item WHERE bill_id = ?)""",

@@ -71,15 +71,15 @@ def _identity_from_request(request: Request):
     """
     ident_id = request.headers.get("X-Identity-Id", "")
     if not ident_id:
-        raise HTTPException(400, "Missing X-Identity-Id header")
+        raise HTTPException(400, "Header X-Identity-Id wajib diisi")
     ident = db.get_identity(ident_id)
     if not ident:
-        raise HTTPException(404, "Identity not found")
+        raise HTTPException(404, "Identitas tidak ditemukan")
     stored = ident.get("secret")
     if stored:
         given = request.headers.get("X-Identity-Secret", "")
         if not given or not secrets.compare_digest(str(stored), given):
-            raise HTTPException(403, "Sesi gak valid, coba masuk ulang")
+            raise HTTPException(403, "Sesi tidak valid, coba masuk ulang")
     return ident
 
 
@@ -99,7 +99,7 @@ def _viewer_id(request: Request) -> str | None:
 def _bill_or_404(bill_id: str):
     data = db.get_bill(bill_id)
     if not data:
-        raise HTTPException(404, "Bill not found")
+        raise HTTPException(404, "Bill tidak ditemukan")
     return data
 
 
@@ -218,7 +218,7 @@ def _check_photo_mime(content_type: str | None):
     plus a broken thumbnail (bug: v66 audit).
     """
     if (content_type or "") not in _ALLOWED_PHOTO_MIME:
-        raise HTTPException(400, "Format foto gak didukung, pilih JPEG/PNG/WEBP")
+        raise HTTPException(400, "Format foto tidak didukung, pilih JPEG/PNG/WEBP")
 
 
 def generate_readable_code() -> str:
@@ -371,19 +371,19 @@ async def _read_json(request: Request) -> dict:
     try:
         raw = await request.body()
     except Exception:
-        raise HTTPException(400, "Body required")
+        raise HTTPException(400, "Isi permintaan wajib diisi")
     if not raw:
-        raise HTTPException(400, "Body required")
+        raise HTTPException(400, "Isi permintaan wajib diisi")
     try:
         parsed = json.loads(raw)
     except Exception:
-        raise HTTPException(400, "Invalid JSON")
+        raise HTTPException(400, "Format JSON tidak valid")
     # a JSON array (or string/number) parses fine but every caller immediately
     # does data.get(...) on it -> AttributeError -> 500 (bug: `POST /api/bills`
     # with `[]` as the body). A non-object body is malformed input, not a
     # server error.
     if not isinstance(parsed, dict):
-        raise HTTPException(400, "Body harus JSON object")
+        raise HTTPException(400, "Isi permintaan harus berupa objek JSON")
     return parsed
 
 
@@ -393,7 +393,7 @@ async def create_identity(request: Request):
     data = await _read_json(request)
     name = _to_str(data.get("name"), "Nama", maxlen=60)
     if not name:
-        raise HTTPException(400, "Name required")
+        raise HTTPException(400, "Nama wajib diisi")
     ident = db.new_identity(name, role="creator" if data.get("creator") else "guest")
     return ident
 
@@ -423,10 +423,10 @@ def bind_identity_secret(identity_id: str, request: Request):
     """
     ident = db.get_identity(identity_id)
     if not ident:
-        raise HTTPException(404, "Identity not found")
+        raise HTTPException(404, "Identitas tidak ditemukan")
     secret = db.bind_secret(identity_id)
     if not secret:
-        raise HTTPException(403, "Identitas ini udah punya sesi")
+        raise HTTPException(403, "Identitas ini sudah memiliki sesi")
     return {"id": identity_id, "name": ident["name"], "secret": secret}
 
 
@@ -434,7 +434,7 @@ def bind_identity_secret(identity_id: str, request: Request):
 async def set_code(identity_id: str, request: Request):
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
-        raise HTTPException(403, "Identitas gak cocok")
+        raise HTTPException(403, "Identitas tidak cocok")
     data = await _read_json(request)
     # same non-string-code crash as restore_identity, self-inflicted only
     # here since the caller is already authenticated (bug: v66 audit, A13)
@@ -451,7 +451,7 @@ async def generate_code(identity_id: str, request: Request):
     """Auto-generate a recovery code. Regenerating replaces (kills) the old one."""
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
-        raise HTTPException(403, "Identitas gak cocok")
+        raise HTTPException(403, "Identitas tidak cocok")
     code = generate_readable_code()
     db.set_identity_code(identity_id, code)
     return {"code": code}
@@ -461,7 +461,7 @@ async def generate_code(identity_id: str, request: Request):
 async def update_name(identity_id: str, request: Request):
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
-        raise HTTPException(403, "Identitas gak cocok")
+        raise HTTPException(403, "Identitas tidak cocok")
     data = await _read_json(request)
     name = _to_str(data.get("name"), "Nama", maxlen=60)
     if not name:
@@ -477,7 +477,7 @@ def get_me(identity_id: str, request: Request):
     user had already written down."""
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
-        raise HTTPException(403, "Identitas gak cocok")
+        raise HTTPException(403, "Identitas tidak cocok")
     return {
         "id": ident["id"],
         "name": ident["name"],
@@ -490,7 +490,7 @@ def get_me(identity_id: str, request: Request):
 def list_accounts(identity_id: str, request: Request):
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
-        raise HTTPException(403, "Identitas gak cocok")
+        raise HTTPException(403, "Identitas tidak cocok")
     return db.get_accounts(identity_id)
 
 
@@ -501,7 +501,7 @@ def list_contacts(identity_id: str, request: Request):
     people out using the bill payload."""
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
-        raise HTTPException(403, "Identitas gak cocok")
+        raise HTTPException(403, "Identitas tidak cocok")
     q = (request.query_params.get("q") or "").strip()[:30] or None
     return db.get_contacts(identity_id, q)
 
@@ -513,7 +513,7 @@ async def set_auto_accept(identity_id: str, request: Request):
     OFF = invites land as pending cards the user accepts/declines."""
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
-        raise HTTPException(403, "Identitas gak cocok")
+        raise HTTPException(403, "Identitas tidak cocok")
     data = await _read_json(request)
     raw = data.get("auto_accept")
     # strict boolean: bool("false") == True would silently flip ON for any
@@ -527,7 +527,7 @@ async def set_auto_accept(identity_id: str, request: Request):
     elif isinstance(raw, str) and raw.strip().lower() in ("false", "0", ""):
         value = False
     else:
-        raise HTTPException(400, "auto_accept wajib true/false")
+        raise HTTPException(400, "auto_accept wajib bernilai true atau false")
     db.set_auto_accept(identity_id, value)
     return {"ok": True}
 
@@ -537,7 +537,7 @@ async def set_auto_accept(identity_id: str, request: Request):
 async def add_account(identity_id: str, request: Request):
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
-        raise HTTPException(403, "Identitas gak cocok")
+        raise HTTPException(403, "Identitas tidak cocok")
     data = await _read_json(request)
     brand = _to_str(data.get("brand"), "Brand", maxlen=40)
     account_no = _to_str(data.get("account_no"), "Nomor", maxlen=60)
@@ -579,7 +579,7 @@ def delete_account(account_id: int, request: Request):
 def my_bills(identity_id: str, request: Request):
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
-        raise HTTPException(403, "Identitas gak cocok")
+        raise HTTPException(403, "Identitas tidak cocok")
     rows = db.get_bills_for_identity(identity_id)
     # expose the effective owner (resolved payer, else creator) so the UI can
     # show owner-only actions (delete) — mirrors _owner_id, including the
@@ -650,7 +650,7 @@ async def create_bill(request: Request):
         price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0, maxv=_MAX_IDR)
         discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0, maxv=_MAX_IDR)
         if discount > price:
-            raise HTTPException(400, f"Diskon {i['name']} gak bisa lebih besar dari harga")
+            raise HTTPException(400, f"Diskon {i['name']} tidak boleh lebih besar dari harga")
         eff_sum += price - discount
     participants = []
     seen_participants = set()
@@ -662,7 +662,7 @@ async def create_bill(request: Request):
                 participants.append(p.strip())
     pc = data.get("participant_count")
     participant_count = _to_int(pc, "Jumlah orang", minv=0) if pc not in (None, "") else None
-    paid_by_name = _to_str(data.get("paid_by_name"), "Nama yang nalangin", maxlen=60) or None
+    paid_by_name = _to_str(data.get("paid_by_name"), "Nama pembayar", maxlen=60) or None
     subtotal = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0, maxv=_MAX_IDR)
     tax = _to_int(data.get("tax"), "Pajak", 0, minv=0, maxv=_MAX_IDR)
     service = _to_int(data.get("service"), "Service", 0, minv=0, maxv=_MAX_IDR)
@@ -674,9 +674,9 @@ async def create_bill(request: Request):
     if tax_included and tax > 0:
         raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
     if total != subtotal + tax + service:
-        raise HTTPException(400, "Total gak cocok sama subtotal + pajak + service")
+        raise HTTPException(400, "Total tidak sesuai dengan subtotal + pajak + service")
     if subtotal != eff_sum:
-        raise HTTPException(400, f"Subtotal gak cocok sama isi item (harusnya Rp {eff_sum:,})")
+        raise HTTPException(400, f"Subtotal tidak sesuai dengan isi item (seharusnya Rp {eff_sum:,})")
     # a non-string here reached sqlite3 and raised InterfaceError -> 500, and
     # Cloudflare replaces 5xx bodies with its own error page (bug: v64 audit)
     #
@@ -704,14 +704,14 @@ async def create_bill(request: Request):
             if not isinstance(p, str) or not p:
                 continue
             if not _valid_photo_name(p):
-                raise HTTPException(400, "Path foto gak valid")
+                raise HTTPException(400, "Path foto tidak valid")
             photos.append(p)
     photo_path = data.get("photo_path")
     if photo_path is not None:
         if not isinstance(photo_path, str):
-            raise HTTPException(400, "photo_path harus teks")
+            raise HTTPException(400, "photo_path harus berupa teks")
         if photo_path and not _valid_photo_name(photo_path):
-            raise HTTPException(400, "Path foto gak valid")
+            raise HTTPException(400, "Path foto tidak valid")
     created = db.create_bill(
         creator_id=ident["id"],
         title=title,
@@ -753,7 +753,7 @@ async def update_bill(bill_id: str, request: Request):
     if not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "open":
-        raise HTTPException(403, "Bill sudah ditutup, gak bisa diedit")
+        raise HTTPException(403, "Bill sudah ditutup, tidak dapat diedit")
     items = data.get("items") or []
     if not isinstance(items, list) or not items:
         raise HTTPException(400, "Minimal 1 item")
@@ -764,7 +764,7 @@ async def update_bill(bill_id: str, request: Request):
         price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0, maxv=_MAX_IDR)
         discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0, maxv=_MAX_IDR)
         if discount > price:
-            raise HTTPException(400, f"Diskon {i['name']} gak bisa lebih besar dari harga")
+            raise HTTPException(400, f"Diskon {i['name']} tidak boleh lebih besar dari harga")
         eff_sum += price - discount
     # the same item id twice would be validated twice but stored once, leaving
     # bill.total_idr permanently larger than the sum of its items (bug: 100k
@@ -799,7 +799,7 @@ async def update_bill(bill_id: str, request: Request):
                 sc = 1
             taken = taken_by_item.get(int(iid), 0)
             if sc < taken:
-                raise HTTPException(400, f"Slot {it['name']} minimal {taken} (sudah keambil {taken})")
+                raise HTTPException(400, f"Slot {it['name']} minimal {taken} (sudah terisi {taken})")
         elif cur["mode"] == "slot":
             # switching to free: clamp qty to 1 (people stay selected once)
             db.clamp_selection_qty(bill_id, int(iid))
@@ -839,9 +839,9 @@ async def update_bill(bill_id: str, request: Request):
     if data.get("tax_included") and tax_v > 0:
         raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
     if total_v != subtotal_v + tax_v + service_v:
-        raise HTTPException(400, "Total gak cocok sama subtotal + pajak + service")
+        raise HTTPException(400, "Total tidak sesuai dengan subtotal + pajak + service")
     if subtotal_v != eff_sum:
-        raise HTTPException(400, f"Subtotal gak cocok sama isi item (harusnya Rp {eff_sum:,})")
+        raise HTTPException(400, f"Subtotal tidak sesuai dengan isi item (seharusnya Rp {eff_sum:,})")
     db.update_bill(
         bill_id,
         title=_to_str(data.get("title"), "Judul bill", maxlen=120) or bill_data["bill"]["title"],
@@ -877,14 +877,14 @@ async def set_paid_by(bill_id: str, request: Request):
     if not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "open":
-        raise HTTPException(403, "Bill sudah ditutup, gak bisa diubah")
+        raise HTTPException(403, "Bill sudah ditutup, tidak dapat diubah")
     identity_id = _to_str(data.get("identity_id"), "Identity id", maxlen=64) or None
     name = _to_str(data.get("name"), "Nama", maxlen=60) or None
     if identity_id:
         # validate identity exists & is part of this bill (roster)
         target = db.get_identity(identity_id)
         if not target:
-            raise HTTPException(404, "Orang gak ditemukan")
+            raise HTTPException(404, "Orang tidak ditemukan")
         roster_ids = {p["identity_id"] for p in bill_data["payments"]}
         roster_ids.add(bill_data["bill"]["creator_identity_id"])
         if identity_id not in roster_ids:
@@ -979,16 +979,16 @@ async def invite_to_bill(bill_id: str, request: Request):
         raise HTTPException(400, "Identity id wajib diisi")
     target = db.get_identity(target_id)
     if not target:
-        raise HTTPException(404, "Akun gak ketemu")
+        raise HTTPException(404, "Akun tidak ditemukan")
     if target_id == ident["id"]:
-        raise HTTPException(400, "Gak bisa invite diri sendiri")
+        raise HTTPException(400, "Tidak dapat mengundang diri sendiri")
     if db.identity_on_bill(bill_id, target_id):
-        raise HTTPException(400, "Orang ini udah di bill")
+        raise HTTPException(400, "Orang ini sudah ada di bill")
     # identity ids are public (every bill payload lists them) — scoping the
     # invite to "kontak terbukti" stops anyone force-joining strangers to
     # their own bills as a spam vector (bug found in v64 review)
     if not db.is_contact(ident["id"], target_id):
-        raise HTTPException(400, "Bisa ngundang orang yang udah pernah share bill aja")
+        raise HTTPException(400, "Hanya orang yang pernah berbagi bill yang dapat diundang")
     inv = db.create_invite(bill_id, target_id, ident["id"])
     if inv["status"] == "accepted":
         # stale-guard: an accepted row can outlive the person's membership
@@ -1022,14 +1022,14 @@ def accept_invite(bill_id: str, invite_id: int, request: Request):
     ident = _identity_from_request(request)
     inv = db.get_invite(invite_id)
     if not inv or inv["bill_id"] != bill_id or inv["identity_id"] != ident["id"]:
-        raise HTTPException(404, "Undangan gak ketemu")
+        raise HTTPException(404, "Undangan tidak ditemukan")
     if inv["status"] != "pending":
-        raise HTTPException(400, "Undangan ini udah diproses")
+        raise HTTPException(400, "Undangan ini sudah diproses")
     db.mark_invite_accepted(invite_id)
     db.join_bill(bill_id, ident["id"], ident["name"])
     fresh = db.get_bill(bill_id)
     if not fresh:
-        raise HTTPException(404, "Bill gak ketemu")
+        raise HTTPException(404, "Bill tidak ditemukan")
     return _compute_response(fresh, ident["id"])
 
 
@@ -1039,9 +1039,9 @@ def decline_invite(bill_id: str, invite_id: int, request: Request):
     ident = _identity_from_request(request)
     inv = db.get_invite(invite_id)
     if not inv or inv["bill_id"] != bill_id or inv["identity_id"] != ident["id"]:
-        raise HTTPException(404, "Undangan gak ketemu")
+        raise HTTPException(404, "Undangan tidak ditemukan")
     if not db.decline_invite(invite_id, ident["id"]):
-        raise HTTPException(400, "Undangan ini udah diproses")
+        raise HTTPException(400, "Undangan ini sudah diproses")
     return {"ok": True}
 
 
@@ -1050,7 +1050,7 @@ def list_pending_invites(identity_id: str, request: Request):
     """Pending invites for the viewer — cards shown at the top of home."""
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
-        raise HTTPException(403, "Identitas gak cocok")
+        raise HTTPException(403, "Identitas tidak cocok")
     return db.get_pending_invites(identity_id)
 
 
@@ -1067,7 +1067,7 @@ def cancel_bill_invite(bill_id: str, invite_id: int, request: Request):
     if not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if not db.cancel_invite(bill_id, invite_id):
-        raise HTTPException(404, "Undangan gak ketemu")
+        raise HTTPException(404, "Undangan tidak ditemukan")
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
@@ -1080,7 +1080,7 @@ def remove_person(bill_id: str, identity_id: str, request: Request):
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
     if identity_id == ident["id"]:
-        raise HTTPException(400, "Gak bisa hapus diri sendiri (owner bill)")
+        raise HTTPException(400, "Tidak dapat menghapus diri sendiri (owner bill)")
     # the creator used to be unremovable. Since v57 they're a regular
     # participant once a confirmed payer holds the bill, and v58 lets them
     # leave — so the manager can drop them too, same as anyone else. While no
@@ -1114,7 +1114,7 @@ def leave_bill(bill_id: str, request: Request):
         raise HTTPException(403, "Bill sudah ditutup")
     ident = _identity_from_request(request)
     if _can_manage(bill_data, ident["id"]):
-        raise HTTPException(400, "Owner bill gak bisa keluar — pindahin yang bayar atau hapus billnya")
+        raise HTTPException(400, "Owner bill tidak dapat keluar — pindahkan pembayar atau hapus bill")
     # must actually be part of the bill (joined via payment row, or has picks).
     # The creator is in it by construction until they leave.
     is_creator = ident["id"] == bill["creator_identity_id"]
@@ -1125,7 +1125,7 @@ def leave_bill(bill_id: str, request: Request):
         for sel in (it.get("selections") or [])
     )
     if not (is_creator and not bill.get("creator_left")) and ident["id"] not in joined_ids and not picked:
-        raise HTTPException(404, "Kamu gak ada di bill ini")
+        raise HTTPException(404, "Kamu tidak ada di bill ini")
     db.remove_person(bill_id, ident["id"])
     if is_creator:
         db.set_creator_left(bill_id, ident["id"])
@@ -1154,7 +1154,7 @@ async def set_selections(bill_id: str, request: Request):
             picks.append({"item_id": _to_int(p, "Item", minv=1), "qty": 1})
     valid = {i["id"]: i for i in bill_data["items"]}
     if any(p["item_id"] not in valid for p in picks):
-        raise HTTPException(400, "Item invalid")
+        raise HTTPException(400, "Item tidak valid")
     # merge duplicate item ids
     merged: dict[int, int] = {}
     for p in picks:
@@ -1170,10 +1170,10 @@ async def set_selections(bill_id: str, request: Request):
         it = valid[p["item_id"]]
         if it["mode"] == "slot" and it["slot_count"]:
             if p["qty"] > it["slot_count"]:
-                raise HTTPException(400, f"Slot {it['name']} cuma {it['slot_count']}")
+                raise HTTPException(400, f"Slot {it['name']} hanya berjumlah {it['slot_count']}")
             if others.get(p["item_id"], 0) + p["qty"] > it["slot_count"]:
                 left = it["slot_count"] - others.get(p["item_id"], 0)
-                raise HTTPException(400, f"Slot {it['name']} tinggal {left}")
+                raise HTTPException(400, f"Slot {it['name']} tersisa {left}")
         elif p["qty"] > 99:
             raise HTTPException(400, f"{it['name']} maksimal 99 porsi")
     db.claim_participant(bill_id, ident["id"], ident["name"])
@@ -1193,7 +1193,7 @@ async def set_item_slots(bill_id: str, item_id: int, request: Request):
     if not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "open":
-        raise HTTPException(403, "Bill sudah ditutup, gak bisa diubah")
+        raise HTTPException(403, "Bill sudah ditutup, tidak dapat diubah")
     item = next((i for i in bill_data["items"] if i["id"] == item_id), None)
     if not item:
         raise HTTPException(404, "Item tidak ditemukan")
@@ -1202,12 +1202,12 @@ async def set_item_slots(bill_id: str, item_id: int, request: Request):
     try:
         slot_count = int(data.get("slot_count") or 0)
     except (TypeError, ValueError):
-        raise HTTPException(400, "slot_count invalid")
+        raise HTTPException(400, "Jumlah slot tidak valid")
     if slot_count < 1:
         raise HTTPException(400, "Slot minimal 1")
     taken = sum(int(s.get("qty", 1)) for s in bill_data["selections"] if s["item_id"] == item_id)
     if slot_count < taken:
-        raise HTTPException(400, f"Slot minimal {taken} (sudah keambil {taken})")
+        raise HTTPException(400, f"Slot minimal {taken} (sudah terisi {taken})")
     if not db.set_item_slots(bill_id, item_id, slot_count):
         raise HTTPException(404, "Item tidak ditemukan")
     return _compute_response(db.get_bill(bill_id), ident["id"])
@@ -1222,12 +1222,12 @@ async def release_selection(bill_id: str, item_id: int, identity_id: str, reques
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
     if ident["id"] != identity_id and not _can_manage(bill_data, ident["id"]):
-        raise HTTPException(403, "Cuma pemilik slot atau pembuat bill yang bisa lepas")
+        raise HTTPException(403, "Hanya pemilik slot atau pembuat bill yang dapat melepasnya")
     item = next((i for i in bill_data["items"] if i["id"] == item_id), None)
     if not item:
         raise HTTPException(404, "Item tidak ditemukan")
     if not db.get_selection(bill_id, item_id, identity_id):
-        raise HTTPException(404, "Orang itu gak punya slot di item ini")
+        raise HTTPException(404, "Orang itu tidak memiliki slot pada item ini")
     db.set_selection_qty(bill_id, identity_id, item_id, 0)
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
@@ -1238,15 +1238,15 @@ def mark_paid(bill_id: str, identity_id: str, request: Request):
     can do it (e.g. someone transferred money but won't open the app)."""
     bill_data = _bill_or_404(bill_id)
     if bill_data["bill"]["status"] != "open":
-        raise HTTPException(403, "Bill sudah ditutup, gak bisa ubah status bayar")
+        raise HTTPException(403, "Bill sudah ditutup, tidak dapat mengubah status pembayaran")
     ident = _identity_from_request(request)
     if ident["id"] != identity_id and not _can_manage(bill_data, ident["id"]):
-        raise HTTPException(403, "Gak bisa ubah status bayar orang lain")
+        raise HTTPException(403, "Tidak dapat mengubah status pembayaran orang lain")
     # identity_id must exist — otherwise INSERT OR IGNORE violates the payment
     # FK and leaves an open write transaction wedging the SQLite lock
     # (bug: mark_paid of a random id -> 500, then every writer hung 5s -> 500)
     if not db.get_identity(identity_id):
-        raise HTTPException(404, "Orang gak dikenal")
+        raise HTTPException(404, "Orang tidak dikenal")
     # the target must already be ON the bill — this used to be close to /join
     # in effect (see _is_bill_member's docstring), a roster-injection route
     # that never called /join and never got vetted by it (bug: v66 audit).
@@ -1262,10 +1262,10 @@ def mark_unpaid(bill_id: str, identity_id: str, request: Request):
     """Undo 'sudah bayar'. Only the payer or the bill creator can undo."""
     bill_data = _bill_or_404(bill_id)
     if bill_data["bill"]["status"] != "open":
-        raise HTTPException(403, "Bill sudah ditutup, gak bisa ubah status bayar")
+        raise HTTPException(403, "Bill sudah ditutup, tidak dapat mengubah status pembayaran")
     ident = _identity_from_request(request)
     if ident["id"] != identity_id and not _can_manage(bill_data, ident["id"]):
-        raise HTTPException(403, "Gak bisa ubah status bayar orang lain")
+        raise HTTPException(403, "Tidak dapat mengubah status pembayaran orang lain")
     db.mark_unpaid(bill_id, identity_id)
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
@@ -1351,7 +1351,7 @@ def delete_photo(bill_id: str, photo_id: int, request: Request):
     # delete any bill's photo from a bill they do manage (bug: v64 audit)
     path = db.delete_bill_photo(bill_data["bill"]["id"], photo_id)
     if path is None:
-        raise HTTPException(404, "Foto gak ketemu")
+        raise HTTPException(404, "Foto tidak ditemukan")
     db._unlink_photo(path)
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
@@ -1398,7 +1398,7 @@ def delete_photo_standalone(filename: str, request: Request):
     """
     _identity_from_request(request)
     if not db._PHOTO_NAME_RE.match(filename):
-        raise HTTPException(404, "Foto gak ketemu")
+        raise HTTPException(404, "Foto tidak ditemukan")
     path = UPLOAD_DIR / filename
     full_path = str(path)
     if db._photo_in_use(full_path):

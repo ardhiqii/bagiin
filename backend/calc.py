@@ -169,10 +169,10 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     warnings = []
     for it in unassigned:
         eff = max(0, it["price_idr"] - int(it.get("discount_idr", 0) or 0))
-        warnings.append(f"Item tidak dipilih siapa pun: {it['name']} Rp {eff:,} -> masuk ke yang nalangin")
+        warnings.append(f"Item tidak dipilih siapa pun: {it['name']} Rp {eff:,} -> otomatis dibebankan ke pembayar dahulu")
     for u in uncovered_slots:
         warnings.append(
-            f"Bagian kosong: {u['name']} {u['empty']} bagian belum keambil "
+            f"Bagian kosong: {u['name']} {u['empty']} bagian belum terisi "
             f"(total Rp {u['amount_idr']:,})"
         )
 
