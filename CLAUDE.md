@@ -20,14 +20,15 @@ cd backend
 source venv/bin/activate                 # venv is committed-adjacent but gitignored
 uvicorn main:app --reload --port 8082    # serves API + frontend at http://localhost:8082
 
-venv/bin/python -m pytest -q                       # full suite (98 tests, ~4s)
+venv/bin/python -m pytest -q                       # full suite (~140 tests, ~7s)
 venv/bin/python -m pytest test_behaviors.py -q     # one file
 venv/bin/python -m pytest test_behaviors.py -q -k slot   # one test
 venv/bin/python test_calc_regression.py            # test files also run standalone (__main__)
 
-# browser smoke test of the guest picker (needs Chrome on --remote-debugging-port=9222)
+# browser smoke tests (need Chrome on --remote-debugging-port=9222)
 BAGIIN_DB=/tmp/e2e.db BAGIIN_UPLOAD_DIR=/tmp/e2e-up venv/bin/python -m uvicorn main:app --port 8099 &
-node ../tools/e2e_smoke.mjs
+node ../tools/e2e_smoke.mjs      # guest picker: shown total == server total
+node ../tools/e2e_settled.mjs    # a hand-settled bill says the same thing on every screen
 ```
 
 `tools/e2e_smoke.mjs` seeds a bill, drives the real UI, and asserts the guest is shown
@@ -36,8 +37,16 @@ frontend used to re-derive the split in JS and told people to transfer the wrong
 It needs no dependencies — Node's built-in WebSocket talks to a Chrome that is already
 running with `--remote-debugging-port=9222`.
 
+`tools/e2e_settled.mjs` guards the other recurring bug class: one bill, two contradicting
+statements. A bill settled by hand (`POST /settle`, v60) deliberately leaves every payment
+row `unpaid`, so the manager view, the guest view and the list must all read
+`settled_manual` or they argue with each other on screen.
+
 Tests set `BAGIIN_DB` to a temp file at import time, so they never touch `backend/bagiin.db`
 (the live DB, gitignored). Any new test file must do the same **before** importing `db`.
+`backend/conftest.py` does the same for `BAGIIN_UPLOAD_DIR` once for the whole session
+(main.py resolves and `mkdir`s it at import, so the first file to import `main` binds it
+for every other file) and disables the rate limiter, whose buckets are process-global.
 
 Production: `sudo systemctl restart bagiin.service` (systemd + nginx + Let's Encrypt on the
 VPS; uploads live in `/var/www/bagiin-uploads`).
@@ -108,7 +117,10 @@ mints one (trust on first use). Bill id is a 22-char `token_urlsafe(16)`; posses
 grants read access. Rate limiting via slowapi per IP.
 
 **Ownership:** `_owner_id()` / `_can_manage()` in `main.py` encode the rule —
-the CONFIRMED payer is the sole manager (v57). Before any payer is confirmed
+the CONFIRMED payer is the sole manager (v57). Only an explicit `identity_id`
+on `PUT /paid_by` confirms; passing a `name` resolves the identity for display
+and must never set `paid_by_confirmed` (v65 — doing so let anyone with the link
+rename themselves to the placeholder and take the bill over). Before any payer is confirmed
 the creator manages; once a manager explicitly confirms a payer (`paid_by`
 with an `identity_id`), power moves to them completely and the creator becomes
 a regular participant. A payer matched only by name is display-only and never
@@ -143,13 +155,17 @@ tax + service`, `tax_included` implies `tax == 0`) and 400 rather than persist a
 split can never reconcile. `db.update_bill()` diffs items by id so existing selections survive
 an edit; ids not belonging to the bill are inserted as new rather than clobbering rows.
 
-**Frontend** (`frontend/static/vNN/`):
+**Frontend** (`frontend/static/`):
 
 - `app.js` — state, `localStorage` helpers (all wrapped in try/catch — private mode must not
   break the app), the `api()` fetch wrapper that injects `X-Identity-Id`, and a hash router
-  (`#/b/<bill_id>`, `#/history`, `#/settings`, `#/create`).
-- `screens.js` — onboarding, home, history, settings/payment accounts, create + OCR verify
-  editor, and the rupiah input helpers (`rupiahFmt`/`rupiahParse`/`bindRupiahInput` — inputs
+  (`#/b/<bill_id>`, `#/settings`, `#/create`, `#/create/verify`). `#/history` is gone (v68 —
+  home owns the one bill list, with filter/sort/paging) and redirects to `#/`. The router
+  also carries a leave-guard so a system Back out of the verify editor asks before
+  discarding a re-typed receipt.
+- `screens.js` — onboarding, home (the one bill list: status chips, year/month, sort and
+  paging — behind an "Atur" sheet on phones, inline at >=1040px), settings/payment accounts,
+  create + OCR verify editor, and the rupiah input helpers (`rupiahFmt`/`rupiahParse`/`bindRupiahInput` — inputs
   hold dot-formatted text, so **never `parseInt` an input value directly**).
 - `bill.js` — the bill screens: guest picker, creator view, edit bill, pay sheet, slot manager.
 

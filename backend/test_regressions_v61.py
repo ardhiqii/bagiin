@@ -17,6 +17,7 @@ Run:
   cd backend && venv/bin/python -m pytest test_regressions_v61.py -q
 """
 import os
+import secrets
 import sys
 import tempfile
 from pathlib import Path
@@ -65,6 +66,15 @@ def _photos(bid):
     return [p["path"] for p in db.get_bill(bid)["photos"]]
 
 
+def _fake_photo():
+    """An upload-shaped path (v67: create_bill now 400s on anything whose
+    basename doesn't match db._PHOTO_NAME_RE, since a bare string used to be
+    accepted verbatim — including another bill's real photo path). This
+    stands in for a path a client would legitimately hand back from a prior
+    /api/photos or /api/ocr call, without actually writing the file."""
+    return str(Path(os.environ["BAGIIN_UPLOAD_DIR"]) / (secrets.token_hex(8) + ".jpg"))
+
+
 def _upload(bid, ident, data=b"jpg-bytes"):
     return c.post(
         f"/api/bills/{bid}/photo",
@@ -76,28 +86,31 @@ def _upload(bid, ident, data=b"jpg-bytes"):
 def test_create_with_photos_list():
     """photos[] attaches every path, in order."""
     aufa = db.new_identity("Aufa61", role="creator")
-    bid = _mk_bill(aufa, photos=["/tmp/a.jpg", "/tmp/b.jpg"])
-    assert _photos(bid) == ["/tmp/a.jpg", "/tmp/b.jpg"]
+    p1, p2 = _fake_photo(), _fake_photo()
+    bid = _mk_bill(aufa, photos=[p1, p2])
+    assert _photos(bid) == [p1, p2]
 
 
 def test_legacy_photo_path_folds_in():
     """create_bill(photo_path=...) still lands in bill_photo (OCR path)."""
     aufa = db.new_identity("Aufa61b", role="creator")
-    bid = _mk_bill(aufa, photo_path="/tmp/legacy.jpg")
-    assert _photos(bid) == ["/tmp/legacy.jpg"]
+    p = _fake_photo()
+    bid = _mk_bill(aufa, photo_path=p)
+    assert _photos(bid) == [p]
     # the legacy column still holds the value (kept, not dropped)
     row = db.get_bill(bid)
-    assert row["bill"]["photo_path"] == "/tmp/legacy.jpg"
+    assert row["bill"]["photo_path"] == p
 
 
 def test_upload_adds_not_replaces():
     """POST /photo now ADDS — a second upload keeps both photos."""
     aufa = db.new_identity("Aufa61c", role="creator")
-    bid = _mk_bill(aufa, photos=["/tmp/one.jpg"])
+    p = _fake_photo()
+    bid = _mk_bill(aufa, photos=[p])
     r = _upload(bid, aufa)
     assert r.status_code == 200, r.text
     assert len(_photos(bid)) == 2, _photos(bid)
-    assert "/tmp/one.jpg" in _photos(bid)
+    assert p in _photos(bid)
 
 
 def test_delete_photo_removes_and_unlinks():

@@ -14,8 +14,8 @@ function statusChipHtml(data) {
     // a closed bill nobody but the creator ever joined isn't "Belum Lunas" —
     // nobody owes anybody anything (bug: solo closed bill said "Belum Lunas")
     if ((data.people || []).length <= 1)
-      return `<span class="chip chip-grey">Ditutup · Selesai</span>`;
-    return `<span class="chip chip-grey">Ditutup · Belum Lunas</span>`;
+      return `<span class="chip chip-grey">Ditutup · selesai</span>`;
+    return `<span class="chip chip-grey">Ditutup · belum lunas</span>`;
   }
   if (data.settled) return `<span class="chip chip-green">${ic("check")}Lunas</span>`;
   return `<span class="chip chip-red">Belum lunas</span>`;
@@ -27,11 +27,25 @@ function statusChipHtml(data) {
 function uncoveredNoteHtml(data) {
   if (!(data.uncovered_idr > 0)) return "";
   const n = (data.uncovered_slots || []).reduce((s, u) => s + u.empty, 0);
-  const what = n > 0 ? `${n} bagian kosong belum keambil` : "ada bagian yang belum keambil";
+  const what = n > 0 ? `${n} bagian kosong belum terambil` : "ada bagian yang belum terambil";
   return `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} ${what} (${fmt(data.uncovered_idr)})</p>`;
 }
 
 // ---------- Receipt photos: view / upload / remove ----------
+function photoThumbHtml(p, i, canManage) {
+  // a row can outlive its file (older data, a failed upload) — onerror swaps
+  // the <img> for a neutral placeholder instead of the browser's broken-image
+  // glyph (bug: a missing file rendered as a giant broken-image icon in the grid)
+  return `
+    <div class="bill-photo-wrap" style="position:relative;">
+      <img src="/uploads/${esc(p.path.split("/").pop())}" alt="Struk ${i + 1}" loading="lazy"
+           data-photo="${esc(p.path)}" data-idx="${i}" style="width:100%;height:110px;object-fit:cover;border-radius:var(--r-xs);display:block;"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+      <div class="photo-missing" style="width:100%;height:110px;">${ic("image")}<span>Foto tidak ditemukan</span></div>
+      ${canManage ? `<button class="bill-photo-del" data-id="${p.id}" aria-label="Hapus foto ${i + 1}" style="position:absolute;top:4px;right:4px;width:40px;height:40px;min-height:40px;padding:0;border-radius:var(--r-full);background:rgba(0,0,0,.62);color:#fff;border:none;display:flex;align-items:center;justify-content:center;">${ic("x")}</button>` : ""}
+    </div>`;
+}
+
 function photoBtnHtml(data) {
   const photos = data.photos || [];
   // uploading needs management rights, not payer-ness — the backend gates this
@@ -39,12 +53,7 @@ function photoBtnHtml(data) {
   // the button on their own bill)
   const canManage = data.can_manage && data.bill.status === "open";
   if (!photos.length && !canManage) return "";
-  const thumbs = photos.map((p, i) => `
-    <div class="bill-photo-wrap" style="position:relative;">
-      <img src="/uploads/${esc(p.path.split("/").pop())}" alt="Struk ${i + 1}" loading="lazy"
-           data-photo="${esc(p.path)}" data-idx="${i}" style="width:100%;height:110px;object-fit:cover;border-radius:var(--r-xs);display:block;">
-      ${canManage ? `<button class="bill-photo-del" data-id="${p.id}" aria-label="Hapus foto ${i + 1}" style="position:absolute;top:6px;right:6px;width:28px;height:28px;min-height:28px;padding:0;border-radius:var(--r-full);background:rgba(0,0,0,.62);color:#fff;border:none;display:flex;align-items:center;justify-content:center;">${ic("x")}</button>` : ""}
-    </div>`).join("");
+  const thumbs = photos.map((p, i) => photoThumbHtml(p, i, canManage)).join("");
   return `
     <div style="margin-top:10px;">
       ${photos.length ? `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">${thumbs}</div>` : ""}
@@ -52,21 +61,49 @@ function photoBtnHtml(data) {
     </div>`;
 }
 
+/** Same two pieces, split so the manager card can put the thumbnails in the
+ *  card body and the button in a row next to the other utility. */
+function photoThumbsHtml(data) {
+  const photos = data.photos || [];
+  if (!photos.length) return "";
+  const canManage = data.can_manage && data.bill.status === "open";
+  return `
+    <div style="margin-top:10px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">
+      ${photos.map((p, i) => photoThumbHtml(p, i, canManage)).join("")}
+    </div>`;
+}
+
+function photoAddBtnHtml(data) {
+  const canManage = data.can_manage && data.bill.status === "open";
+  if (!canManage) return "";
+  const n = (data.photos || []).length;
+  return `<button class="btn-outline btn-sm" id="add-photo-btn">${ic("camera")} ${n ? "Tambah Foto" : "Foto Struk"}</button>`;
+}
+
 function openPhotoSheet(bill, photos, idx) {
   const list = photos && photos.length ? photos : (bill.photo_path ? [{ path: bill.photo_path }] : []);
   const start = Math.min(Math.max(idx || 0, 0), list.length - 1);
   let cur = start;
+  // same fallback as the thumbnail grid: reset both panes before swapping
+  // src so a working photo after a missing one isn't left hidden behind the
+  // placeholder from the previous onerror
   const renderImg = () => {
     const p = list[cur];
     if (!p) return;
-    $("img", s.sheet).src = `/uploads/${encodeURIComponent(p.path.split("/").pop())}`;
+    const img = $("img", s.sheet);
+    const missing = $(".photo-missing", s.sheet);
+    img.style.display = "block";
+    if (missing) missing.style.display = "none";
+    img.src = `/uploads/${encodeURIComponent(p.path.split("/").pop())}`;
     if (list.length > 1) $(".sheet-title", s.sheet).textContent = `Struk asli ${cur + 1}/${list.length}`;
   };
   const s = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-title">Struk asli ${list.length > 1 ? `${cur + 1}/${list.length}` : ""}</div>
     <img src="/uploads/${encodeURIComponent(list[start].path.split("/").pop())}" alt="Foto struk asli bill ini"
-         style="width:100%;border-radius:var(--r-sm);" loading="lazy">
+         style="width:100%;border-radius:var(--r-sm);" loading="lazy"
+         onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+    <div class="photo-missing" style="width:100%;height:220px;">${ic("image")}<span>Foto struk tidak ditemukan</span></div>
     <div class="btn-row" style="margin-top:10px;">
       ${list.length > 1 ? `<button class="btn-outline btn-sm" id="ph-prev" style="margin-top:0;">${ic("chevron")} Sebelumnya</button>
       <button class="btn-outline btn-sm" id="ph-next" style="margin-top:0;">Berikutnya</button>` : ""}
@@ -90,7 +127,7 @@ function bindPhotoActions(data) {
     if (!Number.isFinite(pid)) return;
     const ok = await confirmSheet({
       title: "Hapus foto ini?",
-      body: "Fotonya ilang dari bill. Item & pembagiannya gak berubah.",
+      body: "Foto akan dihapus dari bill. Item & pembagiannya tidak berubah.",
       confirmText: "Hapus",
       danger: true,
     });
@@ -116,6 +153,9 @@ function bindPhotoActions(data) {
     input.addEventListener("change", async () => {
       const f = input.files[0];
       if (!f) return;
+      // every other photo entry point checks first; without it a 12MB phone
+      // photo uploads in full over mobile data and is rejected on arrival
+      if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); input.value = ""; return; }
       const fd = new FormData();
       fd.append("file", f);
       await withBusy(ab, "Upload...", async () => {
@@ -222,7 +262,11 @@ async function loadBillView(billId) {
         if (state.currentBillId !== billId) return;
         renderGuestView(fresh, me);
       } catch (e) {
-        // closed bill or join hiccup: guest can still view the final split
+        // closed bill or join hiccup: guest can still view the final split.
+        // Joining a CLOSED bill always 403s, so this is the routine path, not
+        // an edge case — without the same guard as the success branch, bill
+        // A's split paints over bill B when you tap through fast.
+        if (state.currentBillId !== billId) return;
         renderGuestView(data, me);
       }
     } else {
@@ -238,7 +282,7 @@ async function loadBillView(billId) {
       <div class="card">
         <div class="empty-state">
           ${ic(notFound ? "empty" : "alert")}
-          <p style="font-weight:700;color:var(--text);">${notFound ? "Bill gak ketemu" : "Gagal muat bill"}</p>
+          <p style="font-weight:700;color:var(--text);">${notFound ? "Bill tidak ditemukan" : "Gagal memuat bill"}</p>
           <p class="muted">${esc(e.message)}</p>
         </div>
         <div class="btn-row" style="margin-top:4px;">
@@ -252,7 +296,22 @@ async function loadBillView(billId) {
   }
 }
 
+let guestLayer = null;
+
+function enterGuestViewFromName(billId, data, me) {
+  if (guestLayer) guestLayer.finishQuiet();
+  guestLayer = beginEditorLayer(billId);
+  const layer = guestLayer;
+  addEventListener("popstate", () => { if (guestLayer === layer) guestLayer = null; }, { once: true });
+  renderGuestView(data, me);
+}
+
 function renderGuestNamePrompt(billId, data) {
+  // A gesture-pop reloads the bill; the session then decides whether gate or picker is valid.
+  if (guestLayer) guestLayer.finishQuiet();
+  guestLayer = beginEditorLayer(billId);
+  const layer = guestLayer;
+  addEventListener("popstate", () => { if (guestLayer === layer) guestLayer = null; }, { once: true });
   const app = $("#app");
   const saved = lsGet(LS_KEYS.name, "");
   const payerName = data.paid_by_name || data.creator_name;
@@ -269,14 +328,14 @@ function renderGuestNamePrompt(billId, data) {
     </div>
     ${shell(`
       <div class="card">
-        <div class="label-sm">Kamu diajak bagi bill</div>
+        <div class="label-sm">Kamu diundang untuk membagi bill</div>
         <div style="font-size:21px;font-weight:800;margin-top:4px;letter-spacing:-.02em;">${esc(data.bill.title)}</div>
         <div class="money hero-total" style="margin-top:6px;">${fmt(data.bill.total_idr)}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
           <span class="chip chip-grey">${ic("receipt")}${data.items.length} item</span>
-          <span class="chip chip-grey">${ic("people")}${joined} orang udah gabung</span>
+          <span class="chip chip-grey">${ic("people")}${joined} orang sudah bergabung</span>
         </div>
-        ${data.bill.tax_included ? `<p class="muted" style="color:var(--green);margin-top:10px;">${ic("check")} Harga item sudah termasuk pajak — gak ada PPN tambahan</p>` : ""}
+        ${data.bill.tax_included ? `<p class="muted" style="color:var(--green);margin-top:10px;">${ic("check")} Harga item sudah termasuk pajak — tidak ada PPN tambahan</p>` : ""}
         <p class="muted" style="margin-top:10px;">${payerName === data.creator_name
           ? `Dibuat <strong style="color:var(--text);">${esc(data.creator_name)}</strong> — nanti bayarnya ke dia`
           : `Dibuat ${esc(data.creator_name)} · nanti bayarnya ke <strong style="color:var(--text);">${esc(payerName)}</strong>`}</p>
@@ -288,11 +347,16 @@ function renderGuestNamePrompt(billId, data) {
             <input id="guest-name" name="name" placeholder="Nama kamu" value="${esc(saved)}"
                    maxlength="30" autocomplete="name">
           </div>
-          <button class="btn-primary" type="submit" id="guest-go">Lanjut, Milih Item</button>
+          <button class="btn-primary" type="submit" id="guest-go">Lanjut, Pilih Item</button>
         </form>
-        <p class="muted" style="margin-top:12px;">Tanpa akun. Namamu cuma buat nandain item yang kamu ambil, dan cuma kesimpen di HP ini.</p>
+        <p class="muted" style="margin-top:12px;">Tanpa akun. Namamu hanya untuk menandai item yang kamu ambil, dan hanya tersimpan di perangkat ini.</p>
       </div>`)}`;
-  $("#guest-back").addEventListener("click", () => location.hash = "#/");
+  $("#guest-back").addEventListener("click", () => {
+    const layer = guestLayer;
+    guestLayer = null;
+    if (layer) layer.finishQuiet();
+    location.hash = "#/";
+  });
   const input = $("#guest-name");
   input.focus();
   $("#guest-form").addEventListener("submit", (e) => {
@@ -300,17 +364,20 @@ function renderGuestNamePrompt(billId, data) {
     withBusy($("#guest-go"), "Bentar...", async () => {
       const name = input.value.trim();
       if (!name) { toast("Isi nama dulu"); input.focus(); return; }
+      const layer = guestLayer;
+      guestLayer = null;
+      if (layer) layer.finishQuiet();
       try {
         await ensureIdentity(name);
         const fresh = await apiJson("/api/bills/" + billId + "/join", "POST", {});
-        renderGuestView(fresh, state.identity);
+        enterGuestViewFromName(billId, fresh, state.identity);
       } catch (e2) {
         toast(e2.message);
         // A closed bill still 403s on join — that guest should see the final
         // split anyway. But if we never got an identity (the create call
         // itself failed), renderGuestView would blow up on me.id, so stay put
         // and let them retry (bug: offline at this step = white screen).
-        if (state.identity) renderGuestView(data, state.identity);
+        if (state.identity) enterGuestViewFromName(billId, data, state.identity);
       }
     });
   });
@@ -322,9 +389,15 @@ function renderGuestView(data, me) {
   state.bill = data;
   const closed = data.bill.status === "closed";
   const myPeople = data.people.filter(p => p.identity_id === me.id);
-  const myPaid = myPeople.length ? myPeople[0].paid === "paid" : false;
+  // "Tandai Lunas" (v60) settles the WHOLE bill without touching anyone's
+  // payment row, so reading p.paid alone put a red "Belum Bayar" chip and a
+  // "Tandai Udah Bayar" button under a green "Lunas" header — and on a closed
+  // bill that button could only ever 403 (bug: one screen, two answers).
+  const myPaid = !!data.settled_manual
+    || (myPeople.length ? myPeople[0].paid === "paid" : false);
   const iAmPayer = data.paid_by_id === me.id;
   const payerName = data.paid_by_name || data.creator_name;
+  const payment = payerPayment(data);
   // nobody but the creator is on the bill yet — the product moment is
   // "share the link", not "belum lunas". Mirror the creator view's guard so
   // a fresh solo bill never wears a misleading status (bug: "blom ada yg
@@ -357,17 +430,22 @@ function renderGuestView(data, me) {
           // one line, and the fact a guest actually needs: who fronted the
           // money. "Dikelola oleh" was manager jargon on a screen with no
           // manager actions on it
-          ? ` · nalangin ${esc(payerName)}` : ""}</p>
-      ${data.bill.tax_included ? `<p class="muted" style="margin-top:6px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — gak ada PPN tambahan</p>` : ""}
+          ? ` · membayar dahulu: ${esc(payerName)}` : ""}</p>
+      ${data.bill.tax_included ? `<p class="muted" style="margin-top:6px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — tidak ada PPN tambahan</p>` : ""}
       ${photoBtnHtml(data)}
       ${uncoveredNoteHtml(data)}
-      ${data.all_paid && !closed && !soloSoFar ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua yang milih item udah lunas 🎉</p>` : ""}
+      ${data.all_paid && !closed && !soloSoFar ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua yang memilih item sudah lunas 🎉</p>` : ""}
     </div>
-    <button class="btn-outline" id="pay-methods-btn" style="margin-bottom:12px;">
-      ${ic("wallet")} Metode Bayar ${esc(payerName)}
+    <div class="card card-flat payment-destination">
+      <div class="card-title">Bayar ke ${esc(payment.name)}</div>
+      <p class="muted" style="margin-top:4px;">Bagian kamu: <strong style="color:var(--text);">${fmt(bd.total)}</strong>. Transfer ke ${esc(payment.name)} lewat kanal berikut:</p>
+      <div style="margin-top:10px;">${accountRowsHtml(payment.name, payment.accounts)}</div>
+    </div>
+    <button class="btn-outline btn-sm" id="pay-methods-btn" style="margin-bottom:12px;">
+      ${ic("wallet")} Lihat metode bayar lagi
     </button>
     ${closed ? `
-    <div class="info-box">Bill ini udah ditutup. Pembagiannya final dan gak bisa diubah lagi.</div>
+    <div class="info-box">Bill ini sudah ditutup. Pembagiannya final dan tidak bisa diubah lagi.</div>
     <div class="card card-flat">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
         <div>
@@ -375,8 +453,8 @@ function renderGuestView(data, me) {
           <div class="money" style="font-size:23px;font-weight:800;">${fmt(bd.total)}</div>
         </div>
         ${iAmPayer
-          ? `<span class="chip chip-grey">Kamu yang nalangin</span>`
-          : `<span class="chip ${myPaid ? "chip-green" : "chip-red"}">${myPaid ? `${ic("check")} Udah Bayar` : "Belum Bayar"}</span>`}
+          ? `<span class="chip chip-grey">Kamu yang membayar dahulu</span>`
+          : `<span class="chip ${myPaid ? "chip-green" : "chip-red"}">${myPaid ? `${ic("check")} Sudah bayar` : "Belum bayar"}</span>`}
       </div>
       ${hasTax ? `
       <div class="dock-split" style="margin-top:10px;flex-wrap:wrap;background:var(--surface-3);">
@@ -384,13 +462,14 @@ function renderGuestView(data, me) {
         <span>Pajak &amp; service <b class="money-sm" style="color:var(--accent);">${fmt(bd.tax)}</b></span>
       </div>` : ""}
       ${!iAmPayer && !myPaid ? `
-      <p class="muted" style="margin-top:10px;">Status bayar gak bisa diubah lagi di bill yang udah ditutup.
-      Kalau kamu udah transfer, kabarin ${esc(payerName)} langsung ya — dia yang bisa nandain.</p>` : ""}
-      ${iAmPayer ? `<p class="muted" style="margin-top:10px;">Kamu yang nalangin bill ini, jadi yang lain transfer ke kamu.</p>` : ""}
+      <p class="muted" style="margin-top:10px;">Status bayar tidak bisa diubah lagi di bill yang sudah ditutup.
+      Kalau kamu sudah transfer, beri tahu ${esc(payerName)} langsung ya — dia yang bisa menandai.</p>` : ""}
+      ${iAmPayer ? `<p class="muted" style="margin-top:10px;">Kamu yang membayar dahulu untuk bill ini, jadi yang lain transfer ke kamu.</p>` : ""}
+      ${closed && !iAmPayer ? `<p class="muted" style="margin-top:10px;">${esc(payerName)} membayar dahulu; transfer pembayaran ke ${esc(payerName)} sesuai kanal yang ditentukan.</p>` : ""}
     </div>` : ""}
     <div class="card">
       <div class="card-title">${closed ? "Item yang kamu tanggung" : "Centang yang kamu tanggung"}</div>
-      ${closed ? `<p class="muted" style="margin:-4px 0 8px;">Bill udah ditutup — daftar ini cuma buat dibaca.</p>` : ""}
+      ${closed ? `<p class="muted" style="margin:-4px 0 8px;">Bill sudah ditutup — daftar ini hanya untuk dibaca.</p>` : ""}
       <div id="pick-items">${data.items.map(it => itemRowHtml(it, data, mySel, me.name, me, closed)).join("")}</div>
     </div>
     ${!closed && data.owner_id !== me.id ? `
@@ -410,8 +489,8 @@ function renderGuestView(data, me) {
         <span>Pajak &amp; service <b class="money-sm" id="my-tax" style="color:var(--accent);">${fmt(bd.tax)}</b></span>
       </div>
       ${iAmPayer
-        ? `<div class="chip chip-grey" style="justify-content:center;padding:10px;">${ic("wallet")} Kamu yang Nalangin Bill Ini</div>`
-        : `<button class="${myPaid ? "btn-green" : "btn-primary"}" id="pay-btn">${myPaid ? `${ic("check")} Udah bayar` : "Tandai Udah Bayar"}</button>`}
+        ? `<div class="chip chip-grey" style="justify-content:center;padding:10px;">${ic("wallet")} Kamu yang membayar dahulu</div>`
+        : `<button class="${myPaid ? "btn-green" : "btn-primary"}" id="pay-btn">${myPaid ? `${ic("check")} Sudah bayar` : "Tandai sudah bayar"}</button>`}
     </div></div>`;
 
   app.innerHTML = `
@@ -434,9 +513,9 @@ function renderGuestView(data, me) {
     const iMadeIt = data.bill.creator_identity_id === me.id;
     const ok = await confirmSheet({
       title: "Keluar dari bill ini?",
-      body: "Pilihan item kamu dihapus dan bill ini ilang dari daftar kamu. Masih bisa gabung lagi lewat link selama billnya belum ditutup."
+      body: "Pilihan item kamu dihapus dan bill ini tidak lagi muncul di daftar kamu. Kamu masih bisa bergabung lagi lewat link selama bill masih aktif."
         // confirmSheet renders `body` as markup, so the typed name needs esc()
-        + (iMadeIt ? ` Billnya tetep jalan, sekarang dipegang ${esc(data.paid_by_name || "yang nalangin")}.` : ""),
+        + (iMadeIt ? ` Billnya tetap berjalan, sekarang dipegang ${esc(data.paid_by_name || "yang membayar dahulu")}.` : ""),
       confirmText: "Keluar",
       danger: true,
     });
@@ -444,7 +523,7 @@ function renderGuestView(data, me) {
     withBusy(leaveBtn, "Bentar...", async () => {
       try {
         await apiJson(`/api/bills/${data.bill.id}/leave`, "POST", {});
-        toast("Kamu udah keluar dari bill");
+        toast("Kamu sudah keluar dari bill");
         if (location.hash === "#/") render(); else location.hash = "#/";
       } catch (e) { toast(e.message); }
     });
@@ -463,19 +542,27 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
   const isSel = myQty > 0;
   const isSlot = it.mode === "slot" && it.slot_count;
   const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
+  const modeLabel = isSlot ? "Bagi per porsi" : "Dibagi rata";
   let shareText;
+  // "kamu N×" only where there is no stepper to read it off (closed bills).
+  // On an open bill the stepper sits right there showing the same number, and
+  // on a 390px phone that duplicate pushed the detail line onto three rows.
   if (isSlot) {
     const perSlot = Math.floor(eff / it.slot_count);
+    const perSlotMax = Math.ceil(eff / it.slot_count);
+    const shareLabel = perSlot === perSlotMax
+      ? `${fmt(perSlot)}/bagian`
+      : `${fmt(perSlot)}–${fmt(perSlotMax).replace(/^Rp\s*/, "")}/bagian`;
     const taken = selList.reduce((s, x) => s + (x.qty || 1), 0);
     const empty = Math.max(0, it.slot_count - taken);
-    const mineTxt = myQty > 0 ? ` · kamu ${myQty}×` : "";
-    shareText = `${taken}/${it.slot_count} bagian · ${fmt(perSlot)}/bagian${mineTxt}${empty > 0 ? ` · ${empty} kosong` : ""}`;
+    const mineTxt = readOnly && myQty > 0 ? ` · kamu ${myQty}×` : "";
+    shareText = `${taken}/${it.slot_count} bagian · ${shareLabel}${mineTxt}${empty > 0 ? ` · ${empty} kosong` : ""}`;
   } else if (selList.length === 0) {
     shareText = "belum dipilih";
   } else {
     const totalQty = selList.reduce((s, x) => s + (x.qty || 1), 0);
     const perServing = Math.floor(eff / totalQty);
-    const mineTxt = myQty > 0 ? ` · kamu ${myQty}×` : "";
+    const mineTxt = readOnly && myQty > 0 ? ` · kamu ${myQty}×` : "";
     shareText = `${totalQty} porsi · ${fmt(perServing)}/porsi${mineTxt}`;
   }
   const priceHtml = it.discount_idr > 0
@@ -496,14 +583,18 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
     <div class="item-row${isSel ? " selected" : ""}${!readOnly && !isFull ? " item-tappable" : ""}${isFull ? " item-full" : ""}" data-item="${it.id}"${a11y}>
       ${!readOnly || isSel ? (isFull ? `<div class="item-check item-check-full">${ic("x")}</div>` : `<div class="item-check">${ic("check")}</div>`) : ""}
       <div class="item-info">
-        <div class="item-name">${esc(it.name)}${isSlot ? ` <span class="slot-badge">Slot</span>` : ""}</div>
+        <div class="item-name">${esc(it.name)} <span class="slot-badge">${modeLabel}</span></div>
         <div class="item-share">${shareText}</div>
       </div>
       ${!readOnly ? `
+      <!-- the +/- disabled state used to be set only by renderPickRows, i.e.
+           AFTER the first tap: a maxed-out slot row painted an enabled "+"
+           that could only toast "slot sudah penuh" (bug: dead button that looked
+           alive until you touched something else) -->
       <div class="item-stepper" data-step-for="${it.id}">
-        <button type="button" class="step-btn step-dec" aria-label="Kurangi">−</button>
+        <button type="button" class="step-btn step-dec" aria-label="Kurangi"${myQty <= 0 ? " disabled" : ""}>−</button>
         <span class="step-qty" aria-live="polite">${myQty || 0}</span>
-        <button type="button" class="step-btn step-inc" aria-label="Tambah">+</button>
+        <button type="button" class="step-btn step-inc" aria-label="Tambah"${isSlot && myQty >= it.slot_count - (selList.reduce((s, x) => s + (x.qty || 1), 0) - myQty) ? " disabled" : ""}>+</button>
       </div>` : ""}
       <div class="money item-price">${priceHtml}</div>
     </div>`;
@@ -537,7 +628,7 @@ function bindItemRows(data, me, root) {
           state.selQty.set(id, 1);
           updateGuestSelection(data, me);
         } else {
-          toast("Slot item ini udah abis");
+          toast("Bagian item ini sudah habis");
         }
       } else if (myQty > 0) {
         state.selQty.delete(id);
@@ -555,7 +646,7 @@ function bindItemRows(data, me, root) {
       if (next <= 0) {
         state.selQty.delete(id);
       } else if (isSlot && next > slotsLeft()) {
-        toast("Slot item ini udah abis");
+        toast("Bagian item ini sudah habis");
         return;
       } else {
         state.selQty.set(id, next);
@@ -594,6 +685,11 @@ function saveSelectionsViaChain(data, picks) {
 // useServer=true renders the backend's own numbers for my row; false keeps the
 // local estimate that bridges the gap between a tap and the response.
 function renderPickRows(data, me, useServer) {
+  // #my-total is the dock number on the guest view, the creator-pick view AND
+  // the manager view (where it is labelled "Belum beres"). A selection POST
+  // that lands after the user opened another bill used to write this bill's
+  // personal total into that bill's dock (bug: right number, wrong screen).
+  if (!data.bill || state.currentBillId !== data.bill.id) return;
   const bd = useServer ? myBreakdown(data, me) : computeMyBreakdown(data, state.selQty);
   const mtEl = $("#my-total");
   if (mtEl) mtEl.textContent = fmt(bd.total);
@@ -611,30 +707,32 @@ function renderPickRows(data, me, useServer) {
     row.classList.toggle("selected", sel);
     if (row.hasAttribute("role")) row.setAttribute("aria-checked", sel ? "true" : "false");
     const it = data.items.find(x => x.id === id);
-    const share = $(".item-share", row);
+    const shareEl = $(".item-share", row);
     const isSlot = it && it.mode === "slot" && it.slot_count;
     const selList = othersSel(data.sel_by_item[id], me);
-    if (share && it) {
+    if (shareEl && it) {
       if (isSlot) {
         const taken = selList.reduce((s, x) => s + (x.qty || 1), 0) + qty;
         const empty = Math.max(0, it.slot_count - taken);
-        share.textContent = `${taken}/${it.slot_count} bagian${qty > 0 ? ` · kamu ${qty}×` : ""}${empty > 0 ? ` · ${empty} kosong` : ""}`;
+        shareEl.textContent = `${taken}/${it.slot_count} bagian${empty > 0 ? ` · ${empty} kosong` : ""}`;
       } else if (sel || selList.length > 0) {
         const totalQty = selList.reduce((s, x) => s + (x.qty || 1), 0) + qty;
         const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
         const perServing = Math.floor(eff / totalQty);
-        share.textContent = `${totalQty} porsi · ${fmt(perServing)}/porsi${qty > 0 ? ` · kamu ${qty}×` : ""}`;
+        shareEl.textContent = `${totalQty} porsi · ${fmt(perServing)}/porsi`;
       } else {
-        share.textContent = "belum dipilih";
+        shareEl.textContent = "belum dipilih";
       }
     }
-    // stepper live state: qty number, minus dead at 0 (or at 1 for slots —
-    // dropping to 0 means releasing), plus dead when a slot item is maxed
+    // stepper live state: qty number, minus dead only at 0, plus dead when a
+    // slot item is maxed. Minus used to die at 1 on slot items while tapping
+    // the row still released the slot — same gesture, two rules, depending on
+    // the item type (bug: "−" greys out but the row still lets go)
     const qtyEl = $(".step-qty", row);
     const dec = $(".step-dec", row);
     const inc = $(".step-inc", row);
     if (qtyEl) qtyEl.textContent = qty;
-    if (dec) dec.disabled = qty <= 0 || (isSlot && qty <= 1);
+    if (dec) dec.disabled = qty <= 0;
     if (inc && it) {
       if (isSlot) {
         const othersTaken = selList.reduce((s, x) => s + (x.qty || 1), 0);
@@ -695,24 +793,24 @@ function openSlotPickerSheet(data, me, it) {
   const s = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-title">${esc(it.name)}</div>
-    <p class="muted">${fmt(perSlot)}/bagian · ${it.slot_count} bagian · ${othersTaken} keambil orang lain</p>
+    <p class="muted">${fmt(perSlot)}/bagian · ${it.slot_count} bagian · ${othersTaken} terambil oleh orang lain</p>
     <p class="muted" style="margin-top:4px;">Item ini dibagi ${it.slot_count} bagian tetap. Kamu bisa ambil lebih dari 1 kalau pesennya lebih dari satu.</p>
-    <p class="muted" style="margin:4px 0 14px;">${leftEmpty > 0 ? `Sisa bagian kosong: ${leftEmpty}` : "Bagian udah abis"}</p>
+    <p class="muted" style="margin:4px 0 14px;">${leftEmpty > 0 ? `Sisa bagian kosong: ${leftEmpty}` : "Bagian sudah habis"}</p>
     ${max > 0 ? `
     <div style="display:flex;align-items:center;justify-content:center;gap:20px;margin-bottom:16px;">
-      <button class="btn-outline slot-qty-dec" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Kurangi slot">−</button>
+      <button class="btn-outline slot-qty-dec" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Kurangi bagian">−</button>
       <div style="text-align:center;">
         <div style="font-size:40px;font-weight:800;" class="slot-qty">${qty}</div>
-        <div class="muted" style="font-size:12px;">Slot Kamu</div>
+        <div class="muted" style="font-size:12px;">Bagian kamu</div>
       </div>
-      <button class="btn-outline slot-qty-inc" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Tambah slot">＋</button>
+      <button class="btn-outline slot-qty-inc" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Tambah bagian">＋</button>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;">
       <span class="label">Total kamu</span>
       <span class="money slot-total" style="font-size:24px;font-weight:800;">${fmt(perSlot * qty)}</span>
     </div>
-    <button class="btn-primary" id="slot-confirm">Ambil ${qty} slot</button>` : ""}
-    ${myQty > 0 ? `<button class="btn-danger-ghost" id="slot-release">${ic("x")} Lepas Slot (${myQty})</button>` : ""}
+    <button class="btn-primary" id="slot-confirm">Ambil ${qty} bagian</button>` : ""}
+    ${myQty > 0 ? `<button class="btn-danger-ghost" id="slot-release">${ic("x")} Lepas bagian (${myQty})</button>` : ""}
     <button class="btn-outline" id="slot-close">${max > 0 ? "Batal" : "Tutup"}</button>`, { noAutofocus: true });
 
   const sync = () => {
@@ -721,7 +819,7 @@ function openSlotPickerSheet(data, me, it) {
     $(".slot-total", s.sheet).textContent = fmt(perSlot * qty);
     $(".slot-qty-inc", s.sheet).disabled = qty >= max;
     $(".slot-qty-dec", s.sheet).disabled = qty <= 1;
-    $("#slot-confirm", s.sheet).textContent = `Ambil ${qty} slot`;
+    $("#slot-confirm", s.sheet).textContent = `Ambil ${qty} bagian`;
   };
   if (max > 0) {
     $(".slot-qty-dec", s.sheet).addEventListener("click", () => { qty = Math.max(1, qty - 1); sync(); });
@@ -744,105 +842,20 @@ function openSlotPickerSheet(data, me, it) {
   if (rel) rel.addEventListener("click", (ev) =>
     withBusy(ev.currentTarget, "Melepas...", async () => {
       try {
-        await api(`/api/bills/${data.bill.id}/items/${it.id}/selections/${me.id}`, { method: "DELETE" });
+        // release must ride the same save chain as picks — a raw DELETE here
+        // could land BEFORE a queued optimistic POST that still contains this
+        // item, resurrecting a pick the user just released (bug: races)
+        const picks = [...state.selQty.entries()]
+          .filter(([iid]) => iid !== it.id)
+          .map(([iid, q]) => ({ item_id: iid, qty: q }));
+        state.selQty.delete(it.id);
+        await saveSelectionsViaChain(data, picks);
         s.close();
-        toast("Slot dilepas ✓");
+        toast("Bagian dilepas ✓");
         loadBillView(data.bill.id);
       } catch (e) { toast(e.message); }
     }));
   $("#slot-close", s.sheet).addEventListener("click", s.close);
-  sync();
-}
-
-// ---------- Free portion picker sheet (bebas: pick 1+ portions) ----------
-function openFreePickerSheet(data, me, it) {
-  const selList = (data.sel_by_item[it.id] || []);
-  const othersQty = othersSel(selList, me).reduce((s, x) => s + (x.qty || 1), 0);
-  // myQty MUST come from live state.selQty, not the backend snapshot: after an
-  // optimistic pick the snapshot still lacks my row, so reading it here showed
-  // "Belum ada yang ambil" while I already had picks (bug: status + release
-  // button both used the stale myQty)
-  const myQty = state.selQty.get(it.id) || (mySelEntry(selList, me) || {}).qty || 0;
-  // status must count MY picks too — "Belum ada yang ambil" is only true
-  // when nobody (including me) picked it (bug: showed "Belum ada" while I
-  // already had picks, because othersQty excludes me)
-  let statusText;
-  if (myQty > 0 && othersQty > 0) statusText = `Kamu ${myQty} porsi · ${othersQty} porsi orang lain`;
-  else if (myQty > 0) statusText = `Kamu udah ambil ${myQty} porsi`;
-  else if (othersQty > 0) statusText = `${othersQty} porsi keambil orang lain`;
-  else statusText = "Belum ada yang ambil item ini";
-  const MAX_P = 99;
-  let qty = myQty || 1;
-
-  const s = openSheet(`
-    <div class="sheet-handle"></div>
-    <div class="sheet-title">${esc(it.name)}</div>
-    <p class="muted">Pilih bebas — ambil 1 porsi atau lebih kalau pesennya lebih dari satu. Harga dibagi sesuai porsi yang keambil.</p>
-    <p class="muted" style="margin:4px 0 14px;">${statusText}</p>
-    <div style="display:flex;align-items:center;justify-content:center;gap:20px;margin-bottom:16px;">
-      <button class="btn-outline fr-qty-dec" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Kurangi porsi">−</button>
-      <div style="text-align:center;">
-        <div style="font-size:40px;font-weight:800;" class="fr-qty">${qty}</div>
-        <div class="muted" style="font-size:12px;">Porsi Kamu</div>
-      </div>
-      <button class="btn-outline fr-qty-inc" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Tambah porsi">＋</button>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;">
-      <span class="label">Estimasi Kamu</span>
-      <span class="money fr-total" style="font-size:24px;font-weight:800;">${fmt(perServingEst(it, othersQty, qty) * qty)}</span>
-    </div>
-    <button class="btn-primary" id="fr-confirm">Simpan ${qty} porsi</button>
-    <div class="btn-row">
-      ${myQty > 0 ? `<button class="btn-danger-ghost" id="fr-release" style="margin-top:0;">${ic("x")} Lepas Pilihan (${myQty})</button>` : ""}
-      <button class="btn-outline" id="fr-close" style="margin-top:0;">${myQty > 0 ? "Batal" : "Tutup"}</button>
-    </div>`, { noAutofocus: true });
-
-  const sync = () => {
-    $(".fr-qty", s.sheet).textContent = qty;
-    $(".fr-total", s.sheet).textContent = fmt(perServingEst(it, othersQty, qty) * qty);
-    $(".fr-qty-inc", s.sheet).disabled = qty >= MAX_P;
-    // minus at 1 means "lepas pilihan" (same as the release button) when a
-    // pick exists to release; only truly dead when nothing is picked yet, so
-    // qty can't drop below 1 (bug: minus stayed greyed out at 1 while the
-    // user held a pick and wanted to drop it)
-    $(".fr-qty-dec", s.sheet).disabled = qty <= 1 && myQty === 0;
-    $(".fr-qty-dec", s.sheet).ariaLabel = qty <= 1 && myQty > 0 ? "Lepas pilihan" : "Kurangi porsi";
-    $(".fr-qty-dec", s.sheet).style.color = qty <= 1 && myQty > 0 ? "var(--red)" : "";
-    $("#fr-confirm", s.sheet).textContent = `Simpan ${qty} porsi`;
-  };
-  $(".fr-qty-dec", s.sheet).addEventListener("click", () => {
-    if (qty <= 1 && myQty > 0) {
-      // dropping from 1 to 0 = release the whole pick (no 0-porsi state)
-      const rel = $("#fr-release", s.sheet);
-      if (rel) { rel.click(); return; }
-    }
-    qty = Math.max(1, qty - 1); sync();
-  });
-  $(".fr-qty-inc", s.sheet).addEventListener("click", () => { qty = Math.min(MAX_P, qty + 1); sync(); });
-  // (bug: no in-flight guard — a double tap fired two POSTs)
-  $("#fr-confirm", s.sheet).addEventListener("click", (ev) =>
-    withBusy(ev.currentTarget, "Nyimpen...", async () => {
-      try {
-        const picks = [...state.selQty.entries()].filter(([iid]) => iid !== it.id).map(([iid, q]) => ({ item_id: iid, qty: q }))
-          .concat([{ item_id: it.id, qty }]);
-        state.selQty.set(it.id, qty);
-        await saveSelectionsViaChain(data, picks);
-        s.close();
-        buzz(20);
-        loadBillView(data.bill.id);
-      } catch (e) { toast(e.message); }
-    }));
-  const rel = $("#fr-release", s.sheet);
-  if (rel) rel.addEventListener("click", (ev) =>
-    withBusy(ev.currentTarget, "Melepas...", async () => {
-      try {
-        await api(`/api/bills/${data.bill.id}/items/${it.id}/selections/${me.id}`, { method: "DELETE" });
-        s.close();
-        toast("Pilihan dilepas ✓");
-        loadBillView(data.bill.id);
-      } catch (e) { toast(e.message); }
-    }));
-  $("#fr-close", s.sheet).addEventListener("click", s.close);
   sync();
 }
 
@@ -852,10 +865,59 @@ function perServingEst(it, othersQty, myQty) {
   return totalQty > 0 ? Math.floor(eff / totalQty) : eff;
 }
 
-// LOCAL ESTIMATE ONLY — see myBreakdown(). Mirrors backend calc:
-// - free item: price / (others + me), rounded like backend (floor + rem)
-// - slot item: per-slot price (price // slot_count) * my qty
-// - tax proportional to total subtotal across ALL people, rounded down.
+// Merge the live (post-tap) qty for ME into a server-snapshot selector list,
+// keeping everyone else's order as returned. If I'm already in `selList`
+// (an earlier pick, now just changing qty) I keep that slot; a brand-new
+// pick is appended at the end, since calc.py orders selectors by each
+// identity's first-ever appearance in the raw selection rows and mine would
+// be the newest. selQty===0 drops me out entirely (a release).
+function mergeLiveSelectors(selList, myId, myName, myQty) {
+  const isMe = s => (s.id ? s.id === myId : (!s.id && normName(s.name) === normName(myName)));
+  const out = [];
+  let found = false;
+  (selList || []).forEach(s => {
+    if (isMe(s)) {
+      found = true;
+      if (myQty > 0) out.push({ id: myId, qty: myQty });
+    } else {
+      out.push({ id: s.id, qty: s.qty || 1 });
+    }
+  });
+  if (!found && myQty > 0) out.push({ id: myId, qty: myQty });
+  return out;
+}
+
+// LOCAL ESTIMATE ONLY — see myBreakdown(). Mirrors backend calc.py exactly
+// (not just its shape): both item modes' rounding remainder are distributed
+// the same way calc.py distributes them, instead of being floor()ed away, so
+// this number no longer ticks by a rupiah the moment the real response lands.
+// - free item: price // (others + me) per serving, then the leftover
+//   (eff - share*totalQty) round-robins across SELECTOR ENTRIES in order,
+//   one rupiah each, same as calc.py's `for i in range(rem): selectors[i %
+//   len(selectors)]` — a person with qty>1 only gets at most +1 from this,
+//   not +1 per unit.
+// - slot item: per-slot price (price // slot_count) * my qty, then — only
+//   once every slot is taken — the leftover (eff - per_slot*slot_count)
+//   hands out +1 per SLOT UNIT in order (a person holding qty>1 slots can
+//   get multiple), same as calc.py's nested slot loop. Uncovered items never
+//   get a remainder — that money sits in uncovered_idr, not in the tax base.
+// - tax proportional to total subtotal across ALL people, rounded down —
+//   exact for everyone except the bill owner, who additionally absorbs
+//   calc.py's leftover tax rounding rupiah (see note below).
+//
+// ORDERING ASSUMPTION: calc.py decides who gets the remainder by walking
+// identities in the order they first appear anywhere in the raw selection
+// rows, then that identity's items in the order they were first picked. The
+// API payload only gives per-item order (`sel_by_item[id]`, i.e. the order
+// selection rows for THIS item were inserted) — it doesn't expose the
+// cross-item global order calc.py actually uses. The two agree whenever
+// nobody's first-ever pick in the bill was on a DIFFERENT item than the one
+// being estimated (true for the common case: a single contested item, or
+// everyone picking items in the same order they joined). They can disagree
+// only when two people's relative order differs between "first item each of
+// them ever picked" and "order of rows on this specific item" — genuinely
+// rare, and not detectable from this payload without a backend change, which
+// is out of scope here (bill.js/index.html only).
 function computeMyBreakdown(data, selQty) {
   let sub = 0;
   let totalSelAll = 0;
@@ -866,35 +928,43 @@ function computeMyBreakdown(data, selQty) {
   const iAmOwner = data.owner_id === myId;
   data.items.forEach(it => {
     const myQty = selQty.get(it.id) || 0;
+    const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
     if (it.mode === "slot" && it.slot_count) {
-      const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
       const perSlot = Math.floor(eff / it.slot_count);
-      if (myQty > 0) sub += perSlot * myQty;
-      // total assigned subtotal for tax: all taken slots * perSlot. Use
-      // OTHERS from the snapshot + MY LIVE qty — the snapshot lacks my
-      // just-added slots after an optimistic tap (bug: all-slot bill + fresh
-      // pick → totalSelAll 0 → tax 0 → pay sheet understated the total by the
-      // whole tax). Empty slots stay uncovered_idr, never in the tax base.
-      const selList = (data.sel_by_item[it.id] || []);
-      let othersTaken = 0;
-      selList.forEach(s => {
-        const isMe = (s.id && s.id === myId) ? true : (!s.id && normName(s.name) === normName(myName));
-        if (!isMe) othersTaken += (s.qty || 1);
-      });
-      const taken = othersTaken + myQty;
-      totalSelAll += perSlot * taken;
+      const order = mergeLiveSelectors(data.sel_by_item[it.id], myId, myName, myQty);
+      const taken = order.reduce((s, x) => s + x.qty, 0);
+      order.forEach(x => { if (x.id === myId) sub += perSlot * x.qty; });
+      if (taken >= it.slot_count) {
+        // all slots taken: distribute eff - perSlot*slotCount across SLOTS
+        // (per unit, not per person) — mirrors calc.py's inner `for _ in
+        // range(qty)` loop
+        let rem = eff - perSlot * it.slot_count;
+        for (const x of order) {
+          for (let i = 0; i < x.qty && rem > 0; i++) {
+            if (x.id === myId) sub += 1;
+            rem -= 1;
+          }
+          if (rem <= 0) break;
+        }
+        totalSelAll += perSlot * taken + (eff - perSlot * it.slot_count);
+      } else {
+        // still uncovered: the leftover stays in uncovered_idr, never in
+        // anyone's subtotal or the tax base
+        totalSelAll += perSlot * taken;
+      }
       return;
     }
     // free item: per-serving split (my qty of total qty taken)
-    const selList = (data.sel_by_item[it.id] || []);
-    let othersQty = 0;
-    selList.forEach(s => {
-      const isMe = (s.id && s.id === myId) ? true : (!s.id && normName(s.name) === normName(myName));
-      if (!isMe) othersQty += (s.qty || 1);
-    });
-    const totalQty = othersQty + myQty;
-    const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
-    if (myQty > 0 && totalQty > 0) sub += Math.floor(eff / totalQty) * myQty;
+    const order = mergeLiveSelectors(data.sel_by_item[it.id], myId, myName, myQty);
+    const totalQty = order.reduce((s, x) => s + x.qty, 0);
+    if (myQty > 0 && totalQty > 0) {
+      const portion = Math.floor(eff / totalQty);
+      sub += portion * myQty;
+      const rem = eff - portion * totalQty;
+      for (let i = 0; i < rem; i++) {
+        if (order[i % order.length].id === myId) sub += 1;
+      }
+    }
     // a free item NOBODY picked still belongs to someone — calc.py hands it to
     // the bill owner, so it stays in the tax denominator (and in the owner's own
     // subtotal). Dropping it inflated everyone else's tax share (bug: estimate
@@ -907,11 +977,14 @@ function computeMyBreakdown(data, selQty) {
   if (data.bill.tax_included) taxService = (data.bill.service_idr || 0);
   let tax = 0;
   if (totalSelAll > 0) tax = Math.floor(sub * taxService / totalSelAll);
+  // NOT mirrored: in proportional tax mode calc.py additionally hands the
+  // OWNER any leftover rupiah from truncating everyone's tax share (`diff`
+  // in calc.py's proportional branch) — computing that exactly here would
+  // mean re-deriving every other person's live subtotal, i.e. re-running the
+  // whole split client-side, which is what this function deliberately avoids.
+  // Only the owner's own dock can be off by that rounding rupiah until the
+  // server responds; every other participant's tax share above is exact.
   return { sub, tax, total: sub + tax };
-}
-
-function computeMyTotal(data, selQty) {
-  return computeMyBreakdown(data, selQty).total;
 }
 
 function taxServiceTotal(data) {
@@ -927,14 +1000,28 @@ function hasPickedAny(data, pid) {
 
 // ---------- Pay sheet (confirm items -> mark paid) ----------
 function openPaySheet(data, me, alreadyPaid) {
+  // This sheet is the last mile of the whole product: the moment someone
+  // actually transfers money. It used to be titled "Konfirmasi Item" and list
+  // only the picks — the person was asked to mark themselves paid without ever
+  // being told WHERE to send it (the accounts sat behind a separate button on
+  // the screen behind). Amount, destination, then the button.
+  const pay = payerPayment(data);
+  const iAmPayer = data.paid_by_id === me.id;
   const s = openSheet(`
     <div class="sheet-handle"></div>
-    <div class="sheet-title">Konfirmasi Item</div>
-    <p class="sheet-sub">Ini item yang kamu pilih. Ketuk item buat batalin.</p>
+    <div class="sheet-title">${iAmPayer ? "Bagian kamu" : `Bayar ke ${esc(pay.name)}`}</div>
+    <p class="sheet-sub">${iAmPayer
+      ? "Kamu yang membayar dahulu untuk bill ini — ini bagian kamu sendiri."
+      : "Cek item kamu, transfer, lalu tandai sudah bayar. Ketuk item untuk membatalkan."}</p>
     <div id="pay-items"></div>
     <div id="pay-total"></div>
+    ${iAmPayer ? "" : `
+    <div class="card card-flat" style="margin-bottom:12px;">
+      <div class="label-sm" style="margin-bottom:8px;">Kirim ke ${esc(pay.name)}</div>
+      ${accountRowsHtml(pay.name, pay.accounts)}
+    </div>`}
     <button class="${alreadyPaid ? "btn-green" : "btn-primary"}" id="confirm-pay">
-      ${alreadyPaid ? `${ic("check")} Udah bayar` : "Tandai Udah Bayar"}
+      ${alreadyPaid ? `${ic("check")} Sudah bayar` : "Tandai sudah bayar"}
     </button>
     ${alreadyPaid ? `<button class="btn-danger-ghost" id="undo-pay">${ic("refresh")} Batalin Status Bayar</button>` : ""}
     <button class="btn-outline" id="close-sheet">Batal</button>`, { noAutofocus: true });
@@ -950,6 +1037,7 @@ function openPaySheet(data, me, alreadyPaid) {
     itemsBox.innerHTML = items.length ? `
       <div class="card card-flat">
         <div class="label-sm" style="margin-bottom:4px;">Item kamu (${items.length})</div>
+        <p class="muted" style="margin:-2px 0 6px;font-size:12px;">Angka per item perkiraan (≈) — total di bawah pakai hitungan final.</p>
         ${items.map(it => {
           const myQty = state.selQty.get(it.id) || 1;
           const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
@@ -958,7 +1046,7 @@ function openPaySheet(data, me, alreadyPaid) {
           if (it.mode === "slot" && it.slot_count) {
             const perSlot = Math.floor(eff / it.slot_count);
             myPrice = perSlot * myQty;
-            shareNote = `${myQty} slot · ${fmt(perSlot)}/slot`;
+            shareNote = `${myQty} bagian · ${fmt(perSlot)}/bagian`;
           } else {
             // free item: split by total portions taken (others + mine), like
             // the backend and like computeMyBreakdown — NOT by selector count.
@@ -971,15 +1059,28 @@ function openPaySheet(data, me, alreadyPaid) {
             myPrice = n > 1 ? Math.floor(eff / n) * myLive : eff;
             shareNote = n > 1 ? `dibagi ${n} porsi` : "";
           }
+          const priceNote = it.discount_idr > 0
+            ? `diskon ${fmt(it.discount_idr)} dari ${fmt(it.price_idr)}`
+            : (it.mode !== "slot" && (data.sel_by_item[it.id] || []).length > 1
+              ? `dari ${fmt(eff)}` : "");
           return `
           <div class="pay-item" data-item="${it.id}">
             <div style="flex:1;min-width:0;">
               <div class="item-name" style="font-size:14px;">${esc(it.name)}</div>
-              ${shareNote ? `<div class="item-share">${esc(shareNote)}</div>` : ""}
+              ${/* the price note used to sit in the RIGHT column, which is
+                    flex-shrink:0 — "diskon Rp 3.000 · dari Rp 38.000" then
+                    pinned that column ~180px wide and squeezed the name into
+                    one word per line on a 390px phone. It describes the
+                    item's price, so it belongs under the item's name where
+                    there is room to wrap (bug: v67 visual sweep). */ ""}
+              ${priceNote || shareNote ? `<div class="item-share">${esc([shareNote, priceNote].filter(Boolean).join(" · "))}</div>` : ""}
             </div>
-            <div style="text-align:right;flex-shrink:0;">
-              <div class="money">${fmt(myPrice)}</div>
-              ${it.discount_idr > 0 ? `<div class="muted" style="font-size:11px;">diskon ${fmt(it.discount_idr)} · dari ${fmt(it.price_idr)}</div>` : (it.mode !== "slot" && (data.sel_by_item[it.id] || []).length > 1 ? `<div class="muted" style="font-size:11px;">dari ${fmt(eff)}</div>` : "")}
+            <div style="text-align:right;flex-shrink:0;min-width:0;">
+              <!-- client-side per-item price can drift 1 rupiah from the
+                   backend's remainder distribution; the sheet total below is
+                   the server's number, so label the row as an estimate
+                   (bug: row said 33, subtotal said 34, same item) -->
+              <div class="money">≈ ${fmt(myPrice)}</div>
             </div>
             <span class="pay-item-x" aria-hidden="true">${ic("x")}</span>
           </div>`;
@@ -1025,13 +1126,14 @@ function openPaySheet(data, me, alreadyPaid) {
   };
 
   renderItems();
+  bindCopyAccounts(s.sheet);
   $("#confirm-pay", s.sheet).addEventListener("click", (ev) =>
     withBusy(ev.currentTarget, "Nyimpen...", async () => {
       try {
         await api(`/api/bills/${data.bill.id}/payments/${me.id}/paid`, { method: "POST" });
         buzz(20);
         s.close();
-        toast("Udah dicatat! 🎉");
+        toast("Sudah dicatat! 🎉");
         loadBillView(data.bill.id);
       } catch (e) { toast(e.message); }
     }));
@@ -1048,42 +1150,68 @@ function openPaySheet(data, me, alreadyPaid) {
     }));
 }
 
-// ---------- Accounts sheet (standalone payment methods) ----------
-function openAccountsSheet(data) {
-  const payerName = data.paid_by_name || data.creator_name;
-  // Only fall back to the creator's accounts when the creator IS the payer
-  // (or no payer is declared yet). A resolved payer who hasn't added any
-  // payment method must NOT show the creator's accounts (bug: 'Metode bayar
-  // amel' was listing Aufa's GoPay/Mandiri/Jago because paid_by_accounts was
-  // empty and the sheet silently fell back to creator_accounts).
+// ---------- Where the money goes ----------
+/** Payer + their payment accounts. ONE resolver, because the pay sheet and the
+ *  standalone methods sheet must never name different destinations.
+ *  Only fall back to the creator's accounts when the creator IS the payer (or
+ *  no payer is declared yet). A resolved payer who hasn't added any payment
+ *  method must NOT show the creator's accounts (bug: 'Metode bayar amel' was
+ *  listing Aufa's GoPay/Mandiri/Jago because paid_by_accounts was empty and
+ *  the sheet silently fell back to creator_accounts). */
+function payerPayment(data) {
+  const name = data.paid_by_name || data.creator_name;
   const isCreatorPayer = data.paid_by_id === data.bill.creator_identity_id
     || (!data.paid_by_id && !data.paid_by_name);
   const accounts = (data.paid_by_accounts && data.paid_by_accounts.length)
     ? data.paid_by_accounts
     : (isCreatorPayer ? (data.creator_accounts || []) : []);
-  const s = openSheet(`
-    <div class="sheet-handle"></div>
-    <div class="sheet-title">Metode Bayar ${esc(payerName)}</div>
-    <p class="sheet-sub">Transfer langsung ke ${esc(payerName)} lewat:</p>
-    ${accounts.length ? accounts.map(a => `
+  return { name, accounts };
+}
+
+function accountRowsHtml(name, accounts) {
+  return accounts.length ? accounts.map(a => `
       <div class="account-row">
         ${brandChipHtml(a.brand)}
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;font-size:14px;">${esc(a.brand)}</div>
+          <div style="font-weight:600;font-size:14px;">${esc(brandLabel(a.brand))}</div>
           <div class="muted" style="font-size:13px;">${esc(a.account_no)}${a.holder_name ? " · " + esc(a.holder_name) : ""}</div>
         </div>
         <button class="btn-outline btn-sm copy-acct" data-no="${esc(a.account_no)}" aria-label="Salin nomor ${esc(a.brand)}">${ic("copy")} Salin</button>
       </div>`).join("")
-      : `<div class="card card-flat"><div class="muted">${esc(payerName)} belum nambah metode bayar. Minta nomor rekening/e-money-nya langsung ya.</div></div>`}
-    <button class="btn-outline" id="close-sheet">Tutup</button>`, { noAutofocus: true });
-  $$(".copy-acct", s.sheet).forEach(b => b.addEventListener("click", async () => {
+    : `<div class="card card-flat"><div class="muted">${esc(name)} belum nambah metode bayar. Minta nomor rekening/e-money-nya langsung ya.</div></div>`;
+}
+
+function bindCopyAccounts(root) {
+  $$(".copy-acct", root).forEach(b => b.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(b.dataset.no); toast("Nomor disalin 📋"); }
     catch (e) { toast("Gagal salin, copy manual ya"); }
   }));
+}
+
+// ---------- Accounts sheet (standalone payment methods) ----------
+function openAccountsSheet(data) {
+  const { name, accounts } = payerPayment(data);
+  const s = openSheet(`
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Metode Bayar ${esc(name)}</div>
+    <p class="sheet-sub">Transfer langsung ke ${esc(name)} lewat:</p>
+    ${accountRowsHtml(name, accounts)}
+    <button class="btn-outline" id="close-sheet">Tutup</button>`, { noAutofocus: true });
+  bindCopyAccounts(s.sheet);
   $("#close-sheet", s.sheet).addEventListener("click", s.close);
 }
 
 // ---------- Creator view: summary ----------
+// ONE creator-view status chip. source of truth order:
+// settled (manual "Tandai Lunas" wins) -> closed states -> all_paid ->
+// unpaid people -> uncovered slots -> fallback. The old code computed
+// `statusChipHtml` (settled-based) for the header AND a separate chip
+// (all_paid/totalUnpaid-based) for the second row, so one card could show
+// "Lunas" next to "Rp X belum dibayar" (bug: two status systems, one screen).
+function creatorStatusChip(data, closed, totalUnpaid, soloSoFar) {
+  return renderBillStatusChip(data, closed, totalUnpaid, soloSoFar);
+}
+
 function renderCreatorView(data) {
   const app = $("#app");
   const me = state.identity;
@@ -1100,35 +1228,21 @@ function renderCreatorView(data) {
   const payerRow = data.people.find(p => p.identity_id === payerId);
   const notPicked = data.people.filter(p => !p.subtotal_idr && !hasPickedAny(data, p.identity_id) && p.identity_id !== me.id);
 
-  // status chip: all_paid, NOT settled — settled folds in uncovered slots and
-  // a closed bill is no longer settled by fiat (bug: "semua lunas" on a closed
-  // bill with unpaid people right below it)
-  let statusChip;
-  const allSettled = data.all_paid && data.uncovered_idr === 0;
+  // A bill is automatically selesai when everyone has marked their payment
+  // and no item portions remain unclaimed. The dock follows that same derived
+  // state so its copy and the status chip never disagree.
+  const allSettled = data.settled || (data.all_paid && data.uncovered_idr === 0);
   // Nobody but the creator is on the bill yet. This is the moment right after
-  // "Bikin Bill", and the whole product depends on the link being sent — so the
+  // "Buat Tagihan", and the whole product depends on the link being sent — so the
   // screen leads with sharing instead of with warnings about a bill that has
   // not started (bug: a 3-second-old bill opened on "Belum lunas", a Rp 0 chip,
-  // and a red-ish card listing every item as "tidak dipilih siapa pun", while
-  // the only primary button offered was "Tutup Bill").
+  // and a red-ish card listing every item as "tidak dipilih siapa pun".
   const soloSoFar = data.people.length <= 1 && !closed && !data.settled;
-  if (soloSoFar) {
-    statusChip = `<span class="chip chip-grey">Belum ada yang gabung</span>`;
-  } else if (data.all_paid && data.uncovered_idr === 0) {
-    statusChip = `<span class="chip chip-green">${ic("check")} Semua Lunas</span>`;
-  } else if (totalUnpaid > 0) {
-    // "belum dibayar" (orang) vs "belum keambil" (bagian kosong) vs "belum
-    // beres" (jumlah dua-duanya, di rail). Tiga angka ini pernah sama-sama
-    // dilabelin "belum lunas", jadi header bilang Rp 35.280 sementara rail
-    // bilang Rp 53.280 buat hal yang kelihatannya sama (bug: angka saling
-    // bantah di satu layar).
-    statusChip = `<span class="chip chip-red">${fmt(totalUnpaid)} belum dibayar</span>`;
-  } else if (data.uncovered_idr > 0) {
-    statusChip = `<span class="chip chip-red">${fmt(data.uncovered_idr)} belum keambil</span>`;
-  } else {
-    statusChip = `<span class="chip chip-grey">Belum ada yang milih</span>`;
-  }
-  const closedNotSettled = closed && (totalUnpaid > 0 || data.uncovered_idr > 0);
+  const statusChip = creatorStatusChip(data, closed, totalUnpaid, soloSoFar);
+  // !data.settled: a closed bill the owner marked lunas by hand is done —
+  // printing "masih ada Rp X yang belum dibayar" under a green "Ditutup ·
+  // lunas" chip is the same card arguing with itself
+  const closedNotSettled = closed && !data.settled && (totalUnpaid > 0 || data.uncovered_idr > 0);
 
   // consolidated "perhatian" rows (single card, one row each)
   const warnRows = [];
@@ -1137,7 +1251,7 @@ function renderCreatorView(data) {
       icon: "slot",
       // per_slot × empty != amount when eff % slot_count has a remainder —
       // show the honest total instead of misleading arithmetic
-      text: `Bagian kosong belum keambil: ${data.uncovered_slots.map(u => `${esc(u.name)} (${u.empty} bagian kosong = ${fmt(u.amount_idr)})`).join(", ")}`,
+      text: `Bagian kosong belum terambil: ${data.uncovered_slots.map(u => `${esc(u.name)} (${u.empty} bagian kosong = ${fmt(u.amount_idr)})`).join(", ")}`,
       red: true,
     });
   }
@@ -1174,7 +1288,7 @@ function renderCreatorView(data) {
     && !lsGet(`bagiin_payer_dismiss_${data.bill.id}`, false);
   const payerConfirmHtml = payerPendingConfirm ? `
     <div class="warn-card" style="margin-top:10px;">
-      <div class="warn-row">${ic("alert")}<span><strong style="color:var(--text);">${esc(payerName)}</strong> udah join & ditandai yang nalangin. Konfirmasi biar dia bisa edit bill ini.</span></div>
+      <div class="warn-row">${ic("alert")}<span><strong style="color:var(--text);">${esc(payerName)}</strong> sudah bergabung dan ditandai sebagai yang membayar dahulu. Konfirmasi agar dia bisa mengedit bill ini.</span></div>
       <div class="btn-row" style="margin-top:8px;">
         <button class="btn-primary btn-sm" id="confirm-payer-btn">${ic("check")} Konfirmasi</button>
         <button class="btn-outline btn-sm" id="dismiss-payer-btn">Nanti aja</button>
@@ -1184,8 +1298,8 @@ function renderCreatorView(data) {
   const inviteHtml = soloSoFar ? `
     <div class="card invite-card">
       <div class="invite-head">${ic("share")}<div>
-        <div class="invite-title">Share linknya sekarang</div>
-        <div class="muted">Temen kamu tinggal buka link, tulis nama, terus centang item yang dia makan. Gak usah bikin akun.</div>
+        <div class="invite-title">Bagikan linknya sekarang</div>
+        <div class="muted">Temen kamu tinggal buka link, tulis nama, terus centang item yang dia makan. Tidak perlu membuat akun.</div>
       </div></div>
       <div class="btn-row" style="margin-top:14px;">
         <button class="btn-primary" id="invite-share-btn">${ic("share")} Bagikan Link</button>
@@ -1201,35 +1315,44 @@ function renderCreatorView(data) {
           <div class="label-sm">Total bill</div>
           <div class="money hero-total">${fmt(data.bill.total_idr)}</div>
         </div>
-        <!-- one status per card: while nobody has joined, "Belum ada yang
-             gabung" IS the status, and the generic "Belum lunas" underneath it
-             only contradicted it -->
-        <span>${soloSoFar ? statusChip : statusChipHtml(data)}</span>
+        <!-- one status per card: solo, settled, closed, unpaid — all flow
+             through creatorStatusChip so the header and the row below can
+             never disagree -->
+        <span>${statusChip}</span>
       </div>
-      ${data.bill.merchant ? `<div class="muted" style="margin-top:4px;">${esc(data.bill.merchant)}</div>` : ""}
+      ${data.bill.title || data.bill.merchant ? `<div style="margin-top:4px;">${esc((data.bill.title || "").trim() || data.bill.merchant)}</div>` : ""}
       ${data.bill.transacted_at ? `<div class="muted">${esc(shortDate(data.bill.transacted_at))}</div>` : ""}
-      ${data.bill.tax_included ? `<div class="muted" style="margin-top:4px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — gak ada PPN tambahan</div>` : ""}
-      ${soloSoFar ? "" : `
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-        <span class="chip ${totalPaid > 0 ? "chip-green" : "chip-grey"}">${totalPaid > 0 ? ic("check") : ""}${fmt(totalPaid)} udah masuk</span>
-        ${statusChip}
-      </div>`}
-      ${!closed && !data.settled ? `
-      <button class="btn-outline btn-sm" id="settle-all-btn" style="width:100%;margin-top:10px;">
-        ${ic("check")} Tandai Lunas
-      </button>` : data.settled_manual ? `
-      <button class="btn-outline btn-sm" id="unsettle-all-btn" style="width:100%;margin-top:10px;">
-        ${ic("refresh")} Batalin Lunas
-      </button>` : ""}
-      ${closedNotSettled ? `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} Bill udah ditutup tapi ${totalUnpaid > 0 ? `masih ada ${fmt(totalUnpaid)} yang belum dibayar` : `masih ada ${fmt(data.uncovered_idr)} bagian yang gak keambil`}. Buka lagi kalau mau dibenerin.</p>` : ""}
-      ${photoBtnHtml(data)}
+      ${!closed && data.all_paid && data.uncovered_idr === 0 ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua sudah menandai lunas, bill otomatis selesai.</p>` : ""}
+      <div class="collect" style="margin-top:12px;">
+        <div class="collect-track"><div class="collect-fill" style="width:${data.bill.total_idr > 0 ? Math.min(100, Math.round(totalPaid * 100 / data.bill.total_idr)) : 0}%;"></div></div>
+        <div class="collect-line" style="margin-top:6px;">
+          <span class="muted">Sudah masuk <b class="money-sm${totalPaid > 0 ? " collect-in" : ""}">${fmt(totalPaid)}</b></span>
+          <span class="muted">dari <b class="money-sm">${fmt(data.bill.total_idr)}</b></span>
+        </div>
+      </div>
+      ${data.bill.tax_included ? `<div class="muted" style="margin-top:4px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — tidak ada PPN tambahan</div>` : ""}
+      ${closedNotSettled ? `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} Bill sudah ditutup, tetapi ${totalUnpaid > 0 ? `masih ada ${fmt(totalUnpaid)} yang belum dibayar` : `masih ada ${fmt(data.uncovered_idr)} bagian yang tidak terambil`}. Buka lagi kalau ingin memperbaikinya.</p>` : ""}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;">
-        <span class="muted">Yang nalangin: <strong style="color:var(--text);">${esc(payerName)}</strong>${payerRow && payerRow.total_idr > 0 ? ` · bagian dia ${fmt(payerRow.total_idr)}` : ""}</span>
+        <span class="muted">Yang membayar dahulu: <strong style="color:var(--text);">${esc(payerName)}</strong>${payerRow && payerRow.total_idr > 0 ? ` · bagian dia ${fmt(payerRow.total_idr)}` : ""}</span>
         ${!closed ? `<button class="btn-outline btn-sm" id="set-payer-btn" style="flex-shrink:0;">${ic("pencil")} Ubah</button>` : ""}
       </div>
-      <button class="btn-outline btn-sm" id="pay-methods-btn" style="width:100%;margin-top:10px;">
-        ${ic("wallet")} Metode Bayar ${esc(payerName)}
-      </button>
+      ${closed ? `<p class="muted" style="margin:8px 0 0;">${esc(payerName)} membayar dahulu; transfer pembayaran ke ${esc(payerName)} sesuai kanal yang ditentukan.</p>` : ""}
+      <!-- the card used to stack three identical full-width buttons: settle
+           the whole bill, attach a photo, show payment methods — same weight,
+           no hierarchy, with the most consequential one on top. Utilities go
+           side by side; the one that changes money stands alone below. -->
+      ${photoThumbsHtml(data)}
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn-outline btn-sm" id="pay-methods-btn">${ic("wallet")} Metode Bayar</button>
+        ${photoAddBtnHtml(data)}
+      </div>
+      ${!closed && !data.settled ? `
+      <button class="btn-outline btn-sm" id="settle-all-btn" style="width:100%;margin-top:8px;">
+        ${ic("check")} Tandai semua lunas
+      </button>` : data.settled_manual ? `
+      <button class="btn-outline btn-sm" id="unsettle-all-btn" style="width:100%;margin-top:8px;">
+        ${ic("refresh")} Batalin Lunas
+      </button>` : ""}
     </div>
     ${warnHtml}
     ${payerConfirmHtml}
@@ -1239,7 +1362,9 @@ function renderCreatorView(data) {
         ${data.people.map(p => {
           const isMe = p.identity_id === me.id;
           const isPayer = p.identity_id === payerId;
-          const paid = p.paid === "paid";
+          // same v60 rule as the guest view: a manually settled bill counts
+          // everyone as done, or the rows contradict the header chip
+          const paid = p.paid === "paid" || !!data.settled_manual;
           const sub = (p.subtotal_idr || hasPickedAny(data, p.identity_id))
             ? (p.subtotal_idr
               ? `${fmt(p.subtotal_idr)} item · ${fmt(p.tax_idr)} pajak`
@@ -1247,10 +1372,10 @@ function renderCreatorView(data) {
             : "belum pilih item";
           // the payer never "bayar" themselves — they fronted the money
           const statusHtml = isPayer
-            ? `<span class="chip chip-grey">${ic("wallet")} Nalangin</span>`
+            ? `<span class="chip chip-grey">${ic("wallet")} Membayar dahulu</span>`
             : (!closed
               ? `<button class="${paid ? "btn-sm" : "btn-outline btn-sm"} toggle-paid" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}" data-paid="${paid ? "1" : "0"}"
-                   style="${paid ? "background:var(--green-soft);color:var(--green);border:1px solid color-mix(in srgb, var(--green) 28%, transparent);" : ""}">${paid ? `${ic("check")} Lunas` : "Tandai Lunas"}</button>`
+                   style="${paid ? "background:var(--green-soft);color:var(--green);border:1px solid color-mix(in srgb, var(--green) 28%, transparent);" : ""}">${paid ? `${ic("check")} Lunas` : "Tandai lunas"}</button>`
               : `<span class="chip ${paid ? "chip-green" : "chip-red"}">${paid ? `${ic("check")} Lunas` : "Belum lunas"}</span>`);
           return `
           <div class="person-row">
@@ -1265,30 +1390,39 @@ function renderCreatorView(data) {
             </div>
             ${!closed && !isMe ? `
               <span aria-hidden="true" style="width:1px;align-self:stretch;background:var(--border);margin-left:8px;flex-shrink:0;"></span>
-              <button class="person-remove remove-person" style="width:38px;height:38px;" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}" aria-label="Hapus ${esc(p.name)} dari bill">${ic("trash")}</button>` : ""}
+              <button class="person-remove remove-person" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}" aria-label="Hapus ${esc(p.name)} dari bill">${ic("trash")}</button>` : ""}
           </div>`;
         }).join("")}
       </div>
+      ${!closed ? `
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn-outline btn-sm" id="invite-person-btn">${ic("plus")} Undang Orang</button>
+      </div>` : ""}
     </div>
     <div class="card">
       <div class="card-title">Item &amp; Siapa yang Pilih</div>
       ${!closed ? `<div class="btn-row" style="margin-bottom:10px;">
-        <button class="btn-outline btn-sm" id="pick-mine-btn">${ic("hand")} Pilih Item Kamu</button>
+        <button class="btn-outline btn-sm" id="pick-mine-btn">${ic("hand")} Pilih Item</button>
         <button class="btn-outline btn-sm" id="edit-bill-btn">${ic("pencil")} Edit Bill</button>
       </div>` : ""}
       ${data.items.map(it => {
         const selList = (data.sel_by_item[it.id] || []);
         const isSlot = it.mode === "slot" && it.slot_count;
         const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
+        const modeLabel = isSlot ? "Bagi per porsi" : "Dibagi rata";
         const priceHtml = it.discount_idr > 0
           ? `<span class="price-was">${fmt(it.price_idr)}</span> <span class="price-now">${fmt(eff)}</span>`
           : fmt(eff);
         let shareText;
         if (isSlot) {
           const perSlot = Math.floor(eff / it.slot_count);
+          const perSlotMax = Math.ceil(eff / it.slot_count);
+          const shareLabel = perSlot === perSlotMax
+            ? `${fmt(perSlot)}/bagian`
+            : `${fmt(perSlot)}–${fmt(perSlotMax).replace(/^Rp\s*/, "")}/bagian`;
           const taken = selList.reduce((s, x) => s + (x.qty || 1), 0);
           const empty = Math.max(0, it.slot_count - taken);
-          shareText = `${taken}/${it.slot_count} bagian · ${fmt(perSlot)}/bagian`
+          shareText = `${taken}/${it.slot_count} · ${shareLabel}`
             + (selList.length ? ` · ${selList.map(s => `${esc(s.name)}${(s.qty || 1) > 1 ? ` ×${s.qty}` : ""}`).join(", ")}` : "")
             + (empty > 0 ? ` · <span style="color:var(--red);">${empty} kosong</span>` : "");
         } else {
@@ -1297,7 +1431,7 @@ function renderCreatorView(data) {
         return `
         <div class="item-row">
           <div class="item-info">
-            <div class="item-name">${esc(it.name)}${isSlot ? ` <span class="slot-badge">Slot</span>` : ""}</div>
+            <div class="item-name">${esc(it.name)} <span class="slot-badge">${modeLabel}</span></div>
             <div class="item-share">${shareText}</div>
           </div>
           <div class="money item-price">${priceHtml}</div>
@@ -1315,26 +1449,24 @@ function renderCreatorView(data) {
         <span class="label">Nunggu temen kamu gabung</span>
       </div>` : `
       <div class="dock-total">
-        <span class="label">${allSettled ? "Semua" : "Belum beres"}</span>
+        <span class="label">${allSettled ? "Semua" : "Sisa pembayaran"}</span>
         <span class="money" id="my-total">${allSettled ? "Lunas" : fmt(totalUnpaid + data.uncovered_idr)}</span>
       </div>`}
       ${soloSoFar ? "" : allSettled ? `
       <div class="dock-split" style="flex-wrap:wrap;">
-        <span>Udah masuk <b class="money-sm">${fmt(totalPaid)}</b></span>
+        <span>Sudah masuk <b class="money-sm">${fmt(totalPaid)}</b></span>
         <span>${data.people.length} orang</span>
       </div>`
       : `<div class="dock-split" style="flex-direction:column;gap:4px;align-items:stretch;">
         ${totalUnpaid > 0 ? `<span style="display:flex;justify-content:space-between;gap:8px;">Belum dibayar <b class="money-sm">${fmt(totalUnpaid)}</b></span>` : ""}
         ${data.uncovered_idr > 0 ? `<span style="display:flex;justify-content:space-between;gap:8px;">Bagian kosong <b class="money-sm">${fmt(data.uncovered_idr)}</b></span>` : ""}
-        <span style="display:flex;justify-content:space-between;gap:8px;color:var(--text-3);">Udah masuk <b class="money-sm">${fmt(totalPaid)}</b></span>
+        <span style="display:flex;justify-content:space-between;gap:8px;color:var(--text-3);">Sudah masuk <b class="money-sm">${fmt(totalPaid)}</b></span>
       </div>`}
       ${closed
         ? `<button class="btn-outline" id="reopen-bill-btn" style="color:var(--accent);border-color:var(--accent);">${ic("refresh")} Buka Bill Lagi</button>`
         : soloSoFar
-          // closing a bill nobody has joined is never the next thing you want
-          ? `<button class="btn-primary" id="dock-share-btn">${ic("share")} Bagikan Link</button>
-             <button class="btn-ghost btn-sm" id="close-bill-btn" style="width:100%;">Tutup Bill</button>`
-          : `<button class="btn-primary" id="close-bill-btn">Tutup Bill</button>`}
+          ? `<button class="btn-primary" id="dock-share-btn">${ic("share")} Bagikan Link</button>`
+          : ""}
     </div></div>`;
 
   app.innerHTML = `
@@ -1364,7 +1496,14 @@ function renderCreatorView(data) {
     }
   });
   const pickBtn = $("#pick-mine-btn");
-  if (pickBtn) pickBtn.addEventListener("click", () => renderCreatorPick(data));
+  if (pickBtn) pickBtn.addEventListener("click", () => {
+    // Creator pick is a full-shell pseudo-layer on the same hash.
+    if (pickLayer) pickLayer.finishQuiet();
+    pickLayer = beginEditorLayer(data.bill.id);
+    const layer = pickLayer;
+    addEventListener("popstate", () => { if (pickLayer === layer) pickLayer = null; }, { once: true });
+    renderCreatorPick(data);
+  });
   const setPayerBtn = $("#set-payer-btn");
   if (setPayerBtn) setPayerBtn.addEventListener("click", () => openSetPayerSheet(data));
   // v62: confirm the name-resolved payer — same PUT the sheet uses, one tap.
@@ -1375,7 +1514,7 @@ function renderCreatorView(data) {
       try {
         await apiJson(`/api/bills/${data.bill.id}/paid_by`, "PUT", { identity_id: data.paid_by_id });
         lsSet(`bagiin_payer_dismiss_${data.bill.id}`, true);
-        toast(`${data.paid_by_name} dikonfirmasi yang nalangin ✓`);
+        toast(`${data.paid_by_name} dikonfirmasi sebagai yang membayar dahulu ✓`);
         loadBillView(data.bill.id);
       } catch (e) { toast(e.message); }
     }));
@@ -1388,8 +1527,6 @@ function renderCreatorView(data) {
   if (methodsBtn) methodsBtn.addEventListener("click", () => openAccountsSheet(data));
   const editBtn = $("#edit-bill-btn");
   if (editBtn) editBtn.addEventListener("click", () => renderEditBill(data));
-  const closeBtn = $("#close-bill-btn");
-  if (closeBtn) closeBtn.addEventListener("click", () => openCloseConfirm(data));
   const reopenBtn = $("#reopen-bill-btn");
   if (reopenBtn) reopenBtn.addEventListener("click", () => openReopenConfirm(data));
   // v60: bill-level settle — one click marks the whole bill lunas (cash
@@ -1404,6 +1541,8 @@ function renderCreatorView(data) {
   }));
   $$(".remove-person").forEach(b => b.addEventListener("click", () =>
     openRemovePersonConfirm(data, b.dataset.id, b.dataset.name)));
+  const invitePersonBtn = $("#invite-person-btn");
+  if (invitePersonBtn) invitePersonBtn.addEventListener("click", () => openInviteSheet(data));
   $$(".toggle-paid").forEach(b => b.addEventListener("click", () => togglePaidByCreator(data, b)));
   $("#delete-bill-btn").addEventListener("click", () => openDeleteBillConfirm(data.bill.id, data.bill.title));
   watchDock();
@@ -1452,7 +1591,7 @@ function openSlotManagerSheet(data, it) {
   const s = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-title">Atur bagian: ${esc(it.name)}</div>
-    <p class="sheet-sub">${it.discount_idr > 0 ? `<s style="opacity:.5">${fmt(it.price_idr)}</s> → ${fmt(eff)}` : fmt(eff)} · ${fmt(perSlot)}/bagian · ${taken}/${n} keambil</p>
+    <p class="sheet-sub">${it.discount_idr > 0 ? `<s style="opacity:.5">${fmt(it.price_idr)}</s> → ${fmt(eff)}` : fmt(eff)} · ${fmt(perSlot)}/bagian · ${taken}/${n} terambil</p>
     <div style="display:flex;align-items:center;justify-content:center;gap:20px;margin-bottom:12px;">
       <button class="btn-outline mgr-dec" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Kurangi bagian">−</button>
       <div style="text-align:center;">
@@ -1461,14 +1600,17 @@ function openSlotManagerSheet(data, it) {
       </div>
       <button class="btn-outline mgr-inc" style="width:52px;height:52px;min-height:52px;font-size:22px;border-radius:var(--r-full);padding:0;" aria-label="Tambah bagian">＋</button>
     </div>
-    <p class="muted" style="margin-bottom:6px;">Minimal ${taken} bagian (yang udah keambil). Harga per bagian ngikut total bagian.</p>
+    <p class="muted" style="margin-bottom:6px;">Minimal ${taken} bagian (yang sudah terambil). Harga per bagian sesuai total bagian.</p>
     <button class="btn-primary" id="mgr-save">Simpan</button>
     ${selList.length ? `<div class="label-sm" style="margin:16px 0 4px;">Pemegang Bagian</div>` : ""}
     ${selList.map(p => `
       <div class="account-row">
         <div style="flex:1;min-width:0;">${esc(p.name)} <span class="muted">×${p.qty || 1}</span></div>
-        <button class="btn-outline btn-sm mgr-free" data-id="${esc(p.id || "")}" data-name="${esc(p.name)}"
-                style="color:var(--red);" aria-label="Lepas bagian ${esc(p.name)}">Lepas</button>
+        <!-- no identity id = a legacy name-only selection. The DELETE URL ends
+             in an empty segment and 404s, so offer nothing rather than a
+             button that can only fail (bug: "Lepas" that never released) -->
+        ${p.id ? `<button class="btn-outline btn-sm mgr-free" data-id="${esc(p.id)}" data-name="${esc(p.name)}"
+                style="color:var(--red);" aria-label="Lepas bagian ${esc(p.name)}">Lepas</button>` : ""}
       </div>`).join("")}
     <button class="btn-outline" id="mgr-close">Tutup</button>`, { noAutofocus: true });
 
@@ -1511,6 +1653,80 @@ function openSlotManagerSheet(data, it) {
   sync();
 }
 
+// ---------- Direct invite: kontak terbukti ----------
+// v64: owner can add someone who already has an identity WITHOUT them clicking
+// the link. Picker shows "kontak terbukti" (people you've shared bills with),
+// searchable by name. People already on THIS bill are marked so you don't
+// re-invite. Auto-accept targets join instantly; others get a pending card.
+function openInviteSheet(data) {
+  const me = state.identity;
+  const billId = data.bill.id;
+  const onBill = new Set((data.people || []).map(p => p.identity_id));
+  // the creator is on the bill only while they are still in it — since v58
+  // they can walk out, and listing them under "Udah di bill ini" made the
+  // person who left un-re-invitable from the sheet (bug: v65 audit)
+  if (!data.bill.creator_left) onBill.add(data.bill.creator_identity_id);
+  const s = openSheet(`
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Undang Orang</div>
+    <p class="sheet-sub">Orang yang sudah pernah berbagi bill bersama kamu. Yang auto-accept langsung masuk — yang lain menunggu mereka menerimanya dari beranda.</p>
+    <input id="invite-search" placeholder="Cari nama..." maxlength="30" autocomplete="off" style="margin-bottom:10px;">
+    <div id="invite-list" style="max-height:46vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">${skeletonRows(3)}</div>
+    <button class="btn-outline" id="invite-cancel">Batal</button>`, { noAutofocus: true });
+
+  const list = $("#invite-list", s.sheet);
+  const search = $("#invite-search", s.sheet);
+  search.focus();
+
+  const renderList = (contacts) => {
+    const fresh = contacts.filter(c => !onBill.has(c.id));
+    const already = contacts.filter(c => onBill.has(c.id));
+    list.innerHTML = `
+      ${fresh.length ? fresh.map(c => `
+        <div class="account-row">
+          <div class="avatar" style="flex:0 0 auto;">${esc(initials(c.name))}</div>
+          <div style="flex:1;min-width:0;">
+            <div class="item-name">${esc(c.name)}</div>
+            <div class="muted">${c.last_shared ? "pernah berbagi bill" : "kontak"}</div>
+          </div>
+          <button class="btn-primary btn-sm inv-send" data-id="${esc(c.id)}" data-name="${esc(c.name)}">${ic("plus")} Undang</button>
+        </div>`).join("")
+      : `<div class="empty-state" style="padding:14px 8px;">${ic("empty")}<p class="muted">${search.value.trim() ? "Tidak ditemukan. Coba nama lain." : "Belum ada kontak. Undang orang lewat link dulu — setelah dia bergabung sekali, dia akan muncul di sini."}</p></div>`}
+      ${already.length ? `<p class="muted" style="margin-top:8px;font-size:12px;">Sudah ada di bill ini: ${already.map(c => esc(c.name)).join(", ")}</p>` : ""}`;
+    $$(".inv-send", s.sheet).forEach(b => b.addEventListener("click", () =>
+      withBusy(b, "Ngundang...", async () => {
+        try {
+          const r = await apiJson(`/api/bills/${billId}/invite`, "POST", { identity_id: b.dataset.id });
+          toast(r.status === "joined"
+            ? `${b.dataset.name} langsung masuk bill ✓`
+            : `Undangan ke ${b.dataset.name} dikirim`);
+          s.close();
+          loadBillView(billId);
+        } catch (e) { toast(e.message); }
+      })));
+  };
+
+  let timer = null;
+  let seq = 0;  // request-sequence guard: slow earlier search must not clobber a newer one
+  const load = async (q) => {
+    const mySeq = ++seq;
+    try {
+      const contacts = await api(`/api/identities/${me.id}/contacts${q ? "?q=" + encodeURIComponent(q) : ""}`);
+      if (mySeq !== seq) return;  // stale response
+      renderList(contacts);
+    } catch (e) {
+      if (mySeq !== seq) return;
+      list.innerHTML = `<div class="empty-state">${ic("alert")}<p class="muted">${esc(e.message)}</p></div>`;
+    }
+  };
+  search.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => load(search.value.trim()), 250);
+  });
+  load("");
+  $("#invite-cancel", s.sheet).addEventListener("click", s.close);
+}
+
 // ---------- Set payer (who fronted the money) ----------
 function openSetPayerSheet(data) {
   // roster = people with a share + everyone who joined (participants). The
@@ -1526,33 +1742,48 @@ function openSetPayerSheet(data) {
   });
   const s = openSheet(`
     <div class="sheet-handle"></div>
-    <div class="sheet-title">Siapa yang nalangin bill ini?</div>
-    <p class="sheet-sub">Yang dipilih dianggap udah lunas otomatis (dia yang keluar duit duluan), dan metode bayar yang ditampilin ke orang lain pake akun dia.</p>
-    <div style="display:flex;flex-direction:column;gap:8px;">
-      <button class="btn-outline payer-opt" data-id="${esc(data.bill.creator_identity_id)}" data-name="${esc(data.creator_name)}" style="text-align:left;justify-content:flex-start;">
+    <div class="sheet-title">Siapa yang membayar dahulu untuk bill ini?</div>
+    <p class="sheet-sub">Yang dipilih dianggap sudah lunas otomatis (dia yang mengeluarkan uang lebih dahulu), dan metode bayar yang ditampilkan ke orang lain menggunakan akun dia.</p>
+    <div role="radiogroup" aria-label="Pilih orang yang membayar dahulu" style="display:flex;flex-direction:column;gap:8px;">
+      <button class="btn-outline payer-opt" role="radio" aria-checked="${data.paid_by_id === data.bill.creator_identity_id}" data-id="${esc(data.bill.creator_identity_id)}" data-name="${esc(data.creator_name)}" style="text-align:left;justify-content:flex-start;">
         ${data.paid_by_id === data.bill.creator_identity_id ? ic("check") : ""}<strong>${esc(data.creator_name)}</strong>
         <span class="muted">(${state.identity && data.bill.creator_identity_id === state.identity.id ? "kamu, pembuat" : "pembuat"})</span>
       </button>
       ${roster.filter(p => p.identity_id !== data.bill.creator_identity_id).map(p => `
-        <button class="btn-outline payer-opt" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}" style="text-align:left;justify-content:flex-start;">
+        <button class="btn-outline payer-opt" role="radio" aria-checked="${data.paid_by_id === p.identity_id}" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}" style="text-align:left;justify-content:flex-start;">
           ${data.paid_by_id === p.identity_id ? ic("check") : ""}<strong>${esc(p.name)}</strong>
         </button>`).join("")}
     </div>
     <div style="height:1px;background:var(--border);margin:14px 0;"></div>
     <label for="payer-name-input">Atau ketik nama (buat yang belum join)</label>
-    <input id="payer-name-input" placeholder="Nama Yang Nalangin" value="${esc(data.paid_by_name || "")}" maxlength="30" autocomplete="off">
+    ${/* only prefill a name that ISN'T already one of the checked options
+          above — echoing the confirmed payer's name back into the "someone
+          who hasn't joined yet" box made the sheet look like it was asking
+          the same question twice (v67 visual sweep) */ ""}
+    <input id="payer-name-input" placeholder="Nama yang membayar dahulu" value="${esc(data.paid_by_id ? "" : (data.paid_by_name || ""))}" maxlength="30" autocomplete="off">
     <button class="btn-primary" id="payer-name-save">Pakai Nama Ini</button>
     <button class="btn-outline" id="payer-cancel">Batal</button>`, { noAutofocus: true });
 
+  let payerSaving = false;
+  const setPayerBusy = (busy) => {
+    payerSaving = busy;
+    $$(".payer-opt", s.sheet).forEach(b => b.disabled = busy);
+    nameInput.disabled = busy;
+    saveBtn.disabled = busy;
+  };
   const savePayer = (btn, body, name) => withBusy(btn, "Nyimpen...", async () => {
+    if (payerSaving) return; // no in-flight guard before: two taps fired two racing PUTs
+    setPayerBusy(true);
     try {
       await apiJson(`/api/bills/${data.bill.id}/paid_by`, "PUT", body);
       s.close();
-      toast(`${name} ditandai yang nalangin ✓`);
+      toast(`${name} ditandai sebagai yang membayar dahulu ✓`);
       loadBillView(data.bill.id);
-    } catch (e) { toast(e.message); }
+    } catch (e) {
+      setPayerBusy(false);
+      toast(e.message);
+    }
   });
-  // (bug: no in-flight guard — tapping two people fired two racing PUTs)
   $$(".payer-opt", s.sheet).forEach(b => b.addEventListener("click", () =>
     savePayer(b, { identity_id: b.dataset.id }, b.dataset.name)));
   const nameInput = $("#payer-name-input", s.sheet);
@@ -1594,7 +1825,7 @@ function openDeleteBillConfirm(billId, title, onDone) {
     <div class="sheet-handle"></div>
     <div class="sheet-title">Hapus bill ini?</div>
     <p class="sheet-sub"><strong style="color:var(--text);">${esc(title)}</strong> — semua item, pembagian, dan catatan bayar di bill ini bakal kehapus permanen.</p>
-    <p class="sheet-sub">Gak bisa dibatalin. Orang lain yang udah join juga gak bakal bisa liat bill ini lagi.</p>
+    <p class="sheet-sub">Tidak bisa dibatalkan. Orang lain yang sudah bergabung juga tidak akan bisa melihat bill ini lagi.</p>
     <button class="btn-danger" id="confirm-delete-bill">Hapus Selamanya</button>
     <button class="btn-outline" id="cancel-delete-bill">Batal</button>`, { noAutofocus: true });
   $("#cancel-delete-bill", s.sheet).addEventListener("click", s.close);
@@ -1615,6 +1846,8 @@ function openDeleteBillConfirm(billId, title, onDone) {
 }
 
 // ---------- Creator pick mode: pick your own items ----------
+let pickLayer = null;
+
 function renderCreatorPick(data) {
   const app = $("#app");
   const me = state.identity;
@@ -1639,7 +1872,7 @@ function renderCreatorPick(data) {
         <span class="chip chip-accent">Kamu pembuat</span>
       </div>
       ${data.bill.merchant ? `<p class="muted" style="margin-top:6px;">${esc(data.bill.merchant)}</p>` : ""}
-      <p class="muted" style="margin-top:8px;">Ketuk item yang kamu tanggung. Item slot bisa diambil lebih dari 1 bagian. Item bebas yang gak dicentang siapa-siapa masuk ke kamu; bagian slot yang kosong tetep keliatan buat diambil.</p>
+      <p class="muted" style="margin-top:8px;">Ketuk item yang kamu tanggung. Item slot bisa diambil lebih dari 1 bagian. Item bebas yang tidak dicentang siapa pun masuk ke kamu; bagian slot yang kosong tetap terlihat untuk diambil.</p>
     </div>
     <div class="card">
       <div class="card-title">Centang yang kamu tanggung</div>
@@ -1667,14 +1900,62 @@ function renderCreatorPick(data) {
     </div>
     ${shell(main, side)}`;
 
-  $("#back-btn").addEventListener("click", () => loadBillView(data.bill.id));
+  $("#back-btn").addEventListener("click", () => {
+    const layer = pickLayer;
+    pickLayer = null;
+    if (layer) layer.finish(false);
+    else loadBillView(data.bill.id);
+  });
   bindItemRows(data, me);
-  $("#done-btn").addEventListener("click", () => loadBillView(data.bill.id));
+  $("#done-btn").addEventListener("click", () => {
+    const layer = pickLayer;
+    pickLayer = null;
+    if (layer) layer.finishQuiet();
+    loadBillView(data.bill.id);
+  });
   watchDock();
 }
 
 // ---------- Creator edit bill ----------
 let editState = { items: [], subtotal: 0, tax: 0, service: 0, total: 0, title: "", transacted_at: "", merchant: "", tax_included: false };
+
+// Full-screen editors are pseudo-layers: they hijack the whole app shell but
+// have NO route of their own, so a raw system Back popped the real previous
+// entry and dumped the user onto the home list (bug: tap Ubah, swipe back,
+// land on list). One history sentinel mirrors the sheet scheme: gesture pops
+// it, fires this listener, and the detail summary is restored instead.
+// UI exits (back button / save) consume the sentinel first so no ghost
+// entries linger behind them.
+function beginEditorLayer(billId) {
+  try { history.pushState({ bagiinEdit: true }, ""); } catch (e) {}
+  let done = false;
+  const listen = "popstate";
+  const onPop = () => {
+    if (done) return;
+    done = true;
+    removeEventListener(listen, onPop);
+    loadBillView(billId).catch(() => {});
+  };
+  addEventListener(listen, onPop);
+  return {
+    // gesture-path: popstate already fired; just stop listening and restore
+    // ui-path: consume the sentinel with one silent back(), then restore
+    finish(viaPopstate) {
+      if (done) return;
+      done = true;
+      removeEventListener(listen, onPop);
+      if (!viaPopstate) {
+        try { history.back(); } catch (e) {}
+        setTimeout(() => { try { loadBillView(billId); } catch (e) {} }, 0);
+      }
+    },
+    finishQuiet() {          // caller will restore the view itself (save flow)
+      done = true;
+      removeEventListener(listen, onPop);
+      try { history.back(); } catch (e) {}
+    },
+  };
+}
 
 function renderEditBill(data) {
   const app = $("#app");
@@ -1689,6 +1970,18 @@ function renderEditBill(data) {
     merchant: data.bill.merchant || "",
     tax_included: !!(data.bill.tax_included),
   };
+  editState._hadPayments = data.people.some(p => p.paid === "paid" && p.total_idr > 0);
+  editState._originalTotals = {
+    subtotal: editState.subtotal,
+    tax: editState.tax,
+    service: editState.service,
+  };
+  editState._originalItems = editState.items.map(it => ({
+    id: it.id,
+    price: it.price,
+    discount: it.discount,
+  }));
+  editState._layer = beginEditorLayer(data.bill.id);
   const main = `
     <div class="card">
       <div class="field" style="margin-bottom:0;">
@@ -1703,9 +1996,9 @@ function renderEditBill(data) {
     </div>
     <div class="card" id="items-card">
       <div class="card-title">Item <span class="muted">(edit kalau salah)</span></div>
-      <p class="muted" style="margin:-4px 0 10px;"><strong style="color:var(--text-2);">Bebas</strong>
-      = siapa pun boleh centang, harganya dibagi rata sesuai porsi yang keambil.
-      <strong style="color:var(--text-2);">Slot</strong> = dibagi jadi N bagian tetap.</p>
+      <p class="muted" style="margin:-4px 0 10px;"><strong style="color:var(--text-2);">Bagi rata</strong>
+      = siapa pun boleh centang, harganya dibagi rata sesuai porsi yang terambil.
+      <strong style="color:var(--text-2);">Bagi per porsi</strong> = dibagi jadi N bagian tetap.</p>
       <div id="items-list"></div>
       <button class="btn-outline btn-sm" id="add-item-btn" style="width:100%;margin-top:8px;">${ic("plus")} Tambah Item</button>
     </div>
@@ -1719,11 +2012,11 @@ function renderEditBill(data) {
       <label class="toggle-row" style="margin-top:10px;">
         <span style="flex:1;">
           <span class="label-strong">Harga item sudah termasuk pajak</span>
-          <span class="muted">Kalau struk nulis "termasuk pajak", harga item udah kehitung pajaknya</span>
+          <span class="muted">Kalau struk menulis "termasuk pajak", harga item sudah menghitung pajaknya</span>
         </span>
         <input type="checkbox" id="tax-included-toggle" ${editState.tax_included ? "checked" : ""}>
       </label>
-      <div id="tax-included-badge" class="info-box ${editState.tax_included ? "" : "hidden"}" style="margin-top:8px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — PPN &amp; service dikosongin, total ngikut item</div>
+      <div id="tax-included-badge" class="info-box ${editState.tax_included ? "" : "hidden"}" style="margin-top:8px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — PPN &amp; service tidak diisi, total mengikuti item</div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;">
         <span class="label-sm">Total</span>
         <span class="money" style="font-size:22px;font-weight:800;" id="total-display">${fmt(editState.total)}</span>
@@ -1748,7 +2041,7 @@ function renderEditBill(data) {
     </div>
     ${shell(main, side)}`;
 
-  $("#back-btn").addEventListener("click", () => loadBillView(data.bill.id));
+  $("#back-btn").addEventListener("click", () => editState._layer.finish(false));
   renderEditItems();
   updateEditTotal();
   bindRupiahInput($("#subtotal-input"), () => updateEditTotal());
@@ -1772,8 +2065,8 @@ function renderEditItems() {
   const elList = $("#items-list");
   if (!elList) return;
   elList.innerHTML = editState.items.map((it, idx) => `
-    <div class="item-row" style="flex-wrap:wrap;">
-      <div style="flex:2;min-width:140px;">
+    <div class="item-row edit-item" style="flex-wrap:wrap;">
+      <div class="edit-name" style="flex:2;min-width:140px;">
         <input data-role="name" data-idx="${idx}" value="${esc(it.name)}" placeholder="Nama Item" aria-label="Nama item" style="padding:9px 10px;">
       </div>
       <div style="flex:1;min-width:100px;">
@@ -1783,21 +2076,20 @@ function renderEditItems() {
       <div style="flex-basis:100%;padding:6px 0 0;display:flex;align-items:center;gap:8px;">
         <span class="label-sm" style="flex-shrink:0;">Potongan (diskon):</span>
         <input data-role="discount" data-idx="${idx}" type="text" inputmode="numeric" class="input-money" value="${rupiahFmt(it.discount)}" placeholder="0" aria-label="Potongan atau diskon item" style="padding:7px 9px;max-width:110px;">
-        <span class="muted" style="font-size:11.5px;">harga asli − potongan = yang dibayar</span>
         ${it.discount > 0 ? `<span class="disc-bayar" style="color:var(--green);font-weight:700;font-size:13px;">→ bayar ${rupiahFmt(Math.max(0, it.price - it.discount))}</span>` : ""}
       </div>
       <div style="flex-basis:100%;padding:2px 0 8px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
           <span class="label-sm" style="flex-shrink:0;">Cara Bagi:</span>
-          <button class="btn-outline btn-sm item-mode-btn ${it.mode !== "slot" ? "chip-active" : ""}" data-idx="${idx}" data-mode="free">Bebas</button>
-          <button class="btn-outline btn-sm item-mode-btn ${it.mode === "slot" ? "chip-active" : ""}" data-idx="${idx}" data-mode="slot">Slot</button>
+          <button class="btn-outline btn-sm item-mode-btn ${it.mode !== "slot" ? "chip-active" : ""}" data-idx="${idx}" data-mode="free">Bagi rata</button>
+          <button class="btn-outline btn-sm item-mode-btn ${it.mode === "slot" ? "chip-active" : ""}" data-idx="${idx}" data-mode="slot">Bagi per porsi</button>
           ${it.mode === "slot" ? `
           <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
             <span class="muted">bagi</span>
             <button class="btn-outline btn-sm slot-dec" data-idx="${idx}" aria-label="Kurangi bagian">−</button>
             <span class="slot-count" style="font-weight:700;min-width:18px;text-align:center;">${it.slot_count || 2}</span>
             <button class="btn-outline btn-sm slot-inc" data-idx="${idx}" aria-label="Tambah bagian">＋</button>
-            <span class="muted">orang</span>
+            <span class="muted">bagian</span>
           </div>` : ""}
         </div>
         ${/* per-slot price must divide the price AFTER discount, like calc.py
@@ -1885,7 +2177,7 @@ function updateEditTotal() {
       if (editState.tax_included) {
         warn.textContent = `Total item (${fmt(sumItems)}) beda dari subtotal (${fmt(subtotal)}). Total item ini yang dipakai — cek harga & diskon tiap item.`;
       } else if (sumItems === total) {
-        warn.textContent = `Harga item (${fmt(sumItems)}) kayaknya udah TERMASUK pajak, tapi kamu isi subtotal ${fmt(subtotal)} + PPN. Aktifin toggle "Harga item sudah termasuk pajak" biar gak dobel.`;
+        warn.textContent = `Harga item (${fmt(sumItems)}) tampaknya sudah TERMASUK pajak, tetapi kamu mengisi subtotal ${fmt(subtotal)} + PPN. Aktifkan toggle "Harga item sudah termasuk pajak" agar tidak dihitung ganda.`;
       } else {
         warn.textContent = `Total item (${fmt(sumItems)}) beda dari subtotal (${fmt(subtotal)}). Cek kolom diskon tiap item.`;
       }
@@ -1895,10 +2187,34 @@ function updateEditTotal() {
 
 async function saveEditBill(billId) {
   const btn = $("#save-bill-btn");
-  const items = editState.items.filter(i => i.name && i.price > 0);
+  const items = editState.items.filter(i => i.name && String(i.name).trim());
+  // price 0 is legal (free item the backend accepts with minv=0) — only
+  // blank rows are dropped (bug: saving an edit silently deleted free items)
   if (!items.length) { toast("Minimal 1 item"); return; }
   await withBusy(btn, "Nyimpen...", async () => {
     try {
+      const originalTotals = editState._originalTotals;
+      const originalItems = editState._originalItems;
+      const totalsChanged = editState.subtotal !== originalTotals.subtotal
+        || editState.tax !== originalTotals.tax
+        || editState.service !== originalTotals.service;
+      const originalById = new Map(originalItems.filter(i => i.id != null).map(i => [i.id, i]));
+      const currentById = new Map(items.filter(i => i.id != null).map(i => [i.id, i]));
+      const itemsChanged = originalItems.length !== items.length
+        || originalItems.some(original => {
+          const current = original.id == null ? null : currentById.get(original.id);
+          return !current || current.price !== original.price || (current.discount || 0) !== (original.discount || 0);
+        })
+        || items.some(current => current.id == null || !originalById.has(current.id));
+      if (editState._hadPayments && (totalsChanged || itemsChanged)) {
+        const ok = await confirmSheet({
+          title: "Perubahan menyentuh pembayaran",
+          body: "Ada orang yang sudah ditandai lunas. Mengubah jumlah akan menggeser pembagian yang sudah dibayar.",
+          confirmText: "Tetap Simpan",
+          cancelText: "Batal",
+        });
+        if (!ok) return;
+      }
       await apiJson(`/api/bills/${billId}`, "PUT", {
         title: editState.title || editState.merchant || "Bill",
         merchant: editState.merchant || null,
@@ -1918,6 +2234,7 @@ async function saveEditBill(billId) {
         })),
       });
       toast("Bill diupdate ✓");
+      editState._layer.finishQuiet();
       loadBillView(billId);
     } catch (e) { toast(e.message); }
   });
@@ -1935,11 +2252,11 @@ function shareBill(billId, title) {
   const s = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-title">Bagikan bill</div>
-    <p class="sheet-sub">Siapa pun yang pegang link ini bisa milih itemnya sendiri — gak perlu bikin akun.</p>
+    <p class="sheet-sub">Siapa pun yang memegang link ini bisa memilih itemnya sendiri — tidak perlu membuat akun.</p>
     <div class="code-display" style="font-size:13px;letter-spacing:0;word-break:break-all;">${esc(url)}</div>
     <button class="btn-primary" id="share-copy">${ic("copy")} Salin Link</button>
     <button class="btn-outline" id="share-wa">${ic("share")} Kirim Lewat WhatsApp</button>
-    ${navigator.share ? `<button class="btn-outline" id="share-native">${ic("share")} Bagikan Lewat Aplikasi Lain</button>` : ""}
+    ${navigator["share"] ? `<button class="btn-outline" id="share-native">${ic("share")} Bagikan Lewat Aplikasi Lain</button>` : ""}
     <button class="btn-ghost" id="share-close">Tutup</button>`, { noAutofocus: true });
 
   // desktop rarely has navigator.share, and copying is what people actually
@@ -1986,28 +2303,3 @@ function openReopenConfirm(data) {
     }));
 }
 
-function openCloseConfirm(data) {
-  const ownerish = new Set([data.paid_by_id, data.bill.creator_identity_id].filter(Boolean));
-  const notPicked = data.people.filter(p => !p.subtotal_idr && !hasPickedAny(data, p.identity_id) && !ownerish.has(p.identity_id));
-  const emptySlots = data.uncovered_slots || [];
-  const s = openSheet(`
-    <div class="sheet-handle"></div>
-    <div class="sheet-title">Tutup bill?</div>
-    <p class="sheet-sub">Setelah ditutup, pembagian jadi final dan status bayar gak bisa diubah lagi. Kamu masih bisa buka lagi kapan pun.</p>
-    ${emptySlots.length ? `<div class="warn-box"><strong>Bagian kosong belum keambil:</strong><ul>
-      ${emptySlots.map(u => `<li>${esc(u.name)} — ${u.empty} bagian (${fmt(u.amount_idr)})</li>`).join("")}
-    </ul></div>` : ""}
-    ${notPicked.length ? `<div class="warn-box"><strong>Belum pilih item:</strong><ul>${notPicked.map(m => `<li>${esc(m.name)}</li>`).join("")}</ul></div>` : ""}
-    <button class="btn-primary" id="confirm-close">Tutup Bill Sekarang</button>
-    <button class="btn-outline" id="cancel-close">Batal, Tunggu yang Lain</button>`, { noAutofocus: true });
-  $("#cancel-close", s.sheet).addEventListener("click", s.close);
-  $("#confirm-close", s.sheet).addEventListener("click", (ev) =>
-    withBusy(ev.currentTarget, "Bentar...", async () => {
-      try {
-        await api(`/api/bills/${data.bill.id}/close`, { method: "POST" });
-        s.close();
-        toast("Bill ditutup");
-        loadBillView(data.bill.id);
-      } catch (e) { toast(e.message); }
-    }));
-}

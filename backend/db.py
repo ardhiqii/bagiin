@@ -3,6 +3,7 @@ import os
 import re
 import sqlite3
 import secrets
+import time
 from pathlib import Path
 
 import calc
@@ -16,15 +17,75 @@ _PHOTO_NAME_RE = re.compile(r"^[0-9a-f]{16}\.jpg$")
 def _unlink_photo(photo_path):
     """Remove an uploaded photo file if it's one of ours (hex.jpg). Safe-guard:
     never unlink arbitrary paths — the URL is public, so a hostile photo_path
-    value must not be able to delete server files."""
+    value must not be able to delete server files.
+
+    Second guard: skip files another bill still points at. Paths are visible to
+    everyone who can read a bill, so submitting a stranger's path and deleting
+    your own bill used to unlink their receipt (bug: v64 audit).
+    """
     if not photo_path:
         return
     try:
+        if _photo_in_use(photo_path):
+            return
         p = Path(photo_path)
         if _PHOTO_NAME_RE.match(p.name):
             p.unlink(missing_ok=True)
     except Exception:
         pass
+
+
+def _photo_in_use(photo_path) -> bool:
+    """Is this file still referenced by any bill (new table or legacy column)?"""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM bill_photo WHERE path = ? "
+            "UNION ALL SELECT 1 FROM bill WHERE photo_path = ? LIMIT 1",
+            (photo_path, photo_path),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def sweep_orphaned_photos(upload_dir, max_age_seconds: int = 86400) -> int:
+    """Delete uploaded photos nothing references anymore, older than
+    `max_age_seconds` (default 1 day, so a photo mid-create-flow never gets
+    swept out from under a slow uploader).
+
+    Not wired to a scheduler — this repo has none (no startup task runner,
+    no APScheduler, no cron entry checked in). Call it from an ops cron job
+    or a one-off invocation. Belt-and-braces, not the primary cleanup path:
+    DELETE /api/photos/{filename} (main.py) is what the client is expected
+    to call when it discards a photo; this only mops up whatever that missed
+    (a crashed tab, a killed upload) so files don't pile up forever.
+
+    Safety, matching `_unlink_photo`: only ever touches direct children of
+    `upload_dir` whose name matches `_PHOTO_NAME_RE` (never walks into
+    subdirectories, never follows a name outside that shape), and never
+    unlinks a file `_photo_in_use` says a bill still points at. Returns the
+    count of files removed.
+    """
+    upload_dir = Path(upload_dir)
+    if not upload_dir.is_dir():
+        return 0
+    now = time.time()
+    removed = 0
+    for entry in upload_dir.iterdir():
+        try:
+            if not entry.is_file() or not _PHOTO_NAME_RE.match(entry.name):
+                continue
+            age = now - entry.stat().st_mtime
+            if age < max_age_seconds:
+                continue
+            if _photo_in_use(str(entry)):
+                continue
+            entry.unlink(missing_ok=True)
+            removed += 1
+        except Exception:
+            continue
+    return removed
 
 
 def get_db():
@@ -119,6 +180,16 @@ def init_db():
             sort_order INTEGER NOT NULL DEFAULT 0
         );
 
+        CREATE TABLE IF NOT EXISTS bill_invite (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bill_id TEXT NOT NULL REFERENCES bill(id),
+            identity_id TEXT NOT NULL REFERENCES identity(id),
+            invited_by TEXT NOT NULL REFERENCES identity(id),
+            status TEXT NOT NULL DEFAULT 'pending',  -- pending | accepted | declined
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (bill_id, identity_id)
+        );
+
         CREATE TABLE IF NOT EXISTS bill_photo (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             bill_id TEXT NOT NULL REFERENCES bill(id),
@@ -131,8 +202,14 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_selection_identity ON selection(identity_id);
         CREATE INDEX IF NOT EXISTS idx_payacct_identity ON payment_account(identity_id);
         CREATE INDEX IF NOT EXISTS idx_billphoto_bill ON bill_photo(bill_id);
+        CREATE INDEX IF NOT EXISTS idx_invite_identity ON bill_invite(identity_id, status);
+        CREATE INDEX IF NOT EXISTS idx_invite_bill ON bill_invite(bill_id);
         """
     )
+    # migration: identity.auto_accept (default ON) — idempotent for existing DBs
+    icols2 = {r[1] for r in conn.execute("PRAGMA table_info(identity)").fetchall()}
+    if "auto_accept" not in icols2:
+        conn.execute("ALTER TABLE identity ADD COLUMN auto_accept INTEGER NOT NULL DEFAULT 1")
     # migration: add merchant/transacted_at to existing bills table
     cols = {r[1] for r in conn.execute("PRAGMA table_info(bill)").fetchall()}
     if "merchant" not in cols:
@@ -306,6 +383,253 @@ def update_identity_name(ident_id: str, name: str):
     conn.execute("UPDATE identity SET name = ? WHERE id = ?", (name, ident_id))
     conn.commit()
     conn.close()
+
+
+def set_auto_accept(ident_id: str, value: bool):
+    """Toggle whether direct invites to this identity join instantly (1) or
+    land as pending invites the user accepts/declines (0)."""
+    conn = get_db()
+    conn.execute("UPDATE identity SET auto_accept = ? WHERE id = ?", (1 if value else 0, ident_id))
+    conn.commit()
+    conn.close()
+
+
+def get_contacts(identity_id: str, q: str | None = None) -> list[dict]:
+    """'Kontak terbukti' — identities who have shared a bill with me.
+
+    Shared = someone is a participant (payment row) on any bill where I am
+        the creator or a participant, and vice versa. Excludes myself. Ordered by
+        most recent shared bill so the picker shows the people you actually split
+        with recently first.
+        """
+    conn = get_db()
+    query = """
+        SELECT i.id, i.name, MAX(b.created_at) AS last_shared
+        FROM identity i
+        JOIN (
+            -- people on a bill = creator OR anyone with a payment row there.
+            -- UNION (not COALESCE): with a payment present the creator used to
+            -- vanish, so contacts were one-directional (Budi saw Aufa's bill
+            -- but not Aufa as a contact).
+            SELECT b.id, b.created_at, b.creator_identity_id AS person_id
+            FROM bill b
+            UNION ALL
+            SELECT b.id, b.created_at, p.identity_id AS person_id
+            FROM payment p
+            JOIN bill b ON b.id = p.bill_id
+        ) b ON b.person_id = i.id
+        WHERE b.id IN (
+            SELECT b2.id FROM bill b2
+            WHERE b2.creator_identity_id = ?
+               OR b2.id IN (SELECT bill_id FROM payment WHERE identity_id = ?)
+        )
+        AND i.id != ?
+    """
+    params: list = [identity_id, identity_id, identity_id]
+    if q:
+        query += " AND i.name LIKE ?"
+        params.append(f"%{q}%")
+    query += " GROUP BY i.id, i.name ORDER BY last_shared DESC, i.name LIMIT 50"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def is_contact(identity_id: str, other_id: str) -> bool:
+    """Have these two ever shared a bill? Same rule as get_contacts, without
+    its LIMIT 50 — the invite endpoint used to test membership against that
+    truncated list, so the picker (which filters BEFORE the limit) happily
+    offered contact #51 and the invite then answered "Bisa ngundang orang yang
+    udah pernah share bill aja" (bug: v64 audit)."""
+    if not other_id or other_id == identity_id:
+        return False
+    a, b = identity_id, other_id
+    conn = get_db()
+    try:
+        row = conn.execute(
+            """
+            SELECT 1 FROM bill x
+            WHERE (x.creator_identity_id = ?
+                   OR x.id IN (SELECT bill_id FROM payment WHERE identity_id = ?))
+              AND (x.creator_identity_id = ?
+                   OR x.id IN (SELECT bill_id FROM payment WHERE identity_id = ?))
+            LIMIT 1
+            """,
+            (a, a, b, b),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+# ---------- direct invites (v64) ----------
+
+def reopen_declined_invite(conn, bill_id: str, identity_id: str, invited_by: str) -> bool:
+    """Turn a declined invite back into a pending one. Without this a decline
+    was permanent: create_invite returned the declined row, the endpoint
+    reported "pending", and the invitee never saw a card again (bug: v64
+    audit)."""
+    cur = conn.execute(
+        "UPDATE bill_invite SET status = 'pending', invited_by = ?, created_at = datetime('now') "
+        "WHERE bill_id = ? AND identity_id = ? AND status = 'declined'",
+        (invited_by, bill_id, identity_id),
+    )
+    return cur.rowcount > 0
+
+
+def create_invite(bill_id: str, identity_id: str, invited_by: str) -> dict:
+    """Record an invite. Idempotent-ish: an existing pending invite for the
+    pair is returned as-is; a fresh invite starts 'pending' (the caller flips
+    it to 'accepted' when auto-accept fires).
+
+    The returned dict carries an extra, non-persisted `reopened_from_decline`
+    flag (v67). Both a brand-new invite and one reopened from a decline come
+    back with `status == 'pending'` — indistinguishable by status alone — but
+    the caller (main.invite_to_bill) must NOT treat them the same when
+    auto_accept is ON: a decline is a "no thanks", not a ban (so re-inviting
+    is fine and reopens the row), but composing that with auto_accept meant
+    an explicit "Tolak" got silently overridden the moment the same person
+    was invited again, with no further consent from them (bug: v67 audit).
+    A first-time invite to an auto-accept contact must still join instantly.
+    """
+    conn = get_db()
+    try:
+        existing = conn.execute(
+            "SELECT * FROM bill_invite WHERE bill_id = ? AND identity_id = ?",
+            (bill_id, identity_id),
+        ).fetchone()
+        if existing:
+            # a declined invite is a "no thanks", not a permanent ban — asking
+            # again is a normal thing to do, and returning the declined row
+            # made the owner see "undangan dikirim" for an invite that could
+            # never appear (bug: v64 audit)
+            if existing["status"] == "declined" and reopen_declined_invite(
+                    conn, bill_id, identity_id, invited_by):
+                conn.commit()
+                existing = conn.execute(
+                    "SELECT * FROM bill_invite WHERE bill_id = ? AND identity_id = ?",
+                    (bill_id, identity_id),
+                ).fetchone()
+                row = dict(existing)
+                row["reopened_from_decline"] = True
+                return row
+            row = dict(existing)
+            row["reopened_from_decline"] = False
+            return row
+        conn.execute(
+            "INSERT INTO bill_invite (bill_id, identity_id, invited_by, status) VALUES (?, ?, ?, 'pending')",
+            (bill_id, identity_id, invited_by),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM bill_invite WHERE bill_id = ? AND identity_id = ?",
+            (bill_id, identity_id),
+        ).fetchone()
+        out = dict(row)
+        out["reopened_from_decline"] = False
+        return out
+    finally:
+        conn.close()
+
+
+def mark_invite_accepted(invite_id: int):
+    conn = get_db()
+    conn.execute("UPDATE bill_invite SET status = 'accepted' WHERE id = ?", (invite_id,))
+    conn.commit()
+    conn.close()
+
+
+def cancel_invite(bill_id: str, invite_id: int) -> bool:
+    """Manager withdraws a still-pending invite (v66).
+
+    Before this the sender of an invite to someone with `auto_accept` OFF had
+    no way back: the invite sat pending forever, the card kept saying
+    "Undang" with no hint one was already outstanding, and a wrong invite
+    (fat-fingered contact) could never be taken back (bug found in the v66
+    audit). Deletes the row outright rather than flipping a status -- unlike
+    a decline there's no state worth keeping, so a later re-invite starts
+    fresh through create_invite's normal insert path instead of the
+    reopen-declined detour.
+    """
+    conn = get_db()
+    cur = conn.execute(
+        "DELETE FROM bill_invite WHERE id = ? AND bill_id = ? AND status = 'pending'",
+        (invite_id, bill_id),
+    )
+    conn.commit()
+    ok = cur.rowcount > 0
+    conn.close()
+    return ok
+
+
+def get_invite(invite_id: int):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM bill_invite WHERE id = ?", (invite_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_invites_for_bill(bill_id: str) -> list[dict]:
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM bill_invite WHERE bill_id = ? ORDER BY id", (bill_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_pending_invites(identity_id: str) -> list[dict]:
+    """Pending invites for an identity, enriched with bill + inviter names."""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT v.id, v.bill_id, v.invited_by, v.created_at, v.status,
+                  b.title AS bill_title, b.total_idr AS bill_total,
+                  inviter.name AS invited_by_name
+           FROM bill_invite v
+           JOIN bill b ON b.id = v.bill_id
+           JOIN identity inviter ON inviter.id = v.invited_by
+           WHERE v.identity_id = ? AND v.status = 'pending'
+             AND b.status = 'open'
+           ORDER BY v.created_at DESC""",
+        (identity_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def decline_invite(invite_id: int, identity_id: str) -> bool:
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE bill_invite SET status = 'declined' WHERE id = ? AND identity_id = ? AND status = 'pending'",
+        (invite_id, identity_id),
+    )
+    conn.commit()
+    ok = cur.rowcount > 0
+    conn.close()
+    return ok
+
+
+def identity_on_bill(bill_id: str, identity_id: str) -> bool:
+    """True if identity is already a participant (payment row) or the creator
+    who hasn't walked out.
+
+    (bug: the creator branch counted them unconditionally, so a creator who
+    left once a confirmed payer took the bill over (v58, `creator_left=1`)
+    could never be invited back -- /invite always answered "Orang ini udah di
+    bill" even though they were gone from the roster and their own history.
+    `join_bill` already clears the flag on rejoin, so this just has to agree
+    that a left creator isn't on the bill.)
+    """
+    conn = get_db()
+    row = conn.execute(
+        """SELECT 1 FROM bill b
+           WHERE b.id = ?
+             AND ((b.creator_identity_id = ? AND b.creator_left = 0)
+                  OR EXISTS (SELECT 1 FROM payment p WHERE p.bill_id = b.id AND p.identity_id = ?))""",
+        (bill_id, identity_id, identity_id),
+    ).fetchone()
+    conn.close()
+    return row is not None
 
 
 # ---------- payment accounts ----------
@@ -484,14 +808,30 @@ def add_bill_photo(bill_id: str, photo_path: str) -> int:
     return new_id
 
 
-def delete_bill_photo(photo_id: int) -> str | None:
-    """Remove one bill photo; returns its path for unlink (or None)."""
+def delete_bill_photo(bill_id: str, photo_id: int) -> str | None:
+    """Remove one photo FROM THIS BILL; returns its path for unlink (or None).
+
+    Scoped by bill_id on purpose: photo ids are a global autoincrement and every
+    reader of a bill payload gets them, so looking a photo up by id alone let
+    someone delete another bill's photo through a bill they do manage (bug:
+    found in the v64 audit).
+    """
     conn = get_db()
-    row = conn.execute("SELECT path FROM bill_photo WHERE id = ?", (photo_id,)).fetchone()
+    row = conn.execute(
+        "SELECT path FROM bill_photo WHERE id = ? AND bill_id = ?",
+        (photo_id, bill_id),
+    ).fetchone()
     if not row:
         conn.close()
         return None
-    conn.execute("DELETE FROM bill_photo WHERE id = ?", (photo_id,))
+    conn.execute("DELETE FROM bill_photo WHERE id = ? AND bill_id = ?", (photo_id, bill_id))
+    # the legacy single-photo column is what the init_db backfill reads. Leaving
+    # it set meant every restart re-created the row the user just deleted, now
+    # pointing at an unlinked file (bug: deleted receipts came back).
+    conn.execute(
+        "UPDATE bill SET photo_path = NULL WHERE id = ? AND photo_path = ?",
+        (bill_id, row["path"]),
+    )
     conn.commit()
     conn.close()
     return row["path"]
@@ -500,9 +840,10 @@ def delete_bill_photo(photo_id: int) -> str | None:
 UNCHANGED = object()  # "this field was not in the request" (vs. explicitly null)
 
 
-def update_bill(bill_id: str, title: str, merchant: str | None,
-                transacted_at: str | None, participants: list[str] | None,
-                items: list[dict], subtotal: int, tax: int, service: int, total: int,
+def update_bill(bill_id: str, title: str, merchant=UNCHANGED,
+                transacted_at=UNCHANGED, participants: list[str] | None = None,
+                items: list[dict] = None, subtotal: int = 0, tax: int = 0,
+                service: int = 0, total: int = 0,
                 participant_count=UNCHANGED,
                 tax_included: int = 0):
     """Full bill update with item diffing.
@@ -514,24 +855,28 @@ def update_bill(bill_id: str, title: str, merchant: str | None,
       They used to be overwritten unconditionally, so every edit of an
       API-created bill silently wiped its roster (bug: the typed names that
       hadn't joined yet disappeared from the "Yang bayar" picker).
+    - `merchant`/`transacted_at`=UNCHANGED (v66) leave those columns alone
+      too. Absent keys used to fall through to `None` -> NULL, and
+      `transacted_at` now drives the history list's ordering and its
+      year/month filter, so a partial-update client quietly moved a bill to
+      another month (bug: v66 audit). An explicit `null`/`""` still nulls the
+      column -- only a genuinely absent key means "don't touch this".
     """
     conn = get_db()
-    if participant_count is UNCHANGED:
-        conn.execute(
-            """UPDATE bill SET title = ?, merchant = ?, transacted_at = ?,
-               subtotal_idr = ?, tax_idr = ?, service_idr = ?, total_idr = ?, tax_included = ?
-               WHERE id = ?""",
-            (title, merchant, transacted_at, subtotal, tax, service, total,
-             1 if tax_included else 0, bill_id),
-        )
-    else:
-        conn.execute(
-            """UPDATE bill SET title = ?, merchant = ?, transacted_at = ?,
-               subtotal_idr = ?, tax_idr = ?, service_idr = ?, total_idr = ?, participant_count = ?, tax_included = ?
-               WHERE id = ?""",
-            (title, merchant, transacted_at, subtotal, tax, service, total, participant_count,
-             1 if tax_included else 0, bill_id),
-        )
+    set_cols = ["title = ?", "subtotal_idr = ?", "tax_idr = ?", "service_idr = ?",
+                "total_idr = ?", "tax_included = ?"]
+    params = [title, subtotal, tax, service, total, 1 if tax_included else 0]
+    if merchant is not UNCHANGED:
+        set_cols.append("merchant = ?")
+        params.append(merchant)
+    if transacted_at is not UNCHANGED:
+        set_cols.append("transacted_at = ?")
+        params.append(transacted_at)
+    if participant_count is not UNCHANGED:
+        set_cols.append("participant_count = ?")
+        params.append(participant_count)
+    params.append(bill_id)
+    conn.execute(f"UPDATE bill SET {', '.join(set_cols)} WHERE id = ?", params)
     # participants (simple replace, but keep identity_id claims for same names)
     if participants is not None:
         claims = {r["name"]: r["identity_id"] for r in conn.execute(
@@ -756,6 +1101,12 @@ def remove_person(bill_id: str, identity_id: str):
         "paid_by_confirmed = 0 WHERE id = ? AND paid_by_identity_id = ?",
         (bill_id, identity_id),
     )
+    # drop any invite rows too — an 'accepted' invite surviving the removal is
+    # a lie (re-invite would report "joined" while the person never re-joined)
+    conn.execute(
+        "DELETE FROM bill_invite WHERE bill_id = ? AND identity_id = ?",
+        (bill_id, identity_id),
+    )
     conn.commit()
     conn.close()
 
@@ -789,7 +1140,7 @@ def set_selections(bill_id: str, identity_id: str, picks) -> None:
                 (item_id, bill_id),
             ).fetchone()
             if not it:
-                raise ValueError("Item invalid")
+                raise ValueError("Item tidak valid")
             if it["mode"] == "slot" and it["slot_count"]:
                 taken = conn.execute(
                     "SELECT COALESCE(SUM(qty), 0) AS t FROM selection "
@@ -798,7 +1149,7 @@ def set_selections(bill_id: str, identity_id: str, picks) -> None:
                 ).fetchone()["t"]
                 if taken + qty > it["slot_count"]:
                     left = it["slot_count"] - taken
-                    raise ValueError(f"Slot tinggal {left}")
+                    raise ValueError(f"Slot tersisa {left}")
         conn.execute(
             """DELETE FROM selection WHERE identity_id = ? AND item_id IN
                (SELECT id FROM item WHERE bill_id = ?)""",
@@ -976,17 +1327,32 @@ def delete_bill(bill_id: str, owner_id: str) -> bool:
             "SELECT path FROM bill_photo WHERE bill_id = ?", (bill_id,)
         ).fetchall()
     ]
-    conn.execute(
-        "DELETE FROM selection WHERE item_id IN (SELECT id FROM item WHERE bill_id = ?)",
-        (bill_id,),
-    )
-    conn.execute("DELETE FROM item WHERE bill_id = ?", (bill_id,))
-    conn.execute("DELETE FROM payment WHERE bill_id = ?", (bill_id,))
-    conn.execute("DELETE FROM bill_participant WHERE bill_id = ?", (bill_id,))
-    conn.execute("DELETE FROM bill_photo WHERE bill_id = ?", (bill_id,))
-    conn.execute("DELETE FROM bill WHERE id = ?", (bill_id,))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute(
+            "DELETE FROM selection WHERE item_id IN (SELECT id FROM item WHERE bill_id = ?)",
+            (bill_id,),
+        )
+        conn.execute("DELETE FROM item WHERE bill_id = ?", (bill_id,))
+        conn.execute("DELETE FROM payment WHERE bill_id = ?", (bill_id,))
+        conn.execute("DELETE FROM bill_participant WHERE bill_id = ?", (bill_id,))
+        conn.execute("DELETE FROM bill_photo WHERE bill_id = ?", (bill_id,))
+        # invites reference the bill too (v64). Missing this row meant every
+        # bill that had ever been invited to was UNDELETABLE: the FK check
+        # (foreign_keys is ON for every connection) raised IntegrityError, the
+        # 500 body got replaced by Cloudflare's error page, and — because the
+        # exception left this connection holding an open write transaction —
+        # the next writes anywhere in the app failed with "database is locked"
+        # until it was garbage-collected (bug: v65 audit).
+        conn.execute("DELETE FROM bill_invite WHERE bill_id = ?", (bill_id,))
+        conn.execute("DELETE FROM bill WHERE id = ?", (bill_id,))
+        conn.commit()
+    except Exception:
+        # never leave the write transaction open: one failed delete used to
+        # take unrelated requests down with it
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
     for p in photo_paths:
         _unlink_photo(p)
     if photo_path:
@@ -994,9 +1360,17 @@ def delete_bill(bill_id: str, owner_id: str) -> bool:
     return True
 
 
-def _bill_settled(conn, bill_id: str, status: str) -> bool:
+def _bill_settled(bill_data: dict | None) -> bool:
     """True when nobody owes anything: everyone with a real share has paid and
     no slot is left empty.
+
+    Takes an already-loaded `get_bill()` payload rather than re-fetching (v67)
+    — `conn` and `status` used to be accepted here and never used; the
+    function re-fetched the whole bill itself via `get_bill(bill_id)`, a
+    fresh sqlite connection every call. `get_bills_for_identity` now loads
+    each bill once and hands it to both this function and (via the caller)
+    `main.my_bills`, instead of three separate full fetches per bill
+    (measured 242 connections for 60 bills before; see test_regressions_v67).
 
     SINGLE SOURCE OF TRUTH: mirrors main._compute_response's settled logic
     exactly (same calc.compute, same owed definition = total_idr > 0, same
@@ -1013,13 +1387,19 @@ def _bill_settled(conn, bill_id: str, status: str) -> bool:
     Closing a bill does NOT settle it. It used to, so a bill closed with empty
     slots and an unpaid guest still showed a green "Lunas" in history.
     """
-    data = get_bill(bill_id)
+    data = bill_data
     if not data:
         return False
+    bill = data["bill"]
+    if bill.get("settled_manual"):
+        # the manual override has to be checked BEFORE the "nobody picked
+        # anything" shortcut, or a solo bill marked lunas by hand reads
+        # "Lunas" on its own screen and "Belum ada yang milih" in the list —
+        # and a solo bill is exactly what the button is for (bug: v64 audit)
+        return True
     sel_ids = {s["identity_id"] for s in data["selections"]}
     if not sel_ids:
         return False
-    bill = data["bill"]
     # same effective owner as main._owner_id: the CONFIRMED payer, else creator
     pid = bill.get("paid_by_identity_id")
     fallback_id = pid if (pid and bill.get("paid_by_confirmed")) else bill["creator_identity_id"]
@@ -1056,22 +1436,34 @@ def get_bills_for_identity(identity_id: str):
     A creator who left the bill (v58) drops out of it like anyone else: the
     bill stops showing up here unless they rejoin (which gives them a payment
     row, so the join below picks it up again).
+
+    Each bill is fetched via `get_bill()` exactly once (v67) and handed to
+    `_bill_settled`. The full payload also rides along on the row under the
+    private key `_bill_data` — `main.my_bills` used to call `get_bill` a
+    SECOND time per bill to compute owner/can_manage/payment fields off the
+    same data this function already loaded; it now pops `_bill_data` instead
+    of re-fetching, and strips the key before the row goes out over HTTP so
+    the response is unchanged. (This function's own return value, used
+    directly by a few tests, does carry the extra key — it's private/internal
+    and additive, not part of the public API.)
     """
     conn = get_db()
     rows = conn.execute(
         """SELECT DISTINCT b.id, b.title, b.merchant, b.transacted_at,
                   b.total_idr, b.status, b.created_at, b.closed_at,
-                  b.creator_identity_id, b.paid_by_identity_id
+                  b.creator_identity_id, b.paid_by_identity_id, b.paid_by_confirmed
           FROM bill b
           LEFT JOIN payment p ON p.bill_id = b.id AND p.identity_id = ?
           WHERE (b.creator_identity_id = ? AND b.creator_left = 0) OR p.id IS NOT NULL
           ORDER BY COALESCE(b.transacted_at, b.created_at) DESC, b.created_at DESC""",
         (identity_id, identity_id),
     ).fetchall()
+    conn.close()
     out = []
     for r in rows:
         d = dict(r)
-        d["settled"] = _bill_settled(conn, d["id"], d["status"])
+        bill_data = get_bill(d["id"])
+        d["settled"] = _bill_settled(bill_data)
+        d["_bill_data"] = bill_data
         out.append(d)
-    conn.close()
     return out

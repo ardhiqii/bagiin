@@ -7,7 +7,7 @@ const fmt = (n) => "Rp " + Number(n || 0).toLocaleString("id-ID");
 const el = (html) => { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
 
-const LS_KEYS = { ident: "bagiin_identity", name: "bagiin_name" };
+const LS_KEYS = { ident: "bagiin_identity", name: "bagiin_name", listSort: "bagiin_list_sort" };
 
 function lsGet(key, fallback) {
   try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
@@ -95,6 +95,36 @@ function ic(name, cls) {
     stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 }
 
+// Shared bill status source of truth. app.js loads before screen-specific scripts.
+function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
+  const pendingPickers = (data.people || []).filter((p) =>
+    p.identity_id !== data.paid_by_id &&
+    !p.subtotal_idr && !Object.values(data.sel_by_item || {}).some(list =>
+      list.some(s => s.id === p.identity_id)));
+  if ((data.settled || data.all_paid) && pendingPickers.length) {
+    if (pendingPickers.length === 1) {
+      const name = String(pendingPickers[0].name || "");
+      const displayName = name.length > 14 ? `${name.slice(0, 14)}…` : name;
+      return `<span class="chip chip-grey">Menunggu ${esc(displayName)} memilih item</span>`;
+    }
+    return `<span class="chip chip-grey">Menunggu ${pendingPickers.length} orang memilih item</span>`;
+  }
+  const total = Math.max(0, data.bill.total_idr || 0);
+  const collected = Math.max(0, Math.min(total, (data.people || [])
+    .filter(p => p.paid === "paid" && p.identity_id !== data.paid_by_id)
+    .reduce((sum, p) => sum + (p.total_idr || 0), 0)));
+  if (totalUnpaid > 0) {
+    if (collected > 0 && collected < total)
+      return `<span class="chip chip-red">Sebagian lunas<br><small>Sudah masuk ${fmt(collected)} · Belum ${fmt(total - collected)}</small></span>`;
+    return `<span class="chip chip-red">${fmt(totalUnpaid)} belum dibayar</span>`;
+  }
+  if (data.uncovered_idr > 0) return `<span class="chip chip-red">${fmt(data.uncovered_idr)} belum terambil</span>`;
+  if (data.settled || data.all_paid)
+    return `<span class="chip chip-green">${ic("check")}Lunas</span>`;
+  if (soloSoFar) return `<span class="chip chip-grey">Belum ada yang gabung</span>`;
+  return `<span class="chip chip-grey">Belum ada yang memilih</span>`;
+}
+
 // ---------- API ----------
 async function api(path, opts = {}) {
   const headers = Object.assign({}, opts.headers || {});
@@ -115,13 +145,13 @@ async function api(path, opts = {}) {
     res = await fetch(path, Object.assign({}, fetchOpts, { headers }));
   } catch (e) {
     // fetch rejections are English browser strings in an otherwise Indonesian app
-    const err = new Error("Koneksi bermasalah. Cek internet kamu terus coba lagi.");
+    const err = new Error("Koneksi bermasalah. Periksa koneksi internet kamu, lalu coba lagi.");
     err.offline = true;
     throw err;
   }
-  if (res.status === 429) throw new Error("Kebanyakan request, tunggu sebentar ya");
+  if (res.status === 429) throw new Error("Terlalu banyak permintaan, tunggu sebentar ya");
   if (!res.ok) {
-    let msg = "Ada yang error (" + res.status + ")";
+    let msg = "Terjadi kendala (" + res.status + ")";
     try {
       const d = await res.json();
       if (typeof d.detail === "string") msg = d.detail;
@@ -190,7 +220,35 @@ function logout() {
 // One helper for every bottom sheet / dialog: role, Esc, background scroll
 // lock, focus handling, and a click-outside close. Replaces the mix of
 // hand-rolled overlays and native confirm() dialogs.
+//
+// History integration: each opened sheet pushes ONE same-URL "sentinel"
+// entry, so the Android system back gesture / browser Back dismisses the
+// top-most sheet first instead of blasting straight through the dialog to
+// whatever route happens to sit under it (bug: back gesture while the
+// payer/guest sheet was open landed on the home list). Because the sentinel
+// keeps the current URL, popping it fires only `popstate` — never
+// `hashchange` — so closing a sheet costs zero router churn. A real route
+// pop fires BOTH events; we detect that by comparing hashes and let the
+// normal leave-guard/render pipeline win.
 let sheetDepth = 0;
+const sheetStack = [];       // live sheet handles, LIFO
+let consumeNextSelfPop = false; // one self-initiated history.back() in flight
+let pendingSelfPops = 0;        // unconsumed sentinels owed after UI closes
+let drainingPops = false;
+
+function drainSelfPops() {
+  // Closing sheets from UI owes one back() per opened-but-unconsumed
+  // sentinel. Confirms stacked ON another sheet bury their inner sentinel,
+  // so more than one may be owed. Drain strictly sequentially: the next
+  // back() only goes out after the previous one's popstate landed.
+  if (consumeNextSelfPop) return;    // one already in flight
+  if (sheetStack.length > 0) return; // finish live sheets first
+  if (pendingSelfPops <= 0) { drainingPops = false; return; }
+  drainingPops = true;
+  consumeNextSelfPop = true;
+  try { history.back(); } catch (e) { consumeNextSelfPop = false; drainingPops = false; }
+}
+
 function openSheet(html, opts = {}) {
   const overlay = el(`<div class="sheet-overlay" role="dialog" aria-modal="true">
     <div class="sheet" role="document">${html}</div></div>`);
@@ -200,15 +258,38 @@ function openSheet(html, opts = {}) {
   sheetDepth++;
   document.body.style.overflow = "hidden";
 
-  const close = () => {
+  // One handle holds everything the popstate machinery needs. Pushing THIS
+  // object (not a look-alike) into the stack is what makes top-sheet close
+  // dispatch work — earlier version pushed a bare {overlay} twin while the
+  // close method lived on another object, so popstate crashed calling
+  // undefined and left overlays/scroll-lock stranded.
+  const handle = {};
+  const bornAtHash = location.hash;
+  const close = (fromHistory) => {
     if (!overlay.isConnected) return;
+    const idx = sheetStack.indexOf(handle);
+    if (idx !== -1) sheetStack.splice(idx, 1);
     overlay.remove();
     sheetDepth = Math.max(0, sheetDepth - 1);
     if (!sheetDepth) document.body.style.overflow = "";
     document.removeEventListener("keydown", onKey);
     if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch (e) {} }
     if (opts.onClose) opts.onClose();
+    if (!fromHistory) {
+      // Closing from UI: this sheet's sentinel becomes an owed back().
+      // Top-most single-sheet case drains immediately; buried ones (cancel
+      // a confirm sitting on another sheet) join the queue.
+      pendingSelfPops++;
+      drainSelfPops();
+    }
   };
+  handle.overlay = overlay;
+  handle.close = close;
+  handle.bornAtHash = bornAtHash;
+
+  sheetStack.push(handle);
+  try { history.pushState({ bagiinSheet: true }, ""); } catch (e) {}
+
   const onKey = (e) => {
     if (e.key === "Escape") { e.stopPropagation(); close(); }
   };
@@ -221,6 +302,42 @@ function openSheet(html, opts = {}) {
   }, 30);
   return { overlay, sheet, close };
 }
+
+// Fires on back gesture / browser Back. A sentinel pop keeps the SAME URL
+// (pushState was called with an unchanged href), so we detect it purely by
+// comparing against the bornAtHash of the live top sheet — do NOT trust
+// e.state here, because popstate reports the DESTINATION entry's state,
+// not the marker of the entry being discarded. Sentinel pop -> close top
+// sheet and swallow the rest of the navigation. Any other pop changes the
+// URL underneath -> it is a genuine route move; drop remaining sheets
+// silently and let the hashchange/leave-guard pipeline own the transition.
+if (typeof window !== "undefined" && window.__bagiinBackWired !== true) {
+  window.__bagiinBackWired = true;
+  window.addEventListener("popstate", () => {
+    if (consumeNextSelfPop) {
+      // Our own sentinel consumption landed — settle one debt unit and keep
+      // draining if stacked confirms left more buried sentinels behind.
+      consumeNextSelfPop = false;
+      if (pendingSelfPops > 0) {
+        pendingSelfPops--;
+        if (sheetStack.length === 0 && pendingSelfPops > 0) setTimeout(drainSelfPops, 0);
+        else if (pendingSelfPops === 0) drainingPops = false;
+      } else { drainingPops = false; }
+      return;
+    }
+    if (!sheetStack.length) return;
+    const top = sheetStack[sheetStack.length - 1];
+    if (top && top.bornAtHash !== null && location.hash === top.bornAtHash) {
+      top.close(true);
+      return;
+    }
+    while (sheetStack.length) {
+      sheetStack[sheetStack.length - 1].close(true);
+    }
+  });
+}
+// Debug/test surface (read-only introspection).
+window.__sheets = { isOpen: () => sheetStack.length > 0, size: () => sheetStack.length };
 
 /** Styled replacement for window.confirm(). Resolves true/false. */
 function confirmSheet({ title, body, confirmText = "Lanjut", cancelText = "Batal", danger = false }) {
@@ -243,7 +360,7 @@ async function withBusy(btn, label, fn) {
   if (!btn || btn.disabled) return;
   const old = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = `<span class="spinner"></span> ${esc(label || "Bentar...")}`;
+  btn.innerHTML = `<span class="spinner"></span> ${esc(label || "Tunggu sebentar...")}`;
   try { return await fn(); }
   finally {
     if (btn.isConnected) { btn.disabled = false; btn.innerHTML = old; }
@@ -310,6 +427,22 @@ function shortDate(iso) {
     return d.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
   } catch (e) { return iso; }
 }
+/** Year+month of a bill date AS RENDERED — same parse as shortDate/monthLabel.
+ *  The filters used to slice the raw ISO string, which is UTC for created_at:
+ *  a bill made at 01:00 WIB on 1 September sat under a "SEPTEMBER 2026" header
+ *  and then vanished when you filtered by September (bug: the list and its own
+ *  filter disagreed about which month a bill is in). */
+function localYM(iso) {
+  try {
+    const s = String(iso || "").trim();
+    if (!s) return null;
+    const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(s);
+    const d = dateOnly ? new Date(s + "T12:00:00") : new Date(s.replace(" ", "T") + "Z");
+    if (isNaN(d)) return null;
+    return { y: String(d.getFullYear()), m: String(d.getMonth() + 1).padStart(2, "0") };
+  } catch (e) { return null; }
+}
+
 function monthLabel(iso) {
   try {
     const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(String(iso).trim());
@@ -317,6 +450,19 @@ function monthLabel(iso) {
     if (isNaN(d)) return "";
     return d.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
   } catch (e) { return ""; }
+}
+
+// Small shell-only additions stay here so the screen modules can remain
+// focused on their existing form/event wiring.
+function addOnboardingSteps() {
+  const form = $("#onboard-form");
+  const valueProp = form && form.previousElementSibling;
+  if (!valueProp || $(".onboarding-steps")) return;
+  valueProp.insertAdjacentHTML("afterend", `<ol class="onboarding-steps" aria-label="Cara kerja Bagiin">
+    <li><b>1.</b><span>Buat bill + foto struk.</span></li>
+    <li><b>2.</b><span>Pembayar membagi tiap item lewat tautan.</span></li>
+    <li><b>3.</b><span>Semua orang transfer ke satu rekening metode bayar.</span></li>
+  </ol>`);
 }
 
 // ---------- router ----------
@@ -335,17 +481,92 @@ function render() {
   // browser-back while a sheet was open + sheet confirm yanked the user back
   // into the bill while the URL said home)
   state.currentBillId = null;
-  $$(".sheet-overlay").forEach(s => s.remove());
+  // Route render tears overlays down wholesale — sync the sheet registry too
+  // so no orphan handle eats a later legitimate back press. Sentinel history
+  // entries left behind are harmless: they duplicate the current URL, so
+  // popping them changes nothing visually.
+  $$(".sheet-overlay").forEach((s) => {
+    const idx = sheetStack.findIndex((h) => h.overlay === s);
+    if (idx !== -1) {
+      const [dead] = sheetStack.splice(idx, 1);
+      dead.overlay = null; // mark detached; its close() is a safe no-op now
+      pendingSelfPops++;   // its sentinel is now an orphaned duplicate entry
+    }
+    s.remove();
+  });
+  if (pendingSelfPops > 0) drainSelfPops();
   sheetDepth = 0;
   document.body.style.overflow = "";
-  if (!state.identity) { renderOnboarding(); return; }
-  if (parts[0] === "history") { renderHistory(); return; }
-  if (parts[0] === "settings") { renderSettings(); return; }
-  if (parts[0] === "create") { renderCreate(); return; }
+  app.classList.remove("settings-page");
+  if (!state.identity) { renderOnboarding(); addOnboardingSteps(); return; }
+  // History uses the same list data, but keeps its URL and heading honest.
+  if (parts[0] === "settings") { app.classList.add("settings-page"); renderSettings(); return; }
+  if (parts[0] === "create") {
+    // #/create/verify is the OCR/manual editor (see renderVerify in
+    // screens.js) — a real route so a page load / forward-nav / the guard
+    // revert below all land on the right screen instead of a blank form.
+    if (parts[1] === "verify") {
+      if (typeof verifyHasTypedContent === "function" && verifyHasTypedContent()) {
+        renderVerify(verifyState, verifyState.manual);
+      } else {
+        // direct hit / reload with nothing retained to show — bounce to a
+        // fresh create screen rather than render an editor with no data
+        location.hash = "#/create";
+      }
+      return;
+    }
+    renderCreate();
+    return;
+  }
   renderHome();
+  if (parts[0] === "history") {
+    const heading = $(".shell-main h1, .shell-solo h1");
+    if (heading) heading.textContent = "Riwayat Bill";
+  }
 }
 
-window.addEventListener("hashchange", render);
+// ---------- navigation leave-guard ----------
+// A screen can ask to be asked-before-leaving on ANY hashchange, not just
+// clicks on its own in-app back button. Needed because the verify editor
+// (renderVerify) has no route of its own by default in a hash router built
+// only around #/, #/history, #/settings, #/create, #/b/<id> — so the
+// Android system back gesture / browser Back fires `hashchange` straight
+// into the router, bypassing whatever confirm the screen wired to its own
+// back BUTTON (bug: system Back destroyed a re-typed receipt with zero
+// warning, because popping the hash entry and re-rendering happens before
+// any in-app handler gets a say).
+//
+// A pushState "sentinel" entry pushed on enter was the other option, but
+// undoing a *cancelled* back with it means pushing a brand new entry every
+// time (the popped one is gone from the back-stack for good) — the history
+// stack grows by one per cancelled back press. `replaceState` instead
+// mutates the CURRENT entry in place, so a cancelled leave costs nothing,
+// and the rewrite happens synchronously BEFORE the async confirm sheet, so
+// the address bar and the screen can never be caught disagreeing mid-ask.
+let leaveGuardFn = null;   // async () => boolean; true = ok to leave
+let guardedHash = null;    // the hash the current guard is protecting
+let guardBusy = false;     // one confirm at a time — a double back-press must not stack sheets
+
+function guardHash(fn) { guardedHash = location.hash; leaveGuardFn = fn; }
+function clearHashGuard() { guardedHash = null; leaveGuardFn = null; }
+
+async function onHashChange() {
+  if (!leaveGuardFn || location.hash === guardedHash) { render(); return; }
+  if (guardBusy) { history.replaceState(null, "", guardedHash); return; }
+  guardBusy = true;
+  const dest = location.hash;
+  const fn = leaveGuardFn;
+  history.replaceState(null, "", guardedHash);
+  const ok = await fn();
+  guardBusy = false;
+  if (ok) {
+    leaveGuardFn = null; guardedHash = null;
+    history.replaceState(null, "", dest);
+    render();
+  }
+  // not ok: already reverted above, screen was never touched — done.
+}
+window.addEventListener("hashchange", onHashChange);
 // a dropped file anywhere outside the dropzone used to navigate the tab to the
 // image and destroy the whole session
 ["dragover", "drop"].forEach(ev =>

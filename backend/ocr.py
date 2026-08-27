@@ -17,6 +17,13 @@ OR_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OR_MODEL = os.environ.get("OPENROUTER_OCR_MODEL", "google/gemma-4-26b-a4b-it:free")
 MAX_ATTEMPTS = 3
 RETRY_CODES = (429, 500, 502, 503, 504)
+# (bug v66: Gemini alone could retry up to 3x60s + backoff, then OpenRouter fallback
+# another 3x90s + backoff -> ~465s worst case on a single request. Cloudflare cuts the
+# connection at 100s and returns its own 524 HTML, so anything past that point burns
+# CPU for nobody. Both providers now share ONE wall-clock budget for the whole call.)
+OCR_BUDGET_SECONDS = 45.0
+_ATTEMPT_TIMEOUT_CAP = 15.0
+_MIN_ATTEMPT_SECONDS = 3.0
 
 SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Output JSON EXACTLY:
 {"merchant":"nama tempat makan/toko","date":"YYYY-MM-DD","items":[{"name":"nama item","price":harga,"discount":diskon}],"subtotal":N,"tax":N,"service":N,"total":N,"tax_included":true/false}
@@ -26,7 +33,7 @@ Rules:
 - price dalam Rupiah integer (tanpa 'Rp', tanpa titik) = harga SEBELUM diskon (harga menu)
 - discount = potongan harga item dalam Rupiah integer (0 kalau tidak ada). Struk sering mencetak baris diskon di bawah item, contoh "CLR-4ProdDis349" lalu "-5.500" — gabungkan diskon itu ke item yang tepat di atasnya sebagai discount. Kalau struk tidak mencetak diskon, discount = 0
 - tax = PPN/PB1, service = service charge/SC (0 kalau tidak ada)
-- tax_included = true kalau struk menyebut harga sudah termasuk pajak (misal tulisan "termasuk PAJAK", "trmasuk pajak", "harga sudah termasuk pajak", "tax included", "Tax Invoice"). Kalau true: subtotal = total yang dibayar, tax = 0, service = 0 (harga item sudah termasuk pajak). Kalau false: subtotal = jumlah sebelum pajak, tax = PPN/PB1, service = SC
+- tax_included = true kalau struk menyebut harga sudah termasuk pajak (misal tulisan "termasuk PAJAK", "trmasuk pajak", "harga sudah termasuk pajak", "tax included", "Tax Invoice"). Kalau true: subtotal = jumlah item setelah diskon, tax = 0 (PPN sudah nempel di harga item, jangan dihitung dobel) TAPI service charge/SC tetap dilaporkan apa adanya kalau ada tulisannya di struk — SC itu biaya terpisah dari pajak, bukan bagian dari harga item. Kalau false: subtotal = jumlah sebelum pajak, tax = PPN/PB1, service = SC
 - subtotal = jumlah sebelum pajak (setelah diskon); total = yang dibayar
 - Jangan menebak item yang tidak jelas; nama sesingkat mungkin tapi tetap terbaca
 - Kalau struk tidak terbaca sama sekali, output: {"merchant":"","date":"","items":[],"subtotal":0,"tax":0,"service":0,"total":0,"tax_included":false}"""
@@ -34,31 +41,43 @@ Rules:
 
 def ocr_receipt(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
     """OCR via Gemini; kalau Gemini gagal (quota/error), fallback ke OpenRouter gratis."""
+    # (bug v66: pesan error dulu nge-leak nama env var mentah-mentah ke toast user,
+    # misal "Gemini: GEMINI_API_KEY not set; cadangan: OPENROUTER_API_KEY not set" -
+    # bahasa Inggris di app berbahasa Indonesia, dan judulnya bohong ["lagi penuh"]
+    # padahal servernya yang belum disetel. Detail teknis sekarang cuma ke log;
+    # user cuma liat kalimat pendek yang jujur, dan "belum disetel" dibedain dari
+    # "lagi penuh / gagal baca".)
+    if not GEMINI_API_KEY and not OR_API_KEY:
+        log.error("OCR tidak berjalan: GEMINI_API_KEY dan OPENROUTER_API_KEY sama-sama kosong")
+        raise RuntimeError("Fitur baca struk otomatis belum disetel di server. Isi manual dulu ya.")
+
+    deadline = time.monotonic() + OCR_BUDGET_SECONDS
     errors = []
     if GEMINI_API_KEY:
         try:
-            return _gemini_ocr(image_bytes, mime_type)
+            return _gemini_ocr(image_bytes, mime_type, deadline)
         except RuntimeError as e:
             errors.append(f"Gemini: {e}")
             log.warning("Gemini OCR gagal, coba OpenRouter: %s", e)
     else:
-        errors.append("Gemini: GEMINI_API_KEY not set")
+        log.warning("GEMINI_API_KEY kosong, langsung coba OpenRouter")
 
     if OR_API_KEY:
         try:
-            return _openrouter_ocr(image_bytes)
+            return _openrouter_ocr(image_bytes, deadline)
         except RuntimeError as e:
             errors.append(f"cadangan: {e}")
+            log.warning("OpenRouter OCR gagal: %s", e)
     else:
-        errors.append("cadangan: OPENROUTER_API_KEY not set")
+        log.warning("OPENROUTER_API_KEY kosong, tidak ada fallback")
 
+    log.error("OCR gagal total: %s", "; ".join(errors) or "no provider berhasil dipanggil")
     raise RuntimeError(
-        "AI gratis lagi penuh (" + "; ".join(errors) + "). Coba lagi beberapa menit "
-        "atau isi manual aja."
+        "Layanan AI gratis sedang penuh atau mengalami gangguan. Coba lagi beberapa menit kemudian atau isi secara manual."
     )
 
 
-def _gemini_ocr(image_bytes: bytes, mime_type: str) -> dict:
+def _gemini_ocr(image_bytes: bytes, mime_type: str, deadline: float) -> dict:
     b64 = base64.b64encode(image_bytes).decode()
     payload = {
         "contents": [
@@ -85,8 +104,16 @@ def _gemini_ocr(image_bytes: bytes, mime_type: str) -> dict:
     )
     data = None
     for attempt in range(MAX_ATTEMPTS):
+        remaining = deadline - time.monotonic()
+        if remaining < _MIN_ATTEMPT_SECONDS:
+            log.warning(
+                "budget waktu habis sebelum attempt %d/%d (sisa %.1fs)",
+                attempt + 1, MAX_ATTEMPTS, remaining,
+            )
+            break
+        timeout = min(_ATTEMPT_TIMEOUT_CAP, remaining)
         try:
-            resp = urllib.request.urlopen(req, timeout=60)
+            resp = urllib.request.urlopen(req, timeout=timeout)
             data = json.loads(resp.read())
             break
         except urllib.error.HTTPError as e:
@@ -95,18 +122,20 @@ def _gemini_ocr(image_bytes: bytes, mime_type: str) -> dict:
             log.warning("Gemini HTTP %d (attempt %d/%d): %s", code, attempt + 1, MAX_ATTEMPTS, body)
             if code == 429 and "quota" in body.lower():
                 raise RuntimeError("kuota harian habis (reset tengah malam)")
-            if code in RETRY_CODES and attempt < MAX_ATTEMPTS - 1:
-                time.sleep(2 * (attempt + 1))
+            backoff = 2 * (attempt + 1)
+            if code in RETRY_CODES and attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
+                time.sleep(backoff)
                 continue
             raise RuntimeError(f"HTTP {code}: {body}")
         except Exception as e:
             log.warning("Gemini request gagal (attempt %d/%d): %s", attempt + 1, MAX_ATTEMPTS, e)
-            if attempt < MAX_ATTEMPTS - 1:
-                time.sleep(2 * (attempt + 1))
+            backoff = 2 * (attempt + 1)
+            if attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
+                time.sleep(backoff)
                 continue
-            raise RuntimeError(f"request gagal: {e}")
+            raise RuntimeError(f"Permintaan gagal: {e}")
     if data is None:
-        raise RuntimeError("gagal setelah beberapa percobaan")
+        raise RuntimeError("Kegagalan setelah beberapa percobaan (waktu habis)")
 
     try:
         text = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -116,7 +145,7 @@ def _gemini_ocr(image_bytes: bytes, mime_type: str) -> dict:
     return _normalize(parsed)
 
 
-def _openrouter_ocr(image_bytes: bytes) -> dict:
+def _openrouter_ocr(image_bytes: bytes, deadline: float) -> dict:
     b64 = base64.b64encode(_downscale(image_bytes)).decode()
     payload = {
         "model": OR_MODEL,
@@ -141,8 +170,16 @@ def _openrouter_ocr(image_bytes: bytes) -> dict:
     )
     data = None
     for attempt in range(MAX_ATTEMPTS):
+        remaining = deadline - time.monotonic()
+        if remaining < _MIN_ATTEMPT_SECONDS:
+            log.warning(
+                "budget waktu habis sebelum attempt %d/%d (sisa %.1fs)",
+                attempt + 1, MAX_ATTEMPTS, remaining,
+            )
+            break
+        timeout = min(_ATTEMPT_TIMEOUT_CAP, remaining)
         try:
-            resp = urllib.request.urlopen(req, timeout=90)
+            resp = urllib.request.urlopen(req, timeout=timeout)
             data = json.loads(resp.read())
             break
         except urllib.error.HTTPError as e:
@@ -151,18 +188,20 @@ def _openrouter_ocr(image_bytes: bytes) -> dict:
             log.warning("OpenRouter HTTP %d (attempt %d/%d): %s", code, attempt + 1, MAX_ATTEMPTS, body)
             if code == 429 and "quota" in body.lower():
                 raise RuntimeError("kuota harian OpenRouter habis")
-            if code in RETRY_CODES and attempt < MAX_ATTEMPTS - 1:
-                time.sleep(3 * (attempt + 1))
+            backoff = 3 * (attempt + 1)
+            if code in RETRY_CODES and attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
+                time.sleep(backoff)
                 continue
             raise RuntimeError(f"HTTP {code}: {body}")
         except Exception as e:
             log.warning("OpenRouter request gagal (attempt %d/%d): %s", attempt + 1, MAX_ATTEMPTS, e)
-            if attempt < MAX_ATTEMPTS - 1:
-                time.sleep(3 * (attempt + 1))
+            backoff = 3 * (attempt + 1)
+            if attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
+                time.sleep(backoff)
                 continue
-            raise RuntimeError(f"request gagal: {e}")
+            raise RuntimeError(f"Permintaan gagal: {e}")
     if data is None:
-        raise RuntimeError("gagal setelah beberapa percobaan")
+        raise RuntimeError("Kegagalan setelah beberapa percobaan (waktu habis)")
 
     try:
         content = data["choices"][0]["message"]["content"]
@@ -177,7 +216,7 @@ def _openrouter_ocr(image_bytes: bytes) -> dict:
 
 
 def _downscale(image_bytes: bytes, max_side: int = 1280) -> bytes:
-    """Kecilin gambar biar request lebih cepat & gak ditolak model gratis."""
+    """Kecilkan gambar agar permintaan lebih cepat dan tidak ditolak model gratis."""
     try:
         from PIL import Image
     except ImportError:
@@ -205,7 +244,14 @@ def _parse_json_text(text: str) -> dict:
     return json.loads(text)
 
 
-def _normalize(parsed: dict) -> dict:
+def _normalize(parsed) -> dict:
+    # (bug v66: model kadang balikin JSON valid tapi bukan object - array telanjang,
+    # `null`, atau string biasa. `_parse_json_text` cuma nyelametin teks yang ada
+    # `{...}`-nya; sisanya lolos ke sini sebagai list/None/str lalu .get() meledak
+    # jadi AttributeError yang gak ketangkep RuntimeError manapun -> lolos ke luar
+    # semua try/except pemanggil dan jadi HTTP 500 mentah ke client.)
+    if not isinstance(parsed, dict):
+        raise RuntimeError("Hasil pembacaan AI tidak sesuai format, coba foto ulang atau isi secara manual.")
     raw_items = parsed.get("items") or []
     if not isinstance(raw_items, list):
         raw_items = []
@@ -239,11 +285,15 @@ def _normalize(parsed: dict) -> dict:
     eff_sum = sum(i["price"] - i["discount"] for i in items)
 
     if tax_included:
-        # harga item sudah termasuk pajak -> pajak gak diitung dobel, total = item
+        # harga item sudah termasuk pajak -> PAJAK gak diitung dobel (subtotal = total
+        # item), TAPI service charge tetap keitung terpisah.
+        # (bug v66: dulu `service = 0` di sini juga -> Rp service ilang sebelum user
+        # sempet liat form sama sekali, padahal calc.py sengaja TETAP misahin service
+        # charge pas tax_included dan editor tetap nampilin field Service di bawah
+        # toggle-nya. Duitnya nyangkut diam-diam ke siapa pun yang udah nalangin.)
         subtotal = eff_sum
         tax = 0
-        service = 0
-        total = eff_sum
+        total = subtotal + service
     else:
         # reconcile LLM-hallucinated numbers so bill-create's strict validation
         # (subtotal == sum items, total == subtotal+tax+service) doesn't 400 on
@@ -254,9 +304,16 @@ def _normalize(parsed: dict) -> dict:
             total = subtotal + tax + service
         elif total != subtotal + tax + service:
             total = subtotal + tax + service
+    # (bug v66: model kadang balikin tanggal non-ISO ("08/08/2026", "8 Agustus 2026").
+    # <input type="date"> gak render itu -> kelihatan KOSONG di form verifikasi, tapi
+    # nilainya tetep kebawa kalau user gak sadar dan langsung submit; lolos ke bill
+    # tersimpan lalu bikin pengelompokan bulan & filter tahun/bulan di daftar bill
+    # gagal parse. Drop diam-diam kalau bukan YYYY-MM-DD, biarin user isi manual.)
+    raw_date = str(parsed.get("date", "") or "").strip()
+    date = raw_date if re.match(r"^\d{4}-\d{2}-\d{2}$", raw_date) else ""
     return {
         "merchant": str(parsed.get("merchant", "") or "").strip(),
-        "date": str(parsed.get("date", "") or "").strip(),
+        "date": date,
         "items": items,
         "subtotal": subtotal,
         "tax": tax,

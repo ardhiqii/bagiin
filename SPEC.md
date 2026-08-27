@@ -438,6 +438,307 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Changelog
 
+### 2026-08-19 (v68) — satu daftar di menu utama + desktop yang gak melar
+
+**Riwayat dihapus, home yang pegang daftarnya**
+
+Home dan Riwayat itu daftar yang sama, dua kali. Sekarang tinggal home, dan `#/history`
+diarahin ke `#/` (bukan dimatiin — ada yang nyimpen bookmark / kebuka di tab).
+
+Kendala yang ngebentuk layoutnya: filter pernah ada di home dan bikin baris bill pertama
+kedorong ke bawah lipatan di HP 390px — itu justru alasan filternya dulu dipindah keluar.
+Jadi sekarang di HP cuma ada satu tombol kecil **⇅ Atur** di header kartu (ada penanda
+angka kalau lagi ada pilihan non-default) yang buka sheet; di ≥1040px kontrol yang sama
+digelar inline. Sakelarnya CSS, bukan cek lebar di JS, jadi resize gak pernah ninggalin
+layar di mode yang salah. Terukur: baris pertama nangkring di 336px pada layar 390×844.
+
+**Sortir (baru)**
+
+Terbaru · Terlama · Paling besar · Paling kecil · Belum beres dulu. Dua detail yang
+sengaja: sortir pakai tanggal yang **sama** dengan yang ditampilin baris dan dipakai
+header bulan (banding string mentah itu UTC dan beda sama dua-duanya), dan **header bulan
+ilang kalau sortirnya nominal** — "AGUSTUS 2026" di atas baris dari empat bulan itu bohong.
+
+Sortir disimpen antar-reload; filternya sengaja **enggak** — buka app langsung ketemu
+daftar kefilter bikin bill kelihatan kehapus.
+
+**Nominal 7 digit nabrak tombol hapus**
+
+`Rp 1.875.000` nembus keluar barisnya dan masuk ke kolom tombol hapus — terukur 59px
+tumpang tindih di 390px. Chip status sama nominal dua-duanya dikunci gak boleh mengecil;
+sekarang yang ngalah chip-nya, duitnya gak pernah dipotong.
+
+**Desktop: dikomposisi, bukan dimelarin**
+
+Di 1440 kotak "Judul Bill" selebar **920px** dan paragraf ngalir **136 karakter per
+baris** (nyaman itu 45–75), sementara home/settings dipusatin 680px — dua layout beda di
+satu app, gara-gara layar ber-rail bikin kolom kirinya ngisi semua sisa ruang.
+
+Motong kolomnya doang pernah dicoba dan dibalikin (rail-nya jadi ngambang jauh dari
+isinya). Jadi sekarang form + rail diperlakukan sebagai **satu komposisi yang dipusatin**
+(720 + 320): margin kiri-kanan seimbang, rail tetap nempel ke isinya. Topbar ikut
+disamain lebarnya.
+
+Lebarnya dipakai buat kepadatan: di desktop Judul + Tanggal sebaris, dan satu baris item
+muat nama | harga | potongan | hapus — potongan tadinya turun sendiri dan nyisain ~700px
+kosong. Teks berjalan dibatasi 65ch.
+
+Terukur di 1440: kolom utama 954 → **720**, input terlebar 920 → **567**, paragraf
+terpanjang 131 → **83** karakter. Sama persis di 1280/1440/1920.
+
+Sekalian: mepetin tiga field jadi satu baris bikin dua kotak "0" kembar tanpa penanda —
+label potongannya cuma kebaca screen reader. Desktop sekarang punya header kolom
+(Nama item · Harga · Potongan); di bawah 1040px header itu gak ada dan labelnya utuh.
+
+**Layout HP gak gerak sepiksel pun** — semua di dalam query ≥1040px, dibuktiin dengan
+diff gambar 390px sebelum/sesudah.
+
+184 tes + tiga suite browser lulus.
+
+### 2026-08-19 (v67) — audit lanjutan 2 + deploy
+
+Pass ketiga, hasil audit paralel (undangan+foto, alur bikin bill, identitas/auth, sweep
+visual 390px). Semua di bawah ini udah live di produksi (restart 2026-08-19 01:26).
+
+**Duit: estimasi di dock sekarang persis sama dengan server**
+
+`bill.js` ngitung ulang bagian kamu di JS biar angkanya gerak pas ngetuk item, tapi sisa
+pembulatannya beda sama `calc.py` — jadi angkanya "tik" berubah pas server jawab
+(3.833 → 3.834). Sekarang sisa pembulatannya dibagi sama persis kayak backend, buat item
+bebas maupun item slot yang penuh, dan gak ikut masuk basis pajak (sama kayak di sana).
+Dikunci sama suite baru `tools/e2e_rounding.mjs` yang sengaja pakai harga yang gak habis
+dibagi, dicek dua kali: pas ngetuk dan setelah respons masuk.
+
+**Keamanan & data**
+
+- **Path foto gak divalidasi.** `POST /api/bills` nerima string apa pun sebagai path foto,
+  termasuk path foto bill orang lain — yang lalu kesajiin ke semua orang yang pegang link
+  kita. Sekarang tiap basename wajib cocok sama pola yang emang server ini bikin.
+- **Foto yang dibuang sebelum bill jadi nyangkut selamanya di server.** Tombol ✕ di
+  editor cuma ngapus dari array di browser. Sekarang ada `DELETE /api/photos/{filename}`
+  (nolak file yang masih dipakai bill) dan klien manggilnya di semua jalur buang: ✕,
+  tombol back, back sistem, dan retry scan — yang ternyata juga ninggalin foto lama tiap
+  kali dipencet.
+- **Undangan yang ditolak bisa dipaksa masuk lagi.** Undang ulang orang yang auto-accept-
+  nya nyala langsung nyeret dia masuk, jadi "Tolak" bisa dibatalin sepihak. Sekarang
+  undangan ulang setelah ditolak selalu pending.
+- `/uploads/` kirim `X-Content-Type-Options: nosniff`.
+
+**Kinerja**
+
+Daftar bill nge-load tiap bill **dua kali** (query daftar → `_bill_settled` → `get_bill`,
+terus `my_bills` → `get_bill` lagi): 242 koneksi SQLite buat 60 bill. Sekarang 122, dengan
+payload yang sama persis.
+
+**UI (temuan sweep visual 390px, terang & gelap)**
+
+- **Sheet bayar mecah nama item jadi satu kata per baris.** Kolom harga `flex-shrink:0`,
+  jadi catatan diskon ngunci kolom itu ~180px dan nama keremes: "Ayam Bakar Bumbu Rujak
+  Pedas Level 5" jadi tujuh baris — di layar terakhir sebelum orang transfer duit.
+  Catatan harganya pindah ke bawah nama; sekarang dua baris.
+- Sheet "ubah yang nalangin" ngisi otomatis kotak "buat yang belum join" pakai nama payer
+  yang udah kepilih, jadi satu orang muncul dua kali di satu sheet.
+- Spinner "Lagi baca struknya" gak pernah muncul pas retry scan — hash diganti dan
+  `uploadAndOcr` dipanggil di tick yang sama, jadi pencarian `#create-body` jalan sebelum
+  router sempat ngegambar.
+- Rekening dobel pas paste ke-deteksi (nomor + brand dinormalisasi), toggle auto-accept
+  jadi 40px, foto yang filenya ilang nampilin placeholder bukan ikon rusak, baris item di
+  layar manager gak pecah tiga baris lagi di HP, dan `#app` berhenti melar di 1400px
+  (di 1920 "Judul Bill" tadinya selebar 1440px).
+
+**Tes**
+
+184 lulus (14 baru di `test_regressions_v67.py`, termasuk satu yang ngunci "daftar dan
+layar bill harus sepakat" di lima keadaan sekaligus). Tiga suite browser:
+`e2e_smoke` (angka tamu = angka server), `e2e_settled` (satu bill satu jawaban),
+`e2e_rounding` (estimasi = server sampai rupiah terakhir).
+
+### 2026-08-18 (v66) — audit lanjutan: bill gak bisa dihapus, service charge ilang
+
+Pass kedua, hasil audit paralel per-fitur (undangan+foto, alur bikin bill/OCR,
+identitas). Yang di bawah ini yang udah masuk; sisanya nyusul di entri yang sama.
+
+**Bill yang pernah diundang gak bisa dihapus — dan sempat ngunci DB**
+
+`bill_invite` nunjuk ke `bill(id)` dan tiap koneksi jalan dengan `foreign_keys = ON`,
+tapi `delete_bill` gak pernah ngapus barisnya. Sekali tap "Hapus Bill" di bill yang
+pernah diundang (jalur `auto_accept` default nulis satu baris tiap undangan) →
+`IntegrityError` → 500 yang badannya diganti halaman error Cloudflare, dan billnya
+**gak bisa dihapus selamanya**. Lebih parah: exception-nya ninggalin koneksi dengan
+transaksi tulis kebuka, jadi request tulis lain di app ikut gagal "database is
+locked" sampai koneksinya di-GC. Sekarang undangannya ikut dihapus dan fungsinya
+exception-safe (rollback + close di `finally`).
+
+**OCR ngapus service charge di struk "termasuk pajak"**
+
+`_normalize` nge-nol-in `service` barengan `tax` waktu `tax_included`. Padahal
+`calc.py` sengaja **tetap** misahin service charge di bill tax-included, dan editor
+tetap nampilin field Service di bawah toggle-nya. Jadi Rp 10.000 SC ilang sebelum
+user sempat lihat formnya, dan diam-diam nempel ke yang nalangin. Sekarang cuma
+pajak yang di-nol-in; promptnya ikut dibenerin.
+
+**OCR: 500, tanggal hantu, dan request 7¾ menit**
+
+- Model kadang balikin JSON valid tapi bukan object (array telanjang, `null`, string).
+  `_normalize` langsung `.get()` → `AttributeError` di luar semua handler → HTTP 500.
+  Sekarang `RuntimeError`, yang emang udah ditangkep jadi 4xx.
+- Tanggal non-ISO ("08/08/2026") bikin `<input type="date">` kelihatan **kosong** tapi
+  nilainya tetap kebawa ke bill — lalu pengelompokan bulan dan filter tahun/bulan di
+  daftar bill gagal parse. Sekarang dibuang kalau bukan `YYYY-MM-DD`.
+- Satu request bisa jalan ~465 detik (Gemini 3×60s + backoff, lanjut fallback 3×90s).
+  Cloudflare mutus di 100 detik dan balikin 524-nya sendiri, jadi sisanya kerja buat
+  yang udah gak nunggu. Sekarang dua provider berbagi satu budget 45 detik.
+- Pesan gagalnya nyebut nama env var dalam bahasa Inggris ("Gemini: GEMINI_API_KEY not
+  set") di bawah judul yang bohong ("lagi penuh" padahal servernya belum disetel).
+  Detail teknis pindah ke log.
+
+**Back browser ngapus struk yang udah diketik ulang**
+
+Layar verifikasi itu tempat orang ngetik ulang satu struk penuh, dan keluar dari situ
+= ilang semua — makanya tombol back di app-nya udah lama nanya dulu. Tapi layar itu
+gak punya route sendiri (hash-nya tetap `#/create`), jadi gesture back Android
+langsung nembus ke router lewat `hashchange` dan isinya ilang tanpa peringatan:
+satu-satunya gesture yang beneran dipakai orang di HP justru yang gak dijaga.
+
+Sekarang editornya punya `#/create/verify` (masuk pakai `replaceState`, jadi gak
+nambah entri history) dan `app.js` punya leave-guard di level router. Tiap jalan
+keluar yang disengaja (simpan, tombol back, "Coba Scan Lagi") ngebersihin guard-nya,
+jadi gak mungkin nyangkut dan bikin navigasi mati. Diuji di Chrome: back sistem
+nanya dan semua ketikan utuh pas dibatalin, editor kosong keluar tanpa nanya, dua kali
+back cepat (~140ms) cuma buka satu sheet dan gak ngapus apa-apa, load dingin ke
+`#/create/verify` mendarat di layar buat-bill, dan deep link + suite e2e gak keganggu.
+
+**Backend: 14 lubang dari audit**
+
+- Siapa pun yang pegang link bisa **nyelundup ke roster** lewat
+  `POST /payments/{id}/paid` — endpoint-nya cuma ngecek "ini gw?", gak pernah "gw ada
+  di bill ini?", padahal `INSERT OR IGNORE` di situ bikin baris payment sendiri. Itu
+  sama aja kayak `/join`, bedanya ini juga ngubah `len(people) > 1` — salah satu
+  penjaga bill solo biar gak auto-lunas.
+- `can_manage` di daftar bill sempat dikasih ke payer yang belum dikonfirmasi.
+- Creator yang udah keluar gak bisa diundang balik (`identity_on_bill` ngitung dia
+  terus).
+- Foto masih bisa ditambah/dihapus di bill yang udah ditutup lewat API, padahal
+  tombolnya disembunyiin — jadi foto di bill tertutup gak bisa dihapus selamanya.
+- `POST /api/identities/restore` bisa dibikin 500 sama **siapa aja tanpa login**
+  (body `{"code": [1,2,3]}` → `.strip()` di list). Plus body JSON non-objek, harga 20
+  digit (OverflowError di sqlite), `PUT /api/accounts/{id}` yang gak lewat
+  `_read_json`, endpoint foto yang nerima file apa aja, dan `/uploads/<direktori>`.
+- Edit parsial diem-diem nge-null-in `merchant`/`transacted_at` — dan `transacted_at`
+  sekarang nentuin urutan + filter bulan di daftar bill.
+- Undangan pending sekarang kelihatan sama yang ngirim (khusus manager) dan bisa
+  dibatalin.
+
+**Lain-lain**
+
+- Layar 1920px: kolomnya melar sampai "Judul Bill" selebar 1440px dan nama item
+  kepisah sejauh layar dari harganya. Sekarang berhenti di 1400px — di bawah itu gak
+  ada yang berubah, rail-nya tetap nempel di kanan.
+- Creator yang udah keluar dari billnya masih kelihatan "Udah di bill ini" di sheet
+  undangan, jadi gak bisa diundang balik.
+- "Tambah Foto" di layar bill satu-satunya jalur foto tanpa cek 5MB — foto 12MB
+  keupload penuh dulu baru ditolak.
+- Sheet undangan nampilin kotak kosong selama kontak dimuat.
+- `.btn-sm` (dipakai "Gabung", "Undang", "Tandai Lunas") 38px dan tombol hapus foto
+  36px → 40px.
+
+### 2026-08-18 (v65) — audit pass: takeover ditutup, UI dirapihin lagi
+
+Pass audit penuh setelah v59–v64 (filter+paging riwayat, undangan langsung,
+stepper inline, multi-foto, settle sekaligus, konfirmasi payer by name).
+
+**Keamanan**
+
+- **Bill bisa direbut lewat nama payer.** Bill dibikin "dibayar Budi". Siapa pun
+  yang pegang link bisa ganti namanya jadi "budi", join, terus pas si pembuat
+  ngetuk "Pakai Nama Ini" (kelihatannya gak ngapa-ngapain — namanya udah keisi
+  duluan), backend nge-set `paid_by_confirmed = 1` → orang itu jadi **satu-satunya**
+  owner: pembuatnya kena 403 di billnya sendiri dan bill-nya bisa dihapus orang
+  lain. Ini aturan v51 yang bocor lagi dari sisi lain. Sekarang cuma `identity_id`
+  eksplisit (banner konfirmasi v62) yang nge-confirm; jalur nama tetap nyambungin
+  identitas buat tampilan doang.
+- **Hapus foto gak dibatesin ke bill-nya.** `DELETE /api/bills/{bill}/photos/{id}`
+  nyari foto by id doang. Id foto itu autoincrement global dan dikirim ke semua
+  yang bisa baca bill, jadi orang bisa ngehapus foto bill orang lain lewat bill
+  miliknya sendiri. Sekarang query-nya `WHERE id = ? AND bill_id = ?`.
+- **Hapus bill sendiri bisa ngilangin struk orang lain.** Path foto ikut di
+  payload, jadi bisa dipasang ke bill sendiri; pas bill itu dihapus, file-nya
+  di-unlink — punya korban. `_unlink_photo` sekarang nolak hapus file yang masih
+  dipakai bill lain.
+- **Foto yang dihapus balik lagi tiap restart.** `init_db` nge-backfill kolom lama
+  `bill.photo_path` ke `bill_photo` tiap boot, sementara hapus foto cuma ngapus
+  baris `bill_photo`. Sekarang kolom lamanya ikut dikosongin.
+
+**Status yang saling bantah**
+
+- "Tandai Lunas" (v60) di bill solo: layar bill bilang **Lunas**, daftar di home
+  bilang **Belum ada yang milih** — `_bill_settled` keburu return di cek "belum
+  ada yang milih" sebelum baca flag manualnya. Padahal bill solo justru alasan
+  tombol itu ada.
+- Bill yang di-Tandai Lunas: header hijau "Lunas" tapi tiap baris orang masih
+  nampilin tombol "Tandai Lunas", dan layar tamu masih nagih. Sekarang UI baca
+  `settled_manual`.
+- Bill ditutup + ditandai lunas manual masih nyetak "masih ada Rp X yang belum
+  dibayar" merah di bawah chip hijau "Ditutup · lunas".
+- Undangan yang **ditolak** gak bisa diundang lagi selamanya: `create_invite`
+  balikin baris `declined`, endpoint-nya lapor "pending", yang diundang gak pernah
+  liat kartunya. Sekarang di-reset jadi pending.
+- Cek kontak buat undangan pakai daftar yang di-`LIMIT 50`, padahal pencarian
+  kontak nyaring sebelum limit — jadi kontak ke-51 muncul di picker tapi ditolak
+  "bisa ngundang orang yang udah pernah share bill aja". Sekarang pakai
+  `db.is_contact()` tanpa limit.
+
+**UI — HP dan desktop**
+
+- **Baris item yang dicentang jebol di HP.** Stepper (−/+) + harga + checkbox
+  nyisain ~90px buat nama, jadi "Ayam Bakar Madu" pecah jadi tiga baris. Di layar
+  ≤430px stepper sekarang turun ke barisnya sendiri, tombolnya jadi 40px, dan
+  keterangan "kamu 1×" dicopot (steppernya udah nunjukin angka yang sama).
+- **Sheet bayar gak nyebut mau transfer ke mana.** Ini layar terakhir sebelum
+  orang beneran ngirim duit, judulnya "Konfirmasi Item" dan isinya cuma daftar
+  item — nomor rekeningnya ada di tombol lain di layar belakangnya. Sekarang:
+  "Bayar ke <nama>", total, lalu **Kirim ke** + rekening/e-wallet + tombol Salin.
+- **Home = salinan Riwayat.** Dua-duanya daftar bill lengkap dengan empat chip
+  filter dan dua dropdown; di HP filternya doang udah makan setengah layar.
+  Home sekarang cuma 4 bill terakhir + "Lihat Semua"; filter tinggal di Riwayat.
+- **Filter tahun gak bisa dibalikin ke "Semua tahun".** Opsinya kehapus tiap
+  daftar dimuat, jadi selectnya nulis "2026" padahal filternya mati, dan sekali
+  milih tahun gak ada jalan pulang.
+- Chip status "Belum dipilih" pakai warna aksen — di daftar normal empat baris
+  ikutan oranye, warnanya sama kayak tombol utama, jadi gak ada yang menonjol.
+  Sekarang warna = duit: hijau beres, merah masih ada tagihan, abu netral.
+- Kartu owner nyetak chip status yang **sama persis dua kali** ("Rp 88.975 belum
+  dibayar" di atas dan lagi 12px di bawahnya). Diganti bar progress "udah masuk".
+- Tiga tombol full-width numpuk di kartu owner (Tandai Lunas / Tambah Foto /
+  Metode Bayar) tanpa hierarki — yang paling berdampak malah paling atas.
+  Sekarang dua utilitas sebaris, aksi duitnya sendirian di bawah.
+- Baris orang di HP: nama + rincian + total + chip + tombol hapus rebutan 326px.
+  Sekarang totalnya turun ke baris kedua.
+- Toggle "Baca Otomatis" bohong: `aria-checked` di-hardcode `true`, padahal
+  scanMode disimpen di module — matiin sekali, buka lagi, kelihatannya nyala tapi
+  OCR-nya mati.
+- PPN ilang di editor: nambah/hapus foto nge-reset `taxSaved` ke 0 kalau "harga
+  termasuk pajak" lagi nyala.
+- Tombol hapus 20–34px (chip peserta, hapus foto, hapus orang, stepper) dinaikin
+  ke ≥30–40px. Tombol hapus bill di baris yang bukan punya kita gak dirender lagi
+  sebagai tombol mati.
+- Copy: "Parse" → "Cek Teksnya", "OCR gak nemu item" → "Struknya gak kebaca
+  jelas", DOMException mentah di toast clipboard diganti instruksi, chip status
+  konsisten sentence case.
+- ~110 baris kode mati dibuang (`openFreePickerSheet`, `computeMyTotal` — sisa
+  dari perpindahan ke stepper inline).
+
+**Tes**
+
+- `backend/conftest.py` baru: suite-nya selama ini kebind ke direktori upload
+  **produksi** (`/var/www/bagiin-uploads`) karena cuma `BAGIIN_DB` yang di-set per
+  file — di VPS itu berarti nulis JPEG tes ke folder live. Rate limiter juga
+  dimatiin pas tes (bucket-nya global per-IP, suite-nya nge-429 sendiri).
+- `test_regressions_v65.py` (8 tes) buat semua temuan di atas. Total 138 lulus.
+- ⚠️ `test_regressions_v62.py::test_confirm_by_name_resolves_and_confirms` sekarang
+  GAGAL — dia nge-assert perilaku yang jadi celah takeover di atas. File-nya
+  mode 600 punya user `hermes`, jadi belum bisa diupdate.
+
 ### 2026-08-12 (lanjutan 4) — pembuat bill boleh keluar (v58)
 
 Nutup celah desain yang ketinggalan dari v57: sejak payer di-confirm, pembuat bill

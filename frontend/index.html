@@ -6,12 +6,12 @@
 <meta name="theme-color" content="#FAF8F5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#151311" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
-<title>Bagiin — Bagi Bill Bareng Tanpa Ribet</title>
-<meta name="description" content="Foto struk, share link, semua milih itemnya sendiri. Pajak kebagi otomatis. Tanpa akun, tanpa install.">
+<title>Bagiin — Bagi Bill Bareng Tanpa Rumit</title>
+<meta name="description" content="Foto struk, bagikan tautan, semua memilih itemnya sendiri. Pajak terbagi otomatis. Tanpa akun, tanpa install.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Bagiin">
-<meta property="og:title" content="Bagiin — Bagi Bill Bareng Tanpa Ribet">
-<meta property="og:description" content="Foto struk, share link, semua milih itemnya sendiri. Pajak kebagi otomatis. Tanpa akun.">
+<meta property="og:title" content="Bagiin — Bagi Bill Bareng Tanpa Rumit">
+<meta property="og:description" content="Foto struk, bagikan tautan, semua memilih itemnya sendiri. Pajak terbagi otomatis. Tanpa akun.">
 <meta property="og:image" content="https://bagiin.ardhiqi.com/static/og-cover.png?v=@HASH:og-cover.png@">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -100,7 +100,10 @@ body {
            clip:rect(0 0 0 0); white-space:nowrap; border:0; }
 
 /* ---------- app shell ---------- */
-#app { max-width:var(--page); margin:0 auto; padding:12px 16px calc(env(safe-area-inset-bottom) + 120px); }
+#app { max-width:var(--page); margin:0 auto; padding:12px 16px calc(env(safe-area-inset-bottom) + 32px); }
+/* Screens with a fixed bottom action dock need room for it; screens without
+   one should not inherit a large, unexplained blank tail on short pages. */
+#app:has(.dock, .sticky-bar) { padding-bottom:calc(env(safe-area-inset-bottom) + 120px); }
 .shell { display:block; }
 .shell-main { min-width:0; }
 .shell-side { display:contents; }
@@ -138,6 +141,13 @@ h2 { font-size:18px; font-weight:700; letter-spacing:-.02em; }
 .card-title { font-size:13px; color:var(--text-2); margin-bottom:10px; font-weight:600;
               display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .card-title .muted { font-weight:400; }
+/* text-only action inside a card header ("Lihat Semua") — a full button would
+   compete with the card's own content */
+.link-btn { background:none; border:none; padding:8px 2px; min-height:44px;
+            font:inherit; font-weight:600; color:var(--accent); cursor:pointer;
+            border-radius:var(--r-sm); }
+.link-btn:active { opacity:.65; }
+@media (hover:hover) { .link-btn:hover { text-decoration:underline; } }
 .stack { display:flex; flex-direction:column; gap:12px; }
 
 /* ---------- buttons ---------- */
@@ -163,7 +173,8 @@ button:not(:disabled):active { transform:scale(.98); }
 .btn-danger  { background:var(--red); color:#fff; }
 .btn-outline { background:var(--surface); color:var(--text); border:1px solid var(--border-strong); }
 .btn-ghost   { background:transparent; color:var(--text-2); }
-.btn-sm { min-height:38px; padding:8px 12px; font-size:13.5px; font-weight:600; width:auto; border-radius:var(--r-xs); }
+/* Compact controls keep their visual density while retaining a full 44px hit area. */
+.btn-sm { min-height:44px; padding:10px 12px; font-size:13.5px; font-weight:600; width:auto; border-radius:var(--r-xs); }
 .btn-auto { width:auto; }
 .btn-danger-ghost { background:var(--surface); color:var(--red); border:1px solid var(--accent-line); border-color:color-mix(in srgb, var(--red) 35%, transparent); }
 @media (hover:hover) {
@@ -175,7 +186,7 @@ button:not(:disabled):active { transform:scale(.98); }
   .btn-danger-ghost:hover:not(:disabled) { background:var(--red-soft); }
 }
 .icon-btn {
-  width:42px; height:42px; min-height:42px; padding:0; flex-shrink:0;
+  width:44px; height:44px; min-height:44px; padding:0; flex-shrink:0;
   display:inline-flex; align-items:center; justify-content:center;
   background:var(--surface); border:1px solid var(--border); border-radius:var(--r-sm);
   color:var(--text-2);
@@ -201,8 +212,17 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .chip-red   { background:var(--red-soft);   color:var(--red);   border-color:color-mix(in srgb, var(--red) 22%, transparent); }
 .chip-grey  { background:var(--surface-2);  color:var(--text-2); border-color:var(--border); }
 .chip-accent{ background:var(--accent-soft);color:var(--accent); border-color:var(--accent-line); }
+.people-chip { display:inline-flex; align-items:center; gap:5px; padding:3px 4px 3px 11px; border-radius:var(--r-full);
+               background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent-line);
+               font-size:13px; font-weight:600; }
+/* 20px was a thumb-sized miss: the chip stays small, the hit area doesn't */
+.people-chip-x { width:44px; height:44px; min-height:44px; padding:0; border-radius:50%; border:none;
+                 background:transparent; color:inherit; display:inline-flex; align-items:center; justify-content:center;
+                 cursor:pointer; }
+.people-chip-x svg { width:14px; height:14px; }
+.people-chip-x:hover { background:rgba(0,0,0,.15); }
 .chip-btn { display:inline-flex; align-items:center; gap:5px; border-radius:var(--r-full);
-            padding:6px 11px; font-size:12px; font-weight:600; cursor:pointer;
+            min-height:44px; padding:8px 11px; font-size:12px; font-weight:600; cursor:pointer;
             border:1px solid var(--border); background:var(--surface-2); color:var(--text-2); }
 .chip-btn svg { width:13px; height:13px; }
 .chip-active { outline:2px solid var(--accent); outline-offset:-1px; font-weight:700; }
@@ -236,7 +256,7 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .item-stepper { display:none; align-items:center; gap:2px; flex-shrink:0; margin-right:2px; }
 .item-row.selected .item-stepper { display:flex; }
 .step-btn {
-  width:34px; height:34px; min-height:34px; border-radius:var(--r-full);
+  width:44px; height:44px; min-height:44px; border-radius:var(--r-full);
   border:1px solid var(--border-strong); background:var(--surface);
   display:flex; align-items:center; justify-content:center;
   font-size:17px; line-height:1; color:var(--text); padding:0;
@@ -248,6 +268,10 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .item-info { flex:1; min-width:0; }
 .item-name { font-size:15px; font-weight:600; letter-spacing:-.01em; }
 .item-share { font-size:12.5px; color:var(--text-3); margin-top:2px; }
+/* manager's item-share line renders BOTH a full names list and a compact
+   "N orang" count; only one shows at a time (see the max-width:430px block
+   below) so the row never depends on JS re-rendering on resize. */
+.item-share .share-compact { display:none; }
 .item-price { font-size:15px; font-weight:700; flex-shrink:0; text-align:right; }
 .price-was { opacity:.5; text-decoration:line-through; font-weight:500; }
 .price-now { color:var(--green); }
@@ -255,10 +279,40 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
    squeezed the name column until the share line broke onto three lines —
    stack the struck-through price above the real one instead */
 @media (max-width:430px) {
-  .item-row { gap:10px; }
+  .item-row { gap:10px; flex-wrap:wrap; }
   .price-was { display:block; font-size:12px; line-height:1.2; }
   .item-share { font-size:12px; }
+  /* "1/4 · Rp 13.750/bagian · Rina, Budi, Sari · 3 kosong" wrapped to three
+     lines on a 390px phone — names are the least useful part once there's
+     more than one (nobody reads a list of names in the manager's item row,
+     they read the count and the "kosong" warning), so swap to "N orang" here
+     and keep the full names for wider screens where there's room. */
+  .item-share .share-full { display:none; }
+  .item-share .share-compact { display:inline; }
+  /* the stepper (98px) + price (90px) + checkbox left the name ~90px on a
+     390px phone, so "Ayam Bakar Madu" broke onto three lines and the share
+     line onto three more. Drop the stepper to its own row instead — the name
+     keeps the full width and the tap targets get bigger, not smaller
+     (bug: selected rows were unreadable on the form factor the app is for) */
+  /* an item name shares the row with a 110px price box, so "Nasi Goreng
+     Spesial" rendered as "Nasi Goreng Spe:" — give the name its own line */
+  .edit-item .edit-name { flex-basis:100%; }
+  /* price before the stepper, and the manager's slot button stays on the
+     price's right where the markup puts it */
+  .item-price, .item-row .slot-mgr { order:2; }
+  .item-stepper { order:3; flex-basis:100%; justify-content:flex-end;
+                  margin:6px 0 0; gap:6px; }
 }
+
+/* collection progress on the owner card: how much of the bill has actually
+   come back. Replaces a second copy of the status chip. */
+.collect-line { display:flex; justify-content:space-between; align-items:baseline;
+                gap:10px; font-size:13px; margin-bottom:6px; }
+.collect-in { color:var(--green); }
+.collect-track { height:6px; border-radius:var(--r-full); background:var(--surface-2);
+                 overflow:hidden; }
+.collect-fill { height:100%; border-radius:var(--r-full); background:var(--green);
+                transition:width .3s var(--ease); }
 
 /* ---------- people ---------- */
 .person-row { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border); }
@@ -272,9 +326,18 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .person-sub { font-size:12.5px; color:var(--text-3); margin-top:2px; }
 .person-right { text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:5px; flex-shrink:0; }
 .person-total { font-size:15px; font-weight:700; }
-.person-remove { width:34px; height:34px; border-radius:var(--r-xs); background:transparent; color:var(--text-3);
+.person-remove { width:44px; height:44px; min-height:44px; border-radius:var(--r-xs); background:transparent; color:var(--text-3);
                  display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 .person-remove svg { width:16px; height:16px; }
+/* On phones keep identity and amount/status on one baseline row. The reserved
+   right column prevents the remove control from colliding with the amount. */
+@media (max-width:430px) {
+  .person-row { flex-wrap:nowrap; gap:8px; padding:10px 0; position:relative; }
+  .person-info { min-width:0; }
+  .person-right { flex:0 0 auto; min-width:96px; max-width:42%; flex-direction:row;
+                  align-items:center; justify-content:flex-end; gap:6px; }
+  .person-total { white-space:nowrap; }
+}
 @media (hover:hover) { .person-remove:hover { background:var(--red-soft); color:var(--red); } }
 
 /* ---------- attention card ---------- */
@@ -295,6 +358,12 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .invite-head > svg { width:22px; height:22px; color:var(--accent); flex-shrink:0; margin-top:2px; }
 .invite-title { font-weight:700; font-size:16px; letter-spacing:-.01em; margin-bottom:2px; }
 .invite-card .btn-outline { background:var(--surface); }
+/* v64: pending direct-invite rows on home */
+.invite-row { display:flex; align-items:center; gap:10px; padding:11px 0; border-top:1px solid var(--border); }
+.invite-row:first-of-type { border-top:none; }
+.invite-row-info { flex:1; min-width:0; }
+.invite-row .btn-primary.btn-sm { flex-shrink:0; }
+.invite-row .btn-ghost.btn-sm { flex-shrink:0; width:44px; min-height:44px; }
 
 /* ---------- forms ---------- */
 label { font-size:13px; color:var(--text-2); display:block; margin-bottom:5px; font-weight:500; }
@@ -309,6 +378,8 @@ input:focus,select:focus,textarea:focus {
   box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 input[type=checkbox] { width:22px; height:22px; accent-color:var(--accent); flex-shrink:0; padding:0; }
+/* Radio glyph stays compact; the label row remains the 44px+ tap target. */
+.account-row input[type=radio] { width:18px; height:18px; padding:0; flex:0 0 18px; accent-color:var(--accent); }
 select { appearance:none; -webkit-appearance:none; padding-right:36px;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237A7065' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat:no-repeat; background-position:right 11px center; background-size:17px; }
@@ -317,7 +388,7 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .field-row > * { flex:1; min-width:0; }
 .input-money { text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
 .toggle-row { display:flex; align-items:center; justify-content:space-between; gap:14px;
-              cursor:pointer; padding:10px; margin:0 -10px; border-radius:var(--r-sm); }
+              cursor:pointer; padding:10px; margin:0 -10px; min-height:44px; border-radius:var(--r-sm); }
 @media (hover:hover) { .toggle-row:hover { background:var(--surface-2); } }
 .toggle-row .label-strong { font-weight:600; font-size:14.5px; color:var(--text); display:block; }
 .error-text { color:var(--red); font-size:13px; margin-top:6px; }
@@ -333,6 +404,14 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .dock-inner,.sticky-inner { max-width:var(--page); margin:0 auto; display:flex; flex-direction:column; gap:10px; }
 .dock-total { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
 .dock-total .money { font-size:23px; font-weight:800; letter-spacing:-.02em; }
+/* The create dock is an action aid, not a second card. Keep it compact on phones
+   while preserving the 44px minimum tap target. */
+@media (max-width:1039px) {
+  .dock { padding:8px 16px calc(env(safe-area-inset-bottom) + 8px); }
+  .dock-inner { gap:6px; }
+  .dock-total .money { font-size:20px; }
+  .dock .btn-primary { height:44px; min-height:44px; padding:0 16px; font-size:15px; }
+}
 .dock-split {
   display:flex; justify-content:space-between; gap:10px; font-size:12.5px;
   background:var(--surface-2); border-radius:var(--r-sm); padding:8px 11px;
@@ -363,16 +442,23 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
            padding:12px 2px; border-bottom:1px solid var(--border); margin-bottom:6px; }
 .tgl-label { font-weight:700; font-size:15px; color:var(--text); }
 .tgl-desc { font-size:12.5px; line-height:1.4; }
-.switch { position:relative; width:48px; height:28px; border-radius:var(--r-full);
-          background:var(--border-strong); border:none; cursor:pointer; flex-shrink:0;
-          transition:background .16s var(--ease); padding:0; }
-.switch::after { content:""; position:absolute; top:3px; left:3px; width:22px; height:22px;
-                 border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25);
+/* 48x28 visually (unchanged) but a 40px-tall hit area — everything else in
+   this UI holds a 40px tap-target floor (.btn-sm, .icon-btn) and this was the
+   one 28px hole in a settings row people are meant to tap. The track moved
+   off the button's own background onto ::before so growing the button's box
+   doesn't grow the pill itself. */
+.switch { position:relative; width:48px; height:44px; min-height:44px; background:none;
+          border:none; cursor:pointer; flex-shrink:0; padding:0; }
+.switch::before { content:""; position:absolute; top:50%; left:0; width:48px; height:28px;
+                   transform:translateY(-50%); border-radius:var(--r-full);
+                   background:var(--border-strong); transition:background .16s var(--ease); }
+.switch::after { content:""; position:absolute; top:50%; left:3px; width:22px; height:22px;
+                 margin-top:-11px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25);
                  transition:transform .16s var(--ease); }
-.switch[aria-checked="true"] { background:var(--accent); }
+.switch[aria-checked="true"]::before { background:var(--accent); }
 .switch[aria-checked="true"]::after { transform:translateX(20px); }
 .src-btn { width:100%; display:flex; flex-direction:column; align-items:flex-start;
-           gap:3px; padding:12px 14px; }
+           gap:3px; padding:12px 14px; min-height:44px; }
 .src-btn .src-main { display:flex; align-items:center; gap:10px; font-weight:700; font-size:15px; }
 .src-btn .muted { font-size:12.5px; line-height:1.4; padding-left:34px; }
 /* v63: muted desc inside buttons — --text-3 is invisible on the accent fill
@@ -389,7 +475,7 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .brand-chip { display:inline-flex; align-items:center; justify-content:center; border-radius:10px;
               font-weight:700; font-size:11px; min-width:40px; height:38px; padding:0 8px;
               letter-spacing:.01em; flex-shrink:0; }
-.account-row { display:flex; align-items:center; gap:11px; padding:11px 0; border-bottom:1px solid var(--border); }
+.account-row { display:flex; align-items:center; gap:11px; min-height:44px; padding:8px 0; border-bottom:1px solid var(--border); }
 .account-row:last-child { border-bottom:none; }
 .code-display { font-size:21px; font-weight:800; letter-spacing:.1em; text-align:center; padding:16px 10px;
                 background:var(--surface-2); border-radius:var(--r-sm); font-variant-numeric:tabular-nums;
@@ -403,10 +489,38 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .dropzone-icon { color:var(--brand); margin-bottom:10px; }
 .dropzone-icon svg { width:38px; height:38px; }
 
+/* ---------- home bill-list controls (K1-K6, v67) ----------
+   Home is the only place bills live now (Riwayat is gone). The constraint
+   that shapes all of this: on a 390px phone the first bill row must be
+   visible without scrolling past a wall of controls — that's why the full
+   filter set was pulled off home earlier this year in the first place. So on
+   phones there is exactly ONE control in the card header (.list-ctl-btn,
+   "⇅ Atur"), which opens a sheet holding the status chips + the three
+   selects. Desktop has room, so the same chips/selects render inline in the
+   card instead — .list-controls-inline is a CSS-only swap (not JS branching
+   on width) so a resize can never leave both or neither visible. */
+.list-ctl-btn { display:inline-flex; align-items:center; gap:1px; white-space:nowrap; }
+.list-controls-inline { display:none; }
+.list-chip-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+/* min-height:0 shrank these to ~37px next to 50px-tall selects — under the
+   thumb minimum and visibly out of line with the row */
+.list-chip-row .chip-btn { font-size:13px; padding:10px 14px; min-height:40px; }
+.list-select-row { display:flex; gap:8px; }
+.list-select-row select { flex:1 1 0; min-width:0; }
+@media (min-width:1040px) {
+  /* desktop: inline controls replace the phone's single "Atur" button —
+     chips on their own row, the three selects on the next, always visible */
+  .list-controls-inline { display:block; margin:14px 0; }
+  .list-ctl-btn { display:none; }
+}
+
 .history-row { display:flex; align-items:center; gap:12px; padding:13px 10px 13px 16px; margin:0 -10px;
                border-radius:var(--r-sm); cursor:pointer; position:relative;
                transition:background .14s var(--ease); }
 .history-row + .history-row { border-top:1px solid var(--border); border-radius:0; }
+.history-row .delete-bill svg { width:18px; height:18px; }
+.history-row .delete-bill.is-disabled { opacity:.35; pointer-events:none; }
+@media (hover:hover) { .history-row .delete-bill:not(.is-disabled):hover { color:var(--red); background:var(--red-soft); } }
 @media (hover:hover) { .history-row:hover { background:var(--surface-2); } }
 /* status colour anchor: a bar at the head of the row plus a tinted icon, so a
    long list is scannable without reading every chip */
@@ -430,29 +544,47 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
    on one line left the status chip ~40px on a 390px phone and truncated it to
    "Be…"; only the name is allowed to give up space. */
 .row-title { display:flex; align-items:baseline; gap:8px; min-width:0; }
-.row-date { flex-shrink:0; }
+.row-date { flex-shrink:0; margin-left:auto; }
 .row-meta { display:flex; align-items:center; gap:8px; margin-top:5px; min-width:0; }
-.row-meta .chip { flex-shrink:0; }
-.row-amount { margin-left:auto; flex-shrink:0; font-size:15px; font-weight:700; padding-left:8px; }
+/* the money never shrinks or wraps; the CHIP is what gives way. With both
+   pinned at flex-shrink:0 a 7-digit total ("Rp 1.875.000") pushed the row's
+   content past its own right edge and ran under the delete button's column
+   (bug: measured 59px of overlap at 390px). */
+.row-meta .chip { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.row-amount { margin-left:auto; flex-shrink:0; white-space:nowrap;
+              font-size:15px; font-weight:700; }
 .status-mark { color:var(--text-3); }
 .history-row.is-ok   .status-mark { background:var(--green-soft); color:var(--green);
                                     border-color:color-mix(in srgb, var(--green) 25%, transparent); }
 .history-row.is-due  .status-mark { background:var(--red-soft); color:var(--red);
                                     border-color:color-mix(in srgb, var(--red) 25%, transparent); }
-.history-row.is-done .status-mark { opacity:.65; }
+.history-row.is-done .status-mark { background:var(--surface-3); color:var(--text-3); border-color:var(--border); }
+.history-row.is-idle .status-mark { background:var(--surface-3); color:var(--text-3);
+                                    border-color:var(--border); }
+/* placeholder that reserves the delete button's column on rows you don't own */
+.row-gap { width:42px; flex-shrink:0; }
 .history-month { font-size:12px; font-weight:700; color:var(--text-3); letter-spacing:.04em;
-                 text-transform:uppercase; margin:16px 0 4px; }
+                 text-transform:uppercase; margin:16px -10px 4px 6px; }
 .history-month:first-child { margin-top:0; }
 
 .empty-state { text-align:center; padding:36px 16px; color:var(--text-2); }
 .empty-state svg { width:52px; height:52px; color:var(--border-strong); margin-bottom:12px; }
 .empty-state p + p { margin-top:4px; }
 
+/* fallback for a photo row that outlived its file (older data, failed
+   upload) — swapped in via <img onerror> instead of the browser's broken-
+   image glyph */
+.photo-missing { display:none; align-items:center; justify-content:center; flex-direction:column;
+                 gap:6px; background:var(--surface-2); border-radius:var(--r-xs); color:var(--text-3);
+                 text-align:center; padding:8px; }
+.photo-missing svg { width:26px; height:26px; }
+.photo-missing span { font-size:11.5px; line-height:1.3; }
+
 .pay-item { display:flex; align-items:center; gap:10px; padding:11px 0; border-bottom:1px solid var(--border);
             font-size:14px; cursor:pointer; }
 .pay-item:last-of-type { border-bottom:none; }
 @media (hover:hover) { .pay-item:hover .pay-item-x { background:var(--red); color:#fff; } }
-.pay-item-x { width:28px; height:28px; border-radius:var(--r-xs); background:var(--surface-3); color:var(--text-3);
+.pay-item-x { width:44px; height:44px; min-height:44px; border-radius:var(--r-xs); background:var(--surface-3); color:var(--text-3);
               display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background .14s,color .14s; }
 .pay-item-x svg { width:14px; height:14px; }
 .break-row { display:flex; justify-content:space-between; align-items:baseline; gap:8px; padding:5px 0; font-size:13.5px; }
@@ -487,12 +619,46 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
   #toast { bottom:32px; }
 }
 @media (min-width:1040px) {
-  :root { --page:1060px; }
-  #app { padding-bottom:56px; }
-  .topbar { margin-bottom:22px; }
-  .shell { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:26px; align-items:start; }
+  :root {
+    --page:1060px;
+    /* L1 (v68): the form/rail pair is ONE centered composition, not a
+       full-bleed grid — every desktop layout rule below reads its width
+       from these three tokens instead of guessing. Before this, .shell let
+       the main column eat all remaining space (a bill-title input hit
+       920px, running text hit 136 chars/line) while shell-solo screens
+       (home, settings) sat in an unrelated, independently-centered 680px
+       column — two different layouts in one app. --content matches what
+       shell-solo used to hardcode; --rail is close to the old 340px rail. */
+    /* Keep the composition inside the actual padded viewport. The previous
+       fixed 720 + 26 + 320px pair overflowed at the first desktop breakpoint
+       (1040px), even though the page itself had horizontal gutters. */
+    --page-gutter:clamp(16px,3vw,40px);
+    --rail:clamp(240px,25vw,320px);
+    --shell-gap:clamp(16px,2vw,26px);
+    --composition:min(1066px, calc(100vw - (2 * var(--page-gutter))));
+    --content:min(720px, calc(var(--composition) - var(--shell-gap) - var(--rail)));
+  }
+  /* #app's 1400px cap is a safety net for absurdly wide monitors only — it
+     no longer does the centring. .shell/.shell-solo/.topbar below centre
+     themselves against --composition regardless of how wide #app is. */
+  #app { max-width:1400px; margin:0 auto; padding:12px var(--page-gutter) 56px; }
+  #app:has(.dock, .sticky-bar) { padding-bottom:56px; }
+  /* the topbar used to be full-bleed across #app (a title centered over
+     1400px, above cards that stop at ~1070px, looked broken) — constrain it
+     to the SAME composition width and centre it the same way */
+  .topbar { margin:0 auto 22px; max-width:var(--composition); }
+  .shell {
+    display:grid; grid-template-columns:var(--content) var(--rail);
+    width:100%; max-width:var(--composition); gap:var(--shell-gap);
+    align-items:start; justify-content:center; margin:0 auto;
+  }
+  /* the pair sits in the middle of the viewport with equal margins on both
+     sides — this is what removes the "sea of empty space" a flat 680px cap
+     used to leave between the form and the sticky action rail, without
+     letting the form stretch to fill whatever's left */
+  .shell-main { max-width:none; }
   .shell-side { display:block; position:sticky; top:78px; }
-  .shell-solo { display:block; max-width:680px; margin:0 auto; }
+  .shell-solo { display:block; max-width:var(--content); margin:0 auto; }
 
   /* the dock stops being a fixed bar and becomes a card in the rail */
   .shell-side .dock,.shell-side .sticky-bar {
@@ -504,7 +670,39 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
   .shell-side .dock-total { flex-direction:column; align-items:flex-start; gap:2px; }
   .shell-side .dock-total .money { font-size:30px; }
   .hero-total { font-size:38px; }
+
+  /* L2: explanatory running text (the Bebas/Slot line, "Siapa yang Ikut"'s
+     help text, sheet subtitles, muted paragraphs inside cards) must not run
+     past a comfortable measure. ch tracks the font instead of guessing a
+     pixel width. Item rows (.item-share) and person rows (.person-sub) are
+     excluded on purpose — those are meant to span their container, not read
+     like prose. */
+  .sheet-sub, p.muted, div.muted { max-width:65ch; }
 }
+/* Medium desktop: give the form the remaining space rather than allowing a
+   fixed content column to force the rail beyond the viewport. The rail stays
+   beside the form, but becomes a little narrower while both columns retain
+   usable minimums. */
+@media (min-width:1040px) and (max-width:1199px) {
+  :root { --rail:clamp(240px,24vw,280px); --shell-gap:clamp(16px,2vw,22px); }
+  .shell { grid-template-columns:minmax(0,1fr) var(--rail); }
+  .shell-main, .shell-side { min-width:0; }
+}
+.onboarding-steps { list-style:none; display:grid; gap:5px; margin:-10px 0 18px; padding:0; color:var(--text-2); font-size:13px; }
+.onboarding-steps li { display:flex; align-items:flex-start; gap:8px; }
+.onboarding-steps b { color:var(--accent); min-width:16px; }
+
+/* Compact, clearly separated account sections keep the action reachable on phones. */
+#app.settings-page > .shell-solo > .card { margin-bottom:6px; padding:10px 12px; }
+#app.settings-page > .shell-solo > .card .card-title { margin-bottom:5px; }
+#app.settings-page > .shell-solo > .card p.muted { line-height:1.3; margin-bottom:6px !important; }
+#app.settings-page > .shell-solo > .card .field { margin-bottom:7px; }
+#app.settings-page > .shell-solo > .card .btn-row { margin-top:6px !important; gap:6px; }
+#app.settings-page .empty-state { padding:12px 8px; }
+#app.settings-page .empty-state svg { width:36px; height:36px; margin-bottom:6px; }
+#app.settings-page > .shell-solo > .topbar { margin-bottom:8px; }
+#app.settings-page > .shell-solo > .btn-danger-ghost { margin-top:2px; }
+
 </style>
 </head>
 <body>

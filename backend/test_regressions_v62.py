@@ -122,8 +122,16 @@ def test_confirm_grants_management():
     assert da["can_manage"] is True, "confirmed payer is the sole manager"
 
 
-def test_confirm_by_name_resolves_and_confirms():
-    """PUT /paid_by {name} for a joined person confirms them too."""
+def test_name_resolves_but_never_confirms():
+    """PUT /paid_by {name} resolves the identity for display and NOTHING else.
+
+    Flipped in v65. Confirming on the name path re-opened the v51 takeover from
+    the other side: the name is only ever matched against whoever joined, so
+    anyone holding the share link renames themselves to the placeholder, joins,
+    and the manager's "Pakai Nama Ini" tap (the field is pre-filled — it looks
+    like a no-op) hands them the bill. Handing it over is the identity_id path
+    above, and only that one.
+    """
     amel = db.new_identity("Amel62d", role="creator")
     aufa = db.new_identity("Aufa")
     bid = _mk_bill(amel, paid_by_name="Aufa")
@@ -136,8 +144,10 @@ def test_confirm_by_name_resolves_and_confirms():
     )
     assert r.status_code == 200, r.text
     d = _detail(bid, aufa)
-    assert d["paid_by_confirmed"] is True
-    assert d["can_manage"] is True
+    assert d["paid_by_id"] == aufa["id"], "still resolved, so the UI can name them"
+    assert d["paid_by_confirmed"] is False
+    assert d["can_manage"] is False
+    assert _detail(bid, amel)["can_manage"] is True, "creator still holds it"
 
 
 def test_guest_cannot_confirm():
@@ -159,6 +169,6 @@ if __name__ == "__main__":
     test_placeholder_payer_unconfirmed()
     test_join_links_identity_but_stays_unconfirmed()
     test_confirm_grants_management()
-    test_confirm_by_name_resolves_and_confirms()
+    test_name_resolves_but_never_confirms()
     test_guest_cannot_confirm()
     print("PASS v62 payer-confirm tests")

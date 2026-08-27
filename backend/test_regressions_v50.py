@@ -146,6 +146,18 @@ def test_my_paid_false_for_creator_without_share():
     assert row["settled"] is True, f"guests settled everything: {row}"
 
 
+def test_bills_list_exposes_idle_joined_picker_name():
+    creator = db.new_identity("Creator50c")
+    guest = db.new_identity("Guest50c")
+    bid = _mk_bill(creator, subtotal=100000, total=100000,
+                   items=[{"name": "A", "price": 100000}],
+                   participants=["Creator50c", "Guest50c"])
+    c.post(f"/api/bills/{bid}/join", headers=_H(guest), json={})
+
+    row = _row_for(creator, bid)
+    assert "Guest50c" in row["pending_names"], row
+
+
 if __name__ == "__main__":
     test_my_paid_personal_status_in_list()
     test_my_paid_false_for_creator_without_share()
