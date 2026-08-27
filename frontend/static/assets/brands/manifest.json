@@ -1,224 +1,320 @@
 {
-  "schema_version": 1,
-  "purpose": "Bagiin payment-method picker brand logos",
-  "source": {
-    "name": "idn-finlogos",
-    "url": "https://github.com/hafidznoor/idn-finlogos",
-    "commit": "fe7e2a23f7a078036f9b898f47be91d0db6b2b6c",
-    "asset_license": "CC BY-NC 4.0",
-    "notice": "https://github.com/hafidznoor/idn-finlogos/blob/main/NOTICE"
+ "schema_version": 3,
+ "purpose": "Bagiin payment-method picker brand logos",
+ "policy": "fetched from official brand domains where available; Wikimedia used only as the channel for the brand's official mark; fallback = idn-finlogos collection when the official asset could not be fetched",
+ "trademark_notice": "Logos are trademarks of their respective owners, used for payment-channel identification only.",
+ "logos": [
+  {
+   "code": "BCA",
+   "file": "bca.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/5/5c/Bank_Central_Asia.svg",
+    "fetched": "2026-08-28"
+   }
   },
-  "normalization": [
-    "responsive width/height set to 100%",
-    "viewBox retained",
-    "SVG XML parsed and validated",
-    "no external image/font references"
-  ],
-  "trademark_notice": "Logos are displayed solely to identify payment methods. All trademarks remain property of their respective owners; no endorsement implied. Confirm CC BY-NC/commercial permissions with trademark holders before commercial distribution.",
-  "logos": [
-    {
-      "code": "BCA",
-      "file": "bca.svg",
-      "upstream_file": "bca.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "BNI",
-      "file": "bni.svg",
-      "upstream_file": "bni.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "BRI",
-      "file": "bri.svg",
-      "upstream_file": "bri.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Mandiri",
-      "file": "mandiri.svg",
-      "upstream_file": "mandiri.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "BTN",
-      "file": "btn.svg",
-      "upstream_file": "btn.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "CIMB",
-      "file": "cimb.svg",
-      "upstream_file": "cimb-niaga.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Permata",
-      "file": "permata.svg",
-      "upstream_file": "permata.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "BSI",
-      "file": "bsi.svg",
-      "upstream_file": "bsi.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Danamon",
-      "file": "danamon.svg",
-      "upstream_file": "danamon.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Maybank",
-      "file": "maybank.svg",
-      "upstream_file": "maybank.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Panin",
-      "file": "panin.svg",
-      "upstream_file": "paninbank.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Mega",
-      "file": "mega.svg",
-      "upstream_file": "mega.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "OCBC",
-      "file": "ocbc.svg",
-      "upstream_file": "ocbc-nisp.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "BTPN",
-      "file": "btpn.svg",
-      "upstream_file": "btpn.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "UOB",
-      "file": "uob.svg",
-      "upstream_file": "uob.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Jatim",
-      "file": "jatim.svg",
-      "upstream_file": "bank-bpd-jatim.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "DKI",
-      "file": "dki.svg",
-      "upstream_file": "bank-jakarta.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "BJB",
-      "file": "bjb.svg",
-      "upstream_file": "bank-bjb.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Sinarmas",
-      "file": "sinarmas.svg",
-      "upstream_file": "sinarmas.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Jago",
-      "file": "jago.svg",
-      "upstream_file": "jago.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Jenius",
-      "file": "jenius.svg",
-      "upstream_file": "jenius.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "SeaBank",
-      "file": "seabank.svg",
-      "upstream_file": "seabank.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "BNC",
-      "file": "bnc.svg",
-      "upstream_file": "bnc.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Superbank",
-      "file": "superbank.svg",
-      "upstream_file": "superbank.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Allo",
-      "file": "allo.svg",
-      "upstream_file": "allo.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Blu",
-      "file": "blu.svg",
-      "upstream_file": "blu-bca.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Krom",
-      "file": "krom.svg",
-      "upstream_file": "krom.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "LINE",
-      "file": "line.svg",
-      "upstream_file": "line-bank.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "GoPay",
-      "file": "gopay.svg",
-      "upstream_file": "gopay.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "OVO",
-      "file": "ovo.svg",
-      "upstream_file": "ovo.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "DANA",
-      "file": "dana.svg",
-      "upstream_file": "dana.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "ShopeePay",
-      "file": "shopeepay.svg",
-      "upstream_file": "shopee-pay.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "LinkAja",
-      "file": "linkaja.svg",
-      "upstream_file": "linkaja.svg",
-      "license": "CC BY-NC 4.0 (collection asset; underlying mark is trademarked)"
-    },
-    {
-      "code": "Lainnya",
-      "file": "lainnya.svg",
-      "upstream_file": null,
-      "license": "Original generic payment-card icon; no brand mark"
-    }
-  ]
+  {
+   "code": "BNI",
+   "file": "bni.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/f/f0/Bank_Negara_Indonesia_logo_%282004%29.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "BRI",
+   "file": "bri.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/1/1e/Bank-Rakyat-Indonesia-Logo.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "Mandiri",
+   "file": "mandiri.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/a/ad/Bank_Mandiri_logo_2016.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "BTN",
+   "file": "btn.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/6/6d/Bank_Tabungan_Negara_logo.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "CIMB",
+   "file": "cimb.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/d/dd/CIMB_Niaga_2008.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "Permata",
+   "file": "permata.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/f/ff/Permata_Bank_%282024%29.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "BSI",
+   "file": "bsi.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/a/a0/Bank_Syariah_Indonesia.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "Danamon",
+   "file": "danamon.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/a/a1/Danamon_%282024%29.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "Panin",
+   "file": "panin.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/c/c9/Logo_Panin_Bank.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "Mega",
+   "file": "mega.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/a/af/Bank_Mega_2013.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "UOB",
+   "file": "uob.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/4/4a/UOB.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "DKI",
+   "file": "dki.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/2/2a/Bank_DKI.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "Superbank",
+   "file": "superbank.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/c/c8/Superbank.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "LinkAja",
+   "file": "linkaja.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/8/85/LinkAja.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "SeaBank",
+   "file": "seabank.svg",
+   "source": {
+    "kind": "official-mark-via-wikimedia",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/a/ac/SeaBank.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "Maybank",
+   "file": "maybank.svg",
+   "source": {
+    "kind": "official-domain",
+    "url": "https://www.maybank.co.id/-/media/Project/Maybank/Logo/maybank.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "Jago",
+   "file": "jago.svg",
+   "source": {
+    "kind": "official-domain",
+    "url": "https://www.jago.com/images/brand/logo-jago-re.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "Jenius",
+   "file": "jenius.svg",
+   "source": {
+    "kind": "official-domain",
+    "url": "https://www.jenius.com/assets/img/brand/logo_jenius-blue.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "ShopeePay",
+   "file": "shopeepay.svg",
+   "source": {
+    "kind": "official-domain",
+    "url": "https://shopeepay.co.id/assets/spp-logo-C03WIzdh.svg",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "BJB",
+   "file": "bjb.png",
+   "source": {
+    "kind": "official-domain",
+    "url": "https://www.bankbjb.co.id/files//2021/11/logo-bjb-default-2.png",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "Sinarmas",
+   "file": "sinarmas.png",
+   "source": {
+    "kind": "official-domain",
+    "url": "https://www.banksinarmas.com/id/public/revamp/logoj.png",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "Allo",
+   "file": "allo.png",
+   "source": {
+    "kind": "official-domain",
+    "url": "https://www.allobank.com/assets/logo-allo.png",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "Blu",
+   "file": "blu.png",
+   "source": {
+    "kind": "official-domain",
+    "url": "https://blubybcadigital.id/_nuxt/img/logo-color.83f8c3a.png",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "Jatim",
+   "file": "jatim.png",
+   "source": {
+    "kind": "official-domain",
+    "url": "https://www.bankjatim.co.id/themes/bjtm07/assets/img/logo.png",
+    "fetched": "2026-08-28"
+   }
+  },
+  {
+   "code": "OCBC",
+   "file": "ocbc.svg",
+   "source": {
+    "kind": "collection",
+    "url": "https://github.com/hafidznoor/idn-finlogos",
+    "reason": "official-unavailable",
+    "fetched": "2026-08-27"
+   }
+  },
+  {
+   "code": "BTPN",
+   "file": "btpn.svg",
+   "source": {
+    "kind": "collection",
+    "url": "https://github.com/hafidznoor/idn-finlogos",
+    "reason": "official-unavailable",
+    "fetched": "2026-08-27"
+   }
+  },
+  {
+   "code": "LINE",
+   "file": "line.svg",
+   "source": {
+    "kind": "collection",
+    "url": "https://github.com/hafidznoor/idn-finlogos",
+    "reason": "official-unavailable",
+    "fetched": "2026-08-27"
+   }
+  },
+  {
+   "code": "GoPay",
+   "file": "gopay.svg",
+   "source": {
+    "kind": "collection",
+    "url": "https://github.com/hafidznoor/idn-finlogos",
+    "reason": "official-unavailable",
+    "fetched": "2026-08-27"
+   }
+  },
+  {
+   "code": "OVO",
+   "file": "ovo.svg",
+   "source": {
+    "kind": "collection",
+    "url": "https://github.com/hafidznoor/idn-finlogos",
+    "reason": "official-unavailable",
+    "fetched": "2026-08-27"
+   }
+  },
+  {
+   "code": "DANA",
+   "file": "dana.svg",
+   "source": {
+    "kind": "collection",
+    "url": "https://github.com/hafidznoor/idn-finlogos",
+    "reason": "official-unavailable",
+    "fetched": "2026-08-27"
+   }
+  },
+  {
+   "code": "BNC",
+   "file": "bnc.svg",
+   "source": {
+    "kind": "collection",
+    "url": "https://github.com/hafidznoor/idn-finlogos",
+    "reason": "official-unavailable",
+    "fetched": "2026-08-27"
+   }
+  },
+  {
+   "code": "Krom",
+   "file": "krom.svg",
+   "source": {
+    "kind": "collection",
+    "url": "https://github.com/hafidznoor/idn-finlogos",
+    "reason": "official-unavailable",
+    "fetched": "2026-08-27"
+   }
+  },
+  {
+   "code": "Lainnya",
+   "file": "lainnya.svg",
+   "source": {
+    "kind": "internal-generic"
+   }
+  }
+ ]
 }
