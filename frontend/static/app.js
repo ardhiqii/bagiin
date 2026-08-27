@@ -115,13 +115,13 @@ async function api(path, opts = {}) {
     res = await fetch(path, Object.assign({}, fetchOpts, { headers }));
   } catch (e) {
     // fetch rejections are English browser strings in an otherwise Indonesian app
-    const err = new Error("Koneksi bermasalah. Cek internet kamu terus coba lagi.");
+    const err = new Error("Koneksi bermasalah. Periksa koneksi internet kamu, lalu coba lagi.");
     err.offline = true;
     throw err;
   }
-  if (res.status === 429) throw new Error("Kebanyakan request, tunggu sebentar ya");
+  if (res.status === 429) throw new Error("Terlalu banyak permintaan, tunggu sebentar ya");
   if (!res.ok) {
-    let msg = "Ada yang error (" + res.status + ")";
+    let msg = "Terjadi kendala (" + res.status + ")";
     try {
       const d = await res.json();
       if (typeof d.detail === "string") msg = d.detail;
@@ -243,7 +243,7 @@ async function withBusy(btn, label, fn) {
   if (!btn || btn.disabled) return;
   const old = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = `<span class="spinner"></span> ${esc(label || "Bentar...")}`;
+  btn.innerHTML = `<span class="spinner"></span> ${esc(label || "Tunggu sebentar...")}`;
   try { return await fn(); }
   finally {
     if (btn.isConnected) { btn.disabled = false; btn.innerHTML = old; }
@@ -335,6 +335,19 @@ function monthLabel(iso) {
   } catch (e) { return ""; }
 }
 
+// Small shell-only additions stay here so the screen modules can remain
+// focused on their existing form/event wiring.
+function addOnboardingSteps() {
+  const form = $("#onboard-form");
+  const valueProp = form && form.previousElementSibling;
+  if (!valueProp || $(".onboarding-steps")) return;
+  valueProp.insertAdjacentHTML("afterend", `<ol class="onboarding-steps" aria-label="Cara kerja Bagiin">
+    <li><b>1.</b><span>Buat bill + foto struk.</span></li>
+    <li><b>2.</b><span>Pembayar membagi tiap item lewat tautan.</span></li>
+    <li><b>3.</b><span>Semua orang transfer ke satu rekening metode bayar.</span></li>
+  </ol>`);
+}
+
 // ---------- router ----------
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, "");
@@ -354,13 +367,10 @@ function render() {
   $$(".sheet-overlay").forEach(s => s.remove());
   sheetDepth = 0;
   document.body.style.overflow = "";
-  if (!state.identity) { renderOnboarding(); return; }
-  // Riwayat was folded into home (K1, v67) — someone may still have the old
-  // URL open in a tab or bookmarked, so send them to the one list rather than
-  // falling through to the unconditional renderHome() below with a stale
-  // "#/history" sitting in the address bar (bug: URL and screen disagreeing).
-  if (parts[0] === "history") { location.hash = "#/"; return; }
-  if (parts[0] === "settings") { renderSettings(); return; }
+  app.classList.remove("settings-page");
+  if (!state.identity) { renderOnboarding(); addOnboardingSteps(); return; }
+  // History uses the same list data, but keeps its URL and heading honest.
+  if (parts[0] === "settings") { app.classList.add("settings-page"); renderSettings(); return; }
   if (parts[0] === "create") {
     // #/create/verify is the OCR/manual editor (see renderVerify in
     // screens.js) — a real route so a page load / forward-nav / the guard
@@ -379,6 +389,10 @@ function render() {
     return;
   }
   renderHome();
+  if (parts[0] === "history") {
+    const heading = $(".shell-main h1, .shell-solo h1");
+    if (heading) heading.textContent = "Riwayat Bill";
+  }
 }
 
 // ---------- navigation leave-guard ----------

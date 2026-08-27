@@ -6,12 +6,12 @@
 <meta name="theme-color" content="#FAF8F5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#151311" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
-<title>Bagiin — Bagi Bill Bareng Tanpa Ribet</title>
-<meta name="description" content="Foto struk, share link, semua milih itemnya sendiri. Pajak kebagi otomatis. Tanpa akun, tanpa install.">
+<title>Bagiin — Bagi Bill Bareng Tanpa Rumit</title>
+<meta name="description" content="Foto struk, bagikan tautan, semua memilih itemnya sendiri. Pajak terbagi otomatis. Tanpa akun, tanpa install.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Bagiin">
-<meta property="og:title" content="Bagiin — Bagi Bill Bareng Tanpa Ribet">
-<meta property="og:description" content="Foto struk, share link, semua milih itemnya sendiri. Pajak kebagi otomatis. Tanpa akun.">
+<meta property="og:title" content="Bagiin — Bagi Bill Bareng Tanpa Rumit">
+<meta property="og:description" content="Foto struk, bagikan tautan, semua memilih itemnya sendiri. Pajak terbagi otomatis. Tanpa akun.">
 <meta property="og:image" content="https://bagiin.ardhiqi.com/static/og-cover.png?v=@HASH:og-cover.png@">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -143,7 +143,7 @@ h2 { font-size:18px; font-weight:700; letter-spacing:-.02em; }
 .card-title .muted { font-weight:400; }
 /* text-only action inside a card header ("Lihat Semua") — a full button would
    compete with the card's own content */
-.link-btn { background:none; border:none; padding:6px 2px; min-height:0;
+.link-btn { background:none; border:none; padding:8px 2px; min-height:44px;
             font:inherit; font-weight:600; color:var(--accent); cursor:pointer;
             border-radius:var(--r-sm); }
 .link-btn:active { opacity:.65; }
@@ -173,10 +173,8 @@ button:not(:disabled):active { transform:scale(.98); }
 .btn-danger  { background:var(--red); color:#fff; }
 .btn-outline { background:var(--surface); color:var(--text); border:1px solid var(--border-strong); }
 .btn-ghost   { background:transparent; color:var(--text-2); }
-/* 40px: .btn-sm carries real actions — "Gabung" on an invite card, "Undang",
-   "Tandai Lunas" on a person row — right next to 40px controls it used to sit
-   2px shorter than */
-.btn-sm { min-height:40px; padding:9px 12px; font-size:13.5px; font-weight:600; width:auto; border-radius:var(--r-xs); }
+/* Compact controls keep their visual density while retaining a full 44px hit area. */
+.btn-sm { min-height:44px; padding:10px 12px; font-size:13.5px; font-weight:600; width:auto; border-radius:var(--r-xs); }
 .btn-auto { width:auto; }
 .btn-danger-ghost { background:var(--surface); color:var(--red); border:1px solid var(--accent-line); border-color:color-mix(in srgb, var(--red) 35%, transparent); }
 @media (hover:hover) {
@@ -188,7 +186,7 @@ button:not(:disabled):active { transform:scale(.98); }
   .btn-danger-ghost:hover:not(:disabled) { background:var(--red-soft); }
 }
 .icon-btn {
-  width:42px; height:42px; min-height:42px; padding:0; flex-shrink:0;
+  width:44px; height:44px; min-height:44px; padding:0; flex-shrink:0;
   display:inline-flex; align-items:center; justify-content:center;
   background:var(--surface); border:1px solid var(--border); border-radius:var(--r-sm);
   color:var(--text-2);
@@ -218,13 +216,13 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
                background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent-line);
                font-size:13px; font-weight:600; }
 /* 20px was a thumb-sized miss: the chip stays small, the hit area doesn't */
-.people-chip-x { width:30px; height:30px; min-height:30px; padding:0; border-radius:50%; border:none;
+.people-chip-x { width:44px; height:44px; min-height:44px; padding:0; border-radius:50%; border:none;
                  background:transparent; color:inherit; display:inline-flex; align-items:center; justify-content:center;
                  cursor:pointer; }
 .people-chip-x svg { width:14px; height:14px; }
 .people-chip-x:hover { background:rgba(0,0,0,.15); }
 .chip-btn { display:inline-flex; align-items:center; gap:5px; border-radius:var(--r-full);
-            padding:6px 11px; font-size:12px; font-weight:600; cursor:pointer;
+            min-height:44px; padding:8px 11px; font-size:12px; font-weight:600; cursor:pointer;
             border:1px solid var(--border); background:var(--surface-2); color:var(--text-2); }
 .chip-btn svg { width:13px; height:13px; }
 .chip-active { outline:2px solid var(--accent); outline-offset:-1px; font-weight:700; }
@@ -258,7 +256,7 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .item-stepper { display:none; align-items:center; gap:2px; flex-shrink:0; margin-right:2px; }
 .item-row.selected .item-stepper { display:flex; }
 .step-btn {
-  width:40px; height:40px; min-height:40px; border-radius:var(--r-full);
+  width:44px; height:44px; min-height:44px; border-radius:var(--r-full);
   border:1px solid var(--border-strong); background:var(--surface);
   display:flex; align-items:center; justify-content:center;
   font-size:17px; line-height:1; color:var(--text); padding:0;
@@ -328,19 +326,17 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .person-sub { font-size:12.5px; color:var(--text-3); margin-top:2px; }
 .person-right { text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:5px; flex-shrink:0; }
 .person-total { font-size:15px; font-weight:700; }
-.person-remove { width:40px; height:40px; border-radius:var(--r-xs); background:transparent; color:var(--text-3);
+.person-remove { width:44px; height:44px; min-height:44px; border-radius:var(--r-xs); background:transparent; color:var(--text-3);
                  display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 .person-remove svg { width:16px; height:16px; }
-/* On a phone the avatar + name + "Rp 74.000 item · Rp 14.975 pajak" + total +
-   status chip + remove button all fought over 326px, so every person took
-   three ragged lines. Give the name the full width and put the money on its
-   own line underneath. */
+/* On phones keep identity and amount/status on one baseline row. The reserved
+   right column prevents the remove control from colliding with the amount. */
 @media (max-width:430px) {
-  .person-row { flex-wrap:wrap; }
-  .person-right { flex-basis:100%; flex-direction:row; align-items:center;
-                  justify-content:space-between; margin-top:6px; padding-left:44px; }
-  .person-remove { position:absolute; right:0; top:12px; }
-  .person-row { position:relative; }
+  .person-row { flex-wrap:nowrap; gap:8px; padding:10px 0; position:relative; }
+  .person-info { min-width:0; }
+  .person-right { flex:0 0 auto; min-width:96px; max-width:42%; flex-direction:row;
+                  align-items:center; justify-content:flex-end; gap:6px; }
+  .person-total { white-space:nowrap; }
 }
 @media (hover:hover) { .person-remove:hover { background:var(--red-soft); color:var(--red); } }
 
@@ -367,7 +363,7 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .invite-row:first-of-type { border-top:none; }
 .invite-row-info { flex:1; min-width:0; }
 .invite-row .btn-primary.btn-sm { flex-shrink:0; }
-.invite-row .btn-ghost.btn-sm { flex-shrink:0; width:40px; min-height:40px; }
+.invite-row .btn-ghost.btn-sm { flex-shrink:0; width:44px; min-height:44px; }
 
 /* ---------- forms ---------- */
 label { font-size:13px; color:var(--text-2); display:block; margin-bottom:5px; font-weight:500; }
@@ -392,7 +388,7 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .field-row > * { flex:1; min-width:0; }
 .input-money { text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
 .toggle-row { display:flex; align-items:center; justify-content:space-between; gap:14px;
-              cursor:pointer; padding:10px; margin:0 -10px; border-radius:var(--r-sm); }
+              cursor:pointer; padding:10px; margin:0 -10px; min-height:44px; border-radius:var(--r-sm); }
 @media (hover:hover) { .toggle-row:hover { background:var(--surface-2); } }
 .toggle-row .label-strong { font-weight:600; font-size:14.5px; color:var(--text); display:block; }
 .error-text { color:var(--red); font-size:13px; margin-top:6px; }
@@ -451,7 +447,7 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
    one 28px hole in a settings row people are meant to tap. The track moved
    off the button's own background onto ::before so growing the button's box
    doesn't grow the pill itself. */
-.switch { position:relative; width:48px; height:40px; background:none;
+.switch { position:relative; width:48px; height:44px; min-height:44px; background:none;
           border:none; cursor:pointer; flex-shrink:0; padding:0; }
 .switch::before { content:""; position:absolute; top:50%; left:0; width:48px; height:28px;
                    transform:translateY(-50%); border-radius:var(--r-full);
@@ -462,7 +458,7 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .switch[aria-checked="true"]::before { background:var(--accent); }
 .switch[aria-checked="true"]::after { transform:translateX(20px); }
 .src-btn { width:100%; display:flex; flex-direction:column; align-items:flex-start;
-           gap:3px; padding:12px 14px; }
+           gap:3px; padding:12px 14px; min-height:44px; }
 .src-btn .src-main { display:flex; align-items:center; gap:10px; font-weight:700; font-size:15px; }
 .src-btn .muted { font-size:12.5px; line-height:1.4; padding-left:34px; }
 /* v63: muted desc inside buttons — --text-3 is invisible on the accent fill
@@ -479,7 +475,7 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .brand-chip { display:inline-flex; align-items:center; justify-content:center; border-radius:10px;
               font-weight:700; font-size:11px; min-width:40px; height:38px; padding:0 8px;
               letter-spacing:.01em; flex-shrink:0; }
-.account-row { display:flex; align-items:center; gap:11px; padding:11px 0; border-bottom:1px solid var(--border); }
+.account-row { display:flex; align-items:center; gap:11px; min-height:44px; padding:8px 0; border-bottom:1px solid var(--border); }
 .account-row:last-child { border-bottom:none; }
 .code-display { font-size:21px; font-weight:800; letter-spacing:.1em; text-align:center; padding:16px 10px;
                 background:var(--surface-2); border-radius:var(--r-sm); font-variant-numeric:tabular-nums;
@@ -588,7 +584,7 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
             font-size:14px; cursor:pointer; }
 .pay-item:last-of-type { border-bottom:none; }
 @media (hover:hover) { .pay-item:hover .pay-item-x { background:var(--red); color:#fff; } }
-.pay-item-x { width:28px; height:28px; border-radius:var(--r-xs); background:var(--surface-3); color:var(--text-3);
+.pay-item-x { width:44px; height:44px; min-height:44px; border-radius:var(--r-xs); background:var(--surface-3); color:var(--text-3);
               display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background .14s,color .14s; }
 .pay-item-x svg { width:14px; height:14px; }
 .break-row { display:flex; justify-content:space-between; align-items:baseline; gap:8px; padding:5px 0; font-size:13.5px; }
@@ -692,6 +688,21 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
   .shell { grid-template-columns:minmax(0,1fr) var(--rail); }
   .shell-main, .shell-side { min-width:0; }
 }
+.onboarding-steps { list-style:none; display:grid; gap:5px; margin:-10px 0 18px; padding:0; color:var(--text-2); font-size:13px; }
+.onboarding-steps li { display:flex; align-items:flex-start; gap:8px; }
+.onboarding-steps b { color:var(--accent); min-width:16px; }
+
+/* Compact, clearly separated account sections keep the action reachable on phones. */
+#app.settings-page > .shell-solo > .card { margin-bottom:6px; padding:10px 12px; }
+#app.settings-page > .shell-solo > .card .card-title { margin-bottom:5px; }
+#app.settings-page > .shell-solo > .card p.muted { line-height:1.3; margin-bottom:6px !important; }
+#app.settings-page > .shell-solo > .card .field { margin-bottom:7px; }
+#app.settings-page > .shell-solo > .card .btn-row { margin-top:6px !important; gap:6px; }
+#app.settings-page .empty-state { padding:12px 8px; }
+#app.settings-page .empty-state svg { width:36px; height:36px; margin-bottom:6px; }
+#app.settings-page > .shell-solo > .topbar { margin-bottom:8px; }
+#app.settings-page > .shell-solo > .btn-danger-ghost { margin-top:2px; }
+
 </style>
 </head>
 <body>
