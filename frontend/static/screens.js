@@ -234,16 +234,20 @@ async function loadHomeInvites() {
   }));
 }
 
-/** One status per bill row, so the chip, the colour and the icon can't drift
- *  apart. `tone` drives the row's colour anchor. */
+/** The row tone follows the same precedence and summary fields as the chip.
+ *  In particular, a pending picker keeps a settled-looking bill neutral, and
+ *  money still outstanding wins over the green settled state. */
 function billListStatus(b) {
-  if (b.status === "closed") return { tone: "done", label: "Selesai", icon: "check" };
-  if (b.settled) return { tone: "ok", label: "Lunas", icon: "check" };
-  // a bill nobody has picked from isn't "belum lunas" — nobody owes anything
-  // yet. Saying so put a red chip next to a green "Kamu sudah bayar" on a bill
-  // where literally nothing had happened (bug: chips contradicted each other).
-  if (!b.has_picks) return { tone: "idle", label: "Belum ada yang milih", icon: "receipt" };
-  return { tone: "due", label: "Belum lunas", icon: "receipt" };
+  const paid = !!(b.settled || b.all_paid);
+  const pendingPickers = Array.isArray(b.pending_names) ? b.pending_names.length : 0;
+  if (paid && pendingPickers) {
+    return { tone: "idle", label: "Menunggu memilih item", icon: "people" };
+  }
+  if (Number(b.total_unpaid) > 0 || Number(b.uncovered_idr) > 0) {
+    return { tone: "due", label: "Belum lunas", icon: "receipt" };
+  }
+  if (paid) return { tone: "ok", label: "Lunas", icon: "check" };
+  return { tone: "idle", label: "Belum ada yang memilih", icon: "receipt" };
 }
 
 function billListStatusChip(b) {
@@ -400,15 +404,8 @@ function passHistoryFilter(b) {
   if (histState.month !== "all" && (!ym || ym.m !== histState.month)) return false;
   if (histState.filter === "all") return true;
   const tone = billListStatus(b).tone;
-  // a closed bill wears "Selesai" (tone done), but if everyone settled it's
-  // still lunas — filter "Lunas" must find it (bug: closed & settled bills
-  // vanished from the Lunas filter; "Kitchen & Dimsum" case, 2026-08)
-  if (histState.filter === "ok") return tone === "ok" || (tone === "done" && b.settled);
-  if (histState.filter === "due")
-    // a closed bill with unpaid shares wears "Selesai" (tone done) but is
-    // still outstanding — "Belum lunas" must find it (bug: closed debts
-    // vanished from the red filter)
-    return tone === "due" || (tone === "done" && !b.settled);
+  if (histState.filter === "ok") return tone === "ok";
+  if (histState.filter === "due") return tone === "due";
   return tone === histState.filter;
 }
 
@@ -434,7 +431,7 @@ function sortBills(bills, sortMode) {
   if (sortMode === "amount_desc") return bills.slice().sort((a, b) => (b.total_idr - a.total_idr) || dateDesc(a, b));
   if (sortMode === "amount_asc") return bills.slice().sort((a, b) => (a.total_idr - b.total_idr) || dateDesc(a, b));
   if (sortMode === "due_first") {
-    // due first, then idle, then everything else (ok/done) — each group
+    // due first, then idle, then everything else (ok) — each group
     // newest-first, same as the default sort
     const rank = (b) => { const t = billListStatus(b).tone; return t === "due" ? 0 : t === "idle" ? 1 : 2; };
     return bills.slice().sort((a, b) => (rank(a) - rank(b)) || dateDesc(a, b));
