@@ -1230,12 +1230,13 @@ function renderCreatorView(data) {
   // counts as "masuk", so a fully-settled bill showed a half-empty bar).
   const moneyOutstanding = totalUnpaid > 0 || data.uncovered_idr > 0;
   const payerRow = data.people.find(p => p.identity_id === payerId);
-  const notPicked = data.people.filter(p => !p.subtotal_idr && !hasPickedAny(data, p.identity_id) && p.identity_id !== me.id);
-
-  // A bill is automatically selesai when everyone has marked their payment
-  // and no item portions remain unclaimed. The dock follows that same derived
-  // state so its copy and the status chip never disagree.
-  const allSettled = data.settled || (data.all_paid && data.uncovered_idr === 0);
+  const pendingPickerNames = data.people
+    .filter(p => p.identity_id !== payerId && !p.subtotal_idr && !hasPickedAny(data, p.identity_id))
+    .map(p => p.name);
+  // The dock follows this same derived state so its copy and the status chip
+  // never disagree.
+  const allSettled = (data.settled || (data.all_paid && data.uncovered_idr === 0))
+    && pendingPickerNames.length === 0;
   // Nobody but the creator is on the bill yet. This is the moment right after
   // "Buat Tagihan", and the whole product depends on the link being sent — so the
   // screen leads with sharing instead of with warnings about a bill that has
@@ -1275,8 +1276,8 @@ function renderCreatorView(data) {
       .replace(/->/g, "→");
     if (dedup) warnRows.push({ icon: "receipt", text: esc(dedup) });
   }
-  if (notPicked.length) {
-    warnRows.push({ icon: "pencil", text: `Belum pilih item: ${notPicked.map(m => esc(m.name)).join(", ")}` });
+  if (pendingPickerNames.length) {
+    warnRows.push({ icon: "pencil", text: `Belum pilih item: ${pendingPickerNames.map(m => esc(m)).join(", ")}` });
   }
   const warnHtml = warnRows.length ? `
     <div class="warn-card">
@@ -1326,7 +1327,7 @@ function renderCreatorView(data) {
       </div>
       ${data.bill.title || data.bill.merchant ? `<div style="margin-top:4px;">${esc((data.bill.title || "").trim() || data.bill.merchant)}</div>` : ""}
       ${data.bill.transacted_at ? `<div class="muted">${esc(shortDate(data.bill.transacted_at))}</div>` : ""}
-      ${!closed && data.all_paid && data.uncovered_idr === 0 ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua sudah menandai lunas, bill otomatis selesai.</p>` : ""}
+      ${!closed && allSettled ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua sudah menandai lunas, bill otomatis selesai.</p>` : ""}
       ${moneyOutstanding ? `<div class="collect" style="margin-top:12px;">
         <div class="collect-track"><div class="collect-fill" style="width:${data.bill.total_idr > 0 ? Math.min(100, Math.round(totalPaid * 100 / data.bill.total_idr)) : 0}%;"></div></div>
         <div class="collect-line" style="margin-top:6px;">

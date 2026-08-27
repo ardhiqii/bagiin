@@ -251,6 +251,10 @@ function billListStatus(b) {
 }
 
 function billListStatusChip(b) {
+  const myTotal = Number(b.my_total_idr || 0);
+  if (!b.i_am_payer && !b.my_paid && b.has_picks && !b.settled) {
+    return `<span class="chip chip-red">Kamu belum bayar${myTotal > 0 ? ` Rp ${fmt(myTotal)}` : ""}</span>`;
+  }
   // List rows expose only summary fields; pending_names supplies the picker
   // identity shim so the shared helper can keep its single status decision.
   const pendingNames = Array.isArray(b.pending_names) ? b.pending_names : [];
@@ -273,6 +277,9 @@ function billListStatusChip(b) {
 // closed debts invisible (bug: chip said "Selesai" while the user still owed).
 function personalStatusHtml(b) {
   if (b.settled || !b.has_picks) return "";
+  // The red chip already says exactly what this viewer owes. Rendering the
+  // old neutral line as well duplicates the same debt message in one row.
+  if (!b.i_am_payer && !b.my_paid && b.has_picks && !b.settled) return "";
   // the payer never "paid" — they fronted the money. Calling that "sudah bayar"
   // is what made a fresh bill claim a payment that never happened.
   // personal lines are always neutral: the chip already owns the status colour,
@@ -305,20 +312,30 @@ function billRowHtml(b) {
         </div>
         ${personalStatusHtml(b)}
       </div>
-      <!-- keep the column width so the amounts line up down the list, but a
-           bill you can't delete gets empty space, not a greyed-out trash can:
-           a dead destructive control on most rows is noise, not information -->
-      ${b.can_manage
-        ? `<button class="icon-btn ghost delete-bill" data-id="${esc(b.id)}"
-              data-title="${esc(b.title)}" aria-label="Hapus bill ${esc(b.title)}">${ic("trash")}</button>`
-        : `<span class="row-gap" aria-hidden="true"></span>`}
+      <!-- Every row gets the same trash affordance. Ownership is checked on
+           click so guests get a clear explanation without an API request. -->
+      <button class="icon-btn ghost delete-bill" data-id="${esc(b.id)}"
+            data-title="${esc(b.title)}" data-manageable="${b.can_manage ? 1 : 0}"
+            aria-label="Hapus bill ${esc(b.title)}">${ic("trash")}</button>
     </div>`;
 }
 
 function bindBillRows(box, onDone) {
   $$(".history-row", box).forEach(r => {
     const open = () => location.hash = "#/b/" + r.dataset.id;
-    r.addEventListener("click", (e) => { if (e.target.closest(".delete-bill")) return; open(); });
+    r.addEventListener("click", (e) => {
+      const deleteButton = e.target.closest(".delete-bill");
+      if (deleteButton) {
+        e.stopPropagation();
+        if (deleteButton.dataset.manageable !== "1") {
+          toast("Hanya pemilik bill yang bisa menghapus");
+          return;
+        }
+        openDeleteBillConfirm(deleteButton.dataset.id, deleteButton.dataset.title, onDone);
+        return;
+      }
+      open();
+    });
     // the row is a div (it contains its own delete <button>, so it can't BE a
     // button) — give it real keyboard semantics instead
     r.addEventListener("keydown", (e) => {
@@ -326,14 +343,6 @@ function bindBillRows(box, onDone) {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
     });
   });
-  $$(".delete-bill", box).forEach(btn => btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    // openDeleteBillConfirm (bill.js) ends with location.hash = "#/" — which
-    // fires no hashchange when we're already on "#/", so the deleted row stayed
-    // on screen until a manual reload (bug: ghost row after delete from home).
-    // The third arg re-renders the list ourselves.
-    openDeleteBillConfirm(btn.dataset.id, btn.dataset.title, onDone);
-  }));
 }
 
 // ---------- Bill list (home) — filter, sort, paging (K1-K6, v67) ----------
