@@ -430,7 +430,7 @@ function renderGuestView(data, me) {
           // one line, and the fact a guest actually needs: who fronted the
           // money. "Dikelola oleh" was manager jargon on a screen with no
           // manager actions on it
-          ? ` · membayar dahulu: ${esc(payerName)}` : ""}</p>
+          ? ` · nalangin: ${esc(payerName)}` : ""}</p>
       ${data.bill.tax_included ? `<p class="muted" style="margin-top:6px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — tidak ada PPN tambahan</p>` : ""}
       ${photoBtnHtml(data)}
       ${uncoveredNoteHtml(data)}
@@ -453,7 +453,7 @@ function renderGuestView(data, me) {
           <div class="money" style="font-size:23px;font-weight:800;">${fmt(bd.total)}</div>
         </div>
         ${iAmPayer
-          ? `<span class="chip chip-grey">Kamu yang membayar dahulu</span>`
+          ? `<span class="chip chip-grey">Kamu yang nalangin</span>`
           : `<span class="chip ${myPaid ? "chip-green" : "chip-red"}">${myPaid ? `${ic("check")} Sudah bayar` : "Belum bayar"}</span>`}
       </div>
       ${hasTax ? `
@@ -464,8 +464,8 @@ function renderGuestView(data, me) {
       ${!iAmPayer && !myPaid ? `
       <p class="muted" style="margin-top:10px;">Status bayar tidak bisa diubah lagi di bill yang sudah ditutup.
       Kalau kamu sudah transfer, beri tahu ${esc(payerName)} langsung ya — dia yang bisa menandai.</p>` : ""}
-      ${iAmPayer ? `<p class="muted" style="margin-top:10px;">Kamu yang membayar dahulu untuk bill ini, jadi yang lain transfer ke kamu.</p>` : ""}
-      ${closed && !iAmPayer ? `<p class="muted" style="margin-top:10px;">${esc(payerName)} membayar dahulu; transfer pembayaran ke ${esc(payerName)} sesuai kanal yang ditentukan.</p>` : ""}
+      ${iAmPayer ? `<p class="muted" style="margin-top:10px;">Kamu yang nalangin untuk bill ini, jadi yang lain transfer ke kamu.</p>` : ""}
+      ${closed && !iAmPayer ? `<p class="muted" style="margin-top:10px;">${esc(payerName)} nalangin; transfer pembayaran ke ${esc(payerName)} sesuai kanal yang ditentukan.</p>` : ""}
     </div>` : ""}
     <div class="card">
       <div class="card-title">${closed ? "Item yang kamu tanggung" : "Centang yang kamu tanggung"}</div>
@@ -489,7 +489,7 @@ function renderGuestView(data, me) {
         <span>Pajak &amp; service <b class="money-sm" id="my-tax" style="color:var(--accent);">${fmt(bd.tax)}</b></span>
       </div>
       ${iAmPayer
-        ? `<div class="chip chip-grey" style="justify-content:center;padding:10px;">${ic("wallet")} Kamu yang membayar dahulu</div>`
+        ? `<div class="chip chip-grey" style="justify-content:center;padding:10px;">${ic("wallet")} Kamu yang nalangin</div>`
         : `<button class="${myPaid ? "btn-green" : "btn-primary"}" id="pay-btn">${myPaid ? `${ic("check")} Sudah bayar` : "Tandai sudah bayar"}</button>`}
     </div></div>`;
 
@@ -515,7 +515,7 @@ function renderGuestView(data, me) {
       title: "Keluar dari bill ini?",
       body: "Pilihan item kamu dihapus dan bill ini tidak lagi muncul di daftar kamu. Kamu masih bisa bergabung lagi lewat link selama bill masih aktif."
         // confirmSheet renders `body` as markup, so the typed name needs esc()
-        + (iMadeIt ? ` Billnya tetap berjalan, sekarang dipegang ${esc(data.paid_by_name || "yang membayar dahulu")}.` : ""),
+        + (iMadeIt ? ` Billnya tetap berjalan, sekarang dipegang ${esc(data.paid_by_name || "yang nalangin")}.` : ""),
       confirmText: "Keluar",
       danger: true,
     });
@@ -1011,7 +1011,7 @@ function openPaySheet(data, me, alreadyPaid) {
     <div class="sheet-handle"></div>
     <div class="sheet-title">${iAmPayer ? "Bagian kamu" : `Bayar ke ${esc(pay.name)}`}</div>
     <p class="sheet-sub">${iAmPayer
-      ? "Kamu yang membayar dahulu untuk bill ini — ini bagian kamu sendiri."
+      ? "Kamu yang nalangin untuk bill ini — ini bagian kamu sendiri."
       : "Cek item kamu, transfer, lalu tandai sudah bayar. Ketuk item untuk membatalkan."}</p>
     <div id="pay-items"></div>
     <div id="pay-total"></div>
@@ -1171,7 +1171,7 @@ function payerPayment(data) {
 function accountRowsHtml(name, accounts) {
   return accounts.length ? accounts.map(a => `
       <div class="account-row">
-        ${brandChipHtml(a.brand)}
+        ${brandLogoHtml(a.brand)}
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;font-size:14px;">${esc(brandLabel(a.brand))}</div>
           <div class="muted" style="font-size:13px;">${esc(a.account_no)}${a.holder_name ? " · " + esc(a.holder_name) : ""}</div>
@@ -1224,11 +1224,15 @@ function renderCreatorView(data) {
   const totalPaid = data.people
     .filter(p => p.paid === "paid" && p.identity_id !== payerId)
     .reduce((s, p) => s + p.total_idr, 0);
-  const totalUnpaid = data.people.filter(p => p.paid !== "paid").reduce((s, p) => s + p.total_idr, 0);
+  const nonPayer = data.people.filter(p => p.identity_id !== payerId);
+  const owedByOthers = nonPayer.reduce((s, p) => s + (p.total_idr || 0), 0);
+  const totalUnpaid = nonPayer.filter(p => p.paid !== "paid").reduce((s, p) => s + (p.total_idr || 0), 0);
+  const paidByOthers = Math.max(0, owedByOthers - totalUnpaid);
+  const unpaidNames = nonPayer.filter(p => p.paid !== "paid").map(p => p.name);
   // The collect bar only makes sense while money is genuinely outstanding.
   // For settled/waiting states it lied (payer's own fronted share never
   // counts as "masuk", so a fully-settled bill showed a half-empty bar).
-  const moneyOutstanding = totalUnpaid > 0 || data.uncovered_idr > 0;
+  const moneyOutstanding = owedByOthers > 0;
   const payerRow = data.people.find(p => p.identity_id === payerId);
   const pendingPickerNames = data.people
     .filter(p => p.identity_id !== payerId && !p.subtotal_idr && !hasPickedAny(data, p.identity_id))
@@ -1293,7 +1297,7 @@ function renderCreatorView(data) {
     && !lsGet(`bagiin_payer_dismiss_${data.bill.id}`, false);
   const payerConfirmHtml = payerPendingConfirm ? `
     <div class="warn-card" style="margin-top:10px;">
-      <div class="warn-row">${ic("alert")}<span><strong style="color:var(--text);">${esc(payerName)}</strong> sudah bergabung dan ditandai sebagai yang membayar dahulu. Konfirmasi agar dia bisa mengedit bill ini.</span></div>
+      <div class="warn-row">${ic("alert")}<span><strong style="color:var(--text);">${esc(payerName)}</strong> sudah bergabung dan ditandai sebagai yang nalangin. Konfirmasi agar dia bisa mengedit bill ini.</span></div>
       <div class="btn-row" style="margin-top:8px;">
         <button class="btn-primary btn-sm" id="confirm-payer-btn">${ic("check")} Konfirmasi</button>
         <button class="btn-outline btn-sm" id="dismiss-payer-btn">Nanti aja</button>
@@ -1329,19 +1333,19 @@ function renderCreatorView(data) {
       ${data.bill.transacted_at ? `<div class="muted">${esc(shortDate(data.bill.transacted_at))}</div>` : ""}
       ${!closed && allSettled ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua sudah menandai lunas, bill otomatis selesai.</p>` : ""}
       ${moneyOutstanding ? `<div class="collect" style="margin-top:12px;">
-        <div class="collect-track"><div class="collect-fill" style="width:${data.bill.total_idr > 0 ? Math.min(100, Math.round(totalPaid * 100 / data.bill.total_idr)) : 0}%;"></div></div>
+        <div class="collect-track"><div class="collect-fill" style="width:${owedByOthers > 0 ? Math.min(100, Math.round(paidByOthers * 100 / owedByOthers)) : 0}%;"></div></div>
         <div class="collect-line" style="margin-top:6px;">
-          <span class="muted">Sudah masuk <b class="money-sm${totalPaid > 0 ? " collect-in" : ""}">${fmt(totalPaid)}</b></span>
-          <span class="muted">dari <b class="money-sm">${fmt(data.bill.total_idr)}</b></span>
+          <span class="muted">Sudah masuk <b class="money-sm${paidByOthers > 0 ? " collect-in" : ""}">${fmt(paidByOthers)}</b> dari <b class="money-sm">${fmt(owedByOthers)}</b></span>
+          ${totalUnpaid > 0 ? `<span class="muted">Nunggu ${fmt(totalUnpaid)} dari ${unpaidNames.length === 1 ? esc(unpaidNames[0]) : `${unpaidNames.length} orang`}</span>` : `<span class="muted collect-success">Semua transferan udah masuk ✓</span>`}
         </div>
       </div>` : ""}
       ${data.bill.tax_included ? `<div class="muted" style="margin-top:4px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — tidak ada PPN tambahan</div>` : ""}
       ${closedNotSettled ? `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} Bill sudah ditutup, tetapi ${totalUnpaid > 0 ? `masih ada ${fmt(totalUnpaid)} yang belum dibayar` : `masih ada ${fmt(data.uncovered_idr)} bagian yang tidak terambil`}. Buka lagi kalau ingin memperbaikinya.</p>` : ""}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;">
-        <span class="muted">Yang membayar dahulu: <strong style="color:var(--text);">${esc(payerName)}</strong>${payerRow && payerRow.total_idr > 0 ? ` · bagian dia ${fmt(payerRow.total_idr)}` : ""}</span>
+        <span class="muted">Yang nalangin: <strong style="color:var(--text);">${esc(payerName)}</strong>${payerRow && payerRow.total_idr > 0 ? ` · bagian dia ${fmt(payerRow.total_idr)}` : ""}</span>
         ${!closed ? `<button class="btn-outline btn-sm" id="set-payer-btn" style="flex-shrink:0;">${ic("pencil")} Ubah</button>` : ""}
       </div>
-      ${closed ? `<p class="muted" style="margin:8px 0 0;">${esc(payerName)} membayar dahulu; transfer pembayaran ke ${esc(payerName)} sesuai kanal yang ditentukan.</p>` : ""}
+      ${closed ? `<p class="muted" style="margin:8px 0 0;">${esc(payerName)} nalangin; transfer pembayaran ke ${esc(payerName)} sesuai kanal yang ditentukan.</p>` : ""}
       <!-- the card used to stack three identical full-width buttons: settle
            the whole bill, attach a photo, show payment methods — same weight,
            no hierarchy, with the most consequential one on top. Utilities go
@@ -1370,13 +1374,16 @@ function renderCreatorView(data) {
             : "belum pilih item";
           // the payer never "bayar" themselves — they fronted the money
           const statusHtml = isPayer
-            ? `<span class="chip chip-grey">${ic("wallet")} Membayar dahulu</span>`
+            ? `<span class="chip chip-grey">${ic("wallet")} Nalangin</span>`
             : (!closed
               ? `<button class="${paid ? "btn-sm" : "btn-outline btn-sm"} toggle-paid" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}" data-paid="${paid ? "1" : "0"}"
                    style="${paid ? "background:var(--green-soft);color:var(--green);border:1px solid color-mix(in srgb, var(--green) 28%, transparent);" : ""}">${paid ? `${ic("check")} Lunas` : "Tandai lunas"}</button>`
               : `<span class="chip ${paid ? "chip-green" : "chip-red"}">${paid ? `${ic("check")} Lunas` : "Belum lunas"}</span>`);
+          const canDelete = !!data.can_manage && !closed && !isMe;
           return `
-          <div class="person-row">
+          <div class="person-row swipe-row">
+            <div class="swipe-under" aria-hidden="true"><span class="swipe-del">${ic("trash")} Hapus</span></div>
+            <div class="swipe-front">
             <div class="avatar${isMe ? " avatar-me" : ""}">${esc(initials(p.name))}</div>
             <div class="person-info">
               <div class="person-name">${esc(p.name)}${isMe ? ' <span class="muted">(kamu)</span>' : ""}</div>
@@ -1386,9 +1393,13 @@ function renderCreatorView(data) {
               <div class="money person-total">${fmt(p.total_idr)}</div>
               ${statusHtml}
             </div>
-            ${!closed && !isMe ? `
-              <span aria-hidden="true" style="width:1px;align-self:stretch;background:var(--border);margin-left:8px;flex-shrink:0;"></span>
-              <button class="person-remove remove-person" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}" aria-label="Hapus ${esc(p.name)} dari bill">${ic("trash")}</button>` : ""}
+            <span class="person-actions">
+              ${canDelete ? `<button class="icon-btn ghost kebab-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Aksi ${esc(p.name)}">${ic("kebab")}</button>
+              <span class="row-menu" role="menu">
+                <button class="row-menu-item danger remove-person" role="menuitem" data-id="${esc(p.identity_id)}" data-name="${esc(p.name)}">Hapus dari bill</button>
+              </span>` : ""}
+            </span>
+            </div>
           </div>`;
         }).join("")}
       </div>
@@ -1512,7 +1523,7 @@ function renderCreatorView(data) {
       try {
         await apiJson(`/api/bills/${data.bill.id}/paid_by`, "PUT", { identity_id: data.paid_by_id });
         lsSet(`bagiin_payer_dismiss_${data.bill.id}`, true);
-        toast(`${data.paid_by_name} dikonfirmasi sebagai yang membayar dahulu ✓`);
+        toast(`${data.paid_by_name} dikonfirmasi sebagai yang nalangin ✓`);
         loadBillView(data.bill.id);
       } catch (e) { toast(e.message); }
     }));
@@ -1533,8 +1544,21 @@ function renderCreatorView(data) {
     const it = data.items.find(x => x.id === parseInt(b.dataset.item, 10));
     if (it) openSlotManagerSheet(data, it);
   }));
-  $$(".remove-person").forEach(b => b.addEventListener("click", () =>
-    openRemovePersonConfirm(data, b.dataset.id, b.dataset.name)));
+  $$(".person-actions .kebab-btn").forEach(b => b.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const menu = b.parentElement.querySelector(".row-menu");
+    const open = menu.classList.contains("is-open");
+    $$(".row-menu.is-open").forEach(m => m.classList.remove("is-open"));
+    $$(".kebab-btn[aria-expanded=true]").forEach(x => x.setAttribute("aria-expanded", "false"));
+    menu.classList.toggle("is-open", !open);
+    b.setAttribute("aria-expanded", String(!open));
+  }));
+  // swipe reveal binds only to rows that can actually delete (menu item exists)
+  $$(".person-row.swipe-row").forEach(row => bindSwipeDelete(row));
+  $$(".remove-person").forEach(b => b.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    openRemovePersonConfirm(data, b.dataset.id, b.dataset.name);
+  }));
   const invitePersonBtn = $("#invite-person-btn");
   if (invitePersonBtn) invitePersonBtn.addEventListener("click", () => openInviteSheet(data));
   $$(".toggle-paid").forEach(b => b.addEventListener("click", () => togglePaidByCreator(data, b)));
@@ -1721,9 +1745,9 @@ function openSetPayerSheet(data) {
   });
   const s = openSheet(`
     <div class="sheet-handle"></div>
-    <div class="sheet-title">Siapa yang membayar dahulu untuk bill ini?</div>
+    <div class="sheet-title">Siapa yang nalangin?</div>
     <p class="sheet-sub">Yang dipilih dianggap sudah lunas otomatis (dia yang mengeluarkan uang lebih dahulu), dan metode bayar yang ditampilkan ke orang lain menggunakan akun dia.</p>
-    <div role="radiogroup" aria-label="Pilih orang yang membayar dahulu" style="display:flex;flex-direction:column;gap:8px;">
+    <div role="radiogroup" aria-label="Pilih orang yang nalangin" style="display:flex;flex-direction:column;gap:8px;">
       <button class="btn-outline payer-opt" role="radio" aria-checked="${data.paid_by_id === data.bill.creator_identity_id}" data-id="${esc(data.bill.creator_identity_id)}" data-name="${esc(data.creator_name)}" style="text-align:left;justify-content:flex-start;">
         ${data.paid_by_id === data.bill.creator_identity_id ? ic("check") : ""}<strong>${esc(data.creator_name)}</strong>
         <span class="muted">(${state.identity && data.bill.creator_identity_id === state.identity.id ? "kamu, pembuat" : "pembuat"})</span>
@@ -1739,7 +1763,7 @@ function openSetPayerSheet(data) {
           above — echoing the confirmed payer's name back into the "someone
           who hasn't joined yet" box made the sheet look like it was asking
           the same question twice (v67 visual sweep) */ ""}
-    <input id="payer-name-input" placeholder="Nama yang membayar dahulu" value="${esc(data.paid_by_id ? "" : (data.paid_by_name || ""))}" maxlength="30" autocomplete="off">
+    <input id="payer-name-input" placeholder="Nama yang nalangin" value="${esc(data.paid_by_id ? "" : (data.paid_by_name || ""))}" maxlength="30" autocomplete="off">
     <button class="btn-primary" id="payer-name-save">Pakai Nama Ini</button>
     <button class="btn-outline" id="payer-cancel">Batal</button>`, { noAutofocus: true });
 
@@ -1756,7 +1780,7 @@ function openSetPayerSheet(data) {
     try {
       await apiJson(`/api/bills/${data.bill.id}/paid_by`, "PUT", body);
       s.close();
-      toast(`${name} ditandai sebagai yang membayar dahulu ✓`);
+      toast(`${name} ditandai sebagai yang nalangin ✓`);
       loadBillView(data.bill.id);
     } catch (e) {
       setPayerBusy(false);

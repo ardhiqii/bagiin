@@ -1423,9 +1423,16 @@ def _bill_settled(bill_data: dict | None) -> bool:
     # it done)
     if bill.get("settled_manual"):
         return True
+    # v68: same pending-picker rule as main._compute_response — every joined
+    # non-payer must have picked. A non-picker owes 0 only because unclaimed
+    # money falls back to the payer; counting that as settled let a still-
+    # choosing member's bill settle under them (detail/list agreed, both wrong).
+    payer_exempt = {payer_id} if payer_id else set()
+    non_payer_ids = roster_ids - payer_exempt
     return (
         len(roster_ids) > 1
         and owed_ids <= paid_ids
+        and non_payer_ids <= sel_ids
         and result["uncovered_idr"] == 0
     )
 

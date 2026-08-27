@@ -35,6 +35,7 @@ const ICONS = {
   share: '<path d="M12 15V4"/><path d="M8 7.5L12 3.5l4 4"/><path d="M5.5 13v5.5a1.5 1.5 0 001.5 1.5h10a1.5 1.5 0 001.5-1.5V13"/>',
   link: '<path d="M10 13.5a3.5 3.5 0 005 0l3-3a3.54 3.54 0 00-5-5L11.5 7"/><path d="M14 10.5a3.5 3.5 0 00-5 0l-3 3a3.54 3.54 0 005 5L12.5 17"/>',
   trash: '<path d="M4.5 6.5h15"/><path d="M9.5 6.5V5a1.5 1.5 0 011.5-1.5h2A1.5 1.5 0 0114.5 5v1.5"/><path d="M6.5 6.5l.8 12a1.5 1.5 0 001.5 1.4h6.4a1.5 1.5 0 001.5-1.4l.8-12"/>',
+  kebab: '<circle cx="12" cy="5" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/>',
   camera: '<path d="M3.5 8.5A1.5 1.5 0 015 7h2l1.2-2h7.6L17 7h2a1.5 1.5 0 011.5 1.5v9A1.5 1.5 0 0119 19H5a1.5 1.5 0 01-1.5-1.5z"/><circle cx="12" cy="12.5" r="3.4"/>',
   image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M4 17l4.5-4.5 3.5 3.5 3-3L20 17"/>',
   clipboard: '<rect x="6" y="4.5" width="12" height="15.5" rx="2"/><path d="M9.5 4.5V3.6A1.1 1.1 0 0110.6 2.5h2.8a1.1 1.1 0 011.1 1.1v.9z"/>',
@@ -95,13 +96,82 @@ function ic(name, cls) {
     stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 }
 
+// v68b: real brand logos for payment methods (assets/brands/manifest.json,
+// from the idn-finlogos collection). Fallback = the colored text chip
+// whenever a code has no asset or the manifest hasn't loaded yet.
+let BRAND_LOGOS = null;
+fetch("/static/assets/brands/manifest.json").then(r => r.ok ? r.json() : null).then(m => {
+  if (m && Array.isArray(m.logos)) BRAND_LOGOS = Object.fromEntries(m.logos.map(l => [l.code, l.file]));
+}).catch(() => {});
+function brandLogoHtml(code) {
+  const file = BRAND_LOGOS && BRAND_LOGOS[code];
+  if (!file) return brandChipHtml(code);
+  return `<span class="brand-logo"><img src="/static/assets/brands/${file}" alt="${esc(code)}" loading="lazy"
+    onerror="this.parentElement.classList.add('logo-miss');this.remove()"></span>`;
+}
+
+// v68b: swipe-to-delete reveal, deletable rows only. WCAG 2.5.1 needs a
+// single-pointer alternative for path gestures, so the kebab (with its real
+// menu item) stays; triggering that hidden menu item from the swipe zone
+// reuses the exact confirm flow — gesture and button can never diverge.
+// Rows the viewer can't delete get an EMPTY reserved slot: a control that
+// opens a "you can't do this" menu was a dead control (user feedback).
+function bindSwipeDelete(row) {
+  const front = row.querySelector(".swipe-front");
+  const menuItem = row.querySelector(".row-menu-item.danger");
+  if (!front || !menuItem) return;
+  const OPEN = 84, MAX = 100, THRESHOLD = 60;
+  let x0 = 0, y0 = 0, dx = 0, dragging = false, locked = null, openPx = 0, hideT = 0;
+  const setX = (px) => { front.style.transform = px ? `translateX(${px}px)` : ""; };
+  const showUnder = (on) => {
+    clearTimeout(hideT);
+    if (on) row.classList.add("swipe-active");
+    else hideT = setTimeout(() => row.classList.remove("swipe-active"), 180);
+  };
+  front.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "touch") return;
+    x0 = e.clientX; y0 = e.clientY; dx = 0; locked = null; dragging = true;
+    showUnder(true);
+  });
+  front.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if (locked === null && (Math.abs(mx) > 8 || Math.abs(my) > 8))
+      locked = Math.abs(mx) > Math.abs(my) ? "h" : "v";
+    if (locked !== "h") return;
+    dx = Math.max(0, Math.min(MAX, mx));
+    front.style.transition = "none";
+    setX(dx);
+  });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    front.style.transition = "";
+    openPx = dx >= THRESHOLD ? OPEN : 0;
+    setX(openPx);
+    showUnder(openPx > 0);
+  };
+  front.addEventListener("pointerup", end);
+  front.addEventListener("pointercancel", end);
+  // capture: when the row sits open, a tap on the front swallows the row's
+  // own navigation handler; tapping the red zone fires the real menu item
+  row.addEventListener("click", (e) => {
+    if (!openPx) return;
+    openPx = 0; setX(0); showUnder(false);
+    if (!e.target.closest(".swipe-del")) { e.stopPropagation(); e.preventDefault(); }
+    else menuItem.click();
+  }, true);
+}
+
 // Shared bill status source of truth. app.js loads before screen-specific scripts.
 function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
   const pendingPickers = (data.people || []).filter((p) =>
     p.identity_id !== data.paid_by_id &&
     !p.subtotal_idr && !Object.values(data.sel_by_item || {}).some(list =>
       list.some(s => s.id === p.identity_id)));
-  if ((data.settled || data.all_paid) && pendingPickers.length) {
+  // v68 model: pending pickers now genuinely block auto-settle, so the
+  // chip fires on pending alone (the old settled-guard is obsolete).
+  if (pendingPickers.length) {
     if (pendingPickers.length === 1) {
       const name = String(pendingPickers[0].name || "");
       const displayName = name.length > 14 ? `${name.slice(0, 14)}…` : name;
@@ -115,7 +185,7 @@ function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
     .reduce((sum, p) => sum + (p.total_idr || 0), 0)));
   if (totalUnpaid > 0) {
     if (collected > 0 && collected < total)
-      return `<span class="chip chip-red">Sebagian lunas<br><small>Sudah masuk ${fmt(collected)} · Belum ${fmt(total - collected)}</small></span>`;
+      return `<span class="chip chip-red">Sebagian lunas<br><small>Sudah masuk ${fmt(collected)} · Belum ${fmt(totalUnpaid)}</small></span>`;
     return `<span class="chip chip-red">${fmt(totalUnpaid)} belum dibayar</span>`;
   }
   if (data.uncovered_idr > 0) return `<span class="chip chip-red">${fmt(data.uncovered_idr)} belum terambil</span>`;

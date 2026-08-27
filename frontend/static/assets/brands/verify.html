@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bagiin brand asset verification</title>
+<style>
+  :root { color-scheme: light dark; font: 14px system-ui, sans-serif; }
+  body { margin: 24px; background: #f7f5f2; color: #292521; }
+  h1 { font-size: 1.25rem; }
+  #status { margin: 8px 0 18px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(170px,1fr)); gap: 10px; }
+  figure { display: grid; grid-template-columns: 48px 1fr; align-items: center; gap: 10px; min-height: 76px; margin: 0; padding: 10px; background: white; border: 1px solid #ddd6ce; border-radius: 10px; }
+  img { width: 48px; height: 48px; object-fit: contain; }
+  figcaption { overflow-wrap: anywhere; }
+  .pass { color: #087443; } .fail { color: #b42318; }
+  @media (prefers-color-scheme: dark) { body { background:#1d1b19; color:#eee; } figure { background:#292623; border-color:#4a433c; } }
+</style>
+<h1>Bagiin payment brand assets</h1>
+<div id="status">Loading manifest…</div>
+<div class="grid" id="grid"></div>
+<script>
+(async () => {
+  const status = document.querySelector('#status');
+  try {
+    const manifest = await (await fetch('manifest.json', { cache: 'no-store' })).json();
+    const grid = document.querySelector('#grid');
+    let loaded = 0;
+    for (const item of manifest.logos) {
+      const fig = document.createElement('figure');
+      const img = document.createElement('img');
+      img.src = item.file; img.alt = item.code; img.loading = 'lazy';
+      img.addEventListener('load', () => { loaded++; status.textContent = `${loaded}/${manifest.logos.length} SVGs loaded`; status.className = 'pass'; });
+      img.addEventListener('error', () => { fig.classList.add('fail'); status.textContent = `Asset failed: ${item.file}`; status.className = 'fail'; });
+      const cap = document.createElement('figcaption'); cap.textContent = item.code;
+      fig.append(img, cap); grid.append(fig);
+    }
+    status.textContent = `${manifest.logos.length} manifest entries; loading SVGs…`;
+  } catch (e) { status.textContent = `Verification failed: ${e.message}`; status.className = 'fail'; }
+})();
+</script>
