@@ -523,6 +523,14 @@ function parseHash() {
 function render() {
   const app = $("#app");
   const { parts } = parseHash();
+  // /history was removed in v68: home now owns the bill list. Keep old
+  // bookmarks/back-stack entries from presenting the home list with a false
+  // "Riwayat Bill" heading (the route looked valid but no longer had its own
+  // screen).
+  if (parts[0] === "history") {
+    if (location.hash !== "#/") location.hash = "#/";
+    return;
+  }
   if (parts[0] === "b" && parts[1]) { loadBillView(parts[1]); return; }
   // leaving a bill: reset the stale-guard and drop any floating sheets so a
   // lingering confirm can't re-render the bill over the new screen (bug:
@@ -567,10 +575,6 @@ function render() {
     return;
   }
   renderHome();
-  if (parts[0] === "history") {
-    const heading = $(".shell-main h1, .shell-solo h1");
-    if (heading) heading.textContent = "Riwayat Bill";
-  }
 }
 
 // ---------- navigation leave-guard ----------
