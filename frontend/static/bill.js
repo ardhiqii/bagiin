@@ -208,7 +208,13 @@ function myPersonRow(data, me) {
 function myBreakdown(data, me, selQty) {
   const row = myPersonRow(data, me);
   if (row) return { sub: row.subtotal_idr || 0, tax: row.tax_idr || 0, total: row.total_idr || 0 };
-  return computeMyBreakdown(data, selQty || state.selQty || new Map());
+  // A public read of a closed bill does not create a participant row for a
+  // guest who never joined. There is no server-calculated amount for that
+  // identity, so showing a client-derived split here would invent an amount
+  // (bug: a late guest saw a non-zero total that the server never assigned).
+  // Estimates are allowed only in renderPickRows(false), while a pending tap
+  // is being saved; every settled/displayed breakdown must come from `people`.
+  return { sub: 0, tax: 0, total: 0 };
 }
 
 // Merge a mutating endpoint's payload into the bill object every open screen
@@ -1215,6 +1221,14 @@ function openAccountsSheet(data) {
 // (all_paid/totalUnpaid-based) for the second row, so one card could show
 // "Lunas" next to "Rp X belum dibayar" (bug: two status systems, one screen).
 function creatorStatusChip(data, closed, totalUnpaid, soloSoFar) {
+  // A settled bill is final even when its payment rows remain unpaid. Manual
+  // settle deliberately preserves those rows for audit, so passing
+  // totalUnpaid into the shared renderer would make the manager header claim
+  // both "Lunas" and "Rp X belum dibayar" (bug: settled semantics leaked from
+  // payment rows into the manager view).
+  if (data.settled) {
+    return `<span class="chip chip-green">${ic("check")}${closed ? "Ditutup · lunas" : "Lunas"}</span>`;
+  }
   return renderBillStatusChip(data, closed, totalUnpaid, soloSoFar);
 }
 
@@ -1238,7 +1252,7 @@ function renderCreatorView(data) {
   // The collect bar only makes sense while money is genuinely outstanding.
   // For settled/waiting states it lied (payer's own fronted share never
   // counts as "masuk", so a fully-settled bill showed a half-empty bar).
-  const moneyOutstanding = owedByOthers > 0;
+  const moneyOutstanding = owedByOthers > 0 && !data.settled;
   const payerRow = data.people.find(p => p.identity_id === payerId);
   const pendingPickerNames = data.people
     .filter(p => p.identity_id !== payerId && !p.subtotal_idr && !hasPickedAny(data, p.identity_id))
