@@ -485,6 +485,16 @@ const VERIFY_CSS = `<style>
        (≥1040px) so centering is correct there and stays untouched. */
     .vf-item [data-role=del] { align-self:end; }
   }
+  /* 431-1039px (small-zoom phones / tablets / narrow windows): the 3-column
+     grid keeps the Harga label stacked on the input (64px cell) while name
+     and trash are bare 44px boxes — center alignment put the price input
+     ~10px BELOW both (user device sits in this range: "di gw masih").
+     Bottom-aligning the row coincides all three boxes on the input's
+     bottom edge; the label reads as a mini column header. >=1040 hides the
+     label and shows vf-head, where plain centering is correct. */
+  @media (min-width:431px) and (max-width:1039px) {
+    .vf-item { align-items:end; }
+  }
   .vf-item:last-child { border-bottom:none; }
   .vf-item input { padding:9px 10px; }
   .vf-item .icon-btn { width:44px; height:44px; min-width:44px; min-height:44px; }
