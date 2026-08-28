@@ -1221,6 +1221,14 @@ function openAccountsSheet(data) {
 // (all_paid/totalUnpaid-based) for the second row, so one card could show
 // "Lunas" next to "Rp X belum dibayar" (bug: two status systems, one screen).
 function creatorStatusChip(data, closed, totalUnpaid, soloSoFar) {
+  // A settled bill is final even when its payment rows remain unpaid. Manual
+  // settle deliberately preserves those rows for audit, so passing
+  // totalUnpaid into the shared renderer would make the manager header claim
+  // both "Lunas" and "Rp X belum dibayar" (bug: settled semantics leaked from
+  // payment rows into the manager view).
+  if (data.settled) {
+    return `<span class="chip chip-green">${ic("check")}${closed ? "Ditutup · lunas" : "Lunas"}</span>`;
+  }
   return renderBillStatusChip(data, closed, totalUnpaid, soloSoFar);
 }
 
@@ -1244,7 +1252,7 @@ function renderCreatorView(data) {
   // The collect bar only makes sense while money is genuinely outstanding.
   // For settled/waiting states it lied (payer's own fronted share never
   // counts as "masuk", so a fully-settled bill showed a half-empty bar).
-  const moneyOutstanding = owedByOthers > 0;
+  const moneyOutstanding = owedByOthers > 0 && !data.settled;
   const payerRow = data.people.find(p => p.identity_id === payerId);
   const pendingPickerNames = data.people
     .filter(p => p.identity_id !== payerId && !p.subtotal_idr && !hasPickedAny(data, p.identity_id))
