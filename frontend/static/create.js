@@ -477,6 +477,13 @@ const VERIFY_CSS = `<style>
   @media (max-width:430px) {
     .vf-item { grid-template-columns:1fr 44px; }
     .vf-item [data-role=name] { grid-column:1 / -1; }
+    /* the price cell is label-on-top-of-input (64px) while the trash is a
+       bare 44px box — align-items:center centered the trash on the CELL,
+       10px above the input's center (user: "gk sejajar"). Bottom-aligning
+       the 44px button makes its box coincide with the input's box, since
+       the input is the last element in the wrap. Desktop hides the label
+       (≥1040px) so centering is correct there and stays untouched. */
+    .vf-item [data-role=del] { align-self:end; }
   }
   .vf-item:last-child { border-bottom:none; }
   .vf-item input { padding:9px 10px; }
