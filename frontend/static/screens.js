@@ -23,10 +23,13 @@ function identityErrorHtml(e) {
   }
   return `<div class="empty-state">${ic("alert")}
     <p>${esc((e && e.message) || "Gagal muat")}</p>
-    <p class="muted">Coba lagi sebentar ya.</p></div>`;
+    <p class="muted">Koneksi mungkin lagi bermasalah. Coba muat ulang ya.</p>
+    <button type="button" class="btn-outline identity-retry" style="margin-top:14px;">Coba Lagi</button>
+  </div>`;
 }
 function bindIdentityError(box) {
   $$(".stale-identity-reset", box).forEach(b => b.addEventListener("click", () => logout()));
+  $$(".identity-retry", box).forEach(b => b.addEventListener("click", () => location.reload()));
 }
 
 // ---------- Onboarding ----------
@@ -238,21 +241,27 @@ async function loadHomeInvites() {
  *  In particular, a pending picker keeps a settled-looking bill neutral, and
  *  money still outstanding wins over the green settled state. */
 function billListStatus(b) {
-  const paid = !!(b.settled || b.all_paid);
   const pendingPickers = Array.isArray(b.pending_names) ? b.pending_names.length : 0;
   // v68: pending pickers block settle server-side now — show it first.
   if (pendingPickers) {
     return { tone: "idle", label: "Menunggu memilih item", icon: "people" };
   }
+  // A manual settle is an explicit owner override. The list payload keeps
+  // payment rows unpaid on purpose, so checking total_unpaid first made a
+  // manually settled bill say "Belum lunas" here while every bill screen said
+  // "Lunas" (bug: v60 settled-manual list inconsistency).
+  if (b.settled) return { tone: "ok", label: "Lunas", icon: "check" };
   if (Number(b.total_unpaid) > 0 || Number(b.uncovered_idr) > 0) {
     return { tone: "due", label: "Belum lunas", icon: "receipt" };
   }
-  if (paid) return { tone: "ok", label: "Lunas", icon: "check" };
   return { tone: "idle", label: "Belum ada yang memilih", icon: "receipt" };
 }
 
 function billListStatusChip(b) {
   const myTotal = Number(b.my_total_idr || 0);
+  // settled_manual deliberately leaves payment rows unpaid; the bill-level
+  // decision must win over the viewer's stale payment record.
+  if (b.settled) return `<span class="chip chip-green">Lunas</span>`;
   if (!b.i_am_payer && !b.my_paid && b.has_picks && !b.settled) {
     return `<span class="chip chip-red">Kamu belum bayar${myTotal > 0 ? ` Rp ${fmt(myTotal)}` : ""}</span>`;
   }
@@ -1251,7 +1260,12 @@ function openEditAccountSheet(acct, onDone) {
     </form>`, { noAutofocus: true });
 
   const brandSel = $("#edit-acct-brand", s.sheet);
-  brandSel.innerHTML = BRANDS.map(b => `<option value="${esc(b.c)}" ${b.c === acct.brand ? "selected" : ""}>${esc(b.c)}</option>`).join("");
+  // Accounts created by older builds can carry lowercase brand codes. The list
+  // canonicalises those for display, but an exact-case comparison here made
+  // the edit sheet silently fall back to BCA (bug: editing "mandiri" showed
+  // BCA and saving it changed the account's bank).
+  const currentBrand = String(acct.brand || "").toLowerCase();
+  brandSel.innerHTML = BRANDS.map(b => `<option value="${esc(b.c)}" ${b.c.toLowerCase() === currentBrand ? "selected" : ""}>${esc(b.c)}</option>`).join("");
   $("#edit-acct-no", s.sheet).value = acct.account_no || "";
   $("#edit-acct-holder", s.sheet).value = acct.holder_name || "";
   $("#edit-close", s.sheet).addEventListener("click", s.close);
