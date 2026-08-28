@@ -694,7 +694,10 @@ function chipTextColor(hex) {
 function brandChipHtml(code) {
   const b = brandInfo(code);
   const bg = b ? b.hex : "#6B6259";
-  return `<span class="brand-chip" style="background:${bg};color:${chipTextColor(bg)}">${esc(code)}</span>`;
+  // data-code: upgradeBrandChips() (app.js) swaps these chips for real logos
+  // in place once the manifest lands — without it the race upgrade can't
+  // find the chips it needs to replace
+  return `<span class="brand-chip" data-code="${esc(code)}" style="background:${bg};color:${chipTextColor(bg)}">${esc(code)}</span>`;
 }
 
 function renderSettings() {
