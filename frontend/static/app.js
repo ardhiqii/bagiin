@@ -523,6 +523,20 @@ function parseHash() {
 function render() {
   const app = $("#app");
   const { parts } = parseHash();
+  // Hash routes are public URLs (people can type or share them), so an unknown
+  // route must not silently render home while leaving a dead URL in the address
+  // bar. That made refresh/back behavior look broken and left users stranded
+  // on a route the app could not render (bug: dead deep link showed a plausible
+  // but unrelated screen). Replace, rather than push, so the dead route does
+  // not remain in the browser's back stack.
+  const knownRoute = !parts.length || parts[0] === "history" ||
+    parts[0] === "settings" ||
+    (parts[0] === "create" && (!parts[1] || parts[1] === "verify")) ||
+    (parts[0] === "b" && !!parts[1] && parts.length === 2);
+  if (!knownRoute) {
+    history.replaceState(null, "", "#/");
+    return render();
+  }
   // /history was removed in v68: home now owns the bill list. Keep old
   // bookmarks/back-stack entries from presenting the home list with a false
   // "Riwayat Bill" heading (the route looked valid but no longer had its own

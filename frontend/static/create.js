@@ -1279,14 +1279,21 @@ function updateVerifyTotal() {
   // with a raw error toast). Block the button until the numbers reconcile.
   const cta = $("#create-bill-btn");
   if (cta) {
-    const hasNamedItem = verifyState.items.some(i => String(i.name || "").trim());
+    // `some()` made a partially filled form look ready: after tapping Tambah
+    // Item, one named row was enough to enable the CTA even when the new row
+    // was blank. The submit validator caught it only after a confusing tap.
+    const unnamedIndex = verifyState.items.findIndex(i => !String(i.name || "").trim());
+    const invalidDiscountIndex = verifyState.items.findIndex(i => (i.discount || 0) > (i.price || 0));
+    const allItemsNamed = verifyState.items.length > 0 && unnamedIndex === -1;
+    const hasValidDiscounts = invalidDiscountIndex === -1;
     const hasTotal = total > 0;
     const payerChosen = !!verifyState.paidByMyself || !!String(verifyState.paid_by_name || "").trim();
     const missing = [];
-    if (!hasNamedItem) missing.push("nama item");
+    if (!allItemsNamed) missing.push(unnamedIndex >= 0 ? `nama item baris ${unnamedIndex + 1}` : "nama item");
+    if (!hasValidDiscounts) missing.push(`potongan baris ${invalidDiscountIndex + 1}`);
     if (!hasTotal) missing.push("total");
     if (!payerChosen) missing.push("pembayar");
-    cta.disabled = mismatch || !hasNamedItem || !hasTotal || !payerChosen;
+    cta.disabled = mismatch || !allItemsNamed || !hasValidDiscounts || !hasTotal || !payerChosen;
     cta.textContent = mismatch ? "Subtotal belum cocok sama item" : "Buat Tagihan";
     const helper = $("#create-bill-helper");
     if (helper) helper.textContent = mismatch ? "Samakan subtotal dengan total item untuk lanjut." :
