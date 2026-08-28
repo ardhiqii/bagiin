@@ -241,21 +241,27 @@ async function loadHomeInvites() {
  *  In particular, a pending picker keeps a settled-looking bill neutral, and
  *  money still outstanding wins over the green settled state. */
 function billListStatus(b) {
-  const paid = !!(b.settled || b.all_paid);
   const pendingPickers = Array.isArray(b.pending_names) ? b.pending_names.length : 0;
   // v68: pending pickers block settle server-side now — show it first.
   if (pendingPickers) {
     return { tone: "idle", label: "Menunggu memilih item", icon: "people" };
   }
+  // A manual settle is an explicit owner override. The list payload keeps
+  // payment rows unpaid on purpose, so checking total_unpaid first made a
+  // manually settled bill say "Belum lunas" here while every bill screen said
+  // "Lunas" (bug: v60 settled-manual list inconsistency).
+  if (b.settled) return { tone: "ok", label: "Lunas", icon: "check" };
   if (Number(b.total_unpaid) > 0 || Number(b.uncovered_idr) > 0) {
     return { tone: "due", label: "Belum lunas", icon: "receipt" };
   }
-  if (paid) return { tone: "ok", label: "Lunas", icon: "check" };
   return { tone: "idle", label: "Belum ada yang memilih", icon: "receipt" };
 }
 
 function billListStatusChip(b) {
   const myTotal = Number(b.my_total_idr || 0);
+  // settled_manual deliberately leaves payment rows unpaid; the bill-level
+  // decision must win over the viewer's stale payment record.
+  if (b.settled) return `<span class="chip chip-green">Lunas</span>`;
   if (!b.i_am_payer && !b.my_paid && b.has_picks && !b.settled) {
     return `<span class="chip chip-red">Kamu belum bayar${myTotal > 0 ? ` Rp ${fmt(myTotal)}` : ""}</span>`;
   }
