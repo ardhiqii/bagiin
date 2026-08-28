@@ -130,7 +130,7 @@ function brandLogoHtml(code) {
   const file = BRAND_LOGOS && BRAND_LOGOS[code];
   if (!file) return brandChipHtml(code);
   return `<span class="brand-logo"><img src="/static/assets/brands/${file}" alt="${esc(code)}" loading="lazy"
-    onerror="this.parentElement.replaceWith(brandChipHtml('${esc(code)}'))"></span>`;
+    onerror="this.closest('.brand-logo').outerHTML = brandChipHtml('${esc(code)}')"></span>`;
 }
 
 // Shared bill status source of truth. app.js loads before screen-specific scripts.
@@ -423,8 +423,16 @@ function syncDockSpace() {
   if (!app) return;
   const dock = $(".dock, .sticky-bar");
   const onDesktop = window.matchMedia("(min-width:1040px)").matches;
-  if (!dock || (onDesktop && dock.closest(".shell-side"))) { app.style.paddingBottom = ""; return; }
-  app.style.paddingBottom = `calc(env(safe-area-inset-bottom) + ${dock.offsetHeight + 24}px)`;
+  if (!dock || (onDesktop && dock.closest(".shell-side"))) {
+    app.style.paddingBottom = "";
+    app.style.scrollPaddingBottom = "";
+    return;
+  }
+  const reserve = `calc(env(safe-area-inset-bottom) + ${dock.offsetHeight + 24}px)`;
+  app.style.paddingBottom = reserve;
+  // Keep keyboard/focus scrolling from parking a focused control underneath
+  // the fixed mobile dock. Padding alone only protects normal document flow.
+  app.style.scrollPaddingBottom = reserve;
   const t = $("#toast");
   if (t) t.style.bottom = `calc(env(safe-area-inset-bottom) + ${dock.offsetHeight + 16}px)`;
 }

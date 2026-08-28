@@ -470,7 +470,9 @@ function renderGuestView(data, me) {
     <div class="card">
       <div class="card-title">${closed ? "Item yang kamu tanggung" : "Centang yang kamu tanggung"}</div>
       ${closed ? `<p class="muted" style="margin:-4px 0 8px;">Bill sudah ditutup — daftar ini hanya untuk dibaca.</p>` : ""}
-      <div id="pick-items">${data.items.map(it => itemRowHtml(it, data, mySel, me.name, me, closed)).join("")}</div>
+      <div id="pick-items">${data.items.length
+        ? data.items.map(it => itemRowHtml(it, data, mySel, me.name, me, closed)).join("")
+        : `<div class="empty-state" style="padding:16px 8px;">${ic("receipt")}<p class="muted">Belum ada item di bill ini.</p></div>`}</div>
     </div>
     ${!closed && data.owner_id !== me.id ? `
     <button class="btn-danger-ghost" id="leave-bill-btn">
@@ -490,7 +492,9 @@ function renderGuestView(data, me) {
       </div>
       ${iAmPayer
         ? `<div class="chip chip-grey" style="justify-content:center;padding:10px;">${ic("wallet")} Kamu yang nalangin</div>`
-        : `<button class="${myPaid ? "btn-green" : "btn-primary"}" id="pay-btn">${myPaid ? `${ic("check")} Sudah bayar` : "Tandai sudah bayar"}</button>`}
+        : data.settled
+          ? `<div class="chip chip-green" style="justify-content:center;padding:10px;">${ic("check")} Pembayaran sudah selesai</div>`
+          : `<button class="${myPaid ? "btn-green" : "btn-primary"}" id="pay-btn">${myPaid ? `${ic("check")} Sudah bayar` : "Tandai sudah bayar"}</button>`}
     </div></div>`;
 
   app.innerHTML = `
@@ -568,17 +572,14 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
   const priceHtml = it.discount_idr > 0
     ? `<span class="price-was">${fmt(it.price_idr)}</span> <span class="price-now">${fmt(eff)}</span>`
     : fmt(eff);
-  // Closed bills render plain rows: no checkbox affordance, no role, no
-  // tabindex (bug: rows looked tappable and silently did nothing, because the
-  // "Bill sudah ditutup" toast sat behind an early return)
-  const a11y = readOnly
-    ? ""
-    : ` role="checkbox" tabindex="0" aria-checked="${isSel}" aria-label="${esc(it.name)}, ${fmt(eff)}"`;
   // Slot items with no room left must not look tappable — a dead row that
   // flashes "slot abis" every tap is noise. The stepper stays hidden and the
   // row drops the checkbox affordance (bug: full-slot rows kept the checkbox
   // visual and invited taps that did nothing).
   const isFull = isSlot && (selList.reduce((s, x) => s + (x.qty || 1), 0) >= it.slot_count) && myQty === 0;
+  const a11y = readOnly || isFull
+    ? ""
+    : ` role="checkbox" tabindex="0" aria-checked="${isSel}" aria-label="${esc(it.name)}, ${fmt(eff)}"`;
   return `
     <div class="item-row${isSel ? " selected" : ""}${!readOnly && !isFull ? " item-tappable" : ""}${isFull ? " item-full" : ""}" data-item="${it.id}"${a11y}>
       ${!readOnly || isSel ? (isFull ? `<div class="item-check item-check-full">${ic("x")}</div>` : `<div class="item-check">${ic("check")}</div>`) : ""}
@@ -616,6 +617,10 @@ function bindItemRows(data, me, root) {
     };
 
     const activate = () => {
+      // A full slot row is deliberately read-only until another participant
+      // releases a slot. It has no checkbox semantics, so tapping it must not
+      // emit a misleading "slot habis" action or steal focus.
+      if (row.classList.contains("item-full")) return;
       const myQty = state.selQty.get(id) || 0;
       buzz(10);
       if (isSlot) {
@@ -1122,7 +1127,7 @@ function openPaySheet(data, me, alreadyPaid) {
       await updateGuestSelection(data, me);
       renderItems();
     }));
-    $("#confirm-pay", s.sheet).disabled = items.length === 0;
+    $("#confirm-pay", s.sheet).disabled = items.length === 0 || alreadyPaid;
   };
 
   renderItems();
@@ -1169,7 +1174,8 @@ function payerPayment(data) {
 }
 
 function accountRowsHtml(name, accounts) {
-  return accounts.length ? accounts.map(a => `
+  const rows = Array.isArray(accounts) ? accounts : [];
+  return rows.length ? rows.map(a => `
       <div class="account-row">
         ${brandLogoHtml(a.brand)}
         <div style="flex:1;min-width:0;">
@@ -1255,25 +1261,25 @@ function renderCreatorView(data) {
 
   // consolidated "perhatian" rows (single card, one row each)
   const warnRows = [];
-  if (data.uncovered_slots.length) {
+  if ((data.uncovered_slots || []).length) {
     warnRows.push({
       icon: "slot",
       // per_slot × empty != amount when eff % slot_count has a remainder —
       // show the honest total instead of misleading arithmetic
-      text: `Bagian kosong belum terambil: ${data.uncovered_slots.map(u => `${esc(u.name)} (${u.empty} bagian kosong = ${fmt(u.amount_idr)})`).join(", ")}`,
+      text: `Bagian kosong belum terambil: ${(data.uncovered_slots || []).map(u => `${esc(u.name)} (${u.empty} bagian kosong = ${fmt(u.amount_idr)})`).join(", ")}`,
       red: true,
     });
   }
   // "Item tidak dipilih siapa pun -> masuk ke yang nalangin" is true of every
   // item on a brand-new bill. Listing them all before anyone has even joined
   // reads as an error report, so hold it until there is someone to warn about.
-  if (data.warnings.length && !soloSoFar) {
+  if ((data.warnings || []).length && !soloSoFar) {
     // esc() the whole joined string: warnings embed user-typed item names.
     // Skip "Bagian kosong: ..." — already shown as its own slot row above.
     // Backend formats with Python's US comma ("Rp 45,000") — normalize to
     // Indonesian dots; ASCII arrow -> real arrow (bug: double info + wrong
     // thousands separator)
-    const dedup = data.warnings
+    const dedup = (data.warnings || [])
       .filter(w => !w.startsWith("Bagian kosong:"))
       .join(" · ")
       .replace(/(\d),(\d{3})/g, "$1.$2")
@@ -1369,8 +1375,11 @@ function renderCreatorView(data) {
           const paid = p.paid === "paid" || !!data.settled_manual;
           const sub = (p.subtotal_idr || hasPickedAny(data, p.identity_id))
             ? (p.subtotal_idr
-              ? `${fmt(p.subtotal_idr)} item · ${fmt(p.tax_idr)} pajak`
-              : `item gratis · ${fmt(p.tax_idr)} pajak`)
+              // nowrap per segment: a 390px row wraps this line mid-amount
+              // ("Rp" orphaned at the end, visually colliding with the
+              // person-total column) — keep each segment an unbreakable unit
+              ? `<span style="white-space:nowrap">${fmt(p.subtotal_idr)} item</span> · <span style="white-space:nowrap">${fmt(p.tax_idr)} pajak</span>`
+              : `<span style="white-space:nowrap">item gratis</span> · <span style="white-space:nowrap">${fmt(p.tax_idr)} pajak</span>`)
             : "belum pilih item";
           // the payer never "bayar" themselves — they fronted the money
           const statusHtml = isPayer

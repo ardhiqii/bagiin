@@ -338,14 +338,17 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
               border-radius:8px; display:inline-flex; align-items:center; justify-content:center;
               padding:4px 6px; box-sizing:border-box; }
 .brand-logo img { max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; display:block; }
-.brand-logo.logo-miss { display:none; }
 /* On phones keep identity and amount/status on one baseline row. The reserved
    right column prevents the remove control from colliding with the amount. */
 @media (max-width:430px) {
   .person-row { flex-wrap:nowrap; gap:8px; padding:10px 0; position:relative; }
   .person-info { min-width:0; }
-  .person-right { flex:0 0 auto; min-width:96px; max-width:42%; flex-direction:row;
-                  align-items:center; justify-content:flex-end; gap:6px; }
+  /* money+chip were laid out horizontally here ("one baseline row") but their
+     combined width (~190px) always overflowed the 42% cap at 390px, painting
+     the amount on top of the person-sub text (geometric overlap 45px).
+     Stacked column fits the cap and the sub wraps between its nowrap
+     segments — no mid-amount break, no collision. */
+  .person-right { flex:0 0 auto; min-width:96px; }
   .person-total { white-space:nowrap; }
 }
 
@@ -392,6 +395,9 @@ input[type=checkbox] { width:22px; height:22px; accent-color:var(--accent); flex
 select { appearance:none; -webkit-appearance:none; padding-right:36px;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237A7065' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat:no-repeat; background-position:right 11px center; background-size:17px; }
+@media (prefers-color-scheme: dark) {
+  select { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23C0B7AC' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); }
+}
 .field { margin-bottom:12px; }
 .field-row { display:flex; gap:8px; }
 .field-row > * { flex:1; min-width:0; }
@@ -481,9 +487,10 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 .photo-preview { width:100%; border-radius:var(--r-sm); border:1px solid var(--border); margin-bottom:10px;
                  cursor:zoom-in; max-height:260px; object-fit:contain; background:var(--surface-2); display:block; }
 .photo-preview.expanded { max-height:none; cursor:zoom-out; }
-.brand-chip { display:inline-flex; align-items:center; justify-content:center; border-radius:10px;
-              font-weight:700; font-size:11px; min-width:40px; height:38px; padding:0 8px;
-              letter-spacing:.01em; flex-shrink:0; }
+.brand-chip { width:48px; height:28px; flex:0 0 48px; box-sizing:border-box;
+              display:inline-flex; align-items:center; justify-content:center; border-radius:8px;
+              font-weight:700; font-size:11px; padding:4px 6px; letter-spacing:.01em;
+              flex-shrink:0; border:1px solid color-mix(in srgb, currentColor 22%, transparent); }
 .account-row { display:flex; align-items:center; gap:11px; min-height:44px; padding:8px 0; border-bottom:1px solid var(--border); }
 .account-row:last-child { border-bottom:none; }
 .code-display { font-size:21px; font-weight:800; letter-spacing:.1em; text-align:center; padding:16px 10px;
