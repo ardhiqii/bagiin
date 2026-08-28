@@ -23,10 +23,13 @@ function identityErrorHtml(e) {
   }
   return `<div class="empty-state">${ic("alert")}
     <p>${esc((e && e.message) || "Gagal muat")}</p>
-    <p class="muted">Coba lagi sebentar ya.</p></div>`;
+    <p class="muted">Koneksi mungkin lagi bermasalah. Coba muat ulang ya.</p>
+    <button type="button" class="btn-outline identity-retry" style="margin-top:14px;">Coba Lagi</button>
+  </div>`;
 }
 function bindIdentityError(box) {
   $$(".stale-identity-reset", box).forEach(b => b.addEventListener("click", () => logout()));
+  $$(".identity-retry", box).forEach(b => b.addEventListener("click", () => location.reload()));
 }
 
 // ---------- Onboarding ----------
