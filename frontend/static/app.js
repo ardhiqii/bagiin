@@ -99,15 +99,38 @@ function ic(name, cls) {
 // v68b: real brand logos for payment methods (assets/brands/manifest.json,
 // from the idn-finlogos collection). Fallback = the colored text chip
 // whenever a code has no asset or the manifest hasn't loaded yet.
+// Race fix (user: "gk semuanya ada iconnya, beda2 antar page"): the manifest
+// fetch is async, so every first render painted TEXT CHIPS and nothing ever
+// upgraded them when the manifest arrived — whether a screen showed logos
+// depended on navigation timing. Two layers make it deterministic:
+// 1. a localStorage cache read synchronously at boot — logos render on the
+//    very first paint from the second app load onward;
+// 2. when the fetch lands, upgradeBrandChips() swaps any still-visible
+//    fallback chips in place (chip node -> logo node; no screen re-render,
+//    so typed form input in open sheets/screens survives).
 let BRAND_LOGOS = null;
+try { BRAND_LOGOS = JSON.parse(localStorage.getItem("bagiin_brand_logos") || "null"); } catch (e) {}
+function upgradeBrandChips(root) {
+  (root || document).querySelectorAll(".brand-chip[data-code]").forEach(chip => {
+    if (!BRAND_LOGOS || !BRAND_LOGOS[chip.dataset.code]) return;
+    const tpl = document.createElement("template");
+    tpl.innerHTML = brandLogoHtml(chip.dataset.code).trim();
+    const node = tpl.content.firstElementChild;
+    if (node) chip.replaceWith(node);
+  });
+}
 fetch("/static/assets/brands/manifest.json").then(r => r.ok ? r.json() : null).then(m => {
-  if (m && Array.isArray(m.logos)) BRAND_LOGOS = Object.fromEntries(m.logos.map(l => [l.code, l.file]));
+  if (m && Array.isArray(m.logos)) {
+    BRAND_LOGOS = Object.fromEntries(m.logos.map(l => [l.code, l.file]));
+    try { localStorage.setItem("bagiin_brand_logos", JSON.stringify(BRAND_LOGOS)); } catch (e) {}
+    upgradeBrandChips();
+  }
 }).catch(() => {});
 function brandLogoHtml(code) {
   const file = BRAND_LOGOS && BRAND_LOGOS[code];
   if (!file) return brandChipHtml(code);
   return `<span class="brand-logo"><img src="/static/assets/brands/${file}" alt="${esc(code)}" loading="lazy"
-    onerror="this.parentElement.classList.add('logo-miss');this.remove()"></span>`;
+    onerror="this.closest('.brand-logo').outerHTML = brandChipHtml('${esc(code)}')"></span>`;
 }
 
 // Shared bill status source of truth. app.js loads before screen-specific scripts.
@@ -400,8 +423,16 @@ function syncDockSpace() {
   if (!app) return;
   const dock = $(".dock, .sticky-bar");
   const onDesktop = window.matchMedia("(min-width:1040px)").matches;
-  if (!dock || (onDesktop && dock.closest(".shell-side"))) { app.style.paddingBottom = ""; return; }
-  app.style.paddingBottom = `calc(env(safe-area-inset-bottom) + ${dock.offsetHeight + 24}px)`;
+  if (!dock || (onDesktop && dock.closest(".shell-side"))) {
+    app.style.paddingBottom = "";
+    app.style.scrollPaddingBottom = "";
+    return;
+  }
+  const reserve = `calc(env(safe-area-inset-bottom) + ${dock.offsetHeight + 24}px)`;
+  app.style.paddingBottom = reserve;
+  // Keep keyboard/focus scrolling from parking a focused control underneath
+  // the fixed mobile dock. Padding alone only protects normal document flow.
+  app.style.scrollPaddingBottom = reserve;
   const t = $("#toast");
   if (t) t.style.bottom = `calc(env(safe-area-inset-bottom) + ${dock.offsetHeight + 16}px)`;
 }

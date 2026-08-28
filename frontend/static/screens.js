@@ -694,7 +694,10 @@ function chipTextColor(hex) {
 function brandChipHtml(code) {
   const b = brandInfo(code);
   const bg = b ? b.hex : "#6B6259";
-  return `<span class="brand-chip" style="background:${bg};color:${chipTextColor(bg)}">${esc(code)}</span>`;
+  // data-code: upgradeBrandChips() (app.js) swaps these chips for real logos
+  // in place once the manifest lands — without it the race upgrade can't
+  // find the chips it needs to replace
+  return `<span class="brand-chip" data-code="${esc(code)}" style="background:${bg};color:${chipTextColor(bg)}">${esc(code)}</span>`;
 }
 
 function renderSettings() {
@@ -855,12 +858,17 @@ function renderSettings() {
         sw.addEventListener("click", async () => {
           const next = sw.getAttribute("aria-checked") !== "true";
           sw.setAttribute("aria-checked", String(next));
+          sw.disabled = true;
+          sw.setAttribute("aria-busy", "true");
           try {
             await apiJson(`/api/identities/${me.id}/auto_accept`, "POST", { auto_accept: next });
             toast(next ? "Undangan langsung masuk ya" : "Undangan bakal nunggu kamu terima");
           } catch (e) {
             sw.setAttribute("aria-checked", String(!next));  // rollback optimistically
             toast(e.message);
+          } finally {
+            sw.disabled = false;
+            sw.removeAttribute("aria-busy");
           }
         });
       }
@@ -903,8 +911,10 @@ function renderSettings() {
           confirmText: "Hapus", danger: true,
         });
         if (!ok) return;
-        try { await api("/api/accounts/" + b.dataset.del, { method: "DELETE" }); loadAccounts(); }
-        catch (e) { toast(e.message); }
+        await withBusy(b, "", async () => {
+          try { await api("/api/accounts/" + b.dataset.del, { method: "DELETE" }); loadAccounts(); }
+          catch (e) { toast(e.message); }
+        });
       }));
     } catch (e) {
       box.innerHTML = identityErrorHtml(e);
@@ -1114,8 +1124,12 @@ function openPasteAccountsSheet(identityId, onAdded) {
 
   $("#close-sheet", s.sheet).addEventListener("click", s.close);
   $("#parse-acct-btn", s.sheet).addEventListener("click", () => {
-    const parsed = parseAccountsText($("#paste-input", s.sheet).value);
-    existingP.then(existing => renderParsedResult(s, parsed, identityId, onAdded, existing));
+    const btn = $("#parse-acct-btn", s.sheet);
+    withBusy(btn, "Mengecek", async () => {
+      const parsed = parseAccountsText($("#paste-input", s.sheet).value);
+      const existing = await existingP;
+      if (s.sheet.isConnected) renderParsedResult(s, parsed, identityId, onAdded, existing);
+    });
   });
 }
 
