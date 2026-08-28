@@ -208,7 +208,13 @@ function myPersonRow(data, me) {
 function myBreakdown(data, me, selQty) {
   const row = myPersonRow(data, me);
   if (row) return { sub: row.subtotal_idr || 0, tax: row.tax_idr || 0, total: row.total_idr || 0 };
-  return computeMyBreakdown(data, selQty || state.selQty || new Map());
+  // A public read of a closed bill does not create a participant row for a
+  // guest who never joined. There is no server-calculated amount for that
+  // identity, so showing a client-derived split here would invent an amount
+  // (bug: a late guest saw a non-zero total that the server never assigned).
+  // Estimates are allowed only in renderPickRows(false), while a pending tap
+  // is being saved; every settled/displayed breakdown must come from `people`.
+  return { sub: 0, tax: 0, total: 0 };
 }
 
 // Merge a mutating endpoint's payload into the bill object every open screen
