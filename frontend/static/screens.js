@@ -1254,7 +1254,12 @@ function openEditAccountSheet(acct, onDone) {
     </form>`, { noAutofocus: true });
 
   const brandSel = $("#edit-acct-brand", s.sheet);
-  brandSel.innerHTML = BRANDS.map(b => `<option value="${esc(b.c)}" ${b.c === acct.brand ? "selected" : ""}>${esc(b.c)}</option>`).join("");
+  // Accounts created by older builds can carry lowercase brand codes. The list
+  // canonicalises those for display, but an exact-case comparison here made
+  // the edit sheet silently fall back to BCA (bug: editing "mandiri" showed
+  // BCA and saving it changed the account's bank).
+  const currentBrand = String(acct.brand || "").toLowerCase();
+  brandSel.innerHTML = BRANDS.map(b => `<option value="${esc(b.c)}" ${b.c.toLowerCase() === currentBrand ? "selected" : ""}>${esc(b.c)}</option>`).join("");
   $("#edit-acct-no", s.sheet).value = acct.account_no || "";
   $("#edit-acct-holder", s.sheet).value = acct.holder_name || "";
   $("#edit-close", s.sheet).addEventListener("click", s.close);
