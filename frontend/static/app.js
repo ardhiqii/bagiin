@@ -134,7 +134,14 @@ function brandLogoHtml(code) {
 }
 
 // Shared bill status source of truth. app.js loads before screen-specific scripts.
+// ONE vocabulary for every screen that renders a bill chip: the home list
+// (billListStatusChip), the manager header (creatorStatusChip) and anything
+// else that delegates here. `closed` prefixes "Ditutup · " on terminal states,
+// and settled beats totalUnpaid — settled_manual deliberately leaves payment
+// rows unpaid, so a totalUnpaid-first order made the header claim both
+// "Lunas" and "Rp X belum dibayar" on one screen.
 function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
+  const closedTag = closed ? "Ditutup · " : "";
   const pendingPickers = (data.people || []).filter((p) =>
     p.identity_id !== data.paid_by_id &&
     !p.subtotal_idr && !Object.values(data.sel_by_item || {}).some(list =>
@@ -149,18 +156,18 @@ function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
     }
     return `<span class="chip chip-grey">Menunggu ${pendingPickers.length} orang memilih item</span>`;
   }
+  if (data.settled || data.all_paid)
+    return `<span class="chip chip-green">${ic("check")}${closedTag}Lunas</span>`;
   const total = Math.max(0, data.bill.total_idr || 0);
   const collected = Math.max(0, Math.min(total, (data.people || [])
     .filter(p => p.paid === "paid" && p.identity_id !== data.paid_by_id)
     .reduce((sum, p) => sum + (p.total_idr || 0), 0)));
   if (totalUnpaid > 0) {
     if (collected > 0 && collected < total)
-      return `<span class="chip chip-red">Sebagian lunas<br><small>Sudah masuk ${fmt(collected)} · Belum ${fmt(totalUnpaid)}</small></span>`;
-    return `<span class="chip chip-red">${fmt(totalUnpaid)} belum dibayar</span>`;
+      return `<span class="chip chip-red">${closedTag}Sebagian lunas<br><small>Sudah masuk ${fmt(collected)} · Belum ${fmt(totalUnpaid)}</small></span>`;
+    return `<span class="chip chip-red">${closedTag}${fmt(totalUnpaid)} belum dibayar</span>`;
   }
-  if (data.uncovered_idr > 0) return `<span class="chip chip-red">${fmt(data.uncovered_idr)} belum terambil</span>`;
-  if (data.settled || data.all_paid)
-    return `<span class="chip chip-green">${ic("check")}Lunas</span>`;
+  if (data.uncovered_idr > 0) return `<span class="chip chip-red">${closedTag}${fmt(data.uncovered_idr)} belum terambil</span>`;
   if (soloSoFar) return `<span class="chip chip-grey">Belum ada yang gabung</span>`;
   return `<span class="chip chip-grey">Belum ada yang memilih</span>`;
 }

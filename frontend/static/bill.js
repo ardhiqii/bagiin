@@ -10,10 +10,13 @@ const normName = (s) => String(s || "").trim().toLowerCase();
 function statusChipHtml(data) {
   if (data.bill.status === "closed") {
     if (data.settled)
-      return `<span class="chip chip-green">${ic("check")}Ditutup · lunas</span>`;
+      return `<span class="chip chip-green">${ic("check")}Ditutup · Lunas</span>`;
     // a closed bill nobody but the creator ever joined isn't "Belum Lunas" —
-    // nobody owes anybody anything (bug: solo closed bill said "Belum Lunas")
-    if ((data.people || []).length <= 1)
+    // nobody owes anybody anything (bug: solo closed bill said "Belum Lunas").
+    // But unclaimed slots still carry uncovered money, and the red note below
+    // the header says so — "selesai" next to it contradicts (and the home list
+    // calls the same bill "Belum lunas").
+    if ((data.people || []).length <= 1 && !(data.uncovered_idr > 0))
       return `<span class="chip chip-grey">Ditutup · selesai</span>`;
     return `<span class="chip chip-grey">Ditutup · belum lunas</span>`;
   }
@@ -430,7 +433,7 @@ function renderGuestView(data, me) {
         <span>${soloSoFar ? `<span class="chip chip-grey">Belum ada yang gabung</span>` : statusChipHtml(data)}</span>
       </div>
       ${data.bill.merchant ? `<p class="muted" style="margin-top:6px;">${esc(data.bill.merchant)}</p>` : ""}
-      ${data.bill.transacted_at ? `<p class="muted">${esc(shortDate(data.bill.transacted_at))}</p>` : ""}
+      ${(data.bill.transacted_at || data.bill.created_at) ? `<p class="muted">${esc(shortDate(data.bill.transacted_at || data.bill.created_at))}</p>` : ""}
       <p class="muted" style="margin-top:6px;">dibuat ${esc(data.creator_name)}${
         data.paid_by_name && data.paid_by_name !== data.creator_name
           // one line, and the fact a guest actually needs: who fronted the
@@ -1221,14 +1224,8 @@ function openAccountsSheet(data) {
 // (all_paid/totalUnpaid-based) for the second row, so one card could show
 // "Lunas" next to "Rp X belum dibayar" (bug: two status systems, one screen).
 function creatorStatusChip(data, closed, totalUnpaid, soloSoFar) {
-  // A settled bill is final even when its payment rows remain unpaid. Manual
-  // settle deliberately preserves those rows for audit, so passing
-  // totalUnpaid into the shared renderer would make the manager header claim
-  // both "Lunas" and "Rp X belum dibayar" (bug: settled semantics leaked from
-  // payment rows into the manager view).
-  if (data.settled) {
-    return `<span class="chip chip-green">${ic("check")}${closed ? "Ditutup · lunas" : "Lunas"}</span>`;
-  }
+  // settled/totalUnpaid precedence and the "Ditutup · " prefix now live in the
+  // shared renderer — delegating straight keeps one status system on screen.
   return renderBillStatusChip(data, closed, totalUnpaid, soloSoFar);
 }
 
@@ -1350,7 +1347,7 @@ function renderCreatorView(data) {
         <span>${statusChip}</span>
       </div>
       ${data.bill.title || data.bill.merchant ? `<div style="margin-top:4px;">${esc((data.bill.title || "").trim() || data.bill.merchant)}</div>` : ""}
-      ${data.bill.transacted_at ? `<div class="muted">${esc(shortDate(data.bill.transacted_at))}</div>` : ""}
+      ${(data.bill.transacted_at || data.bill.created_at) ? `<div class="muted">${esc(shortDate(data.bill.transacted_at || data.bill.created_at))}</div>` : ""}
       ${!closed && allSettled ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua sudah menandai lunas, bill otomatis selesai.</p>` : ""}
       ${moneyOutstanding ? `<div class="collect" style="margin-top:12px;">
         <div class="collect-track"><div class="collect-fill" style="width:${owedByOthers > 0 ? Math.min(100, Math.round(paidByOthers * 100 / owedByOthers)) : 0}%;"></div></div>
