@@ -555,6 +555,7 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
   const isSel = myQty > 0;
   const isSlot = it.mode === "slot" && it.slot_count;
   const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
+  const purchasedQty = Math.max(1, Math.min(99, Number(it.quantity) || 1));
   const modeLabel = isSlot ? "Bagi per porsi" : "Dibagi rata";
   let shareText;
   // "kamu N×" only where there is no stepper to read it off (closed bills).
@@ -606,7 +607,7 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
         <span class="step-qty" aria-live="polite">${myQty || 0}</span>
         <button type="button" class="step-btn step-inc" aria-label="Tambah"${isSlot && myQty >= it.slot_count - (selList.reduce((s, x) => s + (x.qty || 1), 0) - myQty) ? " disabled" : ""}>+</button>
       </div>` : ""}
-      <div class="money item-price">${priceHtml}</div>
+      <div class="money item-price"><span class="item-line-total">${fmt(eff * purchasedQty)}</span><span class="muted" style="display:block;font-size:11px;font-weight:500;">${fmt(eff)} × ${purchasedQty} dibeli</span></div>
     </div>`;
 }
 
@@ -1432,6 +1433,7 @@ function renderCreatorView(data) {
         const selList = (data.sel_by_item[it.id] || []);
         const isSlot = it.mode === "slot" && it.slot_count;
         const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
+        const purchasedQty = Math.max(1, Math.min(99, Number(it.quantity) || 1));
         const modeLabel = isSlot ? "Bagi per porsi" : "Dibagi rata";
         const priceHtml = it.discount_idr > 0
           ? `<span class="price-was">${fmt(it.price_idr)}</span> <span class="price-now">${fmt(eff)}</span>`
@@ -1457,7 +1459,7 @@ function renderCreatorView(data) {
             <div class="item-name">${esc(it.name)} <span class="slot-badge">${modeLabel}</span></div>
             <div class="item-share">${shareText}</div>
           </div>
-          <div class="money item-price">${priceHtml}</div>
+          <div class="money item-price"><span class="item-line-total">${fmt(eff * purchasedQty)}</span><span class="muted" style="display:block;font-size:11px;font-weight:500;">${fmt(eff)} × ${purchasedQty} dibeli</span></div>
           ${!closed && isSlot ? `<button class="icon-btn slot-mgr" data-item="${it.id}" aria-label="Atur bagian ${esc(it.name)}" style="margin-left:8px;">${ic("slot")}</button>` : ""}
         </div>`;
       }).join("")}
@@ -1966,7 +1968,7 @@ function beginEditorLayer(billId) {
 function renderEditBill(data) {
   const app = $("#app");
   editState = {
-    items: data.items.map(it => ({ id: it.id, name: it.name, price: it.price_idr, discount: it.discount_idr || 0, mode: it.mode || "free", slot_count: it.slot_count || null })),
+    items: data.items.map(it => ({ id: it.id, name: it.name, price: it.price_idr, discount: it.discount_idr || 0, quantity: Math.max(1, Math.min(99, Number(it.quantity) || 1)), mode: it.mode || "free", slot_count: it.slot_count || null })),
     subtotal: data.bill.subtotal_idr || 0,
     tax: data.bill.tax_idr || 0,
     service: data.bill.service_idr || 0,
@@ -1986,6 +1988,7 @@ function renderEditBill(data) {
     id: it.id,
     price: it.price,
     discount: it.discount,
+    quantity: it.quantity || 1,
   }));
   editState._layer = beginEditorLayer(data.bill.id);
   const main = `
@@ -2060,7 +2063,7 @@ function renderEditBill(data) {
       updateEditTotal();
     });
   }
-  $("#add-item-btn").addEventListener("click", () => { editState.items.push({ id: null, name: "", price: 0, discount: 0 }); renderEditItems(); });
+  $("#add-item-btn").addEventListener("click", () => { editState.items.push({ id: null, name: "", price: 0, discount: 0, quantity: 1 }); renderEditItems(); });
   $("#title-input").addEventListener("input", (e) => editState.title = e.target.value);
   $("#date-input").addEventListener("input", (e) => editState.transacted_at = e.target.value);
   $("#save-bill-btn").addEventListener("click", () => saveEditBill(data.bill.id));
@@ -2077,6 +2080,13 @@ function renderEditItems() {
       </div>
       <div style="flex:1;min-width:100px;">
         <input data-role="price" data-idx="${idx}" type="text" inputmode="numeric" class="input-money" value="${rupiahFmt(it.price)}" placeholder="0" aria-label="Harga item" style="padding:9px 10px;">
+      </div>
+      <div class="edit-quantity" style="display:flex;align-items:center;gap:4px;min-width:170px;">
+        <span class="label-sm" style="white-space:nowrap;">Jumlah dibeli</span>
+        <button type="button" class="btn-outline btn-sm edit-qty-dec" data-idx="${idx}" aria-label="Kurangi jumlah dibeli" style="width:44px;height:44px;padding:0;"${(it.quantity || 1) <= 1 ? " disabled" : ""}>−</button>
+        <input data-role="quantity" data-idx="${idx}" type="number" min="1" max="99" value="${it.quantity || 1}" aria-label="Jumlah dibeli" style="width:48px;height:44px;text-align:center;padding:6px 3px;">
+        <button type="button" class="btn-outline btn-sm edit-qty-inc" data-idx="${idx}" aria-label="Tambah jumlah dibeli" style="width:44px;height:44px;padding:0;"${(it.quantity || 1) >= 99 ? " disabled" : ""}>+</button>
+        <span class="muted" data-role="line-total" style="font-size:12px;white-space:nowrap;">Total ${fmt(Math.max(0, (it.price || 0) - (it.discount || 0)) * (it.quantity || 1))}</span>
       </div>
       <button data-role="del" data-idx="${idx}" class="icon-btn" aria-label="Hapus item ini" style="color:var(--red);">${ic("trash")}</button>
       <div style="flex-basis:100%;padding:6px 0 0;display:flex;align-items:center;gap:8px;">
@@ -2113,7 +2123,24 @@ function renderEditItems() {
   }));
   $$("[data-role=price]", elList).forEach(inp => bindRupiahInput(inp, (v) => {
     editState.items[+inp.dataset.idx].price = v;
+    updateEditLineTotal(+inp.dataset.idx);
     updateEditTotal();
+  }));
+  $$("[data-role=quantity]", elList).forEach(inp => {
+    inp.addEventListener("change", () => {
+      const idx = +inp.dataset.idx;
+      editState.items[idx].quantity = Math.max(1, Math.min(99, Number.parseInt(inp.value, 10) || 1));
+      inp.value = editState.items[idx].quantity;
+      renderEditItems(); updateEditTotal();
+    });
+  });
+  $$(".edit-qty-dec", elList).forEach(btn => btn.addEventListener("click", () => {
+    const it = editState.items[+btn.dataset.idx]; it.quantity = Math.max(1, (it.quantity || 1) - 1);
+    renderEditItems(); updateEditTotal();
+  }));
+  $$(".edit-qty-inc", elList).forEach(btn => btn.addEventListener("click", () => {
+    const it = editState.items[+btn.dataset.idx]; it.quantity = Math.min(99, (it.quantity || 1) + 1);
+    renderEditItems(); updateEditTotal();
   }));
   $$("[data-role=discount]", elList).forEach(inp => bindRupiahInput(inp, (v) => {
     const it = editState.items[+inp.dataset.idx];
@@ -2121,6 +2148,7 @@ function renderEditItems() {
     const row = inp.closest(".item-row");
     let bayar = row ? row.querySelector(".disc-bayar") : null;
     const eff = Math.max(0, (it.price || 0) - v);
+    updateEditLineTotal(+inp.dataset.idx);
     if (v > 0) {
       if (!bayar && row) {
         bayar = document.createElement("span");
@@ -2156,11 +2184,18 @@ function renderEditItems() {
   }));
 }
 
+function updateEditLineTotal(idx) {
+  const it = editState.items[idx];
+  const row = $(`#items-list .edit-item[data-idx="${idx}"]`);
+  const line = row && row.querySelector("[data-role=line-total]");
+  if (line) line.textContent = `Total ${fmt(Math.max(0, (it.price || 0) - (it.discount || 0)) * (it.quantity || 1))}`;
+}
+
 function updateEditTotal() {
   let subtotal = rupiahParse($("#subtotal-input").value);
   let tax = rupiahParse($("#tax-input").value);
   let service = rupiahParse($("#service-input").value);
-  const sumItems = editState.items.reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)), 0);
+  const sumItems = editState.items.reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)) * (i.quantity || 1), 0);
   if (editState.tax_included) {
     subtotal = sumItems;
     const si = $("#subtotal-input"); if (si) si.value = rupiahFmt(subtotal);
@@ -2209,7 +2244,8 @@ async function saveEditBill(billId) {
       const itemsChanged = originalItems.length !== items.length
         || originalItems.some(original => {
           const current = original.id == null ? null : currentById.get(original.id);
-          return !current || current.price !== original.price || (current.discount || 0) !== (original.discount || 0);
+          return !current || current.price !== original.price || (current.discount || 0) !== (original.discount || 0)
+            || (current.quantity || 1) !== (original.quantity || 1);
         })
         || items.some(current => current.id == null || !originalById.has(current.id));
       if (editState._hadPayments && (totalsChanged || itemsChanged)) {
@@ -2235,6 +2271,7 @@ async function saveEditBill(billId) {
           name: i.name,
           price: i.price,
           discount: i.discount || 0,
+          quantity: i.quantity || 1,
           mode: i.mode === "slot" ? "slot" : "free",
           slot_count: i.mode === "slot" ? (i.slot_count || 2) : null,
         })),
