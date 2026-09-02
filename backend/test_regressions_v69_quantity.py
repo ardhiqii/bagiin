@@ -155,6 +155,65 @@ def test_tax_included_drops_tax_but_keeps_service_in_split():
     assert data["total_ok"] is True
 
 
+def test_explicit_null_quantity_is_rejected_on_create():
+    owner = db.new_identity("v69-owner-null-create")
+    response = client.post(
+        "/api/bills",
+        json={"title": "null", "items": [{"name": "x", "price": 10, "quantity": None}], "subtotal": 10, "tax": 0, "service": 0, "total": 10},
+        headers=_headers(owner),
+    )
+    assert response.status_code == 400
+
+
+def test_explicit_null_quantity_is_rejected_on_update():
+    owner = db.new_identity("v69-owner-null-update")
+    bill_id = _bill(owner, [{"name": "original", "price": 100, "quantity": 2}])
+    item = _detail(bill_id)["items"][0]
+    response = client.put(
+        f"/api/bills/{bill_id}",
+        json={"title": "changed", "items": [{"id": item["id"], "name": "changed", "price": 100, "quantity": None}], "subtotal": 200, "tax": 0, "service": 0, "total": 200},
+        headers=_headers(owner),
+    )
+    assert response.status_code == 400
+    assert _detail(bill_id)["items"][0]["quantity"] == 2
+
+
+def test_valid_put_quantity_persists():
+    owner = db.new_identity("v69-owner-put")
+    bill_id = _bill(owner, [{"name": "original", "price": 100, "quantity": 2}])
+    item = _detail(bill_id)["items"][0]
+    response = client.put(
+        f"/api/bills/{bill_id}",
+        json={"title": "updated", "items": [{"id": item["id"], "name": "updated", "price": 100, "quantity": 3}], "subtotal": 300, "tax": 0, "service": 0, "total": 300},
+        headers=_headers(owner),
+    )
+    assert response.status_code == 200, response.text
+    data = _detail(bill_id)
+    assert data["items"][0]["quantity"] == 3
+    assert data["bill"]["subtotal_idr"] == 300
+
+
+def test_invalid_aggregate_does_not_clamp_existing_selections():
+    owner = db.new_identity("v69-owner-aggregate")
+    guest = db.new_identity("v69-guest-aggregate")
+    bill_id = _bill(owner, [{"name": "slot", "price": 100, "quantity": 1, "mode": "slot", "slot_count": 3}])
+    item = _detail(bill_id)["items"][0]
+    response = client.post(
+        f"/api/bills/{bill_id}/selections",
+        json={"picks": [{"item_id": item["id"], "qty": 2}]},
+        headers=_headers(guest),
+    )
+    assert response.status_code == 200, response.text
+    before_qty = db.get_bill(bill_id)["selections"][0]["qty"]
+    response = client.put(
+        f"/api/bills/{bill_id}",
+        json={"title": "invalid", "items": [{"id": item["id"], "name": "slot", "price": 100, "quantity": 1, "mode": "free"}], "subtotal": 999, "tax": 0, "service": 0, "total": 999},
+        headers=_headers(owner),
+    )
+    assert response.status_code == 400
+    assert db.get_bill(bill_id)["selections"][0]["qty"] == before_qty == 2
+
+
 def test_invalid_quantity_values_are_rejected_on_create():
     owner = db.new_identity("v69-owner-9")
     for bad in (True, 1.5, "2", 0, -1, 100):

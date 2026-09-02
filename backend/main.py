@@ -221,12 +221,15 @@ _MAX_IDR = 10**12  # a trillion rupiah -- comfortably above any real bill,
 # (bug: v66 audit, a 20-digit price in a create/update payload).
 
 _MAX_ITEM_QUANTITY = 99
+_MISSING = object()
 
 
 def _item_quantity(value, field: str) -> int:
     """Strictly validate purchased units; numeric strings are not accepted."""
-    if value is None:
+    if value is _MISSING:
         return 1
+    if value is None:
+        raise HTTPException(400, f"{field} harus bilangan bulat")
     if type(value) is not int:
         raise HTTPException(400, f"{field} harus bilangan bulat")
     if value < 1:
@@ -729,7 +732,7 @@ async def create_bill(request: Request):
             raise HTTPException(400, "Nama item wajib diisi")
         price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0, maxv=_MAX_IDR)
         discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0, maxv=_MAX_IDR)
-        quantity = _item_quantity(i.get("quantity"), f"Jumlah {i.get('name')}")
+        quantity = _item_quantity(i.get("quantity", _MISSING), f"Jumlah {i.get('name')}")
         if discount > price:
             raise HTTPException(400, f"Diskon {i['name']} tidak boleh lebih besar dari harga")
         line_total = (price - discount) * quantity
@@ -814,7 +817,7 @@ async def create_bill(request: Request):
             "mode": i.get("mode", "free"),
             "slot_count": _to_int(i.get("slot_count"), f"Slot {i['name']}", 1, minv=1) if i.get("mode") == "slot" else None,
             "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0, maxv=_MAX_IDR),
-            "quantity": _item_quantity(i.get("quantity"), f"Jumlah {i['name']}"),
+            "quantity": _item_quantity(i.get("quantity", _MISSING), f"Jumlah {i['name']}"),
         } for i in items],
         participants=participants,
         photo_path=photo_path,
@@ -849,7 +852,7 @@ async def update_bill(bill_id: str, request: Request):
             raise HTTPException(400, "Nama item wajib diisi")
         price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0, maxv=_MAX_IDR)
         discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0, maxv=_MAX_IDR)
-        quantity = _item_quantity(i.get("quantity"), f"Jumlah {i.get('name')}")
+        quantity = _item_quantity(i.get("quantity", _MISSING), f"Jumlah {i.get('name')}")
         if discount > price:
             raise HTTPException(400, f"Diskon {i['name']} tidak boleh lebih besar dari harga")
         line_total = (price - discount) * quantity
@@ -890,9 +893,9 @@ async def update_bill(bill_id: str, request: Request):
             taken = taken_by_item.get(int(iid), 0)
             if sc < taken:
                 raise HTTPException(400, f"Slot {it['name']} minimal {taken} (sudah terisi {taken})")
-        elif cur["mode"] == "slot":
-            # switching to free: clamp qty to 1 (people stay selected once)
-            db.clamp_selection_qty(bill_id, int(iid))
+        # Switching slot -> free is clamped by db.update_bill, after every
+        # endpoint validation has passed. Do not mutate selections here: an
+        # invalid subtotal/total below must leave the existing bill intact.
     # absent keys mean "leave as is" — the edit screen doesn't send these, and
     # overwriting them wiped the roster of every bill that had one (bug: typed
     # names that hadn't joined yet vanished from the "Yang bayar" picker)
@@ -946,7 +949,7 @@ async def update_bill(bill_id: str, request: Request):
             "mode": i.get("mode", "free"),
             "slot_count": _to_int(i.get("slot_count"), f"Slot {i['name']}", 1, minv=1) if i.get("mode") == "slot" else None,
             "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0, maxv=_MAX_IDR),
-            "quantity": _item_quantity(i.get("quantity"), f"Jumlah {i['name']}"),
+            "quantity": _item_quantity(i.get("quantity", _MISSING), f"Jumlah {i['name']}"),
         } for i in items],
         subtotal=subtotal_v,
         tax=tax_v,
