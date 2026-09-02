@@ -220,6 +220,21 @@ _MAX_IDR = 10**12  # a trillion rupiah -- comfortably above any real bill,
 # `OverflowError: Python int too large to convert to SQLite INTEGER` -> 500
 # (bug: v66 audit, a 20-digit price in a create/update payload).
 
+_MAX_ITEM_QUANTITY = 99
+
+
+def _item_quantity(value, field: str) -> int:
+    """Strictly validate purchased units; numeric strings are not accepted."""
+    if value is None:
+        return 1
+    if type(value) is not int:
+        raise HTTPException(400, f"{field} harus bilangan bulat")
+    if value < 1:
+        raise HTTPException(400, f"{field} minimal 1")
+    if value > _MAX_ITEM_QUANTITY:
+        raise HTTPException(400, f"{field} maksimal {_MAX_ITEM_QUANTITY}")
+    return value
+
 _ALLOWED_PHOTO_MIME = {"image/jpeg", "image/png", "image/webp"}
 
 
@@ -714,9 +729,13 @@ async def create_bill(request: Request):
             raise HTTPException(400, "Nama item wajib diisi")
         price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0, maxv=_MAX_IDR)
         discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0, maxv=_MAX_IDR)
+        quantity = _item_quantity(i.get("quantity"), f"Jumlah {i.get('name')}")
         if discount > price:
             raise HTTPException(400, f"Diskon {i['name']} tidak boleh lebih besar dari harga")
-        eff_sum += price - discount
+        line_total = (price - discount) * quantity
+        if line_total > _MAX_IDR or eff_sum > _MAX_IDR - line_total:
+            raise HTTPException(400, "Subtotal terlalu besar")
+        eff_sum += line_total
     participants = []
     seen_participants = set()
     for p in (data.get("participants") or []):
@@ -795,6 +814,7 @@ async def create_bill(request: Request):
             "mode": i.get("mode", "free"),
             "slot_count": _to_int(i.get("slot_count"), f"Slot {i['name']}", 1, minv=1) if i.get("mode") == "slot" else None,
             "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0, maxv=_MAX_IDR),
+            "quantity": _item_quantity(i.get("quantity"), f"Jumlah {i['name']}"),
         } for i in items],
         participants=participants,
         photo_path=photo_path,
@@ -829,9 +849,13 @@ async def update_bill(bill_id: str, request: Request):
             raise HTTPException(400, "Nama item wajib diisi")
         price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0, maxv=_MAX_IDR)
         discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0, maxv=_MAX_IDR)
+        quantity = _item_quantity(i.get("quantity"), f"Jumlah {i.get('name')}")
         if discount > price:
             raise HTTPException(400, f"Diskon {i['name']} tidak boleh lebih besar dari harga")
-        eff_sum += price - discount
+        line_total = (price - discount) * quantity
+        if line_total > _MAX_IDR or eff_sum > _MAX_IDR - line_total:
+            raise HTTPException(400, "Subtotal terlalu besar")
+        eff_sum += line_total
     # the same item id twice would be validated twice but stored once, leaving
     # bill.total_idr permanently larger than the sum of its items (bug: 100k
     # charged to nobody, total_ok false, and no screen surfaces it)
@@ -922,6 +946,7 @@ async def update_bill(bill_id: str, request: Request):
             "mode": i.get("mode", "free"),
             "slot_count": _to_int(i.get("slot_count"), f"Slot {i['name']}", 1, minv=1) if i.get("mode") == "slot" else None,
             "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0, maxv=_MAX_IDR),
+            "quantity": _item_quantity(i.get("quantity"), f"Jumlah {i['name']}"),
         } for i in items],
         subtotal=subtotal_v,
         tax=tax_v,
