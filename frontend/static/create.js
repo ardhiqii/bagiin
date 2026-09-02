@@ -228,7 +228,7 @@ function blankBillForVerify() {
   // one empty row, not zero: a manual bill always needs at least one item, and
   // an empty card under a paragraph explaining "Bebas vs Slot" is an
   // explanation with nothing to point at
-  return { items: [{ name: "", price: 0, mode: "free" }], subtotal: 0, tax: 0,
+  return { items: [{ name: "", price: 0, quantity: 1, mode: "free" }], subtotal: 0, tax: 0,
            service: 0, total: 0, photo_path: null, merchant: "", date: "", photos: [] };
 }
 
@@ -470,13 +470,14 @@ function confirmDiscardVerify() {
 const VERIFY_CSS = `<style>
   /* Fixed mobile dock reservation: keep the final controls reachable. */
   #app:has(#create-bill-btn) { padding-bottom:calc(124px + env(safe-area-inset-bottom)); scroll-padding-bottom:calc(124px + env(safe-area-inset-bottom)); }
-  .vf-item { display:grid; grid-template-columns:minmax(0,1fr) minmax(96px,110px) 44px; gap:8px; align-items:center;
+  .vf-item { display:grid; grid-template-columns:minmax(0,1fr) minmax(130px,1.25fr) 44px; gap:8px; align-items:center;
              padding:12px 2px; border-bottom:1px solid var(--border); }
   /* "Nasi Goreng Spesial" in a 1fr column next to a 110px price box reads
      "Nasi Goreng Spe:" — give the name the whole width on a phone */
   @media (max-width:430px) {
     .vf-item { grid-template-columns:1fr 44px; }
     .vf-item [data-role=name] { grid-column:1 / -1; }
+    .vf-item .vf-price { grid-column:1 / -1; }
     /* the price cell is label-on-top-of-input (64px) while the trash is a
        bare 44px box — align-items:center centered the trash on the CELL,
        10px above the input's center (user: "gk sejajar"). Bottom-aligning
@@ -499,6 +500,12 @@ const VERIFY_CSS = `<style>
   .vf-item input { padding:9px 10px; }
   .vf-item .icon-btn { width:44px; height:44px; min-width:44px; min-height:44px; }
   .vf-full { grid-column:1 / -1; }
+  .vf-price { min-width:0; }
+  .vf-qty { display:flex; align-items:center; gap:4px; margin-top:5px; }
+  .vf-qty-label { font-size:11.5px; color:var(--text-3); white-space:nowrap; }
+  .vf-qty button { width:44px; height:44px; min-width:44px; padding:0; }
+  .vf-qty input { width:48px; height:44px; padding:8px 4px; text-align:center; }
+  .vf-line-total { display:block; margin-top:3px; font-size:12px; color:var(--text-2); }
   /* discount box: label + input + optional "→ bayar X" result, wrapping as
      one unit on a phone — moved out of an inline style so the desktop rule
      below (L3) can restyle just this wrapper without fighting specificity */
@@ -567,7 +574,7 @@ const VERIFY_CSS = `<style>
 
     /* name | harga | potongan | delete on ONE line — the discount box used
        to drop to its own row and leave ~700px empty next to a 110px input */
-    .vf-item { grid-template-columns:minmax(0,1fr) minmax(104px,120px) minmax(112px,130px) 44px; }
+    .vf-item { grid-template-columns:minmax(0,1fr) minmax(130px,150px) minmax(112px,130px) 44px; }
     .vf-item .vf-discount { order:2; grid-column:auto; }
     .vf-item .vf-discount-fields { flex-direction:column; align-items:stretch; gap:2px; }
     .vf-item .vf-discount input { max-width:none; }
@@ -579,7 +586,7 @@ const VERIFY_CSS = `<style>
       clip:rect(0 0 0 0); white-space:nowrap; border:0;
     }
     .vf-item .disc-bayar { font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .vf-head { display:grid; grid-template-columns:minmax(0,1fr) minmax(104px,120px) minmax(112px,130px) 44px; gap:8px;
+    .vf-head { display:grid; grid-template-columns:minmax(0,1fr) minmax(130px,150px) minmax(112px,130px) 44px; gap:8px;
                padding:0 2px 2px; font-size:11.5px; font-weight:600;
                color:var(--text-3); letter-spacing:.02em; }
     .vf-head span:nth-child(2), .vf-head span:nth-child(3) { text-align:right; }
@@ -592,8 +599,8 @@ const VERIFY_CSS = `<style>
     /* The shell gives this card less room at medium desktop widths. Keep the
        two metadata fields readable without changing the phone layout. */
     .vf-field-pair { gap:12px; }
-    .vf-item { grid-template-columns:minmax(0,1fr) minmax(96px,112px) minmax(104px,120px) 44px; }
-    .vf-head { grid-template-columns:minmax(0,1fr) minmax(96px,112px) minmax(104px,120px) 44px; }
+    .vf-item { grid-template-columns:minmax(0,1fr) minmax(116px,132px) minmax(104px,120px) 44px; }
+    .vf-head { grid-template-columns:minmax(0,1fr) minmax(116px,132px) minmax(104px,120px) 44px; }
   }
 </style>`;
 
@@ -606,13 +613,24 @@ function normalizeTransactionDate(value) {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === candidate ? candidate : "";
 }
 
+function validQuantity(value) {
+  return /^(?:[1-9]|[1-9][0-9])$/.test(String(value ?? "")) ? Number(value) : null;
+}
+
+function itemQuantity(it) {
+  return validQuantity(it.quantity) || 1;
+}
+
 function renderVerify(ocr, manual = false) {
   // v61: photos is an array now; legacy single photo_path folds in so OCR
   // results (which still carry photo_path) keep working
   const photos = Array.isArray(ocr.photos) ? ocr.photos.slice()
     : (ocr.photo_path ? [ocr.photo_path] : []);
   verifyState = {
-        items: ocr.items || [],
+        items: (ocr.items || []).map(i => {
+          const quantity = validQuantity(i.quantity);
+          return { ...i, quantity: quantity || 1, quantityDraft: quantity ? null : (i.quantity == null ? null : String(i.quantity)) };
+        }),
         subtotal: ocr.subtotal || 0,
         tax: ocr.tax || 0,
         service: ocr.service || 0,
@@ -651,7 +669,7 @@ function renderVerify(ocr, manual = false) {
   // own subtotal. For OCR: when the receipt's subtotal differs from the items
   // (LLM missed an item line), keep the receipt value & show the warning —
   // otherwise let it follow the items so editing a price updates the total.
-  const _sumItems = (verifyState.items || []).reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)), 0);
+  const _sumItems = (verifyState.items || []).reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)) * itemQuantity(i), 0);
   // preserve the user's "I typed this" flag across re-renders instead of
   // recomputing it — recomputing made a typed subtotal that happened to equal
   // the item sum silently switch back to auto-follow (bug: user input ignored)
@@ -1029,7 +1047,7 @@ function renderVerify(ocr, manual = false) {
   renderPeopleChips();
 
   $("#add-item-btn").addEventListener("click", () => {
-    verifyState.items.push({ name: "", price: 0, discount: 0 });
+    verifyState.items.push({ name: "", price: 0, discount: 0, quantity: 1 });
     renderVerifyItems();
     updateVerifyTotal();
     const inputs = $$("#items-list [data-role=name]");
@@ -1093,25 +1111,42 @@ function renderVerify(ocr, manual = false) {
   $("#create-bill-btn").addEventListener("click", createBillFinal);
 }
 
+function updateVerifyLineTotal(idx) {
+  const it = verifyState.items[idx];
+  const row = $(`#items-list .vf-item[data-idx="${idx}"]`);
+  const line = row && row.querySelector("[data-role=line-total] strong");
+  if (line) line.textContent = rupiahFmt(Math.max(0, (it.price || 0) - (it.discount || 0)) * itemQuantity(it));
+}
+
 function renderVerifyItems() {
   const elList = $("#items-list");
   if (!elList) return;
   elList.innerHTML = verifyState.items.map((it, idx) => {
     const eff = Math.max(0, (it.price || 0) - (it.discount || 0));
+    const quantity = itemQuantity(it);
+    const quantityDraft = it.quantityDraft != null ? String(it.quantityDraft) : String(quantity);
     const slots = it.slot_count || 2;
     // per-slot price is the EFFECTIVE price / slots — dividing the pre-discount
     // price quoted a per-bagian number nobody would ever be charged
     // (bug: slot preview ignored the discount column)
-    const perSlot = Math.floor(eff / slots);
+    const perSlot = Math.floor(eff * quantity / slots);
     const isSlot = it.mode === "slot";
     return `
     <div class="vf-item" data-idx="${idx}">
       <input data-role="name" data-idx="${idx}" value="${esc(it.name)}" placeholder="Nama Item"
              maxlength="60" aria-label="Nama item baris ${idx + 1}">
       <div class="vf-price">
-        <label class="vf-mobile-label" for="price-${idx}">Harga</label>
+        <label class="vf-mobile-label" for="price-${idx}">Harga satuan</label>
         <input id="price-${idx}" data-role="price" data-idx="${idx}" class="input-money" type="text" inputmode="numeric" maxlength="16"
-               value="${rupiahFmt(it.price)}" placeholder="0" aria-label="Harga item baris ${idx + 1}">
+               value="${rupiahFmt(it.price)}" placeholder="0" aria-label="Harga satuan item baris ${idx + 1}">
+        <div class="vf-qty" aria-label="Jumlah dibeli item baris ${idx + 1}">
+          <span class="vf-qty-label">Jumlah dibeli</span>
+          <button type="button" class="btn-outline qty-dec" data-idx="${idx}" aria-label="Kurangi jumlah dibeli"${quantity <= 1 ? " disabled" : ""}>−</button>
+          <input data-role="quantity" data-idx="${idx}" type="number" min="1" max="99" step="1" value="${esc(quantityDraft)}" aria-label="Jumlah dibeli item baris ${idx + 1}">
+          <button type="button" class="btn-outline qty-inc" data-idx="${idx}" aria-label="Tambah jumlah dibeli"${quantity >= 99 ? " disabled" : ""}>+</button>
+          <span class="error-text quantity-error${it.quantityDraft != null ? "" : " hidden"}" data-role="quantity-error">Jumlah harus bilangan bulat 1–99.</span>
+        </div>
+        <span class="vf-line-total" data-role="line-total">Total baris: <strong>${rupiahFmt(eff * quantity)}</strong></span>
       </div>
       <button type="button" data-role="del" data-idx="${idx}" class="icon-btn ghost"
               aria-label="Hapus item baris ${idx + 1}" style="color:var(--red);">${ic("trash")}</button>
@@ -1163,7 +1198,40 @@ function renderVerifyItems() {
   $$("[data-role=price]", elList).forEach(inp => bindRupiahInput(inp, (v) => {
     verifyState.items[+inp.dataset.idx].price = v;
     inp.style.borderColor = "";
+    updateVerifyLineTotal(+inp.dataset.idx);
     updateVerifyTotal();
+  }));
+  $$("[data-role=quantity]", elList).forEach(inp => {
+    const commit = () => {
+      const idx = +inp.dataset.idx;
+      const it = verifyState.items[idx];
+      const value = validQuantity(inp.value);
+      const error = inp.parentElement.querySelector("[data-role=quantity-error]");
+      if (value == null) {
+        it.quantityDraft = inp.value;
+        if (error) error.classList.remove("hidden");
+        return;
+      }
+      it.quantity = value;
+      it.quantityDraft = null;
+      if (error) error.classList.add("hidden");
+      updateVerifyLineTotal(idx);
+      updateVerifyTotal();
+    };
+    inp.addEventListener("input", commit);
+    inp.addEventListener("change", commit);
+  });
+  $$(".qty-dec", elList).forEach(btn => btn.addEventListener("click", () => {
+    const it = verifyState.items[+btn.dataset.idx];
+    it.quantityDraft = null;
+    it.quantity = Math.max(1, (it.quantity || 1) - 1);
+    renderVerifyItems(); updateVerifyTotal();
+  }));
+  $$(".qty-inc", elList).forEach(btn => btn.addEventListener("click", () => {
+    const it = verifyState.items[+btn.dataset.idx];
+    it.quantityDraft = null;
+    it.quantity = Math.min(99, (it.quantity || 1) + 1);
+    renderVerifyItems(); updateVerifyTotal();
   }));
   $$("[data-role=discount]", elList).forEach(inp => bindRupiahInput(inp, (v) => {
     const it = verifyState.items[+inp.dataset.idx];
@@ -1172,6 +1240,7 @@ function renderVerifyItems() {
     const row = inp.closest(".vf-item");
     let bayar = row ? row.querySelector(".disc-bayar") : null;
     const eff = Math.max(0, (it.price || 0) - v);
+    updateVerifyLineTotal(+inp.dataset.idx);
     if (v > 0) {
       if (!bayar && row) {
         bayar = document.createElement("span");
@@ -1209,7 +1278,7 @@ function renderVerifyItems() {
 }
 
 function updateVerifyTotal() {
-  const sumItems = verifyState.items.reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)), 0);
+  const sumItems = verifyState.items.reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)) * itemQuantity(i), 0);
   // subtotal auto-follows items unless the user typed their own value
   // (bug: manual-mode-only check meant OCR bills never updated the total when
   // item prices were edited)
@@ -1319,6 +1388,9 @@ async function createBillFinal() {
     if (!String(it.name || "").trim()) {
       badInput = $(`#items-list [data-role=name][data-idx="${idx}"]`);
       badMsg = `Item baris ${idx + 1} belum ada namanya`;
+    } else if (it.quantityDraft != null || validQuantity(it.quantity) == null) {
+      badInput = $(`#items-list [data-role=quantity][data-idx="${idx}"]`);
+      badMsg = `Jumlah item baris ${idx + 1} harus bilangan bulat 1–99`;
     } else if ((it.discount || 0) > (it.price || 0)) {
       badInput = $(`#items-list [data-role=discount][data-idx="${idx}"]`);
       badMsg = `Potongan "${it.name}" lebih gede dari harganya`;
@@ -1357,6 +1429,7 @@ async function createBillFinal() {
           name: i.name,
           price: i.price || 0,
           discount: i.discount || 0,
+          quantity: i.quantity || 1,
           mode: i.mode === "slot" ? "slot" : "free",
           slot_count: i.mode === "slot" ? (i.slot_count || 2) : null,
         })),

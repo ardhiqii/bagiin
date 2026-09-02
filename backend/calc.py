@@ -1,9 +1,10 @@
 """Bagiin - split calculation engine.
 
 Free items: split proportionally by servings taken (each picker takes 1+
-portions; price // total_qty per portion).
-Slot items: creator declares N slots; each slot costs price // N; people take
-1+ slots; empty slots stay uncovered (shown to the creator, not auto-assigned).
+portions; line total // total_qty per portion).
+Slot items: creator declares N slots; each slot costs line total // N; people
+take 1+ slots; empty slots stay uncovered (shown to the creator, not
+auto-assigned).
 
 Invariant: sum(total_per_person) + uncovered_idr + remaining_to_creator == bill.total.
 Rounding leftovers go to the one who fronted the money (`fallback_id`).
@@ -16,7 +17,8 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     """Compute per-identity totals.
 
     bill: dict with subtotal_idr, tax_idr, service_idr, total_idr, tax_mode
-    items: list of item dicts (id, name, price_idr, mode, slot_count)
+    items: list of item dicts (id, name, price_idr, mode, slot_count,
+      quantity). quantity is the purchased unit count and defaults to 1.
     selections: list of {item_id, identity_id, qty}
     participants: list of {name} (creator-declared names, for warnings)
     fallback_id: who absorbs money nobody claimed (unpicked free items, tax
@@ -52,9 +54,13 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     for it in items:
         selectors = sel_by_item.get(it["id"], [])
         eff = max(0, it["price_idr"] - int(it.get("discount_idr", 0) or 0))
+        # quantity is the purchased line quantity; selection qty remains the
+        # number of servings/slots claimed by each participant.
+        quantity = int(it.get("quantity", 1) or 1)
+        line_total = eff * quantity
         if it.get("mode") == "slot" and it.get("slot_count"):
             slot_count = max(1, int(it["slot_count"]))
-            per_slot = eff // slot_count
+            per_slot = line_total // slot_count
             taken = sum(q for _, q in selectors)
             for ident, qty in selectors:
                 subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + per_slot * qty
@@ -63,7 +69,7 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
                 # across SLOTS, not people — one person holding qty>1 slots must
                 # get +1 per slot (old loop capped at len(selectors) and lost
                 # rupiah when rem > number of distinct holders)
-                rem = eff - per_slot * slot_count
+                rem = line_total - per_slot * slot_count
                 for ident, qty in selectors:
                     for _ in range(qty):
                         if rem <= 0:
@@ -74,7 +80,7 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
                         break
             else:
                 empty = slot_count - taken
-                amount = eff - per_slot * taken
+                amount = line_total - per_slot * taken
                 uncovered_idr += amount
                 if amount > 0:
                     # a fully discounted item leaves empty slots worth nothing —
@@ -89,17 +95,17 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
                     })
             continue
         # free mode: split proportionally by servings taken (qty = how many
-        # portions this person takes, default 1). eff // total_qty per serving,
+        # portions this person takes, default 1). line_total // total_qty per serving,
         # rounding remainder round-robin across servings.
         if not selectors:
             # nobody picked this free item -> the owner takes it (matches the
             # warning "masuk ke yang nalangin"). This keeps the split complete:
             # sum(people) + uncovered_idr == bill.total.
-            subtotal_by_ident[fallback_id] = subtotal_by_ident.get(fallback_id, 0) + eff
+            subtotal_by_ident[fallback_id] = subtotal_by_ident.get(fallback_id, 0) + line_total
             continue
         total_qty = sum(q for _, q in selectors)
-        share = eff // total_qty
-        rem = eff - share * total_qty
+        share = line_total // total_qty
+        rem = line_total - share * total_qty
         for ident, qty in selectors:
             subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + share * qty
         for i in range(rem):
@@ -169,7 +175,9 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     warnings = []
     for it in unassigned:
         eff = max(0, it["price_idr"] - int(it.get("discount_idr", 0) or 0))
-        warnings.append(f"Item tidak dipilih siapa pun: {it['name']} Rp {eff:,} -> otomatis dibebankan ke pembayar dahulu")
+        quantity = int(it.get("quantity", 1) or 1)
+        line_total = eff * quantity
+        warnings.append(f"Item tidak dipilih siapa pun: {it['name']} Rp {line_total:,} -> otomatis dibebankan ke pembayar dahulu")
     for u in uncovered_slots:
         warnings.append(
             f"Bagian kosong: {u['name']} {u['empty']} bagian belum terisi "

@@ -142,7 +142,8 @@ def init_db():
             price_idr INTEGER NOT NULL,
             sort_order INTEGER NOT NULL DEFAULT 0,
             mode TEXT NOT NULL DEFAULT 'free',      -- 'free' (bagi yang milih) | 'slot' (bagi N slot)
-            slot_count INTEGER                       -- creator-set slot count (slot mode only)
+            slot_count INTEGER,                       -- creator-set slot count (slot mode only)
+            quantity INTEGER NOT NULL DEFAULT 1
         );
 
         CREATE TABLE IF NOT EXISTS selection (
@@ -237,6 +238,8 @@ def init_db():
         conn.execute("ALTER TABLE item ADD COLUMN slot_count INTEGER")
     if "discount_idr" not in icols:
         conn.execute("ALTER TABLE item ADD COLUMN discount_idr INTEGER NOT NULL DEFAULT 0")
+    if "quantity" not in icols:
+        conn.execute("ALTER TABLE item ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1")
     # migration: bill tax-included flag (v33) — item prices already include tax
     bcols = {r[1] for r in conn.execute("PRAGMA table_info(bill)").fetchall()}
     if "tax_included" not in bcols:
@@ -718,9 +721,9 @@ def create_bill(creator_id: str, title: str, tax_mode: str,
             else:
                 slot_count = None
             conn.execute(
-                "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count, discount_idr) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count, discount_idr, quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (bill_id, item["name"], int(item["price"]), i, mode, slot_count,
-                 int(item.get("discount", 0) or 0)),
+                 int(item.get("discount", 0) or 0), int(item.get("quantity", 1))),
             )
         # multi-photo (v61): every attached photo becomes a bill_photo row.
         # The legacy single photo_path is folded in too so OCR-created bills
@@ -917,18 +920,18 @@ def update_bill(bill_id: str, title: str, merchant=UNCHANGED,
                         "UPDATE selection SET qty = 1 WHERE item_id = ? AND qty > 1", (iid,)
                     )
                 conn.execute(
-                    "UPDATE item SET name = ?, price_idr = ?, sort_order = ?, mode = ?, slot_count = ?, discount_idr = ? WHERE id = ? AND bill_id = ?",
+                    "UPDATE item SET name = ?, price_idr = ?, sort_order = ?, mode = ?, slot_count = ?, discount_idr = ?, quantity = ? WHERE id = ? AND bill_id = ?",
                     (item["name"], int(item["price"]), i, mode, slot_count,
-                     int(item.get("discount", 0) or 0), iid, bill_id),
+                     int(item.get("discount", 0) or 0), int(item.get("quantity", 1)), iid, bill_id),
                 )
                 kept.add(int(iid))
                 continue
         # no id, or a stale/foreign id -> insert as a brand-new item (never
         # delete a real item because of an id we don't own)
         cur = conn.execute(
-            "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count, discount_idr) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO item (bill_id, name, price_idr, sort_order, mode, slot_count, discount_idr, quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (bill_id, item["name"], int(item["price"]), i, mode, slot_count,
-             int(item.get("discount", 0) or 0)),
+             int(item.get("discount", 0) or 0), int(item.get("quantity", 1))),
         )
         kept.add(cur.lastrowid)
     removed = existing - kept

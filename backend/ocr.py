@@ -26,12 +26,13 @@ _ATTEMPT_TIMEOUT_CAP = 15.0
 _MIN_ATTEMPT_SECONDS = 3.0
 
 SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Output JSON EXACTLY:
-{"merchant":"nama tempat makan/toko","date":"YYYY-MM-DD","items":[{"name":"nama item","price":harga,"discount":diskon}],"subtotal":N,"tax":N,"service":N,"total":N,"tax_included":true/false}
+{"merchant":"nama tempat makan/toko","date":"YYYY-MM-DD","items":[{"name":"nama item","price":harga,"discount":diskon,"quantity":jumlah}],"subtotal":N,"tax":N,"service":N,"total":N,"tax_included":true/false}
 Rules:
 - merchant = nama tempat makan/toko yang tertera di struk (header paling atas), contoh "Kitchen & Dimsum"; kosongkan string kalau tidak ada
 - date = tanggal transaksi yang tertera di struk, dalam format YYYY-MM-DD (misal struk tulis 8/8/26 -> "2026-08-08"); kalau hanya ada tanggal tanpa tahun, asumsikan tahun berjalan; kosongkan kalau tidak ada
 - price dalam Rupiah integer (tanpa 'Rp', tanpa titik) = harga SEBELUM diskon (harga menu)
 - discount = potongan harga item dalam Rupiah integer (0 kalau tidak ada). Struk sering mencetak baris diskon di bawah item, contoh "CLR-4ProdDis349" lalu "-5.500" — gabungkan diskon itu ke item yang tepat di atasnya sebagai discount. Kalau struk tidak mencetak diskon, discount = 0
+- quantity = jumlah unit yang tercetak jelas pada baris item (bilangan bulat 1 sampai 99). Kalau pengali/jumlah tidak jelas, meragukan, atau hanya terlihat sebagai baris struk yang berulang, quantity = 1 dan pertahankan baris-baris item terpisah; jangan menggabungkan item dengan nama sama
 - tax = PPN/PB1, service = service charge/SC (0 kalau tidak ada)
 - tax_included = true kalau struk menyebut harga sudah termasuk pajak (misal tulisan "termasuk PAJAK", "trmasuk pajak", "harga sudah termasuk pajak", "tax included", "Tax Invoice"). Kalau true: subtotal = jumlah item setelah diskon, tax = 0 (PPN sudah nempel di harga item, jangan dihitung dobel) TAPI service charge/SC tetap dilaporkan apa adanya kalau ada tulisannya di struk — SC itu biaya terpisah dari pajak, bukan bagian dari harga item. Kalau false: subtotal = jumlah sebelum pajak, tax = PPN/PB1, service = SC
 - subtotal = jumlah sebelum pajak (setelah diskon); total = yang dibayar
@@ -267,11 +268,18 @@ def _normalize(parsed) -> dict:
             discount = _to_int(it.get("discount"))
         except Exception:
             discount = 0
+        raw_quantity = it.get("quantity", 1)
+        # Only a real integer emitted in the dedicated quantity field counts
+        # as a clear multiplier. Ambiguous text, booleans, and numeric strings
+        # remain x1; repeated rows are intentionally not deduplicated.
+        quantity = raw_quantity if type(raw_quantity) is int and 1 <= raw_quantity <= 99 else 1
         if discount < 0 or discount > price:
             discount = 0
         name = str(it.get("name", "")).strip()
         if name and price >= 0:
-            items.append({"name": name, "price": price, "discount": discount})
+            # Receipt OCR must be conservative: repeated/ambiguous rows are
+            # separate purchased lines, never an inferred multiplier.
+            items.append({"name": name, "price": price, "discount": discount, "quantity": quantity})
 
     # LLMs often emit tax_included as a STRING ("false"/"0") — bool("false")
     # is True in Python, which silently flipped bills into tax-included mode
