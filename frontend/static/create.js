@@ -613,13 +613,24 @@ function normalizeTransactionDate(value) {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === candidate ? candidate : "";
 }
 
+function validQuantity(value) {
+  return /^(?:[1-9]|[1-9][0-9])$/.test(String(value ?? "")) ? Number(value) : null;
+}
+
+function itemQuantity(it) {
+  return validQuantity(it.quantity) || 1;
+}
+
 function renderVerify(ocr, manual = false) {
   // v61: photos is an array now; legacy single photo_path folds in so OCR
   // results (which still carry photo_path) keep working
   const photos = Array.isArray(ocr.photos) ? ocr.photos.slice()
     : (ocr.photo_path ? [ocr.photo_path] : []);
   verifyState = {
-        items: (ocr.items || []).map(i => ({ ...i, quantity: Math.max(1, Math.min(99, Number(i.quantity) || 1)) })),
+        items: (ocr.items || []).map(i => {
+          const quantity = validQuantity(i.quantity);
+          return { ...i, quantity: quantity || 1, quantityDraft: quantity ? null : (i.quantity == null ? null : String(i.quantity)) };
+        }),
         subtotal: ocr.subtotal || 0,
         tax: ocr.tax || 0,
         service: ocr.service || 0,
@@ -658,7 +669,7 @@ function renderVerify(ocr, manual = false) {
   // own subtotal. For OCR: when the receipt's subtotal differs from the items
   // (LLM missed an item line), keep the receipt value & show the warning —
   // otherwise let it follow the items so editing a price updates the total.
-  const _sumItems = (verifyState.items || []).reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)) * (i.quantity || 1), 0);
+  const _sumItems = (verifyState.items || []).reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)) * itemQuantity(i), 0);
   // preserve the user's "I typed this" flag across re-renders instead of
   // recomputing it — recomputing made a typed subtotal that happened to equal
   // the item sum silently switch back to auto-follow (bug: user input ignored)
@@ -1104,7 +1115,7 @@ function updateVerifyLineTotal(idx) {
   const it = verifyState.items[idx];
   const row = $(`#items-list .vf-item[data-idx="${idx}"]`);
   const line = row && row.querySelector("[data-role=line-total] strong");
-  if (line) line.textContent = rupiahFmt(Math.max(0, (it.price || 0) - (it.discount || 0)) * (it.quantity || 1));
+  if (line) line.textContent = rupiahFmt(Math.max(0, (it.price || 0) - (it.discount || 0)) * itemQuantity(it));
 }
 
 function renderVerifyItems() {
@@ -1112,13 +1123,13 @@ function renderVerifyItems() {
   if (!elList) return;
   elList.innerHTML = verifyState.items.map((it, idx) => {
     const eff = Math.max(0, (it.price || 0) - (it.discount || 0));
-    const quantity = Math.max(1, Math.min(99, Number(it.quantity) || 1));
-    it.quantity = quantity;
+    const quantity = itemQuantity(it);
+    const quantityDraft = it.quantityDraft != null ? String(it.quantityDraft) : String(quantity);
     const slots = it.slot_count || 2;
     // per-slot price is the EFFECTIVE price / slots — dividing the pre-discount
     // price quoted a per-bagian number nobody would ever be charged
     // (bug: slot preview ignored the discount column)
-    const perSlot = Math.floor(eff / slots);
+    const perSlot = Math.floor(eff * quantity / slots);
     const isSlot = it.mode === "slot";
     return `
     <div class="vf-item" data-idx="${idx}">
@@ -1131,8 +1142,9 @@ function renderVerifyItems() {
         <div class="vf-qty" aria-label="Jumlah dibeli item baris ${idx + 1}">
           <span class="vf-qty-label">Jumlah dibeli</span>
           <button type="button" class="btn-outline qty-dec" data-idx="${idx}" aria-label="Kurangi jumlah dibeli"${quantity <= 1 ? " disabled" : ""}>−</button>
-          <input data-role="quantity" data-idx="${idx}" type="number" min="1" max="99" step="1" value="${quantity}" aria-label="Jumlah dibeli item baris ${idx + 1}">
+          <input data-role="quantity" data-idx="${idx}" type="number" min="1" max="99" step="1" value="${esc(quantityDraft)}" aria-label="Jumlah dibeli item baris ${idx + 1}">
           <button type="button" class="btn-outline qty-inc" data-idx="${idx}" aria-label="Tambah jumlah dibeli"${quantity >= 99 ? " disabled" : ""}>+</button>
+          <span class="error-text quantity-error${it.quantityDraft != null ? "" : " hidden"}" data-role="quantity-error">Jumlah harus bilangan bulat 1–99.</span>
         </div>
         <span class="vf-line-total" data-role="line-total">Total baris: <strong>${rupiahFmt(eff * quantity)}</strong></span>
       </div>
@@ -1192,9 +1204,17 @@ function renderVerifyItems() {
   $$("[data-role=quantity]", elList).forEach(inp => {
     const commit = () => {
       const idx = +inp.dataset.idx;
-      const value = Math.max(1, Math.min(99, Number.parseInt(inp.value, 10) || 1));
-      verifyState.items[idx].quantity = value;
-      inp.value = value;
+      const it = verifyState.items[idx];
+      const value = validQuantity(inp.value);
+      const error = inp.parentElement.querySelector("[data-role=quantity-error]");
+      if (value == null) {
+        it.quantityDraft = inp.value;
+        if (error) error.classList.remove("hidden");
+        return;
+      }
+      it.quantity = value;
+      it.quantityDraft = null;
+      if (error) error.classList.add("hidden");
       updateVerifyLineTotal(idx);
       updateVerifyTotal();
     };
@@ -1203,11 +1223,13 @@ function renderVerifyItems() {
   });
   $$(".qty-dec", elList).forEach(btn => btn.addEventListener("click", () => {
     const it = verifyState.items[+btn.dataset.idx];
+    it.quantityDraft = null;
     it.quantity = Math.max(1, (it.quantity || 1) - 1);
     renderVerifyItems(); updateVerifyTotal();
   }));
   $$(".qty-inc", elList).forEach(btn => btn.addEventListener("click", () => {
     const it = verifyState.items[+btn.dataset.idx];
+    it.quantityDraft = null;
     it.quantity = Math.min(99, (it.quantity || 1) + 1);
     renderVerifyItems(); updateVerifyTotal();
   }));
@@ -1256,7 +1278,7 @@ function renderVerifyItems() {
 }
 
 function updateVerifyTotal() {
-  const sumItems = verifyState.items.reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)) * (i.quantity || 1), 0);
+  const sumItems = verifyState.items.reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)) * itemQuantity(i), 0);
   // subtotal auto-follows items unless the user typed their own value
   // (bug: manual-mode-only check meant OCR bills never updated the total when
   // item prices were edited)
@@ -1366,6 +1388,9 @@ async function createBillFinal() {
     if (!String(it.name || "").trim()) {
       badInput = $(`#items-list [data-role=name][data-idx="${idx}"]`);
       badMsg = `Item baris ${idx + 1} belum ada namanya`;
+    } else if (it.quantityDraft != null || validQuantity(it.quantity) == null) {
+      badInput = $(`#items-list [data-role=quantity][data-idx="${idx}"]`);
+      badMsg = `Jumlah item baris ${idx + 1} harus bilangan bulat 1–99`;
     } else if ((it.discount || 0) > (it.price || 0)) {
       badInput = $(`#items-list [data-role=discount][data-idx="${idx}"]`);
       badMsg = `Potongan "${it.name}" lebih gede dari harganya`;

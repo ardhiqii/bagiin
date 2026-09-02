@@ -548,6 +548,11 @@ function renderGuestView(data, me) {
   watchDock();
 }
 
+function billItemQuantity(it) {
+  const raw = String(it.quantity ?? "");
+  return /^(?:[1-9]|[1-9][0-9])$/.test(raw) ? Number(raw) : 1;
+}
+
 function itemRowHtml(it, data, mySel, myName, me, readOnly) {
   const selList = (data.sel_by_item[it.id] || []);
   const mine = mySelEntry(selList, me) || (myName && selList.find(s => !s.id && normName(s.name) === normName(myName)));
@@ -555,15 +560,15 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
   const isSel = myQty > 0;
   const isSlot = it.mode === "slot" && it.slot_count;
   const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
-  const purchasedQty = Math.max(1, Math.min(99, Number(it.quantity) || 1));
+  const purchasedQty = billItemQuantity(it);
   const modeLabel = isSlot ? "Bagi per porsi" : "Dibagi rata";
   let shareText;
   // "kamu N×" only where there is no stepper to read it off (closed bills).
   // On an open bill the stepper sits right there showing the same number, and
   // on a 390px phone that duplicate pushed the detail line onto three rows.
   if (isSlot) {
-    const perSlot = Math.floor(eff / it.slot_count);
-    const perSlotMax = Math.ceil(eff / it.slot_count);
+    const perSlot = Math.floor(eff * purchasedQty / it.slot_count);
+    const perSlotMax = Math.ceil(eff * purchasedQty / it.slot_count);
     const shareLabel = perSlot === perSlotMax
       ? `${fmt(perSlot)}/bagian`
       : `${fmt(perSlot)}–${fmt(perSlotMax).replace(/^Rp\s*/, "")}/bagian`;
@@ -575,7 +580,7 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
     shareText = "belum dipilih";
   } else {
     const totalQty = selList.reduce((s, x) => s + (x.qty || 1), 0);
-    const perServing = Math.floor(eff / totalQty);
+    const perServing = Math.floor(eff * purchasedQty / totalQty);
     const mineTxt = readOnly && myQty > 0 ? ` · kamu ${myQty}×` : "";
     shareText = `${totalQty} porsi · ${fmt(perServing)}/porsi${mineTxt}`;
   }
@@ -589,7 +594,7 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
   const isFull = isSlot && (selList.reduce((s, x) => s + (x.qty || 1), 0) >= it.slot_count) && myQty === 0;
   const a11y = readOnly || isFull
     ? ""
-    : ` role="checkbox" tabindex="0" aria-checked="${isSel}" aria-label="${esc(it.name)}, ${fmt(eff)}"`;
+    : ` role="checkbox" tabindex="0" aria-checked="${isSel}" aria-label="${esc(it.name)}, ${fmt(eff * purchasedQty)}"`;
   return `
     <div class="item-row${isSel ? " selected" : ""}${!readOnly && !isFull ? " item-tappable" : ""}${isFull ? " item-full" : ""}" data-item="${it.id}"${a11y}>
       ${!readOnly || isSel ? (isFull ? `<div class="item-check item-check-full">${ic("x")}</div>` : `<div class="item-check">${ic("check")}</div>`) : ""}
@@ -733,7 +738,7 @@ function renderPickRows(data, me, useServer) {
       } else if (sel || selList.length > 0) {
         const totalQty = selList.reduce((s, x) => s + (x.qty || 1), 0) + qty;
         const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
-        const perServing = Math.floor(eff / totalQty);
+        const perServing = Math.floor(eff * billItemQuantity(it) / totalQty);
         shareEl.textContent = `${totalQty} porsi · ${fmt(perServing)}/porsi`;
       } else {
         shareEl.textContent = "belum dipilih";
@@ -802,7 +807,9 @@ function openSlotPickerSheet(data, me, it) {
   const myQty = state.selQty.get(it.id) || (mySelEntry(selList, me) || {}).qty || 0;
   const max = it.slot_count - othersTaken;
   const leftEmpty = Math.max(0, max - myQty);
-  const perSlot = Math.floor(Math.max(0, it.price_idr - (it.discount_idr || 0)) / it.slot_count);
+  const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
+  const lineTotal = eff * billItemQuantity(it);
+  const perSlot = Math.floor(lineTotal / it.slot_count);
   let qty = myQty || 1;
 
   const s = openSheet(`
@@ -877,7 +884,8 @@ function openSlotPickerSheet(data, me, it) {
 function perServingEst(it, othersQty, myQty) {
   const totalQty = othersQty + myQty;
   const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
-  return totalQty > 0 ? Math.floor(eff / totalQty) : eff;
+  const lineTotal = eff * billItemQuantity(it);
+  return totalQty > 0 ? Math.floor(lineTotal / totalQty) : lineTotal;
 }
 
 // Merge the live (post-tap) qty for ME into a server-snapshot selector list,
@@ -944,8 +952,9 @@ function computeMyBreakdown(data, selQty) {
   data.items.forEach(it => {
     const myQty = selQty.get(it.id) || 0;
     const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
+    const lineTotal = eff * billItemQuantity(it);
     if (it.mode === "slot" && it.slot_count) {
-      const perSlot = Math.floor(eff / it.slot_count);
+      const perSlot = Math.floor(lineTotal / it.slot_count);
       const order = mergeLiveSelectors(data.sel_by_item[it.id], myId, myName, myQty);
       const taken = order.reduce((s, x) => s + x.qty, 0);
       order.forEach(x => { if (x.id === myId) sub += perSlot * x.qty; });
@@ -953,7 +962,7 @@ function computeMyBreakdown(data, selQty) {
         // all slots taken: distribute eff - perSlot*slotCount across SLOTS
         // (per unit, not per person) — mirrors calc.py's inner `for _ in
         // range(qty)` loop
-        let rem = eff - perSlot * it.slot_count;
+        let rem = lineTotal - perSlot * it.slot_count;
         for (const x of order) {
           for (let i = 0; i < x.qty && rem > 0; i++) {
             if (x.id === myId) sub += 1;
@@ -961,7 +970,7 @@ function computeMyBreakdown(data, selQty) {
           }
           if (rem <= 0) break;
         }
-        totalSelAll += perSlot * taken + (eff - perSlot * it.slot_count);
+        totalSelAll += perSlot * taken + (lineTotal - perSlot * it.slot_count);
       } else {
         // still uncovered: the leftover stays in uncovered_idr, never in
         // anyone's subtotal or the tax base
@@ -973,9 +982,9 @@ function computeMyBreakdown(data, selQty) {
     const order = mergeLiveSelectors(data.sel_by_item[it.id], myId, myName, myQty);
     const totalQty = order.reduce((s, x) => s + x.qty, 0);
     if (myQty > 0 && totalQty > 0) {
-      const portion = Math.floor(eff / totalQty);
+      const portion = Math.floor(lineTotal / totalQty);
       sub += portion * myQty;
-      const rem = eff - portion * totalQty;
+      const rem = lineTotal - portion * totalQty;
       for (let i = 0; i < rem; i++) {
         if (order[i % order.length].id === myId) sub += 1;
       }
@@ -985,8 +994,8 @@ function computeMyBreakdown(data, selQty) {
     // subtotal). Dropping it inflated everyone else's tax share (bug: estimate
     // said Rp 145.000, the backend said Rp 122.500, and the number jumped the
     // moment the response landed)
-    else if (totalQty === 0 && iAmOwner) sub += eff;
-    totalSelAll += eff;
+    else if (totalQty === 0 && iAmOwner) sub += lineTotal;
+    totalSelAll += lineTotal;
   });
   let taxService = (data.bill.tax_idr || 0) + (data.bill.service_idr || 0);
   if (data.bill.tax_included) taxService = (data.bill.service_idr || 0);
@@ -1056,10 +1065,11 @@ function openPaySheet(data, me, alreadyPaid) {
         ${items.map(it => {
           const myQty = state.selQty.get(it.id) || 1;
           const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
+          const lineTotal = eff * billItemQuantity(it);
           let myPrice;
           let shareNote;
           if (it.mode === "slot" && it.slot_count) {
-            const perSlot = Math.floor(eff / it.slot_count);
+            const perSlot = Math.floor(lineTotal / it.slot_count);
             myPrice = perSlot * myQty;
             shareNote = `${myQty} bagian · ${fmt(perSlot)}/bagian`;
           } else {
@@ -1071,7 +1081,7 @@ function openPaySheet(data, me, alreadyPaid) {
             const myLive = state.selQty.get(it.id) || 0;
             const othersN = othersSel(data.sel_by_item[it.id], me).reduce((x, y) => x + (y.qty || 1), 0);
             const n = Math.max(1, othersN + myLive);
-            myPrice = n > 1 ? Math.floor(eff / n) * myLive : eff;
+            myPrice = n > 1 ? Math.floor(lineTotal / n) * myLive : lineTotal;
             shareNote = n > 1 ? `dibagi ${n} porsi` : "";
           }
           const priceNote = it.discount_idr > 0
@@ -1433,15 +1443,15 @@ function renderCreatorView(data) {
         const selList = (data.sel_by_item[it.id] || []);
         const isSlot = it.mode === "slot" && it.slot_count;
         const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
-        const purchasedQty = Math.max(1, Math.min(99, Number(it.quantity) || 1));
+        const purchasedQty = billItemQuantity(it);
         const modeLabel = isSlot ? "Bagi per porsi" : "Dibagi rata";
         const priceHtml = it.discount_idr > 0
           ? `<span class="price-was">${fmt(it.price_idr)}</span> <span class="price-now">${fmt(eff)}</span>`
           : fmt(eff);
         let shareText;
         if (isSlot) {
-          const perSlot = Math.floor(eff / it.slot_count);
-          const perSlotMax = Math.ceil(eff / it.slot_count);
+          const perSlot = Math.floor(eff * purchasedQty / it.slot_count);
+          const perSlotMax = Math.ceil(eff * purchasedQty / it.slot_count);
           const shareLabel = perSlot === perSlotMax
             ? `${fmt(perSlot)}/bagian`
             : `${fmt(perSlot)}–${fmt(perSlotMax).replace(/^Rp\s*/, "")}/bagian`;
@@ -1594,7 +1604,7 @@ function openSlotManagerSheet(data, it) {
   const selList = (data.sel_by_item[it.id] || []);
   const taken = selList.reduce((s, x) => s + (x.qty || 1), 0);
   const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
-  const perSlot = Math.floor(eff / it.slot_count);
+  const perSlot = Math.floor(eff * billItemQuantity(it) / it.slot_count);
   let n = it.slot_count;
   const s = openSheet(`
     <div class="sheet-handle"></div>
@@ -2073,7 +2083,10 @@ function renderEditBill(data) {
 function renderEditItems() {
   const elList = $("#items-list");
   if (!elList) return;
-  elList.innerHTML = editState.items.map((it, idx) => `
+  elList.innerHTML = editState.items.map((it, idx) => {
+    const quantity = billItemQuantity(it);
+    const quantityDraft = it.quantityDraft != null ? String(it.quantityDraft) : String(quantity);
+    return `
     <div class="item-row edit-item" style="flex-wrap:wrap;">
       <div class="edit-name" style="flex:2;min-width:140px;">
         <input data-role="name" data-idx="${idx}" value="${esc(it.name)}" placeholder="Nama Item" aria-label="Nama item" style="padding:9px 10px;">
@@ -2084,9 +2097,10 @@ function renderEditItems() {
       <div class="edit-quantity" style="display:flex;align-items:center;gap:4px;min-width:170px;">
         <span class="label-sm" style="white-space:nowrap;">Jumlah dibeli</span>
         <button type="button" class="btn-outline btn-sm edit-qty-dec" data-idx="${idx}" aria-label="Kurangi jumlah dibeli" style="width:44px;height:44px;padding:0;"${(it.quantity || 1) <= 1 ? " disabled" : ""}>−</button>
-        <input data-role="quantity" data-idx="${idx}" type="number" min="1" max="99" value="${it.quantity || 1}" aria-label="Jumlah dibeli" style="width:48px;height:44px;text-align:center;padding:6px 3px;">
-        <button type="button" class="btn-outline btn-sm edit-qty-inc" data-idx="${idx}" aria-label="Tambah jumlah dibeli" style="width:44px;height:44px;padding:0;"${(it.quantity || 1) >= 99 ? " disabled" : ""}>+</button>
-        <span class="muted" data-role="line-total" style="font-size:12px;white-space:nowrap;">Total ${fmt(Math.max(0, (it.price || 0) - (it.discount || 0)) * (it.quantity || 1))}</span>
+        <input data-role="quantity" data-idx="${idx}" type="number" min="1" max="99" value="${esc(quantityDraft)}" aria-label="Jumlah dibeli" style="width:48px;height:44px;text-align:center;padding:6px 3px;">
+        <button type="button" class="btn-outline btn-sm edit-qty-inc" data-idx="${idx}" aria-label="Tambah jumlah dibeli" style="width:44px;height:44px;padding:0;"${quantity >= 99 ? " disabled" : ""}>+</button>
+        <span class="error-text quantity-error${it.quantityDraft != null ? "" : " hidden"}" data-role="quantity-error">Jumlah harus bilangan bulat 1–99.</span>
+        <span class="muted" data-role="line-total" style="font-size:12px;white-space:nowrap;">Total ${fmt(Math.max(0, (it.price || 0) - (it.discount || 0)) * billItemQuantity(it))}</span>
       </div>
       <button data-role="del" data-idx="${idx}" class="icon-btn" aria-label="Hapus item ini" style="color:var(--red);">${ic("trash")}</button>
       <div style="flex-basis:100%;padding:6px 0 0;display:flex;align-items:center;gap:8px;">
@@ -2114,10 +2128,10 @@ function renderEditItems() {
               bill screen). The "bebas" explainer is the same for every row —
               it lives once above the list instead of under all of them. */ ""}
         ${it.mode === "slot" ? `<div class="muted" style="font-size:12px;line-height:1.45;">
-          Dibagi ${it.slot_count || 2} bagian tetap${it.price > 0 ? ` · ${rupiahFmt(Math.floor(Math.max(0, (it.price || 0) - (it.discount || 0)) / (it.slot_count || 2)))}/bagian` : ""}. Tiap orang bisa ambil 1+ bagian, yang kosong keliatan.
+          Dibagi ${it.slot_count || 2} bagian tetap${it.price > 0 ? ` · ${rupiahFmt(Math.floor(Math.max(0, (it.price || 0) - (it.discount || 0)) * billItemQuantity(it) / (it.slot_count || 2)))}/bagian` : ""}. Tiap orang bisa ambil 1+ bagian, yang kosong keliatan.
         </div>` : ""}
       </div>
-    </div>`).join("");
+    </div>`}).join("");
   $$("[data-role=name]", elList).forEach(inp => inp.addEventListener("input", (e) => {
     editState.items[+e.target.dataset.idx].name = e.target.value;
   }));
@@ -2127,19 +2141,29 @@ function renderEditItems() {
     updateEditTotal();
   }));
   $$("[data-role=quantity]", elList).forEach(inp => {
-    inp.addEventListener("change", () => {
-      const idx = +inp.dataset.idx;
-      editState.items[idx].quantity = Math.max(1, Math.min(99, Number.parseInt(inp.value, 10) || 1));
-      inp.value = editState.items[idx].quantity;
+    const commit = () => {
+      const it = editState.items[+inp.dataset.idx];
+      const value = /^(?:[1-9]|[1-9][0-9])$/.test(inp.value) ? Number(inp.value) : null;
+      const error = inp.parentElement.querySelector("[data-role=quantity-error]");
+      if (value == null) {
+        it.quantityDraft = inp.value;
+        if (error) error.classList.remove("hidden");
+        return;
+      }
+      it.quantity = value;
+      it.quantityDraft = null;
+      if (error) error.classList.add("hidden");
       renderEditItems(); updateEditTotal();
-    });
+    };
+    inp.addEventListener("input", commit);
+    inp.addEventListener("change", commit);
   });
   $$(".edit-qty-dec", elList).forEach(btn => btn.addEventListener("click", () => {
-    const it = editState.items[+btn.dataset.idx]; it.quantity = Math.max(1, (it.quantity || 1) - 1);
+    const it = editState.items[+btn.dataset.idx]; it.quantityDraft = null; it.quantity = Math.max(1, (it.quantity || 1) - 1);
     renderEditItems(); updateEditTotal();
   }));
   $$(".edit-qty-inc", elList).forEach(btn => btn.addEventListener("click", () => {
-    const it = editState.items[+btn.dataset.idx]; it.quantity = Math.min(99, (it.quantity || 1) + 1);
+    const it = editState.items[+btn.dataset.idx]; it.quantityDraft = null; it.quantity = Math.min(99, (it.quantity || 1) + 1);
     renderEditItems(); updateEditTotal();
   }));
   $$("[data-role=discount]", elList).forEach(inp => bindRupiahInput(inp, (v) => {
@@ -2188,7 +2212,7 @@ function updateEditLineTotal(idx) {
   const it = editState.items[idx];
   const row = $(`#items-list .edit-item[data-idx="${idx}"]`);
   const line = row && row.querySelector("[data-role=line-total]");
-  if (line) line.textContent = `Total ${fmt(Math.max(0, (it.price || 0) - (it.discount || 0)) * (it.quantity || 1))}`;
+  if (line) line.textContent = `Total ${fmt(Math.max(0, (it.price || 0) - (it.discount || 0)) * billItemQuantity(it))}`;
 }
 
 function updateEditTotal() {
@@ -2229,6 +2253,13 @@ function updateEditTotal() {
 async function saveEditBill(billId) {
   const btn = $("#save-bill-btn");
   const items = editState.items.filter(i => i.name && String(i.name).trim());
+  const invalidQuantity = items.find(i => i.quantityDraft != null || !/^(?:[1-9]|[1-9][0-9])$/.test(String(i.quantity ?? "")));
+  if (invalidQuantity) {
+    toast("Jumlah item harus bilangan bulat 1–99");
+    const input = $(`#items-list [data-role=quantity][data-idx="${editState.items.indexOf(invalidQuantity)}"]`);
+    if (input) { input.style.borderColor = "var(--red)"; input.focus(); }
+    return;
+  }
   // price 0 is legal (free item the backend accepts with minv=0) — only
   // blank rows are dropped (bug: saving an edit silently deleted free items)
   if (!items.length) { toast("Minimal 1 item"); return; }
