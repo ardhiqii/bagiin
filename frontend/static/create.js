@@ -72,7 +72,7 @@ function renderCreate(opts = {}) {
     </div>
     <div id="create-body">
       ${errCard}
-      <button type="button" class="dropzone" id="dz" style="width:100%;display:block;">
+      <button type="button" class="dropzone create-dropzone" id="dz" style="width:100%;display:block;">
         <div class="dropzone-icon">${ic("camera")}</div>
         <div style="font-weight:700;font-size:16px;color:var(--text);">Scan struk otomatis</div>
         <div class="muted">Foto struk, lalu item dan harga dibaca otomatis</div>
@@ -211,7 +211,10 @@ async function uploadAndAttach(file, ocrReason, session = createFlowSession, pre
     const fd = new FormData();
     fd.append("file", file);
     const result = await api("/api/photos", { method: "POST", body: fd });
-    if (location.hash !== routeAtStart || session !== createFlowSession) return;
+    if (location.hash !== routeAtStart || session !== createFlowSession) {
+      releaseReturnedPhotos([result.photo_path]);
+      return;
+    }
     // keep the photo; items are filled manually
     renderVerify({ ...blankBillForVerify(), ...(preserved || {}), photos: [result.photo_path],
       ocrError: ocrReason || null, ocrRetryFile: ocrReason ? file : null }, true);
@@ -248,7 +251,10 @@ async function verifyAttachPhoto(file) {
   const upload = async () => {
     try {
       const result = await api("/api/photos", { method: "POST", body: fd });
-      if (location.hash !== routeAtStart || session !== createFlowSession) return;
+      if (location.hash !== routeAtStart || session !== createFlowSession) {
+        releaseReturnedPhotos([result.photo_path]);
+        return;
+      }
       const next = { ...verifyState, photos: [...verifyState.photos, result.photo_path] };
       next.photo_path = next.photos[0] || null;
       renderVerify(next, verifyState.manual);
@@ -282,6 +288,10 @@ function releaseAbandonedPhoto(path) {
 function releaseAbandonedPhotos(paths) {
   (paths || []).forEach(releaseAbandonedPhoto);
 }
+function releaseReturnedPhotos(paths) {
+  const retained = new Set((verifyState.photos || []).map(String));
+  releaseAbandonedPhotos((paths || []).filter(path => path && !retained.has(String(path))));
+}
 
 async function uploadAndOcr(file, session = createFlowSession, preserved = null) {
   const body = $("#create-body");
@@ -300,7 +310,10 @@ async function uploadAndOcr(file, session = createFlowSession, preserved = null)
     const fd = new FormData();
     fd.append("file", file);
     const result = await api("/api/ocr", { method: "POST", body: fd });
-    if (location.hash !== routeAtStart || session !== createFlowSession) return;
+    if (location.hash !== routeAtStart || session !== createFlowSession) {
+      releaseReturnedPhotos(result.photos || (result.photo_path ? [result.photo_path] : []));
+      return;
+    }
     renderVerify(preserved ? { ...result, ...preserved, photos: result.photos || (result.photo_path ? [result.photo_path] : []) } : result);
   } catch (e) {
     if (location.hash !== routeAtStart || session !== createFlowSession) return;
@@ -470,6 +483,13 @@ function confirmDiscardVerify() {
 const VERIFY_CSS = `<style>
   /* Fixed mobile dock reservation: keep the final controls reachable. */
   #app:has(#create-bill-btn) { padding-bottom:calc(124px + env(safe-area-inset-bottom)); scroll-padding-bottom:calc(124px + env(safe-area-inset-bottom)); }
+  /* Keep the editor calm at phone widths: cards are the grouping, while the
+     controls inside them are allowed to use the full content width. */
+  #app:has(#create-bill-btn) .card-title { flex-wrap:wrap; row-gap:3px; }
+  #app:has(#create-bill-btn) .card-title .muted { min-width:0; overflow-wrap:anywhere; }
+  #app:has(#create-bill-btn) .account-row { min-width:0; }
+  #app:has(#create-bill-btn) .account-row > span { min-width:0; }
+  #app:has(#create-bill-btn) .account-row .muted { overflow-wrap:anywhere; }
   .vf-item { display:grid; grid-template-columns:minmax(0,1fr) minmax(130px,1.25fr) 44px; gap:8px; align-items:center;
              padding:12px 2px; border-bottom:1px solid var(--border); }
   /* "Nasi Goreng Spesial" in a 1fr column next to a 110px price box reads
@@ -543,6 +563,23 @@ const VERIFY_CSS = `<style>
     .vf-grid { grid-template-columns:repeat(2, minmax(0,1fr)); }
     .vf-grid > .vf-sub { grid-column:1 / -1; }
     .vf-photos { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  }
+  @media (max-width:430px) {
+    /* Two mode chips plus the slot counter cannot share a 286px card. Wrap
+       the counter as a third row instead of letting it paint past the card. */
+    .vf-mode-options { flex-wrap:wrap; }
+    .vf-mode-options > span { flex:1 1 100%; margin-left:0; justify-content:flex-start; }
+    .vf-mode-options .item-mode-btn { flex:1 1 auto; justify-content:center; }
+    .verify-payer-card .account-row { align-items:flex-start; }
+    .verify-payer-card .account-row input { margin-top:2px; }
+  }
+  @media (max-width:359px) {
+    /* Long clipboard labels stay readable and tappable on the smallest
+       supported viewport by using one action per row. */
+    .vf-photo-actions { grid-template-columns:1fr; }
+    .vf-photo-actions > p { text-align:center; }
+    .vf-discount-fields { flex-wrap:wrap; }
+    .vf-discount-fields .disc-bayar { flex:1 1 100%; }
   }
   @media (min-width:720px) {
     #app:has(#create-bill-btn) { padding-bottom:56px; scroll-padding-bottom:56px; }
@@ -705,7 +742,7 @@ function renderVerify(ocr, manual = false) {
       <p class="muted" style="text-align:center;margin-top:6px;">Opsional — foto hanya dilampirkan, tidak dibaca otomatis.</p>
     </div>` : "")}
 
-    <div class="card">
+    <div class="card verify-detail-card">
       <div class="card-title"><span>Detail Bill</span></div>
       <div class="vf-field-pair">
         <div class="field">
@@ -734,7 +771,7 @@ function renderVerify(ocr, manual = false) {
       </div>` : ""}
     </div>` : ""}
 
-    <div class="card" id="items-card">
+    <div class="card verify-items-card" id="items-card">
       <div class="card-title">
         <span>Item</span>
         <span class="muted">${manual ? "Ketik item &amp; harganya" : "cek ulang, edit kalau salah"}</span>
@@ -750,7 +787,7 @@ function renderVerify(ocr, manual = false) {
       <div id="sum-warn" class="error-text hidden" style="margin-top:8px;"></div>
     </div>
 
-    <div class="card">
+    <div class="card verify-cost-card">
       <div class="card-title"><span>Rincian Biaya</span></div>
       <div class="vf-grid">
         <div class="vf-sub">
@@ -785,7 +822,7 @@ function renderVerify(ocr, manual = false) {
 
     </div>
 
-    <div class="card">
+    <div class="card verify-payer-card">
       <div class="card-title"><span>Yang Bayar</span></div>
       <div role="radiogroup" aria-label="Pilih yang membayar" style="display:grid;gap:8px;">
         <label class="account-row" for="paid-by-myself-choice" style="cursor:pointer;border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;">
@@ -805,7 +842,7 @@ function renderVerify(ocr, manual = false) {
       </div>
     </div>
 
-    <details class="card progressive-section">
+    <details class="card progressive-section verify-people-card">
       <summary class="card-title"><span>Siapa yang Ikut</span><span class="muted">(opsional)</span></summary>
       <p class="muted" style="margin:-4px 0 10px;">Pilih kontak atau tambahkan nama. Mereka bisa diundang lagi nanti.</p>
       <div id="people-pick" style="display:flex;flex-direction:column;gap:6px;"></div>
@@ -937,7 +974,10 @@ function renderVerify(ocr, manual = false) {
           const fd = new FormData();
           fd.append("file", f);
           const result = await api("/api/photos", { method: "POST", body: fd });
-          if (location.hash !== routeAtStart || session !== createFlowSession) return;
+          if (location.hash !== routeAtStart || session !== createFlowSession) {
+            releaseReturnedPhotos([result.photo_path]);
+            return;
+          }
           verifyState.photos.push(result.photo_path);
           renderVerify({ ...verifyState, photos: verifyState.photos, paid_by_name: verifyState.paid_by_name }, verifyState.manual);
         } catch (e) { toast(e.message); }
@@ -1173,9 +1213,9 @@ function renderVerifyItems() {
                   aria-pressed="${isSlot}">${ic("slot")} Bagi per porsi</button>
           ${isSlot ? `
           <span style="display:inline-flex;align-items:center;gap:6px;margin-left:auto;">
-            <button type="button" class="chip-btn slot-dec" data-idx="${idx}" aria-label="Kurangi jumlah bagian"><span aria-hidden="true">−</span></button>
+            <button type="button" class="chip-btn slot-dec" data-idx="${idx}" aria-label="Kurangi jumlah bagian"${slots <= 2 ? " disabled" : ""}><span aria-hidden="true">−</span></button>
             <span class="slot-count money-sm" style="min-width:20px;text-align:center;color:var(--text);">${slots}</span>
-            <button type="button" class="chip-btn slot-inc" data-idx="${idx}" aria-label="Tambah jumlah bagian">${ic("plus")}</button>
+            <button type="button" class="chip-btn slot-inc" data-idx="${idx}" aria-label="Tambah jumlah bagian"${slots >= 99 ? " disabled" : ""}>${ic("plus")}</button>
             <span class="muted" style="font-size:12px;">bagian</span>
           </span>` : ""}
         </div>
@@ -1352,17 +1392,20 @@ function updateVerifyTotal() {
     // Item, one named row was enough to enable the CTA even when the new row
     // was blank. The submit validator caught it only after a confusing tap.
     const unnamedIndex = verifyState.items.findIndex(i => !String(i.name || "").trim());
+    const invalidQuantityIndex = verifyState.items.findIndex(i => i.quantityDraft != null || validQuantity(i.quantity) == null);
     const invalidDiscountIndex = verifyState.items.findIndex(i => (i.discount || 0) > (i.price || 0));
     const allItemsNamed = verifyState.items.length > 0 && unnamedIndex === -1;
+    const hasValidQuantities = invalidQuantityIndex === -1;
     const hasValidDiscounts = invalidDiscountIndex === -1;
     const hasTotal = total > 0;
     const payerChosen = !!verifyState.paidByMyself || !!String(verifyState.paid_by_name || "").trim();
     const missing = [];
     if (!allItemsNamed) missing.push(unnamedIndex >= 0 ? `nama item baris ${unnamedIndex + 1}` : "nama item");
+    if (!hasValidQuantities) missing.push(`jumlah item baris ${invalidQuantityIndex + 1}`);
     if (!hasValidDiscounts) missing.push(`potongan baris ${invalidDiscountIndex + 1}`);
     if (!hasTotal) missing.push("total");
     if (!payerChosen) missing.push("pembayar");
-    cta.disabled = mismatch || !allItemsNamed || !hasValidDiscounts || !hasTotal || !payerChosen;
+    cta.disabled = mismatch || !allItemsNamed || !hasValidQuantities || !hasValidDiscounts || !hasTotal || !payerChosen;
     cta.textContent = mismatch ? "Subtotal belum cocok sama item" : "Buat Tagihan";
     const helper = $("#create-bill-helper");
     if (helper) helper.textContent = mismatch ? "Samakan subtotal dengan total item untuk lanjut." :
