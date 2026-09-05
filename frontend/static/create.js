@@ -259,6 +259,10 @@ async function verifyAttachPhoto(file) {
       next.photo_path = next.photos[0] || null;
       renderVerify(next, verifyState.manual);
     } catch (e) {
+      // Some upload adapters expose the server path even when reporting an
+      // error. Never leave that path orphaned; releaseReturnedPhotos keeps
+      // anything already retained by the verify editor.
+      releaseReturnedPhotos(returnedPhotoPaths(e));
       toast(e.message);
     }
   };
@@ -278,6 +282,25 @@ async function verifyAttachPhoto(file) {
 // Never call this for a photo that belongs to a SAVED bill — bill.js has its
 // own DELETE /api/bills/{id}/photos/{id} for those, and this endpoint
 // refuses (409) anything a bill still references anyway.
+// API adapters normally reject without returning a body, but test doubles and
+// alternate clients may attach the uploaded path to the error. Walk only the
+// photo-shaped fields so an unrelated error URL is never treated as an upload.
+function returnedPhotoPaths(error) {
+  const paths = [];
+  const visit = (value, key = "") => {
+    if (key === "photo_path" && typeof value === "string") { paths.push(value); return; }
+    if (!value || typeof value !== "object") return;
+    if (key === "photos" && Array.isArray(value)) value.forEach(p => {
+      if (typeof p === "string") paths.push(p);
+      else visit(p, "photo_path");
+    });
+    ["photo_path", "photos", "response", "data", "detail", "error"].forEach(k => {
+      if (Object.prototype.hasOwnProperty.call(value, k)) visit(value[k], k);
+    });
+  };
+  visit(error);
+  return [...new Set(paths)];
+}
 function releaseAbandonedPhoto(path) {
   if (!path) return;
   const filename = String(path).split("/").pop();
@@ -316,6 +339,9 @@ async function uploadAndOcr(file, session = createFlowSession, preserved = null)
     }
     renderVerify(preserved ? { ...result, ...preserved, photos: result.photos || (result.photo_path ? [result.photo_path] : []) } : result);
   } catch (e) {
+    // OCR failures can still carry the upload path; the manual fallback below
+    // performs a fresh upload, so the failed request's path must be released.
+    releaseReturnedPhotos(returnedPhotoPaths(e));
     if (location.hash !== routeAtStart || session !== createFlowSession) return;
     // v61: OCR failed — keep the photo anyway and drop into the manual
     // editor with it attached (before, the photo was thrown away and the
@@ -481,8 +507,9 @@ function confirmDiscardVerify() {
    - .vf-grid: Subtotal/PPN/Service side by side is unreadable under ~380px,
      so Subtotal takes its own line and PPN/Service share the next one. */
 const VERIFY_CSS = `<style>
-  /* Fixed mobile dock reservation: keep the final controls reachable. */
-  #app:has(#create-bill-btn) { padding-bottom:calc(124px + env(safe-area-inset-bottom)); scroll-padding-bottom:calc(124px + env(safe-area-inset-bottom)); }
+  /* watchDock() replaces this with the dock's measured height. This fallback
+     only preserves the safe area before the dock has been measured. */
+  #app:has(#create-bill-btn) { padding-bottom:env(safe-area-inset-bottom); scroll-padding-bottom:env(safe-area-inset-bottom); }
   /* Keep the editor calm at phone widths: cards are the grouping, while the
      controls inside them are allowed to use the full content width. */
   #app:has(#create-bill-btn) .card-title { flex-wrap:wrap; row-gap:3px; }
@@ -582,7 +609,7 @@ const VERIFY_CSS = `<style>
     .vf-discount-fields .disc-bayar { flex:1 1 100%; }
   }
   @media (min-width:720px) {
-    #app:has(#create-bill-btn) { padding-bottom:56px; scroll-padding-bottom:56px; }
+    #app:has(#create-bill-btn) { padding-bottom:0; scroll-padding-bottom:0; }
   }
   /* Same 44px floor as .vf-item .icon-btn above, applied consistently: the
      slot +/- steppers were 37x27 and 34x32 (mismatched with each other, both
@@ -593,10 +620,28 @@ const VERIFY_CSS = `<style>
      not smaller). .chip-btn's own rule (index.html) has no min-height at all,
      so every place it's used inside this screen needs it re-asserted here. */
   .item-mode-btn, .slot-dec, .slot-inc { min-height:44px; min-width:44px; justify-content:center; }
+  .vf-qty button:disabled, .slot-dec:disabled, .slot-inc:disabled {
+    opacity:1; background:var(--surface-3); border-color:var(--border-strong); color:var(--text-3); box-shadow:none;
+  }
   #add-item-btn, #verify-paste-photo, #verify-add-photo { min-height:44px; }
   .people-empty-action { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .people-empty-action .btn-sm { min-height:44px; flex:0 0 auto; }
   #create-bill-helper { margin:0; font-size:12px; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-3); }
+  #create-bill-btn:disabled {
+    opacity:1;
+    background:var(--surface-3);
+    border-color:var(--border-strong);
+    color:var(--text-2);
+    box-shadow:none;
+    cursor:not-allowed;
+    filter:none;
+  }
+  @media (prefers-color-scheme:dark) {
+    #app:has(#create-bill-btn) {
+      --border:#796c5f;
+      --border-strong:#796c5f;
+    }
+  }
 
   /* L3 (v68, desktop only): the editor gets denser instead of wider. Nothing
      here touches markup order in the DOM — .vf-item stays a CSS grid and
@@ -611,8 +656,21 @@ const VERIFY_CSS = `<style>
 
     /* name | harga | potongan | delete on ONE line — the discount box used
        to drop to its own row and leave ~700px empty next to a 110px input */
-    .vf-item { grid-template-columns:minmax(0,1fr) minmax(130px,150px) minmax(112px,130px) 44px; }
-    .vf-item .vf-discount { order:2; grid-column:auto; }
+    .vf-item { grid-template-columns:minmax(150px,1fr) minmax(100px,120px) minmax(140px,150px) minmax(96px,112px) 44px; }
+    .vf-item [data-role="name"] { grid-column:1; grid-row:1; }
+    .vf-item .vf-price {
+      grid-column:2 / 4;
+      grid-row:1;
+      display:grid;
+      grid-template-columns:minmax(100px,120px) minmax(140px,1fr);
+      gap:0 8px;
+      align-items:start;
+    }
+    .vf-item .vf-price > input { grid-column:1; grid-row:1; }
+    .vf-item .vf-qty { grid-column:2; grid-row:1; margin-top:0; min-width:0; }
+    .vf-item .vf-qty-label { display:none; }
+    .vf-item .vf-line-total { grid-column:1 / -1; grid-row:2; }
+    .vf-item .vf-discount { order:initial; grid-column:4; grid-row:1; }
     .vf-item .vf-discount-fields { flex-direction:column; align-items:stretch; gap:2px; }
     .vf-item .vf-discount input { max-width:none; }
     /* keep the label for screen readers (it's still the input's <label for>)
@@ -623,11 +681,11 @@ const VERIFY_CSS = `<style>
       clip:rect(0 0 0 0); white-space:nowrap; border:0;
     }
     .vf-item .disc-bayar { font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .vf-head { display:grid; grid-template-columns:minmax(0,1fr) minmax(130px,150px) minmax(112px,130px) 44px; gap:8px;
+    .vf-item [data-role="del"] { order:initial; grid-column:5; grid-row:1; align-self:start; }
+    .vf-head { display:grid; grid-template-columns:minmax(150px,1fr) minmax(100px,120px) minmax(140px,150px) minmax(96px,112px) 44px; gap:8px;
                padding:0 2px 2px; font-size:11.5px; font-weight:600;
                color:var(--text-3); letter-spacing:.02em; }
-    .vf-head span:nth-child(2), .vf-head span:nth-child(3) { text-align:right; }
-    .vf-item [data-role="del"] { order:3; }
+    .vf-head span:nth-child(2), .vf-head span:nth-child(3), .vf-head span:nth-child(4) { text-align:right; }
     /* Cara Bagi stays on its own line (unchanged in spirit, just after the
        four fields above instead of wherever DOM order would put it) */
     .vf-item .vf-mode { order:4; }
@@ -636,10 +694,59 @@ const VERIFY_CSS = `<style>
     /* The shell gives this card less room at medium desktop widths. Keep the
        two metadata fields readable without changing the phone layout. */
     .vf-field-pair { gap:12px; }
-    .vf-item { grid-template-columns:minmax(0,1fr) minmax(116px,132px) minmax(104px,120px) 44px; }
-    .vf-head { grid-template-columns:minmax(0,1fr) minmax(116px,132px) minmax(104px,120px) 44px; }
+    .vf-item { grid-template-columns:minmax(150px,1fr) minmax(100px,116px) minmax(136px,144px) minmax(96px,104px) 44px; }
+    .vf-head { grid-template-columns:minmax(150px,1fr) minmax(100px,116px) minmax(136px,144px) minmax(96px,104px) 44px; }
   }
 </style>`;
+
+/* CSS scroll-padding is respected by normal focus scrolling, but browser
+   implementations differ for focus moves caused by dynamically-rendered
+   controls. Measure the live dock and correct after layout as well as before
+   it. The repeated check matters on mobile: focus scrolling and ResizeObserver
+   callbacks can both land after focusin (bug: focus helper ran too early). */
+function keepVerifyFocusAboveDock(target, requireFocus = false) {
+  if (!target || window.matchMedia("(min-width:1040px)").matches) return;
+  const correct = () => {
+    if (!target.isConnected || (requireFocus && document.activeElement !== target)) return;
+    const dock = $(".dock");
+    if (!dock || getComputedStyle(dock).position !== "fixed") return;
+    const clearance = 28;
+    const dockTop = dock.getBoundingClientRect().top;
+    const targetBottom = target.getBoundingClientRect().bottom;
+    const delta = targetBottom + clearance - dockTop;
+    if (delta > 0) window.scrollBy({ top: delta, behavior: "auto" });
+  };
+  // Do not depend on scrollIntoView({block:"end"}); direct correction also
+  // handles a target that starts below the viewport and has no scroll parent.
+  correct();
+  requestAnimationFrame(() => {
+    correct();
+    setTimeout(correct, 0);
+    setTimeout(correct, 80);
+  });
+}
+
+function settleVerifyDock() {
+  if (window.matchMedia("(min-width:1040px)").matches) return;
+  const dock = $(".dock");
+  const firstItem = $("#items-list .vf-item");
+  if (!dock || !firstItem || getComputedStyle(dock).position !== "fixed") return;
+  // Reveal the first editor, then the add-item action only when it is already
+  // in the viewport. This avoids hiding the first row, while still preventing
+  // a visible button from sitting underneath the dock on an empty draft.
+  const targets = [
+    firstItem,
+    $("#add-item-btn"),
+  ].filter(Boolean);
+  for (const target of targets) {
+    const dockTop = dock.getBoundingClientRect().top;
+    const targetRect = target.getBoundingClientRect();
+    const isVisible = targetRect.top < window.innerHeight && targetRect.bottom > 0;
+    if (isVisible && targetRect.bottom > dockTop - 24) {
+      keepVerifyFocusAboveDock(target);
+    }
+  }
+}
 
 function normalizeTransactionDate(value) {
   const raw = String(value || "").trim();
@@ -776,12 +883,12 @@ function renderVerify(ocr, manual = false) {
         <span>Item</span>
         <span class="muted">${manual ? "Ketik item &amp; harganya" : "cek ulang, edit kalau salah"}</span>
       </div>
-      <div class="info-box" style="margin:0 0 10px;">Mulai dari <strong>item dan total</strong>. Pastikan keduanya cocok sebelum lanjut; cara bagi tiap item bisa diatur di bawah.</div>
+      <div class="info-box" style="margin:0 0 10px;">Isi <strong>item dan total</strong> dulu. Pastikan cocok, lalu atur cara bagi.</div>
       ${/* desktop packs name/harga/potongan onto one line, which left two
             identical "0" boxes with the discount's label visually clipped —
             you could not tell which box was which. A column header restores
             that, and only exists where the compact grid does. */ ""}
-      <div class="vf-head" role="presentation"><span>Nama item</span><span>Harga</span><span>Potongan</span><span></span></div>
+      <div class="vf-head" role="presentation"><span>Nama item</span><span>Harga satuan</span><span>Jumlah dibeli</span><span>Potongan</span><span></span></div>
       <div id="items-list"></div>
       <button class="btn-outline btn-sm" id="add-item-btn" style="width:100%;margin-top:10px;">${ic("plus")} Tambah Item</button>
       <div id="sum-warn" class="error-text hidden" style="margin-top:8px;"></div>
@@ -865,6 +972,15 @@ function renderVerify(ocr, manual = false) {
 
   $("#app").innerHTML = shell(main, side);
   watchDock();
+  // Keep keyboard focus and programmatic validation jumps clear of the fixed
+  // mobile dock. Use capture-phase focus because some browsers run their
+  // native focus scroll after bubbling focusin, which can undo the correction.
+  const app = $("#app");
+  if (app) {
+    if (app._verifyDockFocusHandler) app.removeEventListener("focus", app._verifyDockFocusHandler, true);
+    app._verifyDockFocusHandler = (e) => keepVerifyFocusAboveDock(e.target, true);
+    app.addEventListener("focus", app._verifyDockFocusHandler, true);
+  }
 
   // #/create/verify is this screen's own route (see render() in app.js) —
   // give it one on entry so the leave-guard below has a hash to protect.
@@ -980,12 +1096,16 @@ function renderVerify(ocr, manual = false) {
           }
           verifyState.photos.push(result.photo_path);
           renderVerify({ ...verifyState, photos: verifyState.photos, paid_by_name: verifyState.paid_by_name }, verifyState.manual);
-        } catch (e) { toast(e.message); }
+        } catch (e) {
+          releaseReturnedPhotos(returnedPhotoPaths(e));
+          toast(e.message);
+        }
       });
     });
   }
   renderVerifyItems();
   bindVerifyInputs();
+  settleVerifyDock();
 
   // ---------- "Siapa yang Ikut" picker ----------
   const peoplePick = $("#people-pick");
@@ -1111,6 +1231,7 @@ function renderVerify(ocr, manual = false) {
     const nameError = $("#paid-by-name-error");
     if (nameError) nameError.classList.toggle("hidden", isMe || !!String(verifyState.paid_by_name || "").trim());
     if (!isMe && focusOther && inp) inp.focus();
+    updateVerifyTotal();
   };
   payerChoices.forEach(choice => choice.addEventListener("change", () => setPayer(choice.value === "me", choice.value !== "me")));
   if (paidByMe) paidByMe.addEventListener("change", () => setPayer(paidByMe.checked, !paidByMe.checked));
@@ -1122,12 +1243,14 @@ function renderVerify(ocr, manual = false) {
       e.target.style.borderColor = "";
       const nameError = $("#paid-by-name-error");
       if (nameError) nameError.classList.toggle("hidden", !!String(e.target.value || "").trim());
+      updateVerifyTotal();
     });
     paidByNameInput.addEventListener("change", (e) => {
       if (paidByMe && paidByMe.checked) return;
       verifyState.paid_by_name = e.target.value;
       const nameError = $("#paid-by-name-error");
       if (nameError) nameError.classList.toggle("hidden", !!String(e.target.value || "").trim());
+      updateVerifyTotal();
     });
   }
 
@@ -1250,6 +1373,12 @@ function renderVerifyItems() {
       if (value == null) {
         it.quantityDraft = inp.value;
         if (error) error.classList.remove("hidden");
+        // Keep the raw draft visible, but immediately recompute validation so
+        // a filled bill cannot retain an enabled CTA after typing 1.5, blank,
+        // 0, or abc (bug: invalid branch returned before updateVerifyTotal()).
+        updateVerifyLineTotal(idx);
+        updateVerifyTotal();
+        settleVerifyDock();
         return;
       }
       it.quantity = value;
@@ -1257,6 +1386,7 @@ function renderVerifyItems() {
       if (error) error.classList.add("hidden");
       updateVerifyLineTotal(idx);
       updateVerifyTotal();
+      settleVerifyDock();
     };
     inp.addEventListener("input", commit);
     inp.addEventListener("change", commit);
@@ -1441,7 +1571,7 @@ async function createBillFinal() {
   });
   if (badInput) {
     badInput.style.borderColor = "var(--red)";
-    try { badInput.scrollIntoView({ block: "center", behavior: "smooth" }); badInput.focus(); } catch (e) {}
+    try { badInput.focus(); keepVerifyFocusAboveDock(badInput, true); } catch (e) {}
     toast(badMsg);
     return;
   }
@@ -1452,7 +1582,7 @@ async function createBillFinal() {
     toast("Tulis nama orang yang bayar atau pilih Aku yang bayar");
     const inp = $("#paid-by-name-input");
     const nameError = $("#paid-by-name-error");
-    if (inp) { inp.style.borderColor = "var(--red)"; inp.focus(); }
+    if (inp) { inp.style.borderColor = "var(--red)"; inp.focus(); keepVerifyFocusAboveDock(inp, true); }
     if (nameError) nameError.classList.remove("hidden");
     return;
   }
@@ -1506,4 +1636,3 @@ async function createBillFinal() {
     }
   });
 }
-

@@ -426,6 +426,9 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
   .dock-inner { gap:6px; }
   .dock-total .money { font-size:20px; }
   .dock .btn-primary { height:44px; min-height:44px; padding:0 16px; font-size:15px; }
+  /* Keep create controls from showing through the fixed action bar while the
+     page is settling or while a field is being corrected above it. */
+  #app:has(#create-bill-btn) .dock { background:var(--surface); }
 }
 .dock-split {
   display:flex; justify-content:space-between; gap:10px; font-size:12.5px;

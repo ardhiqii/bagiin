@@ -433,8 +433,17 @@ function syncDockSpace() {
   if (!dock || (onDesktop && dock.closest(".shell-side"))) {
     app.style.paddingBottom = "";
     app.style.scrollPaddingBottom = "";
+    if (dock) dock.style.bottom = "";
     return;
   }
+  // On browsers whose layout viewport stays tall while the keyboard shrinks
+  // visualViewport, lift the fixed dock above the occluded portion. Keep the
+  // CSS safe-area padding inside the dock; this offset is only the keyboard /
+  // visual viewport gap (bug: a fixed dock was left behind the IME).
+  const vv = window.visualViewport;
+  const visualBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+  const keyboardGap = Math.max(0, window.innerHeight - visualBottom);
+  dock.style.bottom = keyboardGap ? `${keyboardGap}px` : "";
   const reserve = `calc(env(safe-area-inset-bottom) + ${dock.offsetHeight + 24}px)`;
   app.style.paddingBottom = reserve;
   // Keep keyboard/focus scrolling from parking a focused control underneath
@@ -450,6 +459,13 @@ function watchDock() {
   if (dock && dockObserver) { dockObserver.disconnect(); dockObserver.observe(dock); }
 }
 window.addEventListener("resize", syncDockSpace);
+// window.resize is not guaranteed when a mobile IME changes only the visual
+// viewport. These listeners are harmless on desktop and keep the binding
+// single, route-independent, and compatible with browsers without the API.
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", syncDockSpace, { passive: true });
+  window.visualViewport.addEventListener("scroll", syncDockSpace, { passive: true });
+}
 
 /** Sticky header shadow once the page scrolls. */
 window.addEventListener("scroll", () => {
