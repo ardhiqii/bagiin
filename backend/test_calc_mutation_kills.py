@@ -20,6 +20,175 @@ def test_missing_qty_defaults_to_one_and_discount_is_subtracted():
     assert result["total_ok"] is True
 
 
+def test_purchased_quantity_multiplies_selected_and_unpicked_lines():
+    result = calc.compute(
+        bill(24),
+        items=[
+            {"id": 1, "name": "double snack", "price_idr": 5, "quantity": 2},
+            {"id": 2, "name": "double drink", "price_idr": 7, "quantity": 2},
+        ],
+        selections=[{"item_id": 1, "identity_id": "alice"}],
+        participants=[],
+        fallback_id="owner",
+    )
+    # Kills quantity lookup and line-total mutants in split and warning paths.
+    assert person(result, "alice")["subtotal_idr"] == 10
+    assert person(result, "owner")["subtotal_idr"] == 14
+    assert "Rp 14" in result["warnings"][0]
+    assert result["total_ok"] is True
+
+
+def test_free_split_preserves_one_rupiah_remainder_when_share_is_zero():
+    result = calc.compute(
+        bill(1),
+        items=[{"id": 1, "name": "tiny snack", "price_idr": 1}],
+        selections=[
+            {"item_id": 1, "identity_id": "alice"},
+            {"item_id": 1, "identity_id": "bob"},
+        ],
+        participants=[],
+        fallback_id="alice",
+    )
+    assert person(result, "alice")["subtotal_idr"] == 1
+    assert person(result, "bob")["subtotal_idr"] == 0
+    assert result["total_ok"] is True
+
+
+def test_slot_rounding_distributes_remainder_per_taken_slot():
+    result = calc.compute(
+        bill(11),
+        items=[{"id": 1, "name": "pizza", "price_idr": 11, "mode": "slot", "slot_count": 4}],
+        selections=[
+            {"item_id": 1, "identity_id": "alice", "qty": 2},
+            {"item_id": 1, "identity_id": "bob", "qty": 2},
+        ],
+        participants=[],
+        fallback_id="owner",
+    )
+    assert person(result, "alice")["subtotal_idr"] == 6
+    assert person(result, "bob")["subtotal_idr"] == 5
+    assert result["uncovered_idr"] == 0
+    assert result["total_ok"] is True
+
+
+def test_partial_slots_charge_all_taken_slots_before_uncovered_amount():
+    result = calc.compute(
+        bill(10),
+        items=[{"id": 1, "name": "pizza", "price_idr": 10, "mode": "slot", "slot_count": 4}],
+        selections=[{"item_id": 1, "identity_id": "alice", "qty": 2}],
+        participants=[],
+        fallback_id="owner",
+    )
+    assert person(result, "alice")["subtotal_idr"] == 4
+    assert result["uncovered_idr"] == 6
+    assert result["total_ok"] is True
+
+
+def test_slot_rounding_with_zero_base_assigns_only_real_remainder():
+    result = calc.compute(
+        bill(1),
+        items=[{"id": 1, "name": "tiny pizza", "price_idr": 1, "mode": "slot", "slot_count": 2}],
+        selections=[
+            {"item_id": 1, "identity_id": "alice"},
+            {"item_id": 1, "identity_id": "bob"},
+        ],
+        participants=[],
+        fallback_id="owner",
+    )
+    assert person(result, "alice")["subtotal_idr"] == 1
+    assert person(result, "bob")["subtotal_idr"] == 0
+    assert result["total_ok"] is True
+
+
+def test_equal_tax_is_not_replaced_by_proportional_tax():
+    result = calc.compute(
+        bill(8, tax=4, mode="equal"),
+        items=[
+            {"id": 1, "name": "small", "price_idr": 1},
+            {"id": 2, "name": "large", "price_idr": 3},
+        ],
+        selections=[
+            {"item_id": 1, "identity_id": "alice"},
+            {"item_id": 2, "identity_id": "bob"},
+        ],
+        participants=[],
+        fallback_id="alice",
+    )
+    assert person(result, "alice")["tax_idr"] == 2
+    assert person(result, "bob")["tax_idr"] == 2
+
+
+def test_proportional_tax_handles_one_rupiah_subtotal():
+    result = calc.compute(
+        bill(2, tax=1),
+        items=[{"id": 1, "name": "tiny", "price_idr": 1}],
+        selections=[{"item_id": 1, "identity_id": "alice"}],
+        participants=[],
+        fallback_id="owner",
+    )
+    assert person(result, "alice")["tax_idr"] == 1
+    assert "owner" not in result["by_identity"]
+    assert result["total_ok"] is True
+
+
+def test_proportional_tax_remainder_can_land_on_owner():
+    result = calc.compute(
+        bill(4, tax=1),
+        items=[
+            {"id": 1, "name": "a", "price_idr": 1},
+            {"id": 2, "name": "b", "price_idr": 2},
+        ],
+        selections=[
+            {"item_id": 1, "identity_id": "alice"},
+            {"item_id": 2, "identity_id": "bob"},
+        ],
+        participants=[],
+        fallback_id="owner",
+    )
+    assert person(result, "owner")["tax_idr"] == 1
+    assert result["total_ok"] is True
+
+
+def test_unpicked_slot_is_not_reported_as_free_item():
+    result = calc.compute(
+        bill(10),
+        items=[{"id": 1, "name": "shared pizza", "price_idr": 10, "mode": "slot", "slot_count": 2}],
+        selections=[],
+        participants=[],
+        fallback_id="owner",
+    )
+    assert result["unassigned_items"] == []
+    assert result["uncovered_idr"] == 10
+    assert any("Bagian kosong" in warning for warning in result["warnings"])
+    assert result["total_ok"] is True
+
+
+def test_unpicked_free_item_with_slot_count_still_warns():
+    result = calc.compute(
+        bill(3),
+        items=[{"id": 1, "name": "free item", "price_idr": 3, "slot_count": 2}],
+        selections=[],
+        participants=[],
+        fallback_id="owner",
+    )
+    assert result["unassigned_items"] == [{"id": 1, "name": "free item", "price_idr": 3, "slot_count": 2}]
+    assert person(result, "owner")["subtotal_idr"] == 3
+    assert "Rp 3" in result["warnings"][0]
+    assert result["total_ok"] is True
+
+
+def test_unpicked_zero_price_item_warning_stays_zero():
+    result = calc.compute(
+        bill(0),
+        items=[{"id": 1, "name": "free", "price_idr": 0}],
+        selections=[],
+        participants=[],
+        fallback_id="owner",
+    )
+    assert "Rp 0" in result["warnings"][0]
+    assert result["total_ok"] is True
+
+
 def test_slot_count_one_is_not_changed_by_minimum_guard():
     result = calc.compute(
         bill(5), [{"id": 1, "name": "single", "price_idr": 5, "mode": "slot", "slot_count": 1}],
