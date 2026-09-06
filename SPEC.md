@@ -445,6 +445,14 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Drilldown dan antrean tindakan hanya membawa metadata bill yang aman; bill, undangan, rekening, dan rahasia identitas yang tidak terkait tidak ikut terbuka.
 - Alias nama Rekap Patungan disimpan lokal di perangkat, bukan diubah ke nama identitas bersama atau dikirim ke server.
 
+### 2026-09-07 (v73), cache rekap dan status menunggu yang jujur
+
+- Rekap Patungan memakai cache in-memory terikat identity dengan TTL 15 detik, guard generation untuk response lambat, dan invalidation terpusat setelah mutasi berhasil. Cache error tidak dianggap sebagai data valid.
+- Home dan Rekap Patungan berbagi aturan freshness serta invalidation. Bill list tidak lagi memakai snapshot tanpa batas waktu.
+- Action `wait_payment` sekarang muncul untuk pemilik efektif ketika peserta lain punya alokasi positif tetapi belum membayar, termasuk bill tertutup yang alokasinya sudah final. Peserta tetap mendapat action `pay_share` miliknya sendiri.
+- `waiting_other` tidak lagi dianggap kosong atau aman ketika masih ada orang yang belum memilih, belum membayar, atau belum menerima undangan. Nominal provisional tetap dipisahkan dari saldo final.
+- Regression dan browser smoke mencakup pending selection plus pending payment, cache hit, invalidation setelah mutasi, auth/privacy, alias lokal, tema gelap, serta viewport HP dan desktop.
+
 ### 2026-09-06 (v71), OCR receipt gratis yang lebih ketat
 
 - Prompt OCR sekarang membedakan harga satuan, jumlah dibeli, potongan, dan total baris. Contoh `2 × Rp35.000 = Rp70.000` ditulis eksplisit supaya harga baris tidak salah dibaca sebagai harga satuan.

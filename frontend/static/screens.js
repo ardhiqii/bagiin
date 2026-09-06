@@ -99,7 +99,7 @@ function renderOnboarding() {
     withBusy($("#restore-btn"), "Memulihkan...", async () => {
       try {
         const ident = await apiJson("/api/identities/restore", "POST", { code });
-        state.identity = ident;
+        setCurrentIdentity(ident);
         lsSet(LS_KEYS.ident, ident);
         lsSet(LS_KEYS.name, ident.name);
         toast("Akun dipulihkan 🎉");
@@ -170,7 +170,9 @@ function renderHome() {
   // filter/year/month/sort choices are NOT reset here — they live for the
   // session (K5).
   histState.limit = HIST_PAGE;
-  loadBillList(false);  // false: a fresh visit may follow a mutation (new bill, delete, join) — refetch
+  // The shared cache makes repeat visits instant; successful mutations clear it
+  // centrally in api(), so this remains safe after create/delete/join actions.
+  loadBillList(true);
   loadHomeInvites();
 }
 
@@ -386,14 +388,15 @@ let histState = {
   sort: lsGet(LS_KEYS.listSort, DEFAULT_SORT),
   limit: HIST_PAGE,
 };
-// client-side bill cache so switching filters/sort re-renders instantly
-// instead of refetching the whole list over the network every time (bug:
-// sluggish filters)
-let histBills = null;
-// years available in the current histBills — recomputed on every fetch,
+// The bounded identity-scoped list cache lives beside the recap cache in
+// app.js. Switching filters/sort still re-renders instantly, but an expired
+// snapshot cannot live forever and a different identity can never reuse it.
+// years available in the current shared list cache — recomputed on every fetch,
 // cached here so the sheet (opened on demand, no fetch of its own) can build
 // its year <select> from the same data the inline controls used
+let histBills = null; // render alias only; derivedDataCache owns the snapshot
 let histYears = [];
+window.addEventListener("bagiin:derived-invalidated", () => { histBills = null; });
 // month options are fixed (Januari..Desember) — only the year list is derived
 // from data, so a "all years + Juli" filter can span every July on record
 const MONTH_OPTS = [
@@ -615,17 +618,53 @@ function updateListSummary(shown, total) {
 async function loadBillList(useCache) {
   const box = $("#home-history");
   if (!box) return;
+  const identityId = identityKey(state.identity);
+  if (!identityId) return;
   const generation = ++billListGeneration;
+  const cacheGeneration = derivedDataCache.generation;
+  const cacheEntry = derivedDataCache.billList;
   const isCurrent = () => generation === billListGeneration
+    && derivedDataCache.generation === cacheGeneration
+    && derivedDataCache.identityId === identityId
+    && identityKey(state.identity) === identityId
     && $("#home-history") === box && box.isConnected;
   try {
-    if (!useCache || !histBills) {
-      const bills = await api("/api/identities/" + state.identity.id + "/bills");
-      if (!isCurrent()) return;
-      histBills = bills;
+    let bills;
+    if (useCache && derivedCacheIsFresh(cacheEntry, identityId)) {
+      bills = cacheEntry.data;
+    } else {
+      let request = cacheEntry.promise;
+      const requestMatches = request
+        && cacheEntry.promiseGeneration === cacheGeneration
+        && cacheEntry.promiseIdentity === identityId;
+      if (!requestMatches) {
+        request = api("/api/identities/" + identityId + "/bills");
+        cacheEntry.promise = request;
+        cacheEntry.promiseGeneration = cacheGeneration;
+        cacheEntry.promiseIdentity = identityId;
+      }
+      try {
+        bills = await request;
+      } finally {
+        if (cacheEntry.promise === request) {
+          cacheEntry.promise = null;
+          cacheEntry.promiseGeneration = -1;
+          cacheEntry.promiseIdentity = null;
+        }
+      }
+      if (!Array.isArray(bills)) throw new Error("Respons daftar bill tidak lengkap. Coba lagi ya.");
+      // A late response may still finish, but it must not repopulate a cache
+      // invalidated by a newer mutation or identity switch.
+      if (derivedDataCache.generation === cacheGeneration
+        && derivedDataCache.identityId === identityId
+        && identityKey(state.identity) === identityId) {
+        cacheEntry.data = bills;
+        cacheEntry.fetchedAt = Date.now();
+      }
     }
     if (!isCurrent()) return;
-    const bills = histBills;
+    histBills = bills;
+    if (!Array.isArray(bills)) throw new Error("Respons daftar bill tidak lengkap. Coba lagi ya.");
     const ctlBtn = $("#list-ctl-btn"), inlineBox = $("#list-controls-inline");
     if (!bills.length) {
       if (!isCurrent()) return;
