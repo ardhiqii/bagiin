@@ -17,6 +17,11 @@ assert.match(screens, /const renderGeneration = \+\+settingsRenderGeneration/);
 assert.match(screens, /const isCurrentSettings = \(\) => renderGeneration === settingsRenderGeneration/);
 assert.match(screens, /const info = await api\([^;]+\);\n\s*if \(!isCurrentSettings\(\)\) return;/);
 assert.match(screens, /const accts = await api\([^;]+\);\n\s*if \(!isCurrentSettings\(\)\) return;/);
+const accountCreateStart = screens.indexOf("/api/identities/${me.id}/accounts");
+assert.ok(accountCreateStart >= 0, "account-create request must remain present");
+const accountCreate = screens.slice(accountCreateStart, screens.indexOf("// paste-text account parser", accountCreateStart));
+assert.match(accountCreate, /await apiJson[\s\S]*?if \(!isCurrentSettings\(\)\) return;[\s\S]*?account-form/);
+assert.match(accountCreate, /catch \(err\) \{\s*if \(!isCurrentSettings\(\)\) return;\s*toast\(err\.message\)/);
 
 assert.match(screens, /let inviteGeneration\s*=\s*0/);
 assert.match(screens, /function renderHome\(\) \{[\s\S]*?billListGeneration \+= 1;\n\s*inviteGeneration \+= 1;/);

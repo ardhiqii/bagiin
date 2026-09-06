@@ -1005,11 +1005,15 @@ function renderSettings() {
     withBusy($("#save-account"), "Nyimpen", async () => {
       try {
         await apiJson(`/api/identities/${me.id}/accounts`, "POST", { brand, account_no, holder_name });
+        if (!isCurrentSettings()) return;
         $("#account-form").classList.add("hidden");
         $("#acct-no").value = ""; $("#acct-holder").value = "";
         toast("Metode bayar ditambah");
         loadAccounts();
-      } catch (err) { toast(err.message); }
+      } catch (err) {
+        if (!isCurrentSettings()) return;
+        toast(err.message);
+      }
     });
   });
 
