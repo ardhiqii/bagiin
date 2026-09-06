@@ -175,13 +175,21 @@ function renderHome() {
  *  needed. Cards disappear once accepted/declined. */
 async function loadHomeInvites() {
   const box = $("#home-invites");
-  if (!box || !state.identity) return;
+  const app = $("#app");
+  const root = app && app.firstElementChild;
+  const generation = billListGeneration;
+  const isCurrent = () => generation === billListGeneration
+    && app && app.firstElementChild === root && root && root.isConnected
+    && box.isConnected && $("#home-invites") === box;
+  if (!box || !state.identity || !root) return;
   let invites;
   try {
     invites = await api(`/api/identities/${state.identity.id}/invites`);
   } catch (e) {
+    if (!isCurrent()) return;
     box.innerHTML = ""; return;  // home shouldn't die over a side section
   }
+  if (!isCurrent()) return;
   if (!invites.length) { box.innerHTML = ""; return; }
   box.innerHTML = `
     <div class="card" style="border-color:var(--accent-line);background:var(--accent-soft);">
@@ -198,13 +206,16 @@ async function loadHomeInvites() {
       <p class="muted" style="margin-top:8px;font-size:12.5px;">${invites.length > 1 ? "Kamu diundang ke beberapa bill. Terima yang mau kamu ikutin." : "Kamu diundang langsung — tidak perlu link lagi."}</p>
     </div>`;
   $$(".inv-accept", box).forEach(b => b.addEventListener("click", async (ev) => {
+    if (!isCurrent()) return;
     const row = b.closest(".invite-row");
+    if (!row || !isCurrent()) return;
     const invId = row.dataset.invite, billId = row.dataset.bill;
     // no busy lock meant a double-tap fired two accepts, and the second's
-    // 400 replaced "Udah gabung 🎉" with "Undangan ini sudah diproses" (bug)
+    // 400 replaced "Sudah bergabung 🎉" with "Undangan ini sudah diproses" (bug)
     await withBusy(b, "Gabung...", async () => {
       try {
         await apiJson(`/api/bills/${billId}/invites/${invId}/accept`, "POST", {});
+        if (!isCurrent()) return;
         toast("Sudah bergabung 🎉");
         // re-render the whole card, not just row.remove(): the footer line is
         // written from invites.length, so removing one of two rows left "Kamu
@@ -212,13 +223,16 @@ async function loadHomeInvites() {
         loadHomeInvites();
         loadBillList(false);  // bill baru muncul di list — force refetch (useCache=true reused the pre-join list and the new bill stayed invisible)
       } catch (e) {
+        if (!isCurrent()) return;
         toast(e.message);
         loadHomeInvites();  // failure used to leave the stale card inviting another tap (bug)
       }
     });
   }));
   $$(".inv-decline", box).forEach(b => b.addEventListener("click", async (ev) => {
+    if (!isCurrent()) return;
     const row = b.closest(".invite-row");
+    if (!row || !isCurrent()) return;
     const invId = row.dataset.invite, billId = row.dataset.bill;
     // decline is permanent server-side with no undo — the X is small and easy
     // to fat-finger, so ask first (bug: one tap on a 38px button destroyed an
@@ -228,13 +242,15 @@ async function loadHomeInvites() {
       body: "Undangan ini akan terhapus — untuk menerimanya lagi nanti, minta pengundangnya mengirim ulang.",
       confirmText: "Tolak", cancelText: "Kembali", danger: true,
     });
-    if (!ok) return;
+    if (!ok || !isCurrent()) return;
     await withBusy(b, "", async () => {
       try {
         await apiJson(`/api/bills/${billId}/invites/${invId}/decline`, "POST", {});
+        if (!isCurrent()) return;
         toast("Undangan ditolak");
         loadHomeInvites();   // same reason as accept: the footer counts rows
       } catch (e) {
+        if (!isCurrent()) return;
         toast(e.message);
         loadHomeInvites();  // failure used to leave the stale card inviting another tap (bug)
       }
@@ -834,8 +850,9 @@ function renderSettings() {
   // down (bug: recovery code destroyed by a curious tap). GET /me tells us
   // whether one exists, and regenerating now goes through a confirm.
   const showGeneratedCode = (code) => {
+    if (!isCurrentSettings()) return;
     const box = $("#code-box");
-    if (!box) return;
+    if (!box || !isCurrentSettings()) return;
     hasCode = true;
     box.innerHTML = `
       <div class="code-display">${esc(code)}</div>
@@ -853,8 +870,12 @@ function renderSettings() {
   const generate = (btn) => withBusy(btn, "Bikin kode", async () => {
     try {
       const r = await apiJson(`/api/identities/${me.id}/code/generate`, "POST", {});
+      if (!isCurrentSettings()) return;
       showGeneratedCode(r.code);
-    } catch (err) { toast(err.message); }
+    } catch (err) {
+      if (!isCurrentSettings()) return;
+      toast(err.message);
+    }
   });
 
   const renderCodeBox = (has) => {
@@ -899,11 +920,14 @@ function renderSettings() {
           sw.setAttribute("aria-busy", "true");
           try {
             await apiJson(`/api/identities/${me.id}/auto_accept`, "POST", { auto_accept: next });
+            if (!isCurrentSettings()) return;
             toast(next ? "Undangan langsung masuk ya" : "Undangan bakal nunggu kamu terima");
           } catch (e) {
+            if (!isCurrentSettings()) return;
             sw.setAttribute("aria-checked", String(!next));  // rollback optimistically
             toast(e.message);
           } finally {
+            if (!isCurrentSettings()) return;
             sw.disabled = false;
             sw.removeAttribute("aria-busy");
           }
