@@ -302,6 +302,16 @@ def _valid_upload_photo_path(path: str) -> bool:
         # responses send the absolute photo_path.
         if not candidate.is_absolute():
             candidate = UPLOAD_DIR / candidate
+        # A resolved in-root target is not enough: attached paths must be
+        # direct regular files, never symlinks (including nested components).
+        relative = candidate.relative_to(UPLOAD_DIR)
+        current = UPLOAD_DIR
+        for component in relative.parts[:-1]:
+            current /= component
+            if current.is_symlink():
+                return False
+        if candidate.is_symlink():
+            return False
         resolved = candidate.resolve(strict=True)
     except (OSError, RuntimeError, ValueError):
         return False

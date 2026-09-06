@@ -41,6 +41,33 @@ def create_bill(owner, *, tax_included=False):
     return response.json()["id"]
 
 
+def test_bill_rejects_symlink_photo_targeting_in_root_file():
+    owner = db.new_identity("photo-symlink-owner")
+    upload_root = Path(main.UPLOAD_DIR)
+    real_photo = upload_root / "0123456789abcdef.jpg"
+    symlink_photo = upload_root / "fedcba9876543210.jpg"
+    real_photo.write_bytes(b"real photo")
+    symlink_photo.symlink_to(real_photo)
+    assert main._valid_upload_photo_path(str(real_photo))
+    assert main._valid_upload_photo_path(real_photo.name)
+
+    response = client.post(
+        "/api/bills",
+        headers=headers(owner),
+        json={
+            "title": "symlink photo",
+            "items": [{"name": "item", "price": 100}],
+            "subtotal": 100,
+            "tax": 0,
+            "service": 0,
+            "total": 100,
+            "photo_path": str(symlink_photo),
+        },
+    )
+
+    assert response.status_code == 400
+
+
 def test_selection_failure_does_not_claim_matching_participant(monkeypatch):
     owner = db.new_identity("logic-race-owner")
     guest = db.new_identity("logic-race-guest")
