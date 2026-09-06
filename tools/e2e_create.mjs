@@ -405,11 +405,44 @@ const readCase = async (width, color) => evaluate(`(() => {
   const quantity = document.querySelector('[data-role="quantity"]');
   const cta = document.querySelector("#create-bill-btn");
   const firstFocusable = document.querySelector("#title-input, [data-role=name], #subtotal-input");
+  const firstItem = document.querySelector(".vf-item");
+  const firstSection = document.querySelector("#items-card");
+  const name = document.querySelector('[data-role="name"]');
+  const nameLabel = name ? [...document.querySelectorAll("label")].find(label => label.htmlFor === name.id) : null;
+  const dateHelper = document.querySelector(".date-helper");
+  const datePlaceholder = document.querySelector(".vf-date-placeholder");
+  const modeHelper = document.querySelector(".vf-mode-helper");
+  const totalInstruction = [...document.querySelectorAll(".info-box")].find(el => el.textContent.includes("Total baris dihitung"));
+  const deleteButton = firstItem?.querySelector('[data-role="del"]');
+  const rectTop = selector => document.querySelector(selector)?.getBoundingClientRect().top ?? null;
   const rect = el => el ? el.getBoundingClientRect().toJSON() : null;
+  const topbar = document.querySelector(".topbar");
+  const firstAction = firstItem?.querySelector(".vf-input-group") || firstItem;
+  const firstPreview = firstItem?.querySelector(".vf-mode") || firstAction;
+  const desktopSelectors = [
+    ".vf-head", '[data-role="name"]', '[data-role="price"]', '[data-role="quantity"]',
+    '[data-role="discount"]', '[data-role="del"]', '[data-role="line-total"]', ".vf-mode",
+  ];
+  const desktopHeaders = [...document.querySelectorAll(".vf-head span")].map(el => ({ text: el.textContent.trim(), rect: rect(el) }));
   const validControls = [...document.querySelectorAll("#create-bill-btn, #add-item-btn, #verify-add-photo, #verify-paste-photo, .vf-item button")];
   return {
     route: location.hash,
     controls: { title: Boolean(document.querySelector("#title-input")), item: Boolean(document.querySelector('[data-role="name"]')), quantity: Boolean(quantity), subtotal: Boolean(document.querySelector("#subtotal-input")), cta: Boolean(cta) },
+    repaired: {
+      nameLabel: Boolean(nameLabel && nameLabel.textContent.trim() === "Nama item" && name.id && nameLabel.htmlFor === name.id),
+      dateHelper: Boolean(dateHelper && dateHelper.textContent.includes("Opsional, pilih tanggal transaksi.")),
+      datePlaceholder: Boolean(datePlaceholder && datePlaceholder.textContent.trim() === "dd/mm/yyyy" && getComputedStyle(datePlaceholder).display !== "none"),
+      totalInstruction: Boolean(totalInstruction),
+      modeHelper: Boolean(modeHelper && modeHelper.textContent.includes("Bagi rata") && modeHelper.textContent.includes("Bagi per porsi") && modeHelper.textContent.includes("bukan batas jumlah peserta")),
+      deleteNearName: Boolean(firstItem && deleteButton && deleteButton.getBoundingClientRect().top <= name?.getBoundingClientRect().bottom + 8),
+      order: firstItem ? [".vf-item-header", ".vf-input-group", ".vf-line-total", ".vf-discount", ".vf-mode"].map(rectTop) : [],
+    },
+    entry: firstItem ? { scrollY: window.scrollY, section: rect(firstSection), detail: rect(document.querySelector(".verify-detail-card")), date: rect(document.querySelector("#date-input")), line: rect(document.querySelector('[data-role="line-total"]')), firstItem: rect(firstItem), firstAction: rect(firstAction), firstPreview: rect(firstPreview), topbar: rect(topbar), dock: rect(dock) } : null,
+    desktop: innerWidth >= 1040 ? {
+      display: getComputedStyle(document.querySelector(".vf-head") || document.body).display,
+      rects: desktopSelectors.map(selector => rect(document.querySelector(selector))),
+      headers: desktopHeaders,
+    } : null,
     focus: firstFocusable ? (() => {
       firstFocusable.focus();
       const style = getComputedStyle(firstFocusable);
@@ -424,7 +457,7 @@ const readCase = async (width, color) => evaluate(`(() => {
         width: targetRect.width,
       };
     })() : null,
-    dimensions: { viewport: innerWidth, scrollWidth: document.documentElement.scrollWidth, app: rect(app), dock: rect(dock), main: rect(main), side: rect(side) },
+    dimensions: (() => { const viewport = innerWidth; return { viewport, scrollWidth: document.documentElement.scrollWidth, app: rect(app), dock: rect(dock), main: rect(main), side: rect(side), overflowers: [...document.querySelectorAll("#app *")].map(el => ({ tag: el.tagName, cls: el.className, right: el.getBoundingClientRect().right, width: el.getBoundingClientRect().width })).filter(item => item.right > viewport + 1).slice(0, 5) }; })(),
     dark: matchMedia("(prefers-color-scheme: dark)").matches,
     controlHeights: validControls.map(el => ({ id: el.id || el.getAttribute("aria-label") || el.className, height: el.getBoundingClientRect().height })),
     quantity: quantity ? { value: quantity.value, error: !document.querySelector("[data-role=quantity-error]")?.classList.contains("hidden"), ctaDisabled: Boolean(cta?.disabled) } : null,
@@ -442,7 +475,7 @@ const readCase = async (width, color) => evaluate(`(() => {
     for (const width of WIDTHS) {
       executed += 1;
       try {
-        await send("Emulation.setDeviceMetricsOverride", { width, height: HEIGHT, deviceScaleFactor: 1, mobile: width < 768 });
+        await send("Emulation.setDeviceMetricsOverride", { width, height: HEIGHT, deviceScaleFactor: 1, mobile: false });
         await createAndManual();
         await evaluate(`(() => {
           const set = (selector, value) => {
@@ -462,8 +495,54 @@ const readCase = async (width, color) => evaluate(`(() => {
         check(`${prefix}: create controls render`, allControls, JSON.stringify(initial.controls));
         check(`${prefix}: focused control is active and dock-clear`, initial.focus?.active === true && initial.focus.clear === true, JSON.stringify(initial.focus));
         check(`${prefix}: controls meet tap target`, initial.controlHeights.every(control => control.height >= 44), JSON.stringify(initial.controlHeights));
-        check(`${prefix}: no horizontal overflow`, initial.dimensions.scrollWidth <= width, `${initial.dimensions.scrollWidth}px`);
-        check(`${prefix}: dock geometry`, Boolean(initial.dimensions.dock) && initial.dimensions.dock.height >= 44 && initial.dimensions.dock.right <= width + 1, JSON.stringify(initial.dimensions.dock));
+        check(`${prefix}: no horizontal overflow`, initial.dimensions.scrollWidth <= initial.dimensions.viewport, `${initial.dimensions.scrollWidth}px vs ${initial.dimensions.viewport}px ${JSON.stringify(initial.dimensions.overflowers)}`);
+        check(`${prefix}: persistent item label`, initial.repaired.nameLabel, JSON.stringify(initial.repaired));
+        check(`${prefix}: date and split helpers visible`, initial.repaired.dateHelper && initial.repaired.datePlaceholder && initial.repaired.totalInstruction && initial.repaired.modeHelper, JSON.stringify(initial.repaired));
+        const dateToggle = await evaluate(`(() => {
+          const input = document.querySelector("#date-input");
+          const wrap = document.querySelector("#date-input-wrap");
+          if (!input || !wrap) return { filledHidden: false, emptyVisible: false };
+          input.value = "2026-09-06";
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          const filledHidden = wrap.classList.contains("is-empty") === false && getComputedStyle(wrap.querySelector(".vf-date-placeholder")).display === "none";
+          input.value = "";
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          const emptyVisible = wrap.classList.contains("is-empty") && getComputedStyle(wrap.querySelector(".vf-date-placeholder")).display !== "none";
+          return { filledHidden, emptyVisible };
+        })()`);
+        check(`${prefix}: date placeholder toggles with value`, dateToggle.filledHidden && dateToggle.emptyVisible, JSON.stringify(dateToggle));
+        const entryClear = initial.dimensions.viewport >= 1040 || Boolean(
+          initial.entry?.detail && initial.entry?.date && initial.entry?.line && initial.entry?.topbar && initial.entry?.dock
+          && initial.entry.detail.top >= initial.entry.topbar.bottom - 1
+          && initial.entry.date.top >= initial.entry.topbar.bottom - 1
+          && initial.entry.line.bottom <= initial.entry.dock.top - 12
+        );
+        check(`${prefix}: initial bill context clears sticky topbar`, entryClear, JSON.stringify(initial.entry));
+        check(`${prefix}: delete is beside item name`, initial.dimensions.viewport < 768 ? initial.repaired.deleteNearName : true, JSON.stringify(initial.repaired));
+        const order = initial.repaired.order;
+        const naturalOrder = width >= 1040 ? (() => {
+          const desktop = initial.desktop;
+          const rects = desktop?.rects || [];
+          const row = rects.slice(1, 6);
+          const line = rects[6];
+          const mode = rects[7];
+          const headers = desktop?.headers || [];
+          const rowAligned = row.length === 5 && row.every((box, index) => box && (index === 0 || box.x >= row[index - 1].right - 1));
+          const rowBeforeSummary = row.every(box => box && line && box.bottom <= line.y + 1);
+          const sectionsAfter = Boolean(line && mode && mode.y >= line.bottom - 1);
+          const headerVisible = desktop?.display === "grid" && headers.length >= 5 && headers.slice(0, 4).map(header => header.text).join("|") === "Nama item|Harga satuan|Jumlah dibeli|Potongan";
+          return rowAligned && rowBeforeSummary && sectionsAfter && headerVisible;
+        })() : order.length === 5 && order.every((top, index) => top != null && (index === 0 || top >= order[index - 1]));
+        check(`${prefix}: item controls follow natural vertical order`, naturalOrder, JSON.stringify({ order, desktop: initial.desktop }));
+        if (initial.dimensions.viewport >= 1040) {
+          const desktopRects = initial.desktop?.rects || [];
+          const desktopColumns = desktopRects.length === 8 && desktopRects.slice(0, 6).every(Boolean)
+            && desktopRects.slice(0, 6).every((rect, index, all) => index === 0 || rect.left >= all[index - 1].left - 1)
+            && desktopRects[6].top > desktopRects[0].top && desktopRects[6].left <= desktopRects[3].right + 1
+            && desktopRects[7].top > desktopRects[6].top;
+          check(`${prefix}: desktop columns and secondary rows map`, initial.desktop?.display === "grid" && desktopColumns, JSON.stringify(initial.desktop));
+        }
+        check(`${prefix}: dock geometry`, Boolean(initial.dimensions.dock) && initial.dimensions.dock.height >= 44 && initial.dimensions.dock.right <= initial.dimensions.viewport + 1, JSON.stringify(initial.dimensions.dock));
         check(`${prefix}: color preference applied`, initial.dark === (color === "dark"), `dark=${initial.dark}`);
 
         const invalid = await evaluate(`(() => {

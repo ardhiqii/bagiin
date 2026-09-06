@@ -438,6 +438,13 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Changelog
 
+### 2026-09-06 (v69), editor manual quantity dan responsive
+
+- Subtotal manual mengikuti `harga satuan × jumlah dibeli − potongan`, termasuk validasi backend create dan update.
+- Editor item mobile memakai label permanen, quantity stepper 44px, total baris yang jelas, mode split yang dijelaskan, dan dock yang menjaga focus serta validasi tetap terlihat.
+- Desktop mempertahankan kolom eksplisit untuk nama, harga satuan, jumlah dibeli, potongan, dan aksi hapus.
+- Regression browser mencakup 28 kombinasi viewport, tema, quantity valid atau invalid, OCR, date placeholder, dock clearance, dan desktop grid.
+
 ### 2026-08-19 (v68) — satu daftar di menu utama + desktop yang gak melar
 
 **Riwayat dihapus, home yang pegang daftarnya**

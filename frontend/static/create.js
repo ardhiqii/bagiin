@@ -472,6 +472,7 @@ let verifyState = {
   // free-typed names with no identity (sent as legacy participant placeholders)
   participants: [], extraNames: [],
 };
+let verifyEntryPending = true;
 
 // Leaving this screen throws away every correction the user typed, so ask
 // first when there is anything to lose (bug: one stray back tap and a whole
@@ -513,59 +514,56 @@ const VERIFY_CSS = `<style>
   /* Keep the editor calm at phone widths: cards are the grouping, while the
      controls inside them are allowed to use the full content width. */
   #app:has(#create-bill-btn) .card-title { flex-wrap:wrap; row-gap:3px; }
+  #app:has(#create-bill-btn) { max-width:100%; overflow-x:clip; }
+  #app:has(#create-bill-btn) .dock, #app:has(#create-bill-btn) .dock-inner { min-width:0; overflow:hidden; }
   #app:has(#create-bill-btn) .card-title .muted { min-width:0; overflow-wrap:anywhere; }
   #app:has(#create-bill-btn) .account-row { min-width:0; }
   #app:has(#create-bill-btn) .account-row > span { min-width:0; }
   #app:has(#create-bill-btn) .account-row .muted { overflow-wrap:anywhere; }
-  .vf-item { display:grid; grid-template-columns:minmax(0,1fr) minmax(130px,1.25fr) 44px; gap:8px; align-items:center;
-             padding:12px 2px; border-bottom:1px solid var(--border); }
-  /* "Nasi Goreng Spesial" in a 1fr column next to a 110px price box reads
-     "Nasi Goreng Spe:" — give the name the whole width on a phone */
-  @media (max-width:430px) {
-    .vf-item { grid-template-columns:1fr 44px; }
-    .vf-item [data-role=name] { grid-column:1 / -1; }
-    .vf-item .vf-price { grid-column:1 / -1; }
-    /* the price cell is label-on-top-of-input (64px) while the trash is a
-       bare 44px box — align-items:center centered the trash on the CELL,
-       10px above the input's center (user: "gk sejajar"). Bottom-aligning
-       the 44px button makes its box coincide with the input's box, since
-       the input is the last element in the wrap. Desktop hides the label
-       (≥1040px) so centering is correct there and stays untouched. */
-    .vf-item [data-role=del] { align-self:end; }
-  }
-  /* 431-1039px (small-zoom phones / tablets / narrow windows): the 3-column
-     grid keeps the Harga label stacked on the input (64px cell) while name
-     and trash are bare 44px boxes — center alignment put the price input
-     ~10px BELOW both (user device sits in this range: "di gw masih").
-     Bottom-aligning the row coincides all three boxes on the input's
-     bottom edge; the label reads as a mini column header. >=1040 hides the
-     label and shows vf-head, where plain centering is correct. */
-  @media (min-width:431px) and (max-width:1039px) {
-    .vf-item { align-items:end; }
-  }
+  .vf-item { display:grid; gap:10px; padding:12px 2px; border-bottom:1px solid var(--border); min-width:0; }
+  .vf-item-header { display:grid; grid-template-columns:minmax(0,1fr) 44px; gap:8px; align-items:end; min-width:0; }
+  .vf-item-header .vf-name-field { min-width:0; }
+  .vf-item-header [data-role=name] { width:100%; }
+  .vf-item-header .icon-btn { align-self:end; }
+  .vf-input-group { display:grid; grid-template-columns:minmax(0,1fr) minmax(220px,1fr); gap:8px; min-width:0; }
+  .vf-price { min-width:0; }
+  .vf-qty { display:flex; align-items:center; gap:4px; margin-top:5px; min-width:0; }
+  .vf-qty-label { font-size:11.5px; color:var(--text-2); white-space:nowrap; }
+  .vf-qty button { width:44px; height:44px; min-width:44px; padding:0; }
+  .vf-qty input { width:48px; height:44px; padding:8px 4px; text-align:center; }
+  .vf-line-total { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin:0; padding:10px 12px; border:1px solid var(--border); border-radius:var(--r-sm); background:var(--surface-2); color:var(--text-2); }
+  .vf-line-total strong { color:var(--text); font-size:16px; }
+  @media (max-width:519px) { .vf-input-group { grid-template-columns:1fr; } }
   .vf-item:last-child { border-bottom:none; }
   .vf-item input { padding:9px 10px; }
   .vf-item .icon-btn { width:44px; height:44px; min-width:44px; min-height:44px; }
   .vf-full { grid-column:1 / -1; }
-  .vf-price { min-width:0; }
-  .vf-qty { display:flex; align-items:center; gap:4px; margin-top:5px; }
-  .vf-qty-label { font-size:11.5px; color:var(--text-3); white-space:nowrap; }
-  .vf-qty button { width:44px; height:44px; min-width:44px; padding:0; }
-  .vf-qty input { width:48px; height:44px; padding:8px 4px; text-align:center; }
-  .vf-line-total { display:block; margin-top:3px; font-size:12px; color:var(--text-2); }
+
   /* discount box: label + input + optional "→ bayar X" result, wrapping as
      one unit on a phone — moved out of an inline style so the desktop rule
      below (L3) can restyle just this wrapper without fighting specificity */
-  /* the column header only makes sense next to the compact desktop grid */
   .vf-head { display:none; }
-  .vf-mobile-label { display:block; font-size:11.5px; font-weight:600; color:var(--text-3); margin:0 0 3px; }
+  .vf-mobile-label { display:block; font-size:11.5px; font-weight:600; color:var(--text-2); margin:0 0 3px; }
+  .vf-date-wrap { position:relative; }
+  .vf-date-wrap > input[type="date"] { width:100%; }
+  .vf-date-wrap.is-empty > input[type="date"] { color:transparent; }
+  .vf-date-wrap.is-empty > input[type="date"]::-webkit-datetime-edit { color:transparent; }
+  .vf-date-placeholder { position:absolute; left:13px; top:50%; transform:translateY(-50%); pointer-events:none; color:var(--text-3); font:inherit; }
+  .vf-date-wrap:not(.is-empty) .vf-date-placeholder { display:none; }
+  .manual-photo-card .verify-photo-actions { display:flex; gap:8px; }
+  .manual-photo-card .verify-photo-actions .btn-outline { flex:1; min-width:0; white-space:nowrap; padding-inline:10px; }
+  @media (max-width:379px) {
+    .manual-photo-card .verify-photo-actions { flex-direction:column; }
+  }
   .vf-discount { display:block; }
   .vf-discount-fields { display:flex; align-items:center; gap:8px; min-width:0; }
   .vf-discount input { max-width:110px; }
   .disc-bayar { color:var(--green); font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
   .vf-mode-label { display:block; margin-bottom:5px; }
-  .vf-mode-options { display:flex; flex-wrap:nowrap; align-items:center; gap:6px; min-width:0; }
-  .vf-mode-options .item-mode-btn { flex:0 1 auto; white-space:nowrap; }
+  .vf-mode-helper { margin:7px 0 0; font-size:12px; line-height:1.4; color:var(--text-2); }
+  .vf-mode { min-width:0; }
+  .vf-mode-options { display:flex; flex-wrap:nowrap; align-items:center; gap:6px; min-width:0; width:100%; }
+  .vf-mode-options .item-mode-btn { flex:0 1 auto; white-space:nowrap; min-width:0; overflow:hidden; }
   .vf-mode-options > span { margin-left:auto; }
   .vf-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
   .vf-grid > .vf-sub { grid-column:1 / -1; }
@@ -596,7 +594,7 @@ const VERIFY_CSS = `<style>
        the counter as a third row instead of letting it paint past the card. */
     .vf-mode-options { flex-wrap:wrap; }
     .vf-mode-options > span { flex:1 1 100%; margin-left:0; justify-content:flex-start; }
-    .vf-mode-options .item-mode-btn { flex:1 1 auto; justify-content:center; }
+    .vf-mode-options .item-mode-btn { flex:1 1 0; justify-content:center; min-width:0; }
     .verify-payer-card .account-row { align-items:flex-start; }
     .verify-payer-card .account-row input { margin-top:2px; }
   }
@@ -648,54 +646,47 @@ const VERIFY_CSS = `<style>
      the "order" property does the reflow — so the phone layout above is
      untouched byte for byte. */
   @media (min-width:1040px) {
-    .vf-price .vf-mobile-label { display:none; }
+    /* Headers provide the visible desktop mapping; keep the per-control
+       labels in the accessibility tree without duplicating them visually. */
+    .vf-item-header .vf-mobile-label, .vf-price .vf-mobile-label, .vf-discount .vf-mobile-label {
+      position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+      clip:rect(0 0 0 0); white-space:nowrap; border:0;
+    }
     /* Judul Bill + Tanggal Transaksi share a row instead of each claiming
        the full (now much narrower) card width on its own line */
     .vf-field-pair { display:flex; gap:16px; align-items:flex-start; }
     .vf-field-pair > .field { flex:1; min-width:0; margin-bottom:0; }
 
-    /* name | harga | potongan | delete on ONE line — the discount box used
-       to drop to its own row and leave ~700px empty next to a 110px input */
-    .vf-item { grid-template-columns:minmax(150px,1fr) minmax(100px,120px) minmax(140px,150px) minmax(96px,112px) 44px; }
-    .vf-item [data-role="name"] { grid-column:1; grid-row:1; }
-    .vf-item .vf-price {
-      grid-column:2 / 4;
-      grid-row:1;
-      display:grid;
-      grid-template-columns:minmax(100px,120px) minmax(140px,1fr);
-      gap:0 8px;
-      align-items:start;
-    }
-    .vf-item .vf-price > input { grid-column:1; grid-row:1; }
-    .vf-item .vf-qty { grid-column:2; grid-row:1; margin-top:0; min-width:0; }
-    .vf-item .vf-qty-label { display:none; }
+    /* Preserve the explicit desktop column contract while the mobile markup
+       remains stacked: name | unit price | purchased quantity | discount | delete. */
+    .vf-item { grid-template-columns:minmax(120px,1fr) minmax(100px,120px) minmax(144px,1fr) minmax(96px,1fr) 44px; column-gap:8px; row-gap:8px; }
+    .vf-item-header, .vf-item .vf-input-group { display:contents; }
+    .vf-item-header .vf-name-field { grid-column:1; grid-row:1; }
+    .vf-item-header [data-role="del"] { grid-column:5; grid-row:1; }
+    .vf-item .vf-price { grid-column:2; grid-row:1; }
+    .vf-item .vf-qty { grid-column:3; grid-row:1; margin-top:0; }
     .vf-item .vf-line-total { grid-column:1 / -1; grid-row:2; }
-    .vf-item .vf-discount { order:initial; grid-column:4; grid-row:1; }
+    .vf-item .vf-discount { grid-column:4; grid-row:1; }
+    .vf-item .vf-mode { grid-column:1 / -1; grid-row:3; }
     .vf-item .vf-discount-fields { flex-direction:column; align-items:stretch; gap:2px; }
     .vf-item .vf-discount input { max-width:none; }
-    /* keep the label for screen readers (it's still the input's <label for>)
-       but out of the compact column visually — display:none would drop it
-       from the accessibility tree too, not just from view */
     .vf-item .vf-discount-label {
       position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
       clip:rect(0 0 0 0); white-space:nowrap; border:0;
     }
     .vf-item .disc-bayar { font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .vf-item [data-role="del"] { order:initial; grid-column:5; grid-row:1; align-self:start; }
-    .vf-head { display:grid; grid-template-columns:minmax(150px,1fr) minmax(100px,120px) minmax(140px,150px) minmax(96px,112px) 44px; gap:8px;
+    .vf-head { display:grid; grid-template-columns:minmax(120px,1fr) minmax(100px,120px) minmax(144px,1fr) minmax(96px,1fr) 44px; gap:8px;
                padding:0 2px 2px; font-size:11.5px; font-weight:600;
                color:var(--text-3); letter-spacing:.02em; }
-    .vf-head span:nth-child(2), .vf-head span:nth-child(3), .vf-head span:nth-child(4) { text-align:right; }
-    /* Cara Bagi stays on its own line (unchanged in spirit, just after the
-       four fields above instead of wherever DOM order would put it) */
-    .vf-item .vf-mode { order:4; }
+    .vf-head { color:var(--text-2); }
+    .vf-head span { text-align:left; }
+    .vf-item .vf-qty-label { display:none; }
   }
   @media (min-width:1040px) and (max-width:1199px) {
     /* The shell gives this card less room at medium desktop widths. Keep the
        two metadata fields readable without changing the phone layout. */
     .vf-field-pair { gap:12px; }
-    .vf-item { grid-template-columns:minmax(150px,1fr) minmax(100px,116px) minmax(136px,144px) minmax(96px,104px) 44px; }
-    .vf-head { grid-template-columns:minmax(150px,1fr) minmax(100px,116px) minmax(136px,144px) minmax(96px,104px) 44px; }
+    .vf-item, .vf-head { grid-template-columns:minmax(120px,1fr) minmax(100px,116px) minmax(144px,1fr) minmax(96px,1fr) 44px; }
   }
 </style>`;
 
@@ -729,23 +720,34 @@ function keepVerifyFocusAboveDock(target, requireFocus = false) {
 function settleVerifyDock() {
   if (window.matchMedia("(min-width:1040px)").matches) return;
   const dock = $(".dock");
-  const firstItem = $("#items-list .vf-item");
-  if (!dock || !firstItem || getComputedStyle(dock).position !== "fixed") return;
-  // Reveal the first editor, then the add-item action only when it is already
-  // in the viewport. This avoids hiding the first row, while still preventing
-  // a visible button from sitting underneath the dock on an empty draft.
-  const targets = [
-    firstItem,
-    $("#add-item-btn"),
-  ].filter(Boolean);
-  for (const target of targets) {
-    const dockTop = dock.getBoundingClientRect().top;
-    const targetRect = target.getBoundingClientRect();
-    const isVisible = targetRect.top < window.innerHeight && targetRect.bottom > 0;
-    if (isVisible && targetRect.bottom > dockTop - 24) {
-      keepVerifyFocusAboveDock(target);
-    }
+  const addItem = $("#add-item-btn");
+  if (!dock || !addItem || getComputedStyle(dock).position !== "fixed") return;
+
+  const protectEntrySection = verifyEntryPending;
+  verifyEntryPending = false;
+  if (protectEntrySection) {
+    window.scrollTo({ top: 0, behavior: "auto" });
+    const dockRect = dock.getBoundingClientRect();
+    const topbar = $(".topbar");
+    const detail = $(".verify-detail-card");
+    const lineTotal = $("#items-list .vf-line-total");
+    const topbarBottom = topbar ? topbar.getBoundingClientRect().bottom : 0;
+    const detailRect = detail ? detail.getBoundingClientRect() : null;
+    const lineRect = lineTotal ? lineTotal.getBoundingClientRect() : null;
+    const maxScroll = detailRect ? Math.max(0, detailRect.top - topbarBottom - 1) : Infinity;
+    const lineScroll = lineRect ? Math.max(0, lineRect.bottom - (dockRect.top - 16)) : 0;
+    const entryScroll = Math.min(lineScroll, maxScroll);
+    if (entryScroll > 0) window.scrollBy({ top: entryScroll, behavior: "auto" });
+    return;
   }
+  const activeInItem = document.activeElement?.closest?.(".vf-item");
+  if (activeInItem) return;
+  const dockRect = dock.getBoundingClientRect();
+  const addRect = addItem.getBoundingClientRect();
+  const isVisible = addRect.top < window.innerHeight && addRect.bottom > 0;
+  const horizontalOverlap = addRect.right > dockRect.left && addRect.left < dockRect.right;
+  const needsClearance = addRect.bottom > dockRect.top - 24;
+  if (isVisible && horizontalOverlap && needsClearance) keepVerifyFocusAboveDock(addItem);
 }
 
 function normalizeTransactionDate(value) {
@@ -766,6 +768,7 @@ function itemQuantity(it) {
 }
 
 function renderVerify(ocr, manual = false) {
+  verifyEntryPending = true;
   // v61: photos is an array now; legacy single photo_path folds in so OCR
   // results (which still carry photo_path) keep working
   const photos = Array.isArray(ocr.photos) ? ocr.photos.slice()
@@ -829,7 +832,7 @@ function renderVerify(ocr, manual = false) {
       <div style="width:42px;flex-shrink:0;" aria-hidden="true"></div>
     </div>
     ${verifyState.photos.length ? `
-    <div class="card" style="padding:8px;">
+    <div class="card verify-photo-card" style="padding:8px;">
       <div class="vf-photos">
         ${verifyState.photos.map((p, i) => `
         <div class="vf-photo-wrap">
@@ -843,10 +846,12 @@ function renderVerify(ocr, manual = false) {
         <p class="muted">Ketuk foto untuk memperbesar.</p>
       </div>
     </div>` : (manual ? `
-    <div class="card" style="padding:8px;">
-      <button class="btn-outline" id="verify-add-photo" style="width:100%;">${ic("camera")} Tambah Foto Struk</button>
-      <button class="btn-outline" id="verify-paste-photo" style="width:100%;margin-top:8px;">${ic("clipboard")} Tempel dari Clipboard</button>
-      <p class="muted" style="text-align:center;margin-top:6px;">Opsional — foto hanya dilampirkan, tidak dibaca otomatis.</p>
+    <div class="card verify-photo-card manual-photo-card" style="padding:8px;">
+      <div class="verify-photo-actions">
+        <button class="btn-outline" id="verify-add-photo">${ic("camera")} Tambah Foto Struk</button>
+        <button class="btn-outline" id="verify-paste-photo">${ic("clipboard")} Tempel dari Clipboard</button>
+      </div>
+      <p class="muted" style="text-align:center;margin-top:6px;">Opsional, foto hanya dilampirkan, tidak dibaca otomatis.</p>
     </div>` : "")}
 
     <div class="card verify-detail-card">
@@ -859,7 +864,11 @@ function renderVerify(ocr, manual = false) {
         </div>
         <div class="field" style="margin-bottom:0;">
           <label for="date-input">Tanggal Transaksi</label>
-          <input type="date" id="date-input" value="${esc(verifyState.transacted_at)}">
+          <div class="vf-date-wrap${verifyState.transacted_at ? "" : " is-empty"}" id="date-input-wrap">
+            <input type="date" id="date-input" lang="id-ID" aria-describedby="date-helper" value="${esc(verifyState.transacted_at)}">
+            <span class="vf-date-placeholder" aria-hidden="true">dd/mm/yyyy</span>
+          </div>
+          <p class="muted date-helper" id="date-helper" style="margin-top:5px;">Opsional, pilih tanggal transaksi.</p>
         </div>
       </div>
     </div>
@@ -883,7 +892,7 @@ function renderVerify(ocr, manual = false) {
         <span>Item</span>
         <span class="muted">${manual ? "Ketik item &amp; harganya" : "cek ulang, edit kalau salah"}</span>
       </div>
-      <div class="info-box" style="margin:0 0 10px;">Isi <strong>item dan total</strong> dulu. Pastikan cocok, lalu atur cara bagi.</div>
+      <div class="info-box" style="margin:0 0 10px;">Total baris dihitung dari harga satuan × jumlah dibeli − potongan. Isi <strong>item dan total</strong> dulu, lalu atur cara bagi.</div>
       ${/* desktop packs name/harga/potongan onto one line, which left two
             identical "0" boxes with the discount's label visually clipped —
             you could not tell which box was which. A column header restores
@@ -1215,7 +1224,12 @@ function renderVerify(ocr, manual = false) {
     if (last) last.focus();
   });
   $("#title-input").addEventListener("input", (e) => verifyState.title = e.target.value);
-  $("#date-input").addEventListener("input", (e) => verifyState.transacted_at = e.target.value);
+  const dateInput = $("#date-input");
+  const dateWrap = $("#date-input-wrap");
+  const syncDatePlaceholder = () => dateWrap?.classList.toggle("is-empty", !dateInput.value);
+  dateInput.addEventListener("input", (e) => { verifyState.transacted_at = e.target.value; syncDatePlaceholder(); });
+  dateInput.addEventListener("change", (e) => { verifyState.transacted_at = e.target.value; syncDatePlaceholder(); });
+  syncDatePlaceholder();
   bindRupiahInput($("#subtotal-input"), () => { verifyState.subtotalTouched = true; updateVerifyTotal(); });
   bindRupiahInput($("#tax-input"), (v) => { verifyState.taxSaved = v; updateVerifyTotal(); });
   bindRupiahInput($("#service-input"), () => updateVerifyTotal());
@@ -1289,19 +1303,24 @@ function renderVerifyItems() {
     const quantity = itemQuantity(it);
     const quantityDraft = it.quantityDraft != null ? String(it.quantityDraft) : String(quantity);
     const slots = it.slot_count || 2;
-    // per-slot price is the EFFECTIVE price / slots — dividing the pre-discount
-    // price quoted a per-bagian number nobody would ever be charged
-    // (bug: slot preview ignored the discount column)
-    const perSlot = Math.floor(eff * quantity / slots);
     const isSlot = it.mode === "slot";
     return `
     <div class="vf-item" data-idx="${idx}">
-      <input data-role="name" data-idx="${idx}" value="${esc(it.name)}" placeholder="Nama Item"
-             maxlength="60" aria-label="Nama item baris ${idx + 1}">
-      <div class="vf-price">
+      <div class="vf-item-header">
+        <div class="vf-name-field">
+          <label class="vf-mobile-label" for="name-${idx}">Nama item</label>
+          <input id="name-${idx}" data-role="name" data-idx="${idx}" value="${esc(it.name)}" placeholder="Nama item"
+                 maxlength="60" aria-label="Nama item baris ${idx + 1}">
+        </div>
+        <button type="button" data-role="del" data-idx="${idx}" class="icon-btn ghost"
+                aria-label="Hapus item baris ${idx + 1}" style="color:var(--red);">${ic("trash")}</button>
+      </div>
+      <div class="vf-input-group">
+        <div class="vf-price">
         <label class="vf-mobile-label" for="price-${idx}">Harga satuan</label>
         <input id="price-${idx}" data-role="price" data-idx="${idx}" class="input-money" type="text" inputmode="numeric" maxlength="16"
                value="${rupiahFmt(it.price)}" placeholder="0" aria-label="Harga satuan item baris ${idx + 1}">
+        </div>
         <div class="vf-qty" aria-label="Jumlah dibeli item baris ${idx + 1}">
           <span class="vf-qty-label">Jumlah dibeli</span>
           <button type="button" class="btn-outline qty-dec" data-idx="${idx}" aria-label="Kurangi jumlah dibeli"${quantity <= 1 ? " disabled" : ""}>−</button>
@@ -1309,10 +1328,8 @@ function renderVerifyItems() {
           <button type="button" class="btn-outline qty-inc" data-idx="${idx}" aria-label="Tambah jumlah dibeli"${quantity >= 99 ? " disabled" : ""}>+</button>
           <span class="error-text quantity-error${it.quantityDraft != null ? "" : " hidden"}" data-role="quantity-error">Jumlah harus bilangan bulat 1–99.</span>
         </div>
-        <span class="vf-line-total" data-role="line-total">Total baris: <strong>${rupiahFmt(eff * quantity)}</strong></span>
       </div>
-      <button type="button" data-role="del" data-idx="${idx}" class="icon-btn ghost"
-              aria-label="Hapus item baris ${idx + 1}" style="color:var(--red);">${ic("trash")}</button>
+      <div class="vf-line-total" data-role="line-total"><span>Total baris</span><strong>${rupiahFmt(eff * quantity)}</strong></div>
 
       <div class="vf-full vf-discount">
         <label class="label-sm vf-discount-label vf-mobile-label" for="disc-${idx}" style="margin:0;">Potongan</label>
@@ -1346,9 +1363,7 @@ function renderVerifyItems() {
               item. The "bebas" explainer is identical for every row — printed
               under all of them it filled the form with the same paragraph four
               times over. It lives once, above the list. */ ""}
-        ${isSlot ? `<div class="muted" style="font-size:12px;line-height:1.45;">
-          Dibagi ${slots} bagian tetap${eff > 0 ? ` · ${rupiahFmt(perSlot)}/bagian` : ""}. Tiap orang bisa ambil 1 bagian atau lebih, sisanya keliatan kosong.
-        </div>` : ""}
+        <p class="vf-mode-helper muted">Bagi rata membagi sesuai yang diambil. Bagi per porsi memakai jumlah porsi tetap${isSlot ? ` (${slots} porsi).` : "."} Jumlah dibeli adalah unit di struk, bukan batas jumlah peserta.</p>
       </div>
     </div>`;
   }).join("");
