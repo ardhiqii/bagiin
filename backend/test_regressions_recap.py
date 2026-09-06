@@ -132,11 +132,16 @@ def test_final_counterparty_reports_pending_actions_for_same_person():
     )
     assert counterparty["net_idr"] == 100000
     assert counterparty["pending"] == {
-        "count": 1,
+        "count": 2,
         "current_user": 0,
-        "waiting_other": 1,
-        "bill_ids": [pending_bill],
+        "waiting_other": 2,
+        "bill_ids": sorted([final_bill, pending_bill]),
     }
+    wait_payment = _action(recap, "waiting_other", "wait_payment", final_bill)
+    assert wait_payment["identity_id"] == guest["id"]
+    assert wait_payment["counterparty_id"] == guest["id"]
+    assert wait_payment["amount_idr"] == 100000
+    assert wait_payment["provisional"] is False
     wait = _action(recap, "waiting_other", "wait_selection", pending_bill)
     assert wait["counterparty_id"] == guest["id"]
 
@@ -286,6 +291,151 @@ def test_unpaid_final_share_gets_pay_action_and_paid_row_disappears():
     assert recap["final"]["counterparties"] == []
 
 
+def test_open_unpaid_selected_share_has_reciprocal_payment_actions():
+    owner = db.new_identity("Owner Open Payment", role="creator")
+    guest = db.new_identity("Guest Open Payment")
+    bill_id = _mk_bill(owner, title="Bayar Saat Terbuka", total=70000)
+    _join_and_pick(bill_id, guest, _item_ids(bill_id))
+
+    owner_recap = _recap(owner)
+    wait = _action(owner_recap, "waiting_other", "wait_payment", bill_id)
+    assert wait["identity_id"] == guest["id"]
+    assert wait["name"] == guest["name"]
+    assert wait["counterparty_id"] == guest["id"]
+    assert wait["amount_idr"] == 70000
+    assert wait["provisional"] is True
+    assert wait["href"] == f"#/b/{bill_id}"
+    assert not any(
+        action["kind"] == "wait_payment" and action["identity_id"] == owner["id"]
+        for action in owner_recap["actions"]["waiting_other"]
+    )
+
+    guest_recap = _recap(guest)
+    pay = _action(guest_recap, "current_user", "pay_share", bill_id)
+    assert pay["identity_id"] == guest["id"]
+    assert pay["counterparty_id"] == owner["id"]
+    assert pay["amount_idr"] == 70000
+    assert pay["provisional"] is True
+
+
+def test_owner_sees_selection_and_payment_waiting_separately():
+    owner = db.new_identity("Owner Both Waiting", role="creator")
+    selected = db.new_identity("Selected Unpaid")
+    unselected = db.new_identity("Joined Unselected")
+    bill_id = _mk_bill(
+        owner,
+        title="Dua Jenis Menunggu",
+        items=[
+            {"name": "Item Dipilih", "price": 50000},
+            {"name": "Item Lain", "price": 50000},
+        ],
+        total=100000,
+    )
+    item_ids = _item_ids(bill_id)
+    _join_and_pick(bill_id, selected, [item_ids[0]])
+    joined = c.post(f"/api/bills/{bill_id}/join", headers=_H(unselected))
+    assert joined.status_code == 200, joined.text
+
+    owner_recap = _recap(owner)
+    wait_selection = _action(owner_recap, "waiting_other", "wait_selection", bill_id)
+    wait_payment = _action(owner_recap, "waiting_other", "wait_payment", bill_id)
+    assert wait_selection["identity_id"] == unselected["id"]
+    assert wait_selection["counterparty_id"] == unselected["id"]
+    assert wait_selection["amount_idr"] == 0
+    assert wait_payment["identity_id"] == selected["id"]
+    assert wait_payment["counterparty_id"] == selected["id"]
+    assert wait_payment["amount_idr"] == 50000
+    assert wait_payment["provisional"] is True
+    assert not any(
+        action["kind"] == "wait_payment" and action["identity_id"] == unselected["id"]
+        for action in owner_recap["actions"]["waiting_other"]
+    )
+
+    selected_recap = _recap(selected)
+    assert _action(selected_recap, "current_user", "pay_share", bill_id)["amount_idr"] == 50000
+    unselected_recap = _recap(unselected)
+    assert _action(unselected_recap, "current_user", "select_items", bill_id)["amount_idr"] == 0
+
+
+def test_all_paid_and_manual_settle_have_no_payment_actions():
+    owner = db.new_identity("Owner Settled Actions", role="creator")
+    guest = db.new_identity("Guest Settled Actions")
+
+    auto_bill = _mk_bill(owner, title="Auto Lunas", total=60000)
+    _join_and_pick(auto_bill, guest, _item_ids(auto_bill))
+    paid = c.post(
+        f"/api/bills/{auto_bill}/payments/{guest['id']}/paid",
+        headers=_H(guest),
+    )
+    assert paid.status_code == 200, paid.text
+    assert paid.json()["settled"] is True
+
+    manual_bill = _mk_bill(owner, title="Manual Lunas", total=40000)
+    _join_and_pick(manual_bill, guest, _item_ids(manual_bill))
+    settled = c.post(f"/api/bills/{manual_bill}/settle", headers=_H(owner))
+    assert settled.status_code == 200, settled.text
+    assert settled.json()["settled_manual"] is True
+    assert settled.json()["settled"] is True
+
+    for identity in (owner, guest):
+        recap = _recap(identity)
+        assert all(
+            action["bill_id"] not in {auto_bill, manual_bill}
+            for section in recap["actions"].values()
+            for action in section
+        )
+
+
+def test_confirmed_payer_receives_waiting_payment_and_owns_bill_edge():
+    creator = db.new_identity("Creator Confirmed Payer", role="creator")
+    payer = db.new_identity("Payer Confirmed")
+    debtor = db.new_identity("Debtor Confirmed")
+    bill_id = _mk_bill(
+        creator,
+        title="Payer Dikonfirmasi",
+        items=[
+            {"name": "Bagian Creator", "price": 30000},
+            {"name": "Bagian Payer", "price": 30000},
+            {"name": "Bagian Debtor", "price": 30000},
+        ],
+        total=90000,
+    )
+    item_ids = _item_ids(bill_id)
+    _join_and_pick(bill_id, creator, [item_ids[0]])
+    _join_and_pick(bill_id, payer, [item_ids[1]])
+    _join_and_pick(bill_id, debtor, [item_ids[2]])
+    assigned = c.put(
+        f"/api/bills/{bill_id}/paid_by",
+        headers=_H(creator),
+        json={"identity_id": payer["id"]},
+    )
+    assert assigned.status_code == 200, assigned.text
+    assert assigned.json()["owner_id"] == payer["id"]
+    assert assigned.json()["paid_by_confirmed"] is True
+
+    payer_recap = _recap(payer)
+    waits = [
+        action for action in payer_recap["actions"]["waiting_other"]
+        if action["kind"] == "wait_payment" and action["bill_id"] == bill_id
+    ]
+    assert {action["identity_id"] for action in waits} == {creator["id"], debtor["id"]}
+    assert all(action["counterparty_id"] == action["identity_id"] for action in waits)
+    assert {action["amount_idr"] for action in waits} == {30000}
+    assert not any(
+        action["kind"] == "confirm_payer"
+        for action in payer_recap["actions"]["current_user"]
+    )
+
+    creator_recap = _recap(creator)
+    pay = _action(creator_recap, "current_user", "pay_share", bill_id)
+    assert pay["amount_idr"] == 30000
+    assert pay["counterparty_id"] == payer["id"]
+    assert not any(
+        action["kind"] == "wait_payment"
+        for action in creator_recap["actions"]["waiting_other"]
+    )
+
+
 def test_name_only_payer_does_not_become_ledger_owner():
     creator = db.new_identity("Creator Name Payer", role="creator")
     named_payer = db.new_identity("Named Payer")
@@ -313,6 +463,28 @@ def test_name_only_payer_does_not_become_ledger_owner():
         counterparty["identity_id"]
         for counterparty in recap["final"]["counterparties"]
     }
+    wait = _action(recap, "waiting_other", "wait_payment", bill_id)
+    assert wait["identity_id"] == debtor["id"]
+    assert wait["counterparty_id"] == debtor["id"]
+    assert wait["amount_idr"] == 50000
+    assert wait["provisional"] is False
+    assert all(
+        action["identity_id"] != named_payer["id"]
+        for action in recap["actions"]["waiting_other"]
+        if action["kind"] == "wait_payment"
+    )
+
+
+def test_default_creator_payer_does_not_emit_confirm_action():
+    creator = db.new_identity("Creator Implicit Payer", role="creator")
+    bill_id = _mk_bill(creator, title="Creator Bayar", total=50000)
+
+    recap = _recap(creator)
+    assert not any(
+        action["kind"] == "confirm_payer"
+        and action["bill_id"] == bill_id
+        for action in recap["actions"]["current_user"]
+    )
 
 
 def test_confirm_payer_action_counterparty_is_the_payer_identity():

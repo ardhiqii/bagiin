@@ -29,6 +29,63 @@ const state = {
   currentBillId: null,
 };
 
+// Derived bill data is deliberately kept in one small, identity-scoped cache.
+// The recap and home list have different payloads, but share the same identity,
+// TTL, generation and invalidation rules so a successful mutation cannot leave
+// one screen reading a different snapshot than the other (bug: home reused an
+// indefinitely stale histBills array while recap was freshly fetched).
+const DERIVED_CACHE_TTL_MS = 15_000;
+function newDerivedCacheEntry() {
+  return { data: null, fetchedAt: 0, promise: null, promiseGeneration: -1, promiseIdentity: null };
+}
+const derivedDataCache = {
+  identityId: state.identity && state.identity.id ? String(state.identity.id) : null,
+  generation: 0,
+  recap: newDerivedCacheEntry(),
+  billList: newDerivedCacheEntry(),
+};
+function identityKey(identity) {
+  const id = identity && identity.id;
+  return id == null || id === "" ? null : String(id);
+}
+function syncDerivedCacheIdentity(identityId) {
+  const id = identityId == null || identityId === "" ? null : String(identityId);
+  if (derivedDataCache.identityId === id) return;
+  derivedDataCache.identityId = id;
+  derivedDataCache.generation += 1;
+  derivedDataCache.recap = newDerivedCacheEntry();
+  derivedDataCache.billList = newDerivedCacheEntry();
+}
+function setCurrentIdentity(identity) {
+  const previousId = identityKey(state.identity);
+  state.identity = identity || null;
+  const nextId = identityKey(state.identity);
+  if (previousId !== nextId) syncDerivedCacheIdentity(nextId);
+  return state.identity;
+}
+function derivedCacheIsFresh(entry, identityId) {
+  const id = identityId == null ? null : String(identityId);
+  return !!(entry && derivedDataCache.identityId === id && entry.data !== null
+    && entry.fetchedAt > 0 && Date.now() - entry.fetchedAt <= DERIVED_CACHE_TTL_MS);
+}
+/** Invalidate every derived bill snapshot after a successful mutation. */
+function invalidateDerivedData({ billId, identityId } = {}) {
+  // Extra invalidation is safer than allowing an unknown mutation to leave one
+  // of the two derived screens stale. billId is retained for call-site clarity
+  // and future targeted invalidation, but the bounded cache is tiny enough that
+  // clearing both entries is the only rule today.
+  void billId;
+  const activeId = identityKey(state.identity);
+  if (identityId != null && activeId != null && String(identityId) !== activeId) return;
+  syncDerivedCacheIdentity(activeId);
+  derivedDataCache.generation += 1;
+  derivedDataCache.recap = newDerivedCacheEntry();
+  derivedDataCache.billList = newDerivedCacheEntry();
+  if (typeof window !== "undefined" && typeof window.CustomEvent === "function") {
+    window.dispatchEvent(new CustomEvent("bagiin:derived-invalidated", { detail: { billId } }));
+  }
+}
+
 /* ---------- icons ----------
    Hand-inlined because the project has no build step and no package manager
    (SPEC: vanilla JS, < 50KB gz, no npm). One stroke weight (1.75) and one
@@ -179,6 +236,7 @@ function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
 
 // ---------- API ----------
 async function api(path, opts = {}) {
+  const method = String(opts.method || (opts.json !== undefined ? "POST" : "GET")).toUpperCase();
   const headers = Object.assign({}, opts.headers || {});
   if (state.identity) {
     headers["X-Identity-Id"] = state.identity.id;
@@ -215,7 +273,16 @@ async function api(path, opts = {}) {
     err.status = res.status;
     throw err;
   }
-  return res.json();
+  const payload = await res.json();
+  // Every successful non-read response goes through the one invalidation
+  // point. Keeping this in api(), rather than at dozens of call sites, covers
+  // selections, invites, payer/payment changes, bill CRUD, photo changes and
+  // identity settings consistently. Failed responses throw above and do not
+  // pretend that derived data changed.
+  if (method !== "GET" && method !== "HEAD") {
+    invalidateDerivedData({ identityId: identityKey(state.identity) });
+  }
+  return payload;
 }
 
 function apiJson(path, method, data) {
@@ -240,7 +307,8 @@ function buzz(ms = 10) {
 // ---------- identity ----------
 async function ensureIdentity(name) {
   if (!state.identity) {
-    state.identity = await apiJson("/api/identities", "POST", { name });
+    const identity = await apiJson("/api/identities", "POST", { name });
+    setCurrentIdentity(identity);
     lsSet(LS_KEYS.ident, state.identity);
     lsSet(LS_KEYS.name, name);
   }
@@ -260,7 +328,7 @@ async function ensureSecret() {
 }
 
 function logout() {
-  state.identity = null;
+  setCurrentIdentity(null);
   try {
     localStorage.removeItem(LS_KEYS.ident);
     localStorage.removeItem(LS_KEYS.name);

@@ -579,6 +579,29 @@ def _recap_payment_status(bill_data: dict) -> dict[str, str]:
     }
 
 
+def _recap_pending_payment_people(bill_data: dict, response: dict) -> list[dict]:
+    """Return non-owner people with a positive, unresolved share."""
+    if response.get("settled"):
+        return []
+    owner_id = _owner_id(bill_data)
+    statuses = _recap_payment_status(bill_data)
+    # `_compute_response` marks the resolved payer as paid even when the
+    # persisted payment row is still unpaid. Preserve that canonical bill
+    # semantics (and the manual-settle contract) while routing any other
+    # unpaid share to `_owner_id`.
+    return [
+        person
+        for person in response.get("people", [])
+        if (
+            person.get("identity_id")
+            and person["identity_id"] != owner_id
+            and int(person.get("total_idr", 0) or 0) > 0
+            and statuses.get(person["identity_id"], "unpaid") != "paid"
+            and person.get("paid") != "paid"
+        )
+    ]
+
+
 def _recap_edges_for_viewer(bill_data: dict, response: dict, viewer_id: str) -> list[dict]:
     """Return only this viewer's directed, unpaid money edges.
 
@@ -586,22 +609,11 @@ def _recap_edges_for_viewer(bill_data: dict, response: dict, viewer_id: str) -> 
     unpaid after a manual settle. For all other bills, money goes to the
     effective owner, never to a payer resolved only by display name.
     """
-    if response.get("settled"):
-        return []
     owner_id = _owner_id(bill_data)
-    statuses = _recap_payment_status(bill_data)
     edges = []
-    for person in response.get("people", []):
+    for person in _recap_pending_payment_people(bill_data, response):
         source_id = person.get("identity_id")
         amount = int(person.get("total_idr", 0) or 0)
-        if not source_id or amount <= 0 or source_id == owner_id:
-            continue
-        # `_compute_response` marks the resolved payer as paid even when the
-        # persisted payment row is still unpaid. Preserve that canonical bill
-        # semantics (and the manual-settle contract) while routing any other
-        # unpaid share to `_owner_id`.
-        if statuses.get(source_id, "unpaid") == "paid" or person.get("paid") == "paid":
-            continue
         if viewer_id == source_id:
             edges.append({
                 "other_id": owner_id,
@@ -700,7 +712,7 @@ def _recap_action_counterparty_id(
     if kind in {"select_items", "pay_share"}:
         owner_id = _owner_id(bill_data)
         return owner_id if owner_id != viewer_id else None
-    if kind in {"accept_invite", "confirm_payer", "wait_selection", "wait_invite"}:
+    if kind in {"accept_invite", "confirm_payer", "wait_selection", "wait_payment", "wait_invite"}:
         return target_id if target_id != viewer_id else None
     return None
 
@@ -873,7 +885,11 @@ def _build_identity_recap(identity: dict) -> dict:
             ))
         if viewer_id == owner_id and bill.get("status") == "open":
             paid_by_id = response.get("paid_by_id")
-            if paid_by_id and not response.get("paid_by_confirmed"):
+            payer_declared = bool(
+                bill.get("paid_by_identity_id")
+                or (bill.get("paid_by_name") or "").strip()
+            )
+            if payer_declared and paid_by_id and not response.get("paid_by_confirmed"):
                 payer_name = _recap_identity_name(paid_by_id, people_by_id, name_cache)
                 current_actions.append(_recap_action(
                     "confirm_payer", "current_user", bill_id, title,
@@ -898,6 +914,21 @@ def _build_identity_recap(identity: dict) -> dict:
                     invite_id=invite["id"],
                     counterparty_id=_recap_action_counterparty_id(
                         "wait_invite", bill_data, viewer_id, invite["identity_id"],
+                    ),
+                ))
+        # This is intentionally outside the open-bill branch: closing locks
+        # selection edits, but a fully allocated unpaid share remains a
+        # final balance and still needs to be paid.
+        if viewer_id == owner_id:
+            for waiting_person in _recap_pending_payment_people(bill_data, response):
+                waiting_id = waiting_person["identity_id"]
+                waiting_name = _recap_identity_name(waiting_id, people_by_id, name_cache)
+                waiting_actions.append(_recap_action(
+                    "wait_payment", "other", bill_id, title,
+                    waiting_id, waiting_name,
+                    int(waiting_person.get("total_idr", 0) or 0), not final,
+                    counterparty_id=_recap_action_counterparty_id(
+                        "wait_payment", bill_data, viewer_id, waiting_id,
                     ),
                 ))
 

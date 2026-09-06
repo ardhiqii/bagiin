@@ -18,6 +18,7 @@ const RECAP_ACTION_LABELS = {
   pay_share: "Bayar bagianmu",
   confirm_payer: "Konfirmasi pembayar",
   wait_selection: "Menunggu pilihan item",
+  wait_payment: "Menunggu pembayaran",
   wait_invite: "Menunggu undangan diterima",
 };
 
@@ -336,17 +337,26 @@ function recapActionLabel(action) {
 }
 
 function recapActionTarget(action, isWaiting) {
-  if (action && action.kind === "accept_invite" && action.inviter_name) return recapName(action.inviter_name);
+  const inviterName = action && (action.inviter_name || action.invited_by_name);
+  if (action && action.kind === "accept_invite" && inviterName) return recapName(inviterName);
   if (action && action.name) return recapName(action.name);
   return isWaiting ? "orang lain" : "kamu";
 }
 
 function recapActionDetail(action, isWaiting) {
   if (action && action.kind === "accept_invite") {
-    return action.inviter_name ? `Undangan dari ${recapName(action.inviter_name)}` : "Ada undangan yang menunggu jawabanmu";
+    const inviterName = action.inviter_name || action.invited_by_name;
+    return inviterName ? `Undangan dari ${recapName(inviterName)}` : "Ada undangan yang menunggu jawabanmu";
   }
   if (action && action.kind === "select_items") return "Pilih item yang kamu ambil di bill ini.";
   if (action && action.kind === "pay_share") return "Jumlahnya mengikuti hitungan terbaru dari bill.";
+  if (action && action.kind === "wait_payment") {
+    const debtor = recapActionTarget(action, true);
+    const amount = recapNumber(action.amount_idr);
+    return amount > 0
+      ? `Menunggu ${debtor} membayar ${recapMoney(amount)}.`
+      : `Menunggu ${debtor} membayar bagian bill.`;
+  }
   if (action && action.kind === "confirm_payer") return "Pastikan siapa yang benar-benar membayar bill ini.";
   if (action && action.kind === "wait_selection") return `Menunggu ${recapActionTarget(action, true)} memilih item.`;
   if (action && action.kind === "wait_invite") return `Menunggu ${recapActionTarget(action, true)} menerima undangan.`;
@@ -406,7 +416,7 @@ function recapActionsHtml(data) {
       ${recapActionSectionHtml({
         id: "recap-waiting-actions-title",
         title: "Menunggu orang lain",
-        description: "Bill yang belum bisa selesai tanpa tindakan dari orang lain.",
+        description: "Bill ini masih menunggu pilihan atau pembayaran orang lain.",
         actions: actions.waiting_other,
         empty: "Tidak ada tindakan orang lain yang sedang ditunggu.",
         waiting: true,
@@ -473,24 +483,69 @@ function openRecapAliasSheet(identityId, canonicalName, content) {
 }
 
 function recapResponseLooksValid(data) {
-  return !!(data && typeof data === "object"
-    && data.final && typeof data.final === "object"
-    && data.provisional && typeof data.provisional === "object"
-    && data.actions && typeof data.actions === "object");
+  if (!data || typeof data !== "object") return false;
+  const final = data.final;
+  const provisional = data.provisional;
+  const actions = data.actions;
+  const numberFields = (value, fields) => value && typeof value === "object"
+    && fields.every(field => typeof value[field] === "number" && Number.isFinite(value[field]));
+  return !!(numberFields(final, ["payable_idr", "receivable_idr", "net_idr", "bill_count"])
+    && numberFields(provisional, ["payable_idr", "receivable_idr", "bill_count"])
+    && Array.isArray(provisional.bills)
+    && actions && typeof actions === "object"
+    && Array.isArray(actions.current_user)
+    && Array.isArray(actions.waiting_other)
+    && Array.isArray(final.counterparties));
 }
 
 async function loadRecapPage(root, content, identityId, generation) {
+  const id = String(identityId || "");
+  const cacheGeneration = derivedDataCache.generation;
+  const cacheEntry = derivedDataCache.recap;
   const isCurrent = () => generation === recapGeneration
+    && derivedDataCache.generation === cacheGeneration
+    && derivedDataCache.identityId === id
+    && identityKey(state.identity) === id
     && root && root.isConnected
     && content && content.isConnected
     && $("#app").firstElementChild === root
     && location.hash === "#/recap";
   if (!isCurrent()) return;
+  if (derivedCacheIsFresh(cacheEntry, id) && recapResponseLooksValid(cacheEntry.data)) {
+    recapData = cacheEntry.data;
+    renderRecapLoaded(cacheEntry.data, content);
+    return;
+  }
   content.innerHTML = recapLoadingHtml();
   try {
-    const data = await api(`/api/identities/${encodeURIComponent(identityId)}/recap`);
-    if (!isCurrent()) return;
+    let request = cacheEntry.promise;
+    const requestMatches = request
+      && cacheEntry.promiseGeneration === cacheGeneration
+      && cacheEntry.promiseIdentity === id;
+    if (!requestMatches) {
+      request = api(`/api/identities/${encodeURIComponent(id)}/recap`);
+      cacheEntry.promise = request;
+      cacheEntry.promiseGeneration = cacheGeneration;
+      cacheEntry.promiseIdentity = id;
+    }
+    let data;
+    try {
+      data = await request;
+    } finally {
+      if (cacheEntry.promise === request) {
+        cacheEntry.promise = null;
+        cacheEntry.promiseGeneration = -1;
+        cacheEntry.promiseIdentity = null;
+      }
+    }
     if (!recapResponseLooksValid(data)) throw new Error("Respons rekap tidak lengkap. Coba lagi ya.");
+    if (derivedDataCache.generation === cacheGeneration
+      && derivedDataCache.identityId === id
+      && identityKey(state.identity) === id) {
+      cacheEntry.data = data;
+      cacheEntry.fetchedAt = Date.now();
+    }
+    if (!isCurrent()) return;
     recapData = data;
     renderRecapLoaded(data, content);
   } catch (error) {

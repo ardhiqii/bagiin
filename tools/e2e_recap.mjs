@@ -166,10 +166,25 @@ try {
   await go("#/");
 
   check("home exposes Rekap Patungan navigation", await waitFor("!!document.querySelector('#recap-btn')"));
-  await evaluate("document.querySelector('#recap-btn').click()");
+  await evaluate(`(() => {
+    window.__recapRealFetch = window.fetch.bind(window);
+    window.__recapFetchCount = 0;
+    window.__recapGate = new Promise(resolve => { window.__recapRelease = resolve; });
+    window.fetch = (input, init) => {
+      const url = String(input?.url || input || '');
+      if (url.includes('/recap')) {
+        window.__recapFetchCount += 1;
+        return window.__recapGate.then(() => window.__recapRealFetch(input, init));
+      }
+      return window.__recapRealFetch(input, init);
+    };
+    document.querySelector('#recap-btn').click();
+  })()`);
   check("home navigation reaches canonical recap route", await waitFor("location.hash === '#/recap'"), await evaluate("location.hash"));
   check("recap loading skeleton exists before the response", await evaluate("!!document.querySelector('.recap-loading')"));
-  check("recap response renders", await waitFor("!!document.querySelector('#recap-title')"));
+  await evaluate("window.__recapRelease()");
+  check("recap response renders", await waitFor("!!document.querySelector('#recap-title')")
+    && await evaluate("window.__recapFetchCount === 1"), await evaluate("window.__recapFetchCount"));
 
   const mapped = await evaluate(`(() => ({
     payable: document.querySelector('.recap-money-pay .recap-money-value')?.textContent.trim() || '',
@@ -180,6 +195,8 @@ try {
     pendingCount: document.querySelector('.recap-person-pending-count')?.textContent.trim() || '',
     pendingCurrent: document.querySelector('.recap-pending-current')?.textContent.trim() || '',
     pendingWaiting: document.querySelector('.recap-pending-waiting')?.textContent.trim() || '',
+    waitingText: [...document.querySelectorAll('.recap-waiting-card .recap-action-row')]
+      .map(row => row.textContent.trim()).join(' | '),
     finalLinks: [...document.querySelectorAll('.recap-person-card a.recap-bill-link')].map(a => a.getAttribute('href')),
     provisionalLinks: [...document.querySelectorAll('.recap-provisional-row a.recap-bill-link')].map(a => a.getAttribute('href')),
     currentLinks: [...document.querySelectorAll('.recap-current-card a.recap-bill-link')].map(a => a.getAttribute('href')),
@@ -194,26 +211,51 @@ try {
   check("counterparty name and direction map from the API", mapped.sharedName === guest.name
     && mapped.direction.includes(`${guest.name} perlu bayar kamu`), `${mapped.sharedName} / ${mapped.direction}`);
   const pendingAria = await evaluate("document.querySelector('.recap-person-pending')?.getAttribute('aria-label') || ''");
-  check("same counterparty card shows matched pending action counts", mapped.pendingCount === "1 hal perlu tindakan · 1 bill"
+  check("same counterparty card shows matched pending action counts", mapped.pendingCount === "2 hal perlu tindakan · 2 bill"
     && mapped.pendingCurrent === "0 dari kamu"
-    && mapped.pendingWaiting === "1 menunggu orang lain"
-    && pendingAria.includes("1 hal perlu tindakan")
+    && mapped.pendingWaiting === "2 menunggu orang lain"
+    && pendingAria.includes("2 hal perlu tindakan")
     && pendingAria.includes("0 dari kamu")
-    && pendingAria.includes("1 menunggu orang lain")
+    && pendingAria.includes("2 menunggu orang lain")
     && mapped.receivable === "Rp 100.000",
     `${mapped.pendingCount} / ${mapped.pendingCurrent} / ${mapped.pendingWaiting} / ${pendingAria}`);
+  check("waiting actions explain selection and payment separately",
+    mapped.waitingText.includes("memilih item")
+      && mapped.waitingText.includes("membayar")
+      && mapped.waitingText.includes("Rp 100.000"), mapped.waitingText);
   check("final drilldown links to the exact bill", mapped.finalLinks.includes(`#/b/${finalBill.id}`), JSON.stringify(mapped.finalLinks));
   check("provisional bill is visible with an exact bill link", mapped.provisionalRows === 1
     && mapped.provisionalLinks.includes(`#/b/${pendingBill.id}`), JSON.stringify(mapped.provisionalLinks));
   check("current and waiting actions stay in separate sections", mapped.currentRows === 0
-    && mapped.waitingRows >= 1 && mapped.waitingLinks.includes(`#/b/${pendingBill.id}`),
-    `${mapped.currentRows} current / ${mapped.waitingRows} waiting`);
+    && mapped.currentLinks.length === 0
+    && mapped.waitingRows >= 2
+    && mapped.waitingLinks.includes(`#/b/${finalBill.id}`)
+    && mapped.waitingLinks.includes(`#/b/${pendingBill.id}`),
+    `${mapped.currentRows} current / ${mapped.waitingRows} waiting / current=${JSON.stringify(mapped.currentLinks)} / waiting=${JSON.stringify(mapped.waitingLinks)}`);
 
   await evaluate("document.querySelector('#recap-back').click()");
   check("recap Back returns home", await waitFor("location.hash === '#/'")
     && await evaluate("!!document.querySelector('#create-btn')"));
   await evaluate("document.querySelector('#recap-btn').click()");
-  await waitFor("!!document.querySelector('#recap-title')");
+  check("fresh recap visit uses the bounded cache", await waitFor("!!document.querySelector('#recap-title')")
+    && await evaluate("window.__recapFetchCount === 1"), await evaluate("window.__recapFetchCount"));
+
+  // A successful mutation must invalidate the cached recap before the next
+  // render. Reopen/close the allocated bill to keep the seed useful for the
+  // remaining final-balance assertions.
+  const reopenResult = await evaluate(`api("/api/bills/${finalBill.id}/reopen", { method: "POST" })
+    .then(() => { renderRecap(); return "ok"; })
+    .catch(error => "error:" + error.message)`);
+  check("successful mutation invalidates recap cache", reopenResult === "ok"
+    && await waitFor("!!document.querySelector('#recap-title')")
+    && await evaluate("window.__recapFetchCount === 2"), `${reopenResult} / ${await evaluate("window.__recapFetchCount")}`);
+  const closeResult = await evaluate(`api("/api/bills/${finalBill.id}/close", { method: "POST" })
+    .then(() => { renderRecap(); return "ok"; })
+    .catch(error => "error:" + error.message)`);
+  check("closing the bill refreshes recap after invalidation", closeResult === "ok"
+    && await waitFor("!!document.querySelector('#recap-title')")
+    && await evaluate("window.__recapFetchCount === 3"), `${closeResult} / ${await evaluate("window.__recapFetchCount")}`);
+  await evaluate("window.fetch = window.__recapRealFetch; window.__recapRealFetch = null; window.__recapGate = null; window.__recapRelease = null");
 
   // Error state is tested with a temporary page-local fetch failure. No fake
   // totals may appear while the recap request is unavailable.
@@ -224,6 +266,7 @@ try {
       if (url.includes('/recap')) return Promise.reject(new Error('Uji koneksi gagal'));
       return window.__recapRealFetch(input, init);
     };
+    invalidateDerivedData();
     renderRecap();
   })()`);
   check("API error shows a truthful retry state", await waitFor("!!document.querySelector('#recap-retry')")
@@ -240,11 +283,12 @@ try {
       if (url.includes('/recap')) return Promise.resolve(new Response(${JSON.stringify(JSON.stringify(empty))}, { status: 200, headers: { 'Content-Type': 'application/json' } }));
       return window.__recapRealFetch(input, init);
     };
+    invalidateDerivedData();
     renderRecap();
   })()`);
   check("empty response shows an honest empty account state", await waitFor("document.body.textContent.includes('Rekap akan terisi')")
     && await evaluate("!document.querySelector('.recap-person-card')"));
-  await evaluate("window.fetch = window.__recapRealFetch; window.__recapRealFetch = null; renderRecap()");
+  await evaluate("window.fetch = window.__recapRealFetch; window.__recapRealFetch = null; invalidateDerivedData(); renderRecap()");
   await waitFor("!!document.querySelector('#recap-title')");
 
   // The alias sheet only writes the device-local map. The API name remains in
@@ -287,6 +331,18 @@ try {
     check(`responsive geometry ${width}px`, geometry.scrollWidth <= geometry.viewport && geometry.bad.length === 0,
       `scroll ${geometry.scrollWidth}/${geometry.viewport}, bad ${JSON.stringify(geometry.bad)}`);
   }
+  await send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-color-scheme", value: "dark" }],
+  });
+  await sleep(100);
+  const darkMode = await evaluate(`(() => ({
+    background: getComputedStyle(document.body).backgroundColor,
+    overflow: document.documentElement.scrollWidth <= window.innerWidth,
+  }))()`);
+  check("dark mode tokens and geometry remain valid",
+    darkMode.background === "rgb(21, 19, 17)" && darkMode.overflow,
+    JSON.stringify(darkMode));
+  await send("Emulation.setEmulatedMedia", { features: [] });
   check("no uncaught browser errors", pageErrors.length === 0, [...new Set(pageErrors)].join(" | "));
 } finally {
   ws.close();
