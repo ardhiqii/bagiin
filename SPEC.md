@@ -438,6 +438,13 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Changelog
 
+### 2026-09-06 (v72), Rekap Patungan lintas bill
+
+- Endpoint identity-scoped `GET /api/identities/{identity_id}/recap` merangkum utang dan piutang dari bill yang alokasinya sudah final, dengan autentikasi header dan pengecekan id path.
+- Nilai final dipisahkan tegas dari bill yang masih menunggu pilihan, slot yang belum tertutup, atau workflow lain yang belum selesai. Estimasi sementara tidak pernah masuk ke saldo final.
+- Drilldown dan antrean tindakan hanya membawa metadata bill yang aman; bill, undangan, rekening, dan rahasia identitas yang tidak terkait tidak ikut terbuka.
+- Alias nama Rekap Patungan disimpan lokal di perangkat, bukan diubah ke nama identitas bersama atau dikirim ke server.
+
 ### 2026-09-06 (v71), OCR receipt gratis yang lebih ketat
 
 - Prompt OCR sekarang membedakan harga satuan, jumlah dibeli, potongan, dan total baris. Contoh `2 × Rp35.000 = Rp70.000` ditulis eksplisit supaya harga baris tidak salah dibaca sebagai harga satuan.

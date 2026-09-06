@@ -727,12 +727,145 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 #app.settings-page > .shell-solo > .topbar { margin-bottom:8px; }
 #app.settings-page > .shell-solo > .btn-danger-ghost { margin-top:2px; }
 
+/* ---------- Rekap Patungan (v72) ----------
+   The recap is a reading surface, not a second bill editor. Keep the final
+   ledger, provisional estimates, and workflow actions in separate regions so
+   a waiting task can never look like money that is already owed. */
+.recap-page { min-width:0; }
+.recap-page .topbar { margin-bottom:22px; }
+.recap-topbar-mark { width:44px; height:44px; min-width:44px; display:inline-flex;
+                     align-items:center; justify-content:center; color:var(--accent); }
+.recap-topbar-mark svg { width:21px; height:21px; }
+.recap-summary { padding:20px; }
+.recap-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; min-width:0; }
+.recap-heading > div { min-width:0; }
+.recap-heading h1,.recap-heading h2 { margin:0; }
+.recap-heading .muted { margin-top:5px; max-width:52ch; }
+.recap-heading > .chip { flex-shrink:0; margin-top:3px; }
+.recap-money-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:18px; }
+.recap-money-cell { min-width:0; padding:13px 14px; border-radius:var(--r-sm); background:var(--surface-2);
+                    border:1px solid var(--border); }
+.recap-money-label { display:block; color:var(--text-2); font-size:12px; font-weight:700; }
+.recap-money-value { display:block; margin-top:4px; font-size:clamp(18px,5.2vw,25px); font-weight:800;
+                     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.recap-money-note { display:block; margin-top:4px; color:var(--text-3); font-size:12px; line-height:1.35; }
+.recap-money-pay { border-color:color-mix(in srgb,var(--red) 24%,var(--border)); }
+.recap-money-receive { border-color:color-mix(in srgb,var(--green) 24%,var(--border)); }
+.recap-net-line { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:14px;
+                  padding-top:14px; border-top:1px solid var(--border); min-width:0; }
+.recap-net-line > span { display:flex; flex-direction:column; min-width:0; }
+.recap-net-line b { font-size:14px; }
+.recap-net-line small { color:var(--text-3); font-size:12px; margin-top:2px; }
+.recap-net-line .money { flex-shrink:0; font-size:21px; font-weight:800; white-space:nowrap; }
+.recap-net-receive .money { color:var(--green); }
+.recap-net-pay .money { color:var(--red); }
+.recap-net-zero .money { color:var(--text-2); }
+.recap-summary-note { margin-top:14px; line-height:1.4; }
+.recap-account-empty { display:flex; align-items:flex-start; gap:9px; margin:16px 0 0; }
+.recap-account-empty svg { width:18px; height:18px; flex-shrink:0; color:var(--accent); }
+
+.recap-section { margin-top:24px; min-width:0; }
+.recap-section-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; min-width:0; margin-bottom:11px; }
+.recap-section-heading > div { min-width:0; }
+.recap-section-heading h2 { margin:0; }
+.recap-section-heading .muted { margin-top:4px; line-height:1.4; }
+.recap-section-heading > .chip { flex-shrink:0; }
+.recap-person-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
+.recap-person-card { min-width:0; padding:16px; background:var(--surface); border:1px solid var(--border);
+                     border-radius:var(--r-md); box-shadow:var(--shadow-1); }
+.recap-person-head { display:flex; align-items:flex-start; gap:10px; min-width:0; }
+.recap-person-copy { flex:1; min-width:0; padding-top:1px; }
+.recap-person-name { font-size:16px; font-weight:750; line-height:1.25; overflow-wrap:anywhere; }
+.recap-person-canonical { color:var(--text-3); font-size:12px; line-height:1.35; margin-top:3px; overflow-wrap:anywhere; }
+.recap-person-amount { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; min-width:0; text-align:right; }
+.recap-person-amount .recap-money-label { font-size:11px; }
+.recap-person-amount .money { font-size:17px; font-weight:800; white-space:nowrap; }
+.recap-person-direction { margin:12px 0 0; padding:9px 11px; border-radius:var(--r-sm); font-size:13.5px; font-weight:650;
+                          line-height:1.35; overflow-wrap:anywhere; }
+.recap-person-direction.is-receive { background:var(--green-soft); color:var(--green); }
+.recap-person-direction.is-pay { background:var(--red-soft); color:var(--red); }
+.recap-person-direction.is-unknown { background:var(--surface-2); color:var(--text-2); }
+.recap-person-pending { margin:12px 0 0; }
+.recap-person-pending-heading { min-width:0; line-height:1.35; }
+.recap-person-pending-count { overflow-wrap:anywhere; }
+.recap-person-pending-breakdown { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; min-width:0; }
+.recap-person-pending-breakdown .chip { white-space:normal; line-height:1.3; }
+.recap-alias-btn { width:auto; justify-content:flex-start; padding-left:0; padding-right:6px; margin-top:5px; color:var(--accent); }
+.recap-bill-list { margin-top:12px; border-top:1px solid var(--border); }
+.recap-bill-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:9px; min-width:0;
+                  padding:11px 0; border-bottom:1px solid var(--border); }
+.recap-bill-row:last-child { border-bottom:none; padding-bottom:0; }
+.recap-bill-copy { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.recap-bill-copy strong { font-size:13.5px; line-height:1.3; overflow-wrap:anywhere; }
+.recap-bill-copy .muted { font-size:11.5px; line-height:1.35; overflow-wrap:anywhere; }
+.recap-bill-link { width:auto; flex-shrink:0; white-space:nowrap; text-decoration:none; }
+.recap-empty { text-align:center; padding:28px 16px; }
+.recap-empty > svg { display:block; width:40px; height:40px; margin:0 auto 9px; color:var(--border-strong); }
+.recap-empty p { margin:0; }
+.recap-empty p + p { margin-top:4px; }
+
+.recap-provisional { margin-top:24px; padding:18px 16px; background:var(--surface-2); border-color:var(--border); }
+.recap-provisional .recap-section-heading { margin-bottom:0; }
+.recap-provisional .recap-section-heading .muted { max-width:58ch; }
+.recap-estimate-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:14px; }
+.recap-estimate-grid > div { min-width:0; padding:11px 12px; border-radius:var(--r-sm); background:var(--surface); border:1px solid var(--border); }
+.recap-estimate-grid span { display:block; color:var(--text-2); font-size:11.5px; line-height:1.35; }
+.recap-estimate-grid strong { display:block; margin-top:4px; font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.recap-provisional-list { margin-top:14px; border-top:1px solid var(--border); }
+.recap-provisional-row { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto; gap:4px 10px; min-width:0;
+                          padding:13px 0; border-bottom:1px solid var(--border); }
+.recap-provisional-row:last-child { border-bottom:none; padding-bottom:0; }
+.recap-provisional-copy { grid-column:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.recap-provisional-copy > strong { font-size:14px; line-height:1.3; overflow-wrap:anywhere; }
+.recap-provisional-copy > .muted { font-size:11.5px; }
+.recap-reason-list { display:flex; flex-wrap:wrap; gap:5px; margin-top:3px; min-width:0; }
+.recap-reason-list .chip { white-space:normal; line-height:1.25; }
+.recap-provisional-amounts { grid-column:1; display:flex; flex-wrap:wrap; gap:4px 10px; min-width:0; color:var(--text-2); font-size:12px; line-height:1.4; }
+.recap-provisional-amounts span { overflow-wrap:anywhere; }
+.recap-provisional-row > .recap-bill-link { grid-column:2; grid-row:1 / span 2; align-self:center; }
+.recap-empty-inline { display:flex; align-items:flex-start; gap:8px; min-width:0; padding:13px 0 2px; color:var(--text-2); font-size:13px; line-height:1.4; }
+.recap-empty-inline svg { width:17px; height:17px; flex-shrink:0; color:var(--green); margin-top:1px; }
+
+.recap-actions-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; margin-top:24px; }
+.recap-action-card { min-width:0; margin:0; padding:16px; }
+.recap-action-card .recap-section-heading { margin-bottom:0; }
+.recap-action-card .recap-section-heading .chip { min-width:28px; justify-content:center; }
+.recap-action-list { margin-top:8px; border-top:1px solid var(--border); }
+.recap-action-row { display:grid; grid-template-columns:38px minmax(0,1fr); gap:9px 10px; min-width:0; padding:12px 0; border-bottom:1px solid var(--border); }
+.recap-action-row:last-child { border-bottom:none; padding-bottom:0; }
+.recap-action-icon { width:38px; height:38px; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+                     border-radius:var(--r-sm); background:var(--accent-soft); color:var(--accent); }
+.recap-action-icon svg { width:19px; height:19px; }
+.recap-action-copy { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.recap-action-copy > strong { font-size:14px; line-height:1.3; }
+.recap-action-title { font-weight:650; font-size:13px; line-height:1.35; overflow-wrap:anywhere; }
+.recap-action-copy .muted { font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
+.recap-action-target { color:var(--text-2); font-size:12px; line-height:1.35; overflow-wrap:anywhere; }
+.recap-action-aside { grid-column:2; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:7px; min-width:0; }
+.recap-action-amount { font-size:14px; font-weight:800; white-space:nowrap; }
+.recap-action-aside .chip { flex-shrink:0; }
+.recap-action-link { margin-left:auto; }
+.recap-state-actions { margin-top:4px; }
+.recap-state-actions > * { min-width:0; }
+
+@media (max-width:359px) {
+  .recap-summary { padding:16px 14px; }
+  .recap-money-grid,.recap-estimate-grid { grid-template-columns:minmax(0,1fr); }
+  .recap-person-card,.recap-provisional,.recap-action-card { padding-left:14px; padding-right:14px; }
+  .recap-heading .chip { white-space:normal; text-align:right; }
+}
+@media (min-width:1040px) {
+  .recap-person-grid,.recap-actions-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .recap-summary { padding:22px; }
+}
+
 </style>
 </head>
 <body>
 <main id="app"></main>
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="/static/app.js?v=@HASH:app.js@"></script>
+<script src="/static/recap.js?v=@HASH:recap.js@"></script>
 <script src="/static/screens.js?v=@HASH:screens.js@"></script>
 <script src="/static/create.js?v=@HASH:create.js@"></script>
 <script src="/static/bill.js?v=@HASH:bill.js@"></script>
