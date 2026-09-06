@@ -154,6 +154,7 @@ const setViewport = async (width) => {
   });
   await sleep(80);
 };
+const getNavigationHistory = () => send("Page.getNavigationHistory");
 
 try {
   await new Promise(resolve => ws.addEventListener("open", resolve, { once: true }));
@@ -165,7 +166,67 @@ try {
   await signIn(host);
   await go("#/");
 
-  check("home exposes Rekap Patungan navigation", await waitFor("!!document.querySelector('#recap-btn')"));
+  const homeNav = await evaluate(`(() => {
+    const nav = document.querySelector('#app-nav');
+    const links = [...document.querySelectorAll('#app-nav [data-app-nav]')];
+    return {
+      visible: !!nav && !nav.hidden && getComputedStyle(nav).display !== 'none',
+      count: links.length,
+      labels: links.map(link => link.querySelector(':scope > span:not(.app-nav-badge)')?.textContent.trim() || ''),
+      hrefs: links.map(link => link.getAttribute('href')),
+      active: links.filter(link => link.getAttribute('aria-current') === 'page').map(link => link.dataset.appNav),
+      homeDuplicates: !!document.querySelector('#recap-btn, #settings-btn'),
+      createCount: document.querySelectorAll('#create-btn').length,
+    };
+  })()`);
+  check("home exposes exactly three mobile app destinations", homeNav.visible
+    && homeNav.count === 3
+    && JSON.stringify(homeNav.labels) === JSON.stringify(["Rekap", "Bill", "Akun"])
+    && JSON.stringify(homeNav.hrefs) === JSON.stringify(["#/recap", "#/", "#/settings"])
+    && JSON.stringify(homeNav.active) === JSON.stringify(["bill"]), JSON.stringify(homeNav));
+  check("home replaces duplicate route buttons but keeps one create CTA",
+    !homeNav.homeDuplicates && homeNav.createCount === 1, JSON.stringify(homeNav));
+
+  // Legacy #/history must replace its own entry. Set up a real prior route so
+  // two Back presses can prove that the redirect did not trap the user on a
+  // second #/ entry or keep re-entering the redirect handler.
+  const historyTestUrl = `?legacy_history_e2e=${Date.now()}#/settings`;
+  await evaluate(`history.replaceState(null, "", ${JSON.stringify(historyTestUrl)}); render()`);
+  check("legacy-history setup reaches the prior route", await waitFor("location.hash === '#/settings'"));
+  await evaluate("location.hash = '#/'");
+  check("legacy-history setup returns to authenticated home",
+    await waitFor("location.hash === '#/' && !!document.querySelector('#create-btn')"));
+  const beforeLegacy = await getNavigationHistory();
+  const beforeLegacyLength = await evaluate("history.length");
+  await evaluate("location.hash = '#/history'");
+  const canonicalHome = await waitFor("location.hash === '#/' && !!document.querySelector('#create-btn')");
+  await sleep(80);
+  const afterLegacy = await getNavigationHistory();
+  const afterLegacyLength = await evaluate("history.length");
+  const beforeHomeEntries = beforeLegacy.entries.filter(entry => entry.url.endsWith("#/"));
+  const afterHomeEntries = afterLegacy.entries.filter(entry => entry.url.endsWith("#/"));
+  check("legacy-history replaces one entry without an extra redirect home",
+    canonicalHome
+      && afterLegacy.entries.length === beforeLegacy.entries.length + 1
+      && afterLegacyLength === beforeLegacyLength + 1
+      && afterHomeEntries.length === beforeHomeEntries.length + 1,
+    JSON.stringify({ before: beforeLegacy.entries.length, after: afterLegacy.entries.length,
+      beforeLength: beforeLegacyLength, afterLength: afterLegacyLength,
+      beforeHome: beforeHomeEntries.length, afterHome: afterHomeEntries.length }));
+  await evaluate("history.back()");
+  await sleep(120);
+  await evaluate("history.back()");
+  const backToPriorRoute = await waitFor("location.hash === '#/settings'", 1500);
+  const afterLegacyBack = await getNavigationHistory();
+  const afterLegacyBackLength = await evaluate("history.length");
+  check("Back after legacy-history redirect does not loop on home",
+    backToPriorRoute
+      && afterLegacyBack.entries.length === afterLegacy.entries.length
+      && afterLegacyBackLength === afterLegacyLength,
+    JSON.stringify({ hash: await evaluate("location.hash"),
+      length: afterLegacyBackLength, entries: afterLegacyBack.entries.length }));
+  await go("#/");
+
   await evaluate(`(() => {
     window.__recapRealFetch = window.fetch.bind(window);
     window.__recapFetchCount = 0;
@@ -178,13 +239,18 @@ try {
       }
       return window.__recapRealFetch(input, init);
     };
-    document.querySelector('#recap-btn').click();
+    document.querySelector('[data-app-nav="recap"]').click();
   })()`);
   check("home navigation reaches canonical recap route", await waitFor("location.hash === '#/recap'"), await evaluate("location.hash"));
   check("recap loading skeleton exists before the response", await evaluate("!!document.querySelector('.recap-loading')"));
   await evaluate("window.__recapRelease()");
   check("recap response renders", await waitFor("!!document.querySelector('#recap-title')")
     && await evaluate("window.__recapFetchCount === 1"), await evaluate("window.__recapFetchCount"));
+  check("recap app nav is active without a loading badge", await evaluate(`(() => {
+    const link = document.querySelector('[data-app-nav="recap"]');
+    return !!link && !document.querySelector('.app-nav-badge')
+      && link.getAttribute('aria-current') === 'page';
+  })()`));
 
   const mapped = await evaluate(`(() => ({
     payable: document.querySelector('.recap-money-pay .recap-money-value')?.textContent.trim() || '',
@@ -235,10 +301,31 @@ try {
 
   await evaluate("document.querySelector('#recap-back').click()");
   check("recap Back returns home", await waitFor("location.hash === '#/'")
-    && await evaluate("!!document.querySelector('#create-btn')"));
-  await evaluate("document.querySelector('#recap-btn').click()");
+    && await evaluate("!!document.querySelector('#create-btn') && document.querySelector('[data-app-nav=\"bill\"]')?.getAttribute('aria-current') === 'page'"));
+  await evaluate("document.querySelector('[data-app-nav=\"recap\"]').click()");
   check("fresh recap visit uses the bounded cache", await waitFor("!!document.querySelector('#recap-title')")
     && await evaluate("window.__recapFetchCount === 1"), await evaluate("window.__recapFetchCount"));
+
+  // App-level routes keep the nav, while contextual bill/create surfaces hide
+  // it immediately even if their async renderer has not finished yet.
+  await evaluate("document.querySelector('[data-app-nav=\"settings\"]').click()");
+  check("settings route activates Akun", await waitFor("location.hash === '#/settings'")
+    && await waitFor("document.querySelector('[data-app-nav=\"settings\"]')?.getAttribute('aria-current') === 'page'")
+    && await evaluate("!document.querySelector('#app-nav').hidden"));
+  await evaluate("location.hash = '#/create'");
+  check("create route hides the app nav", await waitFor("location.hash === '#/create'")
+    && await waitFor("!!document.querySelector('#dz')")
+    && await evaluate("document.querySelector('#app-nav').hidden"));
+  await evaluate(`location.hash = ${JSON.stringify(`#/b/${finalBill.id}`)}`);
+  check("bill detail hides the app nav during async load", await waitFor("location.hash.startsWith('#/b/')")
+    && await evaluate("document.querySelector('#app-nav').hidden"));
+  await evaluate("location.hash = '#/'");
+  check("rapid contextual-to-home transition restores Bill", await waitFor("location.hash === '#/'")
+    && await waitFor("!!document.querySelector('#create-btn')")
+    && await evaluate("document.querySelector('[data-app-nav=\"bill\"]')?.getAttribute('aria-current') === 'page'"));
+  await evaluate("document.querySelector('[data-app-nav=\"recap\"]').click()");
+  check("recap cache survives route-only navigation", await waitFor("!!document.querySelector('#recap-title')")
+    && await evaluate("window.__recapFetchCount === 1"));
 
   // A successful mutation must invalidate the cached recap before the next
   // render. Reopen/close the allocated bill to keep the seed useful for the
@@ -257,6 +344,53 @@ try {
     && await evaluate("window.__recapFetchCount === 3"), `${closeResult} / ${await evaluate("window.__recapFetchCount")}`);
   await evaluate("window.fetch = window.__recapRealFetch; window.__recapRealFetch = null; window.__recapGate = null; window.__recapRelease = null");
 
+  // A positive badge uses the current-user action count only. Exercise the
+  // documented fallback by omitting counts.current_user while keeping two
+  // validated current_user actions in the same identity-scoped payload.
+  const badgePayload = recapPayload(host);
+  badgePayload.actions.current_user = [
+    { kind: "select_items", bill_id: finalBill.id, title: "Badge satu", name: host.name, amount_idr: 0, provisional: true },
+    { kind: "pay_share", bill_id: pendingBill.id, title: "Badge dua", name: host.name, amount_idr: 12000, provisional: true },
+  ];
+  delete badgePayload.counts.current_user;
+  await evaluate(`(() => {
+    window.__recapRealFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = String(input?.url || input || '');
+      if (url.includes('/recap')) return Promise.resolve(new Response(${JSON.stringify(JSON.stringify(badgePayload))}, { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      return window.__recapRealFetch(input, init);
+    };
+    invalidateDerivedData();
+    renderRecap();
+  })()`);
+  check("recap badge reflects current-user actions and has an accessible label", await waitFor("!!document.querySelector('.app-nav-badge')")
+    && await evaluate(`(() => {
+      const badge = document.querySelector('.app-nav-badge');
+      const link = document.querySelector('[data-app-nav="recap"]');
+      return badge?.textContent.trim() === '2'
+        && link?.getAttribute('aria-label') === 'Rekap, 2 tindakan yang perlu kamu lakukan';
+    })()`));
+  await evaluate("window.fetch = window.__recapRealFetch; window.__recapRealFetch = null; invalidateDerivedData(); renderRecap()");
+  await waitFor("!!document.querySelector('#recap-title')");
+
+  // Loading is deterministic here: hold the response so the old positive
+  // badge cannot flash while the recap is being replaced.
+  await evaluate(`(() => {
+    window.__recapRealFetch = window.fetch.bind(window);
+    window.__recapGate = new Promise(resolve => { window.__recapRelease = resolve; });
+    window.fetch = (input, init) => {
+      const url = String(input?.url || input || '');
+      if (url.includes('/recap')) return window.__recapGate.then(() => window.__recapRealFetch(input, init));
+      return window.__recapRealFetch(input, init);
+    };
+    invalidateDerivedData();
+    renderRecap();
+  })()`);
+  check("recap loading state clears the badge", await evaluate("!!document.querySelector('.recap-loading') && !document.querySelector('.app-nav-badge')"));
+  await evaluate("window.__recapRelease()");
+  check("recap reloads after the held response", await waitFor("!!document.querySelector('#recap-title')"));
+  await evaluate("window.fetch = window.__recapRealFetch; window.__recapRealFetch = null; window.__recapGate = null; window.__recapRelease = null");
+
   // Error state is tested with a temporary page-local fetch failure. No fake
   // totals may appear while the recap request is unavailable.
   await evaluate(`(() => {
@@ -270,7 +404,7 @@ try {
     renderRecap();
   })()`);
   check("API error shows a truthful retry state", await waitFor("!!document.querySelector('#recap-retry')")
-    && await evaluate("!document.querySelector('.recap-summary')"));
+    && await evaluate("!document.querySelector('.recap-summary') && !document.querySelector('.app-nav-badge')"));
   await evaluate("window.fetch = window.__recapRealFetch; window.__recapRealFetch = null");
   await evaluate("document.querySelector('#recap-retry').click()");
   check("retry reloads the recap", await waitFor("!!document.querySelector('#recap-title')"));
@@ -287,7 +421,7 @@ try {
     renderRecap();
   })()`);
   check("empty response shows an honest empty account state", await waitFor("document.body.textContent.includes('Rekap akan terisi')")
-    && await evaluate("!document.querySelector('.recap-person-card')"));
+    && await evaluate("!document.querySelector('.recap-person-card') && !document.querySelector('.app-nav-badge')"));
   await evaluate("window.fetch = window.__recapRealFetch; window.__recapRealFetch = null; invalidateDerivedData(); renderRecap()");
   await waitFor("!!document.querySelector('#recap-title')");
 

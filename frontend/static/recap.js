@@ -435,6 +435,10 @@ function recapLoadedHtml(data) {
 
 function renderRecapLoaded(data, content) {
   if (!content || !content.isConnected) return;
+  // The payload has already passed recapResponseLooksValid() before this
+  // renderer is called. Update the shared mobile nav from that same snapshot,
+  // never from a second request or a provisional client-side guess.
+  updateAppNavBadge(data);
   content.innerHTML = recapLoadedHtml(data);
   $$(".recap-alias-btn", content).forEach(button => {
     button.addEventListener("click", () => openRecapAliasSheet(
@@ -511,6 +515,9 @@ async function loadRecapPage(root, content, identityId, generation) {
     && $("#app").firstElementChild === root
     && location.hash === "#/recap";
   if (!isCurrent()) return;
+  // Loading and retry states are intentionally badge-free. A previous count
+  // must not look current while this identity's recap is being replaced.
+  clearAppNavBadge();
   if (derivedCacheIsFresh(cacheEntry, id) && recapResponseLooksValid(cacheEntry.data)) {
     recapData = cacheEntry.data;
     renderRecapLoaded(cacheEntry.data, content);
@@ -551,6 +558,7 @@ async function loadRecapPage(root, content, identityId, generation) {
   } catch (error) {
     if (!isCurrent()) return;
     recapData = null;
+    clearAppNavBadge();
     content.innerHTML = recapErrorHtml(error);
     const retry = $("#recap-retry", content);
     if (retry) retry.addEventListener("click", () => loadRecapPage(root, content, identityId, generation));
@@ -565,6 +573,7 @@ function renderRecap() {
   if (!me) return;
   const generation = ++recapGeneration;
   recapData = null;
+  clearAppNavBadge();
   app.innerHTML = shell(`
     <div class="recap-page">
       <div class="topbar">

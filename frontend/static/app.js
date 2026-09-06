@@ -60,7 +60,13 @@ function setCurrentIdentity(identity) {
   const previousId = identityKey(state.identity);
   state.identity = identity || null;
   const nextId = identityKey(state.identity);
-  if (previousId !== nextId) syncDerivedCacheIdentity(nextId);
+  if (previousId !== nextId) {
+    syncDerivedCacheIdentity(nextId);
+    // A badge belongs to one identity's recap only. Clear it before the next
+    // identity can render, so logout/restore never leaks the previous user's
+    // pending-action count (bug: the recap nav badge survived identity swap).
+    clearAppNavBadge();
+  }
   return state.identity;
 }
 function derivedCacheIsFresh(entry, identityId) {
@@ -81,6 +87,7 @@ function invalidateDerivedData({ billId, identityId } = {}) {
   derivedDataCache.generation += 1;
   derivedDataCache.recap = newDerivedCacheEntry();
   derivedDataCache.billList = newDerivedCacheEntry();
+  clearAppNavBadge();
   if (typeof window !== "undefined" && typeof window.CustomEvent === "function") {
     window.dispatchEvent(new CustomEvent("bagiin:derived-invalidated", { detail: { billId } }));
   }
@@ -156,6 +163,114 @@ function ic(name, cls) {
   const d = ICONS[name] || "";
   return `<svg class="ico ${cls || ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+}
+
+// ---------- authenticated mobile app navigation ----------
+// This is deliberately a tiny route map instead of a second router. The hash
+// router remains the only owner of navigation; these anchors only change the
+// hash and this state mirrors the canonical route after render().
+const APP_NAV_ITEMS = [
+  { key: "recap", label: "Rekap", href: "#/recap", icon: "people" },
+  { key: "bill", label: "Bill", href: "#/", icon: "receipt" },
+  { key: "settings", label: "Akun", href: "#/settings", icon: "user" },
+];
+let appNavRoute = null;
+let appNavBadgeTimer = null;
+let appNavBadgeIdentity = null;
+let appNavBadgeExpiresAt = 0;
+
+function initAppNav() {
+  const nav = $("#app-nav");
+  if (!nav || nav.dataset.ready === "true") return nav;
+  nav.innerHTML = APP_NAV_ITEMS.map(item => `
+    <a class="app-nav-link" data-app-nav="${item.key}" href="${item.href}"
+       aria-label="${item.label}">${ic(item.icon)}<span>${item.label}</span></a>`).join("");
+  nav.dataset.ready = "true";
+  return nav;
+}
+
+function clearAppNavBadge() {
+  if (appNavBadgeTimer) clearTimeout(appNavBadgeTimer);
+  appNavBadgeTimer = null;
+  appNavBadgeIdentity = null;
+  appNavBadgeExpiresAt = 0;
+  const nav = initAppNav();
+  if (!nav) return;
+  const badge = $("[data-app-nav-badge]", nav);
+  if (badge) badge.remove();
+  const recapLink = $('[data-app-nav="recap"]', nav);
+  if (recapLink) recapLink.setAttribute("aria-label", "Rekap");
+}
+
+function appNavBadgeCount(data) {
+  const activeId = identityKey(state.identity);
+  if (!activeId || !data || typeof data !== "object") return null;
+  // The recap endpoint includes the identity it was built for. Requiring that
+  // match makes a late or page-local fixture response unable to badge another
+  // identity's nav.
+  if (!data.identity || identityKey(data.identity) !== activeId) return null;
+  const counts = data.counts;
+  if (counts && Object.prototype.hasOwnProperty.call(counts, "current_user")) {
+    const count = counts.current_user;
+    return Number.isInteger(count) && count >= 0 ? count : null;
+  }
+  const actions = data.actions;
+  return actions && Array.isArray(actions.current_user) ? actions.current_user.length : null;
+}
+
+/** Update only from a validated, identity-scoped recap payload. */
+function updateAppNavBadge(data) {
+  const count = appNavBadgeCount(data);
+  if (!Number.isInteger(count) || count <= 0) {
+    clearAppNavBadge();
+    return;
+  }
+  const nav = initAppNav();
+  const recapLink = nav && $('[data-app-nav="recap"]', nav);
+  if (!recapLink) return;
+  const oldBadge = $("[data-app-nav-badge]", recapLink);
+  if (oldBadge) oldBadge.remove();
+  const badge = document.createElement("span");
+  badge.className = "app-nav-badge";
+  badge.dataset.appNavBadge = "true";
+  badge.textContent = String(count);
+  badge.setAttribute("aria-hidden", "true");
+  recapLink.appendChild(badge);
+  recapLink.setAttribute("aria-label", `Rekap, ${count} tindakan yang perlu kamu lakukan`);
+
+  const identityId = identityKey(state.identity);
+  appNavBadgeIdentity = identityId;
+  appNavBadgeExpiresAt = Date.now() + DERIVED_CACHE_TTL_MS;
+  if (appNavBadgeTimer) clearTimeout(appNavBadgeTimer);
+  appNavBadgeTimer = setTimeout(() => {
+    if (appNavBadgeIdentity === identityId && Date.now() >= appNavBadgeExpiresAt) clearAppNavBadge();
+  }, DERIVED_CACHE_TTL_MS + 25);
+}
+
+function syncAppNav() {
+  const nav = initAppNav();
+  if (!nav) return false;
+  const onDesktop = window.matchMedia("(min-width:1040px)").matches;
+  const hasContextualDock = !!$("#app .dock, #app .sticky-bar");
+  const eligible = !!(state.identity && appNavRoute && !onDesktop && !hasContextualDock);
+  nav.hidden = !eligible;
+  nav.setAttribute("aria-hidden", eligible ? "false" : "true");
+  document.body.classList.toggle("has-app-nav", eligible);
+  APP_NAV_ITEMS.forEach(item => {
+    const link = $(`[data-app-nav="${item.key}"]`, nav);
+    if (!link) return;
+    const active = eligible && item.key === appNavRoute;
+    link.classList.toggle("is-active", active);
+    if (active) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  });
+  return eligible;
+}
+
+function setAppNavRoute(route) {
+  appNavRoute = APP_NAV_ITEMS.some(item => item.key === route) ? route : null;
+  syncAppNav();
+  syncDockSpace();
 }
 
 // v68b: real brand logos for payment methods (assets/brands/manifest.json,
@@ -501,12 +616,21 @@ function shell(main, side) {
 function syncDockSpace() {
   const app = $("#app");
   if (!app) return;
+  // Re-evaluate visibility before measuring. A contextual dock can appear
+  // after an async bill response, and the nav must never stack above it.
+  syncAppNav();
   const dock = $(".dock, .sticky-bar");
   const onDesktop = window.matchMedia("(min-width:1040px)").matches;
-  if (!dock || (onDesktop && dock.closest(".shell-side"))) {
+  const appNav = $("#app-nav:not([hidden])");
+  const activeDock = dock && !(onDesktop && dock.closest(".shell-side")) ? dock : null;
+  const surface = activeDock || (!onDesktop ? appNav : null);
+  if (!surface) {
     app.style.paddingBottom = "";
     app.style.scrollPaddingBottom = "";
     if (dock) dock.style.bottom = "";
+    if (appNav) appNav.style.bottom = "";
+    const t = $("#toast");
+    if (t) t.style.bottom = "";
     return;
   }
   // On browsers whose layout viewport stays tall while the keyboard shrinks
@@ -516,14 +640,16 @@ function syncDockSpace() {
   const vv = window.visualViewport;
   const visualBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
   const keyboardGap = Math.max(0, window.innerHeight - visualBottom);
-  dock.style.bottom = keyboardGap ? `${keyboardGap}px` : "";
-  const reserve = `calc(env(safe-area-inset-bottom) + ${dock.offsetHeight + 24}px)`;
+  surface.style.bottom = keyboardGap ? `${keyboardGap}px` : "";
+  if (surface !== dock && dock) dock.style.bottom = "";
+  if (surface !== appNav && appNav) appNav.style.bottom = "";
+  const reserve = `calc(env(safe-area-inset-bottom) + ${surface.offsetHeight + 24}px)`;
   app.style.paddingBottom = reserve;
   // Keep keyboard/focus scrolling from parking a focused control underneath
   // the fixed mobile dock. Padding alone only protects normal document flow.
   app.style.scrollPaddingBottom = reserve;
   const t = $("#toast");
-  if (t) t.style.bottom = `calc(env(safe-area-inset-bottom) + ${dock.offsetHeight + 16}px)`;
+  if (t) t.style.bottom = `calc(env(safe-area-inset-bottom) + ${surface.offsetHeight + 16}px)`;
 }
 const dockObserver = window.ResizeObserver ? new ResizeObserver(syncDockSpace) : null;
 function watchDock() {
@@ -619,6 +745,10 @@ function parseHash() {
 function render() {
   const app = $("#app");
   const { parts } = parseHash();
+  // Hide first. Async bill/create work must never repaint an app nav over a
+  // route that is no longer eligible (bug: stale bill response resurrected a
+  // home nav after a rapid hash transition).
+  setAppNavRoute(null);
   // Hash routes are public URLs (people can type or share them), so an unknown
   // route must not silently render home while leaving a dead URL in the address
   // bar. That made refresh/back behavior look broken and left users stranded
@@ -639,7 +769,10 @@ function render() {
   // "Riwayat Bill" heading (the route looked valid but no longer had its own
   // screen).
   if (parts[0] === "history") {
-    if (location.hash !== "#/") location.hash = "#/";
+    if (location.hash !== "#/") {
+      history.replaceState(null, "", "#/");
+      return render();
+    }
     return;
   }
   if (parts[0] === "b" && parts[1]) { loadBillView(parts[1]); return; }
@@ -667,8 +800,17 @@ function render() {
   app.classList.remove("settings-page");
   if (!state.identity) { renderOnboarding(); addOnboardingSteps(); return; }
   // History uses the same list data, but keeps its URL and heading honest.
-  if (parts[0] === "settings") { app.classList.add("settings-page"); renderSettings(); return; }
-  if (parts[0] === "recap") { renderRecap(); return; }
+  if (parts[0] === "settings") {
+    app.classList.add("settings-page");
+    renderSettings();
+    setAppNavRoute("settings");
+    return;
+  }
+  if (parts[0] === "recap") {
+    renderRecap();
+    setAppNavRoute("recap");
+    return;
+  }
   if (parts[0] === "create") {
     // #/create/verify is the OCR/manual editor (see renderVerify in
     // screens.js) — a real route so a page load / forward-nav / the guard
@@ -687,6 +829,7 @@ function render() {
     return;
   }
   renderHome();
+  setAppNavRoute("bill");
 }
 
 // ---------- navigation leave-guard ----------

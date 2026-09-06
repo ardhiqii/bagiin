@@ -131,10 +131,6 @@ function renderHome() {
   app.innerHTML = shell(`
     <div class="topbar">
       <div class="brand"><span class="brand-mark">${brandMark(26)}</span>Bagiin<span class="dot">.</span></div>
-      <div class="right">
-        <button class="icon-btn" id="recap-btn" aria-label="Rekap Patungan" title="Rekap Patungan">${ic("people")}</button>
-        <button class="icon-btn" id="settings-btn" aria-label="Akun kamu">${ic("user")}</button>
-      </div>
     </div>
     <div style="margin-bottom:18px;">
       <p class="muted">Halo, ${name}</p>
@@ -161,8 +157,6 @@ function renderHome() {
   watchDock();
 
   $("#create-btn").addEventListener("click", () => location.hash = "#/create");
-  $("#recap-btn").addEventListener("click", () => location.hash = "#/recap");
-  $("#settings-btn").addEventListener("click", () => location.hash = "#/settings");
   $("#list-ctl-btn").addEventListener("click", () => openListControlsSheet());
 
   // paging is per-visit: leaving home at "80 rows shown" and coming back

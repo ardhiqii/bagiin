@@ -3,6 +3,9 @@ import { readFile } from "node:fs/promises";
 
 const screens = await readFile(new URL("../frontend/static/screens.js", import.meta.url), "utf8");
 const bill = await readFile(new URL("../frontend/static/bill.js", import.meta.url), "utf8");
+const app = await readFile(new URL("../frontend/static/app.js", import.meta.url), "utf8");
+const recap = await readFile(new URL("../frontend/static/recap.js", import.meta.url), "utf8");
+const index = await readFile(new URL("../frontend/index.html", import.meta.url), "utf8");
 
 // Regression contracts for async screen races. Keep these source-level and
 // deterministic: they run without a server, browser, or test data.
@@ -40,6 +43,34 @@ assert.match(screens, /await apiJson\([^;]+code\/generate[\s\S]*if \(!isCurrentS
 assert.match(screens, /await apiJson\([^;]+auto_accept[\s\S]*if \(!isCurrentSettings\(\)\) return;\n\s*toast/);
 assert.match(screens, /catch \(e\) \{\n\s*if \(!isCurrentSettings\(\)\) return;\n\s*sw\.setAttribute/);
 assert.match(screens, /finally \{\n\s*if \(!isCurrentSettings\(\)\) return;\n\s*sw\.disabled = false/);
+
+// The mobile app nav is a route surface, not a second router. Keep the exact
+// three destinations and make the visibility/active-state lifecycle explicit
+// so a later refactor cannot quietly reintroduce duplicate home controls.
+assert.match(index, /<nav id="app-nav" aria-label="Navigasi utama" hidden><\/nav>/);
+assert.match(app, /key: "recap", label: "Rekap", href: "#\/recap"/);
+assert.match(app, /key: "bill", label: "Bill", href: "#\//);
+assert.match(app, /key: "settings", label: "Akun", href: "#\/settings"/);
+assert.match(app, /function setAppNavRoute\(route\)/);
+assert.match(app, /nav\.hidden = !eligible/);
+assert.match(app, /link\.classList\.toggle\("is-active", active\)/);
+assert.match(app, /link\.setAttribute\("aria-current", "page"\)/);
+assert.match(app, /const surface = activeDock \|\| \(!onDesktop \? appNav : null\)/);
+assert.match(app, /const reserve = `calc\(env\(safe-area-inset-bottom\) \+ \$\{surface\.offsetHeight \+ 24\}px\)`/);
+assert.match(app, /setAppNavRoute\(null\);[\s\S]*setAppNavRoute\("settings"\)/);
+assert.match(app, /setAppNavRoute\(null\);[\s\S]*setAppNavRoute\("recap"\)/);
+assert.match(app, /setAppNavRoute\(null\);[\s\S]*setAppNavRoute\("bill"\)/);
+assert.match(app, /function clearAppNavBadge\(\)/);
+assert.match(app, /function updateAppNavBadge\(data\)/);
+assert.match(app, /counts\.current_user/);
+assert.match(app, /Array\.isArray\(actions\.current_user\)/);
+assert.match(app, /syncDerivedCacheIdentity\(nextId\);[\s\S]*clearAppNavBadge\(\);/);
+assert.match(app, /derivedDataCache\.billList = newDerivedCacheEntry\(\);\n\s*clearAppNavBadge\(\);/);
+assert.match(recap, /updateAppNavBadge\(data\)/);
+assert.match(recap, /Loading and retry states are intentionally badge-free/);
+assert.match(recap, /clearAppNavBadge\(\);\n\s*content\.innerHTML = recapErrorHtml/);
+assert.doesNotMatch(screens, /recap-btn|settings-btn/);
+assert.match(screens, /id="create-btn"/);
 
 // The optimistic split remains available for the picker, but its number must
 // be visibly labeled as pending until the authoritative server payload lands.

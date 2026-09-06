@@ -108,6 +108,40 @@ body {
 .shell-main { min-width:0; }
 .shell-side { display:contents; }
 
+/* ---------- authenticated app navigation ----------
+   The nav is a mobile-only route surface. app.js owns hidden/active state and
+   measures its real height into #app, so this fixed layer never relies on a
+   guessed spacer and never competes with a contextual .dock. */
+#app-nav[hidden] { display:none !important; }
+#app-nav {
+  position:fixed; left:0; right:0; bottom:0; z-index:var(--z-sticky);
+  display:flex; align-items:stretch; gap:4px; overflow:hidden;
+  padding:8px 12px calc(env(safe-area-inset-bottom) + 8px);
+  background:color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter:blur(14px) saturate(180%); -webkit-backdrop-filter:blur(14px) saturate(180%);
+  border-top:1px solid var(--border);
+}
+.app-nav-link {
+  position:relative; flex:1 1 0; min-width:0; min-height:44px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  color:var(--text-3); text-decoration:none; border-radius:var(--r-sm);
+  font-size:12px; font-weight:650; line-height:1.15; white-space:nowrap;
+  transition:background .16s var(--ease), color .16s var(--ease), transform .1s var(--ease);
+}
+.app-nav-link .ico { width:20px; height:20px; }
+.app-nav-link.is-active { color:var(--accent); background:var(--accent-soft); }
+.app-nav-link:active { transform:scale(.97); }
+.app-nav-badge {
+  position:absolute; top:4px; left:calc(50% + 5px); min-width:18px; height:18px;
+  display:inline-flex; align-items:center; justify-content:center; padding:0 5px;
+  border:2px solid var(--surface); border-radius:var(--r-full);
+  background:var(--accent); color:var(--on-accent); font-size:10px; font-weight:800;
+  line-height:1; font-variant-numeric:tabular-nums;
+}
+@media (min-width:1040px) {
+  #app-nav { display:none !important; }
+}
+
 .topbar {
   display:flex; align-items:center; gap:10px; justify-content:space-between;
   margin:0 -16px 16px; padding:8px 16px; min-height:56px;
@@ -863,6 +897,7 @@ select { appearance:none; -webkit-appearance:none; padding-right:36px;
 </head>
 <body>
 <main id="app"></main>
+<nav id="app-nav" aria-label="Navigasi utama" hidden></nav>
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="/static/app.js?v=@HASH:app.js@"></script>
 <script src="/static/recap.js?v=@HASH:recap.js@"></script>
