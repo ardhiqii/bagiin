@@ -32,6 +32,7 @@ import db
 db.init_db()
 
 from fastapi.testclient import TestClient
+import main
 from main import app
 
 c = TestClient(app, raise_server_exceptions=False)
@@ -67,12 +68,11 @@ def _photos(bid):
 
 
 def _fake_photo():
-    """An upload-shaped path (v67: create_bill now 400s on anything whose
-    basename doesn't match db._PHOTO_NAME_RE, since a bare string used to be
-    accepted verbatim — including another bill's real photo path). This
-    stands in for a path a client would legitimately hand back from a prior
-    /api/photos or /api/ocr call, without actually writing the file."""
-    return str(Path(os.environ["BAGIIN_UPLOAD_DIR"]) / (secrets.token_hex(8) + ".jpg"))
+    """Create an upload-shaped fixture under the disposable upload directory."""
+    path = main.UPLOAD_DIR / (secrets.token_hex(8) + ".jpg")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\xff\xd8\xfffixture")
+    return str(path)
 
 
 def _upload(bid, ident, data=b"\xff\xd8\xffjpg-bytes"):

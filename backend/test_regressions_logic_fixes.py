@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import db
 import ocr
+import main
 from fastapi.testclient import TestClient
 from main import app
 
@@ -174,8 +175,11 @@ def test_photo_uploads_require_matching_magic_bytes():
         assert response.status_code == 400, (path, response.text)
 
 
-def test_ocr_rejects_arbitrary_bytes_before_provider_call():
+def test_ocr_rejects_arbitrary_bytes_before_provider_call(monkeypatch):
     owner = db.new_identity("logic-ocr-bytes")
+    def unexpected_provider_call(*args, **kwargs):
+        raise AssertionError("OCR provider must not receive invalid bytes")
+    monkeypatch.setattr(main, "ocr_receipt", unexpected_provider_call)
     response = client.post(
         "/api/ocr",
         headers=headers(owner),

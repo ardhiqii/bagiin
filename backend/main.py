@@ -285,6 +285,29 @@ def _photo_suffix(content_type: str | None) -> str:
     return {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[content_type or ""]
 
 
+def _valid_upload_photo_path(path: str) -> bool:
+    """Return whether *path* is an existing server-uploaded photo.
+
+    Keep the generated-name check as a cheap first gate, then compare resolved
+    paths so a client cannot attach a sibling/outside file or escape through a
+    symlink.  Comparing the parent also enforces that the file is directly in
+    UPLOAD_DIR rather than in a nested directory.
+    """
+    if not isinstance(path, str) or not path or not db._PHOTO_NAME_RE.match(Path(path).name):
+        return False
+    try:
+        upload_root = UPLOAD_DIR.resolve()
+        candidate = Path(path)
+        # Older clients sent the bare filename, while current upload/OCR
+        # responses send the absolute photo_path.
+        if not candidate.is_absolute():
+            candidate = UPLOAD_DIR / candidate
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return resolved.parent == upload_root and resolved.is_file()
+
+
 def generate_readable_code() -> str:
     """12-char code in 3 groups of 4, unambiguous alphabet (no 0/O/1/I/L)."""
     alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -792,18 +815,14 @@ async def create_bill(request: Request):
     # e.g. 2000 photos -> 2000 bill_photo rows -> every viewer of the share
     # link downloads a 2000-entry payload and renders 2000 <img> tags.
     #
-    # each basename must also match db._PHOTO_NAME_RE (v67): every real photo
-    # this server ever hands a client (via /api/photos, /api/ocr, or the
-    # legacy OCR flow) is named `secrets.token_hex(8) + ".jpg"`. Paths are
-    # handed back to every reader of a bill payload, so without this check a
-    # client could post another bill's photo path (or any string) straight
-    # into bill_photo and have it served to everyone with the share link.
+    # every real photo this server ever hands a client (via /api/photos,
+    # /api/ocr, or the legacy OCR flow) is an existing file directly under
+    # UPLOAD_DIR and named `secrets.token_hex(8) + ".jpg"`. Resolve the path,
+    # rather than checking only its basename, so a client cannot post another
+    # bill's photo path (or a symlink escape) into bill_photo.
     # db._unlink_photo already refuses to delete a file another bill still
     # references, but that only guards deletion -- this closes the intake
     # side.
-    def _valid_photo_name(p) -> bool:
-        return isinstance(p, str) and bool(p) and bool(db._PHOTO_NAME_RE.match(Path(p).name))
-
     photos_raw = data.get("photos")
     photos = None
     if isinstance(photos_raw, list):
@@ -811,14 +830,14 @@ async def create_bill(request: Request):
         for p in photos_raw[:10]:
             if not isinstance(p, str) or not p:
                 continue
-            if not _valid_photo_name(p):
+            if not _valid_upload_photo_path(p):
                 raise HTTPException(400, "Path foto tidak valid")
             photos.append(p)
     photo_path = data.get("photo_path")
     if photo_path is not None:
         if not isinstance(photo_path, str):
             raise HTTPException(400, "photo_path harus berupa teks")
-        if photo_path and not _valid_photo_name(photo_path):
+        if photo_path and not _valid_upload_photo_path(photo_path):
             raise HTTPException(400, "Path foto tidak valid")
     created = db.create_bill(
         creator_id=ident["id"],

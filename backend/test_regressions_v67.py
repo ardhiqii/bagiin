@@ -111,6 +111,23 @@ def test_h1_valid_photo_path_is_stored():
     assert data["bill"]["photo_path"].endswith(".jpg")
 
 
+def test_h1_valid_looking_photo_outside_upload_root_is_rejected():
+    """A real file with a generated-looking name outside UPLOAD_DIR is not
+    attachable just because its basename passes the filename regex."""
+    aufa = db.new_identity("Aufa67outside")
+    outside = _UPLOAD_DIR.parent / ("a" * 16 + ".jpg")
+    outside.write_bytes(b"\xff\xd8\xffoutside")
+    try:
+        r = c.post("/api/bills", json={
+            "title": "Bill", "items": [{"name": "A", "price": 100000}],
+            "subtotal": 100000, "tax": 0, "service": 0, "total": 100000,
+            "photo_path": str(outside),
+        }, headers=_H(aufa))
+        assert r.status_code == 400, r.text
+    finally:
+        outside.unlink(missing_ok=True)
+
+
 def test_h1_non_string_photo_path_is_400_not_500():
     """A non-string `photo_path` used to reach Path()/regex code with the
     wrong type -- assert it 400s cleanly instead of 500ing."""
