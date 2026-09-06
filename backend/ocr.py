@@ -27,17 +27,18 @@ _ATTEMPT_TIMEOUT_CAP = 15.0
 _MIN_ATTEMPT_SECONDS = 3.0
 
 SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Output JSON EXACTLY:
-{"merchant":"nama tempat makan/toko","date":"YYYY-MM-DD","items":[{"name":"nama item","price":harga,"discount":diskon,"quantity":jumlah}],"subtotal":N,"tax":N,"service":N,"total":N,"tax_included":true/false}
+{"merchant":"nama tempat makan/toko","date":"YYYY-MM-DD","items":[{"name":"nama item","price":harga_satuan,"discount":diskon,"quantity":jumlah}],"subtotal":N,"tax":N,"service":N,"total":N,"tax_included":true/false}
 Rules:
-- merchant = nama tempat makan/toko yang tertera di struk (header paling atas), contoh "Kitchen & Dimsum"; kosongkan string kalau tidak ada
+- merchant = salin persis nama tempat makan/toko dari header struk, karakter dan ejaannya apa adanya; jangan menerjemahkan, memperbaiki, atau mengarang nama. Kalau satu bagian header buram atau meragukan, merchant = ""; kosongkan juga kalau nama tidak ada
 - date = tanggal transaksi yang tertera di struk, dalam format YYYY-MM-DD (misal struk tulis 8/8/26 -> "2026-08-08"); kalau hanya ada tanggal tanpa tahun, asumsikan tahun berjalan; kosongkan kalau tidak ada
-- price dalam Rupiah integer (tanpa 'Rp', tanpa titik) = harga SEBELUM diskon (harga menu)
-- discount = potongan harga item dalam Rupiah integer (0 kalau tidak ada). Struk sering mencetak baris diskon di bawah item, contoh "CLR-4ProdDis349" lalu "-5.500" — gabungkan diskon itu ke item yang tepat di atasnya sebagai discount. Kalau struk tidak mencetak diskon, discount = 0
-- quantity = jumlah unit yang tercetak jelas pada baris item (bilangan bulat 1 sampai 99). Kalau pengali/jumlah tidak jelas, meragukan, atau hanya terlihat sebagai baris struk yang berulang, quantity = 1 dan pertahankan baris-baris item terpisah; jangan menggabungkan item dengan nama sama
+- price = harga satuan (unit price) SEBELUM diskon, dalam Rupiah integer (tanpa 'Rp', tanpa titik). price BUKAN line total/total baris.
+- quantity = jumlah unit yang tercetak jelas pada baris item (bilangan bulat 1 sampai 99). Line total/total baris dihitung sebagai (price - discount) x quantity, bukan dimasukkan ke price. Contoh struk "2 x AYAM 35.000 70.000" berarti price = 35000, quantity = 2, line total = 70000. Kalau hanya tertulis "AYAM 70.000" tanpa pengali 2 yang jelas, pakai price = 70000 dan quantity = 1; jangan membagi harga atau menebak quantity.
+- discount = potongan harga item dalam Rupiah integer (0 kalau tidak ada). Struk sering mencetak baris diskon di bawah item, contoh "CLR-4ProdDis349" lalu "-5.500" — gabungkan diskon itu ke item yang tepat di atasnya sebagai discount. Kalau struk tidak mencetak diskon, discount = 0.
+- Kalau pengali/jumlah tidak jelas, meragukan, atau hanya terlihat sebagai baris struk yang berulang, quantity = 1 dan pertahankan setiap baris item terpisah; jangan menggabungkan item dengan nama sama.
 - tax = PPN/PB1, service = service charge/SC (0 kalau tidak ada)
 - tax_included = true kalau struk menyebut harga sudah termasuk pajak (misal tulisan "termasuk PAJAK", "trmasuk pajak", "harga sudah termasuk pajak", "tax included", "Tax Invoice"). Kalau true: subtotal = jumlah item setelah diskon, tax = 0 (PPN sudah nempel di harga item, jangan dihitung dobel) TAPI service charge/SC tetap dilaporkan apa adanya kalau ada tulisannya di struk — SC itu biaya terpisah dari pajak, bukan bagian dari harga item. Kalau false: subtotal = jumlah sebelum pajak, tax = PPN/PB1, service = SC
-- subtotal = jumlah sebelum pajak (setelah diskon); total = yang dibayar
-- Jangan menebak item yang tidak jelas; nama sesingkat mungkin tapi tetap terbaca
+- subtotal = jumlah semua line total (setelah diskon); total = yang dibayar
+- Jangan menebak item yang tidak jelas; nama sesingkat mungkin tapi tetap terbaca. Pertahankan bentuk output item yang ada: name, price, discount, quantity; jangan tambahkan field line_total.
 - Kalau struk tidak terbaca sama sekali, output: {"merchant":"","date":"","items":[],"subtotal":0,"tax":0,"service":0,"total":0,"tax_included":false}"""
 
 
@@ -66,7 +67,7 @@ def ocr_receipt(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
 
     if OR_API_KEY:
         try:
-            return _openrouter_ocr(image_bytes, deadline)
+            return _openrouter_ocr(image_bytes, deadline, mime_type=mime_type)
         except RuntimeError as e:
             errors.append(f"cadangan: {e}")
             log.warning("OpenRouter OCR gagal: %s", e)
@@ -147,29 +148,23 @@ def _gemini_ocr(image_bytes: bytes, mime_type: str, deadline: float) -> dict:
     return _normalize(parsed)
 
 
-def _openrouter_ocr(image_bytes: bytes, deadline: float) -> dict:
-    b64 = base64.b64encode(_downscale(image_bytes)).decode()
-    payload = {
-        "model": OR_MODEL,
-        "messages": [{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": SYSTEM_PROMPT},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-            ],
-        }],
-        "temperature": 0.1,
-    }
-    req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
-        data=json.dumps(payload).encode(),
-        headers={
-            "Authorization": f"Bearer {OR_API_KEY}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://bagiin.ardhiqi.com",
-            "X-Title": "Bagiin",
-        },
+def _openrouter_ocr(
+    image_bytes: bytes,
+    deadline: float,
+    mime_type: str = "image/jpeg",
+) -> dict:
+    prepared_image = _downscale(image_bytes)
+    # _downscale returns the original object when Pillow is unavailable or the
+    # input cannot be decoded. Only transformed bytes are always JPEG.
+    prepared_mime = (
+        "image/jpeg"
+        if prepared_image is not image_bytes
+        else (mime_type or "application/octet-stream")
     )
+    b64 = base64.b64encode(prepared_image).decode()
+    payload = _openrouter_payload(b64, prepared_mime, structured=True)
+    req = _openrouter_request(payload)
+    structured = True
     data = None
     for attempt in range(MAX_ATTEMPTS):
         remaining = deadline - time.monotonic()
@@ -187,6 +182,36 @@ def _openrouter_ocr(image_bytes: bytes, deadline: float) -> dict:
         except urllib.error.HTTPError as e:
             code = e.code
             body = e.read().decode()[:300]
+            if structured and _structured_response_rejected(code, body):
+                # Some free OpenRouter models reject response_format even
+                # though they accept the same vision prompt. Retry this
+                # attempt without the optional hint, then keep that fallback
+                # for subsequent attempts instead of sending the rejected
+                # payload repeatedly.
+                log.warning("OpenRouter menolak structured JSON, coba format kompatibel: %s", body)
+                structured = False
+                req = _openrouter_request(_openrouter_payload(b64, prepared_mime, structured=False))
+                fallback_remaining = deadline - time.monotonic()
+                if fallback_remaining >= _MIN_ATTEMPT_SECONDS:
+                    try:
+                        resp = urllib.request.urlopen(
+                            req,
+                            timeout=min(_ATTEMPT_TIMEOUT_CAP, fallback_remaining),
+                        )
+                        data = json.loads(resp.read())
+                        break
+                    except urllib.error.HTTPError as fallback_error:
+                        code = fallback_error.code
+                        body = fallback_error.read().decode()[:300]
+                    except Exception as fallback_error:
+                        log.warning("OpenRouter request fallback gagal: %s", fallback_error)
+                        backoff = 3 * (attempt + 1)
+                        if attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
+                            time.sleep(backoff)
+                            continue
+                        raise RuntimeError(f"Permintaan gagal: {fallback_error}")
+                else:
+                    break
             log.warning("OpenRouter HTTP %d (attempt %d/%d): %s", code, attempt + 1, MAX_ATTEMPTS, body)
             if code == 429 and "quota" in body.lower():
                 raise RuntimeError("kuota harian OpenRouter habis")
@@ -215,6 +240,47 @@ def _openrouter_ocr(image_bytes: bytes, deadline: float) -> dict:
     except Exception:
         raise RuntimeError("respons tidak bisa dibaca")
     return _normalize(parsed)
+
+
+def _openrouter_payload(image_b64: str, image_mime: str, *, structured: bool) -> dict:
+    payload = {
+        "model": OR_MODEL,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": SYSTEM_PROMPT},
+                {"type": "image_url", "image_url": {"url": f"data:{image_mime};base64,{image_b64}"}},
+            ],
+        }],
+        "temperature": 0.1,
+    }
+    if structured:
+        payload["response_format"] = {"type": "json_object"}
+    return payload
+
+
+def _openrouter_request(payload: dict) -> urllib.request.Request:
+    return urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(payload).encode(),
+        headers={
+            "Authorization": f"Bearer {OR_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://bagiin.ardhiqi.com",
+            "X-Title": "Bagiin",
+        },
+    )
+
+
+def _structured_response_rejected(code: int, body: str) -> bool:
+    """Return whether a provider rejected only the optional JSON hint."""
+    if code not in (400, 422):
+        return False
+    text = body.lower()
+    return any(
+        marker in text
+        for marker in ("response_format", "structured", "json_object", "unsupported", "not support")
+    )
 
 
 def _downscale(image_bytes: bytes, max_side: int = 1280) -> bytes:
