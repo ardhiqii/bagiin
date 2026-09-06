@@ -116,6 +116,18 @@ def test_create_and_update_reject_malformed_tax_included():
     assert response.status_code == 400
 
 
+def test_auto_accept_missing_field_is_rejected():
+    owner = db.new_identity("logic-auto-accept-missing")
+    response = client.post(
+        f"/api/identities/{owner['id']}/auto_accept",
+        headers=headers(owner),
+        json={},
+    )
+    assert response.status_code == 400, response.text
+    fresh = db.get_identity(owner["id"])
+    assert fresh and fresh["auto_accept"] == 1
+
+
 def test_photo_uploads_require_matching_magic_bytes():
     owner = db.new_identity("logic-photo-owner")
     bill_id = create_bill(owner)

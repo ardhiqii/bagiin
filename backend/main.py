@@ -241,9 +241,11 @@ def _item_quantity(value, field: str) -> int:
 _ALLOWED_PHOTO_MIME = {"image/jpeg", "image/png", "image/webp"}
 
 
-def _parse_bool(value, field: str, *, default=False) -> bool:
-    """Parse the strict boolean vocabulary used by auto_accept."""
+def _parse_bool(value, field: str, *, default=None) -> bool:
+    """Parse the strict boolean vocabulary used by API boolean fields."""
     if value is None:
+        if default is None:
+            raise HTTPException(400, f"{field} wajib bernilai true atau false")
         return default
     if isinstance(value, bool):
         return value
@@ -769,7 +771,7 @@ async def create_bill(request: Request):
     tax = _to_int(data.get("tax"), "Pajak", 0, minv=0, maxv=_MAX_IDR)
     service = _to_int(data.get("service"), "Service", 0, minv=0, maxv=_MAX_IDR)
     total = _to_int(data.get("total"), "Total", 0, minv=0, maxv=_MAX_IDR)
-    tax_included = 1 if _parse_bool(data.get("tax_included"), "tax_included") else 0
+    tax_included = 1 if _parse_bool(data.get("tax_included"), "tax_included", default=False) else 0
     # reject impossible combos instead of persisting a bill whose split can
     # never reconcile (bug: tax_included + tax>0 made sum(people) != total,
     # and an arbitrary total != subtotal+tax+service broke every invariant)
@@ -944,7 +946,7 @@ async def update_bill(bill_id: str, request: Request):
     service_v = _to_int(data.get("service"), "Service", 0, minv=0, maxv=_MAX_IDR)
     total_v = _to_int(data.get("total"), "Total", 0, minv=0, maxv=_MAX_IDR)
     # same impossible-combo guards as create
-    tax_included_v = _parse_bool(data.get("tax_included"), "tax_included")
+    tax_included_v = _parse_bool(data.get("tax_included"), "tax_included", default=False)
     if tax_included_v and tax_v > 0:
         raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
     if total_v != subtotal_v + tax_v + service_v:
