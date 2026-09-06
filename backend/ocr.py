@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+from datetime import date as _date
 import urllib.error
 import urllib.request
 
@@ -290,7 +291,7 @@ def _normalize(parsed) -> dict:
     tax = max(0, _to_int(parsed.get("tax")))
     service = max(0, _to_int(parsed.get("service")))
     total = max(0, _to_int(parsed.get("total")))
-    eff_sum = sum(i["price"] - i["discount"] for i in items)
+    eff_sum = sum((i["price"] - i["discount"]) * i["quantity"] for i in items)
 
     if tax_included:
         # harga item sudah termasuk pajak -> PAJAK gak diitung dobel (subtotal = total
@@ -306,7 +307,7 @@ def _normalize(parsed) -> dict:
         # reconcile LLM-hallucinated numbers so bill-create's strict validation
         # (subtotal == sum items, total == subtotal+tax+service) doesn't 400 on
         # a receipt that OCR read almost-right
-        if items and eff_sum > 0 and subtotal != eff_sum:
+        if items and subtotal != eff_sum:
             subtotal = eff_sum
         if total <= 0:
             total = subtotal + tax + service
@@ -318,7 +319,13 @@ def _normalize(parsed) -> dict:
     # tersimpan lalu bikin pengelompokan bulan & filter tahun/bulan di daftar bill
     # gagal parse. Drop diam-diam kalau bukan YYYY-MM-DD, biarin user isi manual.)
     raw_date = str(parsed.get("date", "") or "").strip()
-    date = raw_date if re.match(r"^\d{4}-\d{2}-\d{2}$", raw_date) else ""
+    date = ""
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", raw_date):
+        try:
+            _date.fromisoformat(raw_date)
+            date = raw_date
+        except ValueError:
+            pass
     return {
         "merchant": str(parsed.get("merchant", "") or "").strip(),
         "date": date,

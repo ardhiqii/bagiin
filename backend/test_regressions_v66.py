@@ -21,6 +21,7 @@ import db
 db.init_db()
 
 from fastapi.testclient import TestClient
+import main
 from main import app
 
 c = TestClient(app)
@@ -105,7 +106,7 @@ def test_a3_photo_endpoints_reject_non_image_content_type():
     assert r2.status_code == 400, r2.text
     # a real jpeg still works
     r3 = c.post(f"/api/bills/{bid}/photo",
-               files={"file": ("x.jpg", b"jpeg-bytes", "image/jpeg")}, headers=_H(aufa))
+               files={"file": ("x.jpg", b"\xff\xd8\xffjpeg-bytes", "image/jpeg")}, headers=_H(aufa))
     assert r3.status_code == 200, r3.text
 
 
@@ -122,7 +123,11 @@ def test_a4_create_bill_photos_list_is_capped():
     covered in test_regressions_v67.py.
     """
     aufa = db.new_identity("Aufa66d", role="creator")
-    many = [f"/tmp/{i:016x}.jpg" for i in range(50)]
+    many = []
+    for i in range(50):
+        path = main.UPLOAD_DIR / f"{i:016x}.jpg"
+        path.write_bytes(b"\xff\xd8\xfffixture")
+        many.append(str(path))
     bid = _mk_bill(aufa, photos=many)
     assert len(db.get_bill(bid)["photos"]) == 10
 

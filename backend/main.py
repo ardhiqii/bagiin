@@ -241,7 +241,26 @@ def _item_quantity(value, field: str) -> int:
 _ALLOWED_PHOTO_MIME = {"image/jpeg", "image/png", "image/webp"}
 
 
-def _check_photo_mime(content_type: str | None):
+def _parse_bool(value, field: str, *, default=None) -> bool:
+    """Parse the strict boolean vocabulary used by API boolean fields."""
+    if value is None:
+        if default is None:
+            raise HTTPException(400, f"{field} wajib bernilai true atau false")
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("true", "1"):
+            return True
+        if normalized in ("false", "0", ""):
+            return False
+    raise HTTPException(400, f"{field} wajib bernilai true atau false")
+
+
+def _check_photo_mime(content_type: str | None, raw: bytes | None = None):
     """Reject anything that isn't a real photo (400, casual Indonesian).
 
     `/api/ocr` already rejects `image/heic`; these two endpoints checked size
@@ -251,6 +270,52 @@ def _check_photo_mime(content_type: str | None):
     """
     if (content_type or "") not in _ALLOWED_PHOTO_MIME:
         raise HTTPException(400, "Format foto tidak didukung, pilih JPEG/PNG/WEBP")
+    if raw is None:
+        return
+    signatures = {
+        "image/jpeg": raw.startswith(b"\xff\xd8\xff"),
+        "image/png": raw.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/webp": len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP",
+    }
+    if not signatures[content_type]:
+        raise HTTPException(400, "Isi file tidak cocok dengan format foto")
+
+
+def _photo_suffix(content_type: str | None) -> str:
+    return {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[content_type or ""]
+
+
+def _valid_upload_photo_path(path: str) -> bool:
+    """Return whether *path* is an existing server-uploaded photo.
+
+    Keep the generated-name check as a cheap first gate, then compare resolved
+    paths so a client cannot attach a sibling/outside file or escape through a
+    symlink.  Comparing the parent also enforces that the file is directly in
+    UPLOAD_DIR rather than in a nested directory.
+    """
+    if not isinstance(path, str) or not path or not db._PHOTO_NAME_RE.match(Path(path).name):
+        return False
+    try:
+        upload_root = UPLOAD_DIR.resolve()
+        candidate = Path(path)
+        # Older clients sent the bare filename, while current upload/OCR
+        # responses send the absolute photo_path.
+        if not candidate.is_absolute():
+            candidate = UPLOAD_DIR / candidate
+        # A resolved in-root target is not enough: attached paths must be
+        # direct regular files, never symlinks (including nested components).
+        relative = candidate.relative_to(UPLOAD_DIR)
+        current = UPLOAD_DIR
+        for component in relative.parts[:-1]:
+            current /= component
+            if current.is_symlink():
+                return False
+        if candidate.is_symlink():
+            return False
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return resolved.parent == upload_root and resolved.is_file()
 
 
 def generate_readable_code() -> str:
@@ -558,18 +623,7 @@ async def set_auto_accept(identity_id: str, request: Request):
         raise HTTPException(403, "Identitas tidak cocok")
     data = await _read_json(request)
     raw = data.get("auto_accept")
-    # strict boolean: bool("false") == True would silently flip ON for any
-    # malformed client (bug found in v64 review)
-    if isinstance(raw, bool):
-        value = raw
-    elif isinstance(raw, (int, float)) and raw in (0, 1):
-        value = bool(raw)
-    elif isinstance(raw, str) and raw.strip().lower() in ("true", "1"):
-        value = True
-    elif isinstance(raw, str) and raw.strip().lower() in ("false", "0", ""):
-        value = False
-    else:
-        raise HTTPException(400, "auto_accept wajib bernilai true atau false")
+    value = _parse_bool(raw, "auto_accept")
     db.set_auto_accept(identity_id, value)
     return {"ok": True}
 
@@ -754,7 +808,7 @@ async def create_bill(request: Request):
     tax = _to_int(data.get("tax"), "Pajak", 0, minv=0, maxv=_MAX_IDR)
     service = _to_int(data.get("service"), "Service", 0, minv=0, maxv=_MAX_IDR)
     total = _to_int(data.get("total"), "Total", 0, minv=0, maxv=_MAX_IDR)
-    tax_included = 1 if data.get("tax_included") else 0
+    tax_included = 1 if _parse_bool(data.get("tax_included"), "tax_included", default=False) else 0
     # reject impossible combos instead of persisting a bill whose split can
     # never reconcile (bug: tax_included + tax>0 made sum(people) != total,
     # and an arbitrary total != subtotal+tax+service broke every invariant)
@@ -771,18 +825,14 @@ async def create_bill(request: Request):
     # e.g. 2000 photos -> 2000 bill_photo rows -> every viewer of the share
     # link downloads a 2000-entry payload and renders 2000 <img> tags.
     #
-    # each basename must also match db._PHOTO_NAME_RE (v67): every real photo
-    # this server ever hands a client (via /api/photos, /api/ocr, or the
-    # legacy OCR flow) is named `secrets.token_hex(8) + ".jpg"`. Paths are
-    # handed back to every reader of a bill payload, so without this check a
-    # client could post another bill's photo path (or any string) straight
-    # into bill_photo and have it served to everyone with the share link.
+    # every real photo this server ever hands a client (via /api/photos,
+    # /api/ocr, or the legacy OCR flow) is an existing file directly under
+    # UPLOAD_DIR and named `secrets.token_hex(8) + ".jpg"`. Resolve the path,
+    # rather than checking only its basename, so a client cannot post another
+    # bill's photo path (or a symlink escape) into bill_photo.
     # db._unlink_photo already refuses to delete a file another bill still
     # references, but that only guards deletion -- this closes the intake
     # side.
-    def _valid_photo_name(p) -> bool:
-        return isinstance(p, str) and bool(p) and bool(db._PHOTO_NAME_RE.match(Path(p).name))
-
     photos_raw = data.get("photos")
     photos = None
     if isinstance(photos_raw, list):
@@ -790,14 +840,14 @@ async def create_bill(request: Request):
         for p in photos_raw[:10]:
             if not isinstance(p, str) or not p:
                 continue
-            if not _valid_photo_name(p):
+            if not _valid_upload_photo_path(p):
                 raise HTTPException(400, "Path foto tidak valid")
             photos.append(p)
     photo_path = data.get("photo_path")
     if photo_path is not None:
         if not isinstance(photo_path, str):
             raise HTTPException(400, "photo_path harus berupa teks")
-        if photo_path and not _valid_photo_name(photo_path):
+        if photo_path and not _valid_upload_photo_path(photo_path):
             raise HTTPException(400, "Path foto tidak valid")
     created = db.create_bill(
         creator_id=ident["id"],
@@ -929,7 +979,8 @@ async def update_bill(bill_id: str, request: Request):
     service_v = _to_int(data.get("service"), "Service", 0, minv=0, maxv=_MAX_IDR)
     total_v = _to_int(data.get("total"), "Total", 0, minv=0, maxv=_MAX_IDR)
     # same impossible-combo guards as create
-    if data.get("tax_included") and tax_v > 0:
+    tax_included_v = _parse_bool(data.get("tax_included"), "tax_included", default=False)
+    if tax_included_v and tax_v > 0:
         raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
     if total_v != subtotal_v + tax_v + service_v:
         raise HTTPException(400, "Total tidak sesuai dengan subtotal + pajak + service")
@@ -955,7 +1006,7 @@ async def update_bill(bill_id: str, request: Request):
         tax=tax_v,
         service=service_v,
         total=total_v,
-        tax_included=1 if data.get("tax_included") else 0,
+        tax_included=1 if tax_included_v else 0,
     )
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
@@ -1276,11 +1327,11 @@ async def set_selections(bill_id: str, request: Request):
                 raise HTTPException(400, f"Slot {it['name']} tersisa {left}")
         elif p["qty"] > 99:
             raise HTTPException(400, f"{it['name']} maksimal 99 porsi")
-    db.claim_participant(bill_id, ident["id"], ident["name"])
     try:
         db.set_selections(bill_id, ident["id"], picks)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    db.claim_participant(bill_id, ident["id"], ident["name"])
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
@@ -1428,11 +1479,11 @@ async def upload_photo(bill_id: str, request: Request, file: UploadFile = File(.
     # every other mutation) (bug: v66 audit)
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
-    _check_photo_mime(file.content_type)
     raw = await file.read()
+    _check_photo_mime(file.content_type, raw)
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(400, "Foto maksimal 5MB")
-    filename = secrets.token_hex(8) + ".jpg"
+    filename = secrets.token_hex(8) + _photo_suffix(file.content_type)
     path = UPLOAD_DIR / filename
     path.write_bytes(raw)
     db.add_bill_photo(bill_id, str(path))
@@ -1464,11 +1515,11 @@ async def upload_photo_standalone(request: Request, file: UploadFile = File(...)
     """Upload a receipt photo WITHOUT scanning (v61) — for the manual create
     flow. Returns the saved path so the client can attach it to a bill."""
     _identity_from_request(request)
-    _check_photo_mime(file.content_type)
     raw = await file.read()
+    _check_photo_mime(file.content_type, raw)
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(400, "Foto maksimal 5MB")
-    filename = secrets.token_hex(8) + ".jpg"
+    filename = secrets.token_hex(8) + _photo_suffix(file.content_type)
     path = UPLOAD_DIR / filename
     path.write_bytes(raw)
     return {"photo_path": str(path), "filename": filename}
@@ -1520,13 +1571,14 @@ async def ocr_upload(request: Request, file: UploadFile = File(...)):
     mime = file.content_type or "image/jpeg"
     if mime == "image/heic":
         raise HTTPException(400, "Format HEIC belum didukung, pilih foto JPEG/PNG")
+    _check_photo_mime(mime, raw)
     try:
         result = ocr_receipt(raw, mime_type=mime)
     except RuntimeError as e:
         # 4xx supaya Cloudflare gak nelen body-nya (5xx diubah CF jadi HTML error page)
         raise HTTPException(422, str(e))
     # keep photo for bill creation
-    filename = secrets.token_hex(8) + ".jpg"
+    filename = secrets.token_hex(8) + _photo_suffix(mime)
     path = UPLOAD_DIR / filename
     path.write_bytes(raw)
     result["photo_path"] = str(path)
@@ -1542,12 +1594,17 @@ def serve_photo(filename: str):
     # decodes to ".." -> UPLOAD_DIR itself, a directory (bug: v66 audit).
     if not path.is_file():
         raise HTTPException(404)
-    return FileResponse(path, media_type="image/jpeg", headers={
+    media_type = {
+        ".jpg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(path.suffix.lower())
+    if not media_type:
+        raise HTTPException(404)
+    return FileResponse(path, media_type=media_type, headers={
         "Cache-Control": "private, max-age=31536000, immutable",
-        # upload endpoints accept png/webp too (v66) but every file here is
-        # served with a forced image/jpeg content type -- if the bytes and
-        # the declared type disagree, don't let a browser sniff and decide
-        # to run them as something else (v67).
+        # upload bytes are served according to their safe filename suffix and
+        # nosniff prevents browsers from overriding that declared type
         "X-Content-Type-Options": "nosniff",
     })
 

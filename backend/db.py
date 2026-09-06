@@ -10,12 +10,12 @@ import calc
 
 DB_PATH = Path(os.environ.get("BAGIIN_DB", Path(__file__).parent / "bagiin.db"))
 
-# uploads are named secrets.token_hex(8)+'.jpg' — only ever unlink those
-_PHOTO_NAME_RE = re.compile(r"^[0-9a-f]{16}\.jpg$")
+# uploads are named secrets.token_hex(8)+ a safe photo suffix — only ever unlink those
+_PHOTO_NAME_RE = re.compile(r"^[0-9a-f]{16}\.(?:jpg|png|webp)$")
 
 
 def _unlink_photo(photo_path):
-    """Remove an uploaded photo file if it's one of ours (hex.jpg). Safe-guard:
+    """Remove an uploaded photo file if it's one of ours (hex.jpg/png/webp). Safe-guard:
     never unlink arbitrary paths — the URL is public, so a hostile photo_path
     value must not be able to delete server files.
 

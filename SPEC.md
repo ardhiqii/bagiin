@@ -438,6 +438,16 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Changelog
 
+### 2026-09-06 (v70), audit logic dan keamanan upload
+
+- OCR sekarang menghitung subtotal berdasarkan harga satuan, diskon, dan quantity, termasuk diskon penuh serta validasi tanggal kalender nyata.
+- Boolean API untuk `tax_included` dan `auto_accept` diparse strict tanpa mengubah default backward-compatible saat field opsional tidak dikirim.
+- Upload JPEG, PNG, dan WebP diverifikasi dari magic bytes. Ekstensi serta MIME yang disajikan mengikuti format aktual.
+- Path foto harus berupa file reguler langsung di bawah upload root. Path di luar root, symlink, dan nested symlink ditolak.
+- Urutan penyimpanan selection diperbaiki agar claim participant gagal secara atomic saat selection tidak valid.
+- Guard async frontend diperketat untuk bill list, invite Home, Settings, dan account creation agar response stale tidak menimpa screen baru.
+- Regression suite backend, HTTP E2E, frontend logic, mutation, security, dan path foto ditambahkan atau diperkuat.
+
 ### 2026-09-06 (v69), editor manual quantity dan responsive
 
 - Subtotal manual mengikuti `harga satuan × jumlah dibeli − potongan`, termasuk validasi backend create dan update.

@@ -71,7 +71,7 @@ def _ids(bid):
 
 def _upload(who):
     """Real upload via POST /api/photos -> filename, e.g. 'ab12...ef.jpg'."""
-    r = c.post("/api/photos", files={"file": ("x.jpg", b"jpeg-bytes", "image/jpeg")},
+    r = c.post("/api/photos", files={"file": ("x.jpg", b"\xff\xd8\xffjpeg-bytes", "image/jpeg")},
                 headers=_H(who))
     assert r.status_code == 200, r.text
     return r.json()
@@ -109,6 +109,23 @@ def test_h1_valid_photo_path_is_stored():
     data = c.get(f"/api/bills/{bid}", headers=_H(aufa)).json()
     assert data["bill"].get("photo_path") == up["photo_path"]
     assert data["bill"]["photo_path"].endswith(".jpg")
+
+
+def test_h1_valid_looking_photo_outside_upload_root_is_rejected():
+    """A real file with a generated-looking name outside UPLOAD_DIR is not
+    attachable just because its basename passes the filename regex."""
+    aufa = db.new_identity("Aufa67outside")
+    outside = _UPLOAD_DIR.parent / ("a" * 16 + ".jpg")
+    outside.write_bytes(b"\xff\xd8\xffoutside")
+    try:
+        r = c.post("/api/bills", json={
+            "title": "Bill", "items": [{"name": "A", "price": 100000}],
+            "subtotal": 100000, "tax": 0, "service": 0, "total": 100000,
+            "photo_path": str(outside),
+        }, headers=_H(aufa))
+        assert r.status_code == 400, r.text
+    finally:
+        outside.unlink(missing_ok=True)
 
 
 def test_h1_non_string_photo_path_is_400_not_500():

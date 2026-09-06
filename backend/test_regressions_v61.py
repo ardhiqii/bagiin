@@ -32,6 +32,7 @@ import db
 db.init_db()
 
 from fastapi.testclient import TestClient
+import main
 from main import app
 
 c = TestClient(app, raise_server_exceptions=False)
@@ -67,15 +68,14 @@ def _photos(bid):
 
 
 def _fake_photo():
-    """An upload-shaped path (v67: create_bill now 400s on anything whose
-    basename doesn't match db._PHOTO_NAME_RE, since a bare string used to be
-    accepted verbatim — including another bill's real photo path). This
-    stands in for a path a client would legitimately hand back from a prior
-    /api/photos or /api/ocr call, without actually writing the file."""
-    return str(Path(os.environ["BAGIIN_UPLOAD_DIR"]) / (secrets.token_hex(8) + ".jpg"))
+    """Create an upload-shaped fixture under the disposable upload directory."""
+    path = main.UPLOAD_DIR / (secrets.token_hex(8) + ".jpg")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\xff\xd8\xfffixture")
+    return str(path)
 
 
-def _upload(bid, ident, data=b"jpg-bytes"):
+def _upload(bid, ident, data=b"\xff\xd8\xffjpg-bytes"):
     return c.post(
         f"/api/bills/{bid}/photo",
         files={"file": ("f.jpg", data, "image/jpeg")},
@@ -163,8 +163,8 @@ def test_delete_bill_removes_all_photos():
     """Deleting the bill deletes every photo row + file."""
     aufa = db.new_identity("Aufa61g", role="creator")
     bid = _mk_bill(aufa)
-    r1 = _upload(bid, aufa, b"one")
-    r2 = _upload(bid, aufa, b"two")
+    r1 = _upload(bid, aufa, b"\xff\xd8\xffone")
+    r2 = _upload(bid, aufa, b"\xff\xd8\xfftwo")
     assert r1.status_code == 200 and r2.status_code == 200
     paths = [p["path"] for p in db.get_bill(bid)["photos"]]
     assert len(paths) == 2
@@ -179,7 +179,7 @@ def test_standalone_photo_upload():
     aufa = db.new_identity("Aufa61h", role="creator")
     r = c.post(
         "/api/photos",
-        files={"file": ("f.jpg", b"raw", "image/jpeg")},
+        files={"file": ("f.jpg", b"\xff\xd8\xffraw", "image/jpeg")},
         headers=_H(aufa),
     )
     assert r.status_code == 200, r.text
