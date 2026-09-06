@@ -71,7 +71,7 @@ def _ids(bid):
 
 def _upload(who):
     """Real upload via POST /api/photos -> filename, e.g. 'ab12...ef.jpg'."""
-    r = c.post("/api/photos", files={"file": ("x.jpg", b"jpeg-bytes", "image/jpeg")},
+    r = c.post("/api/photos", files={"file": ("x.jpg", b"\xff\xd8\xffjpeg-bytes", "image/jpeg")},
                 headers=_H(who))
     assert r.status_code == 200, r.text
     return r.json()

@@ -105,7 +105,7 @@ def test_a3_photo_endpoints_reject_non_image_content_type():
     assert r2.status_code == 400, r2.text
     # a real jpeg still works
     r3 = c.post(f"/api/bills/{bid}/photo",
-               files={"file": ("x.jpg", b"jpeg-bytes", "image/jpeg")}, headers=_H(aufa))
+               files={"file": ("x.jpg", b"\xff\xd8\xffjpeg-bytes", "image/jpeg")}, headers=_H(aufa))
     assert r3.status_code == 200, r3.text
 
 

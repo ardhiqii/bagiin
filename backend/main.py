@@ -241,7 +241,24 @@ def _item_quantity(value, field: str) -> int:
 _ALLOWED_PHOTO_MIME = {"image/jpeg", "image/png", "image/webp"}
 
 
-def _check_photo_mime(content_type: str | None):
+def _parse_bool(value, field: str, *, default=False) -> bool:
+    """Parse the strict boolean vocabulary used by auto_accept."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("true", "1"):
+            return True
+        if normalized in ("false", "0", ""):
+            return False
+    raise HTTPException(400, f"{field} wajib bernilai true atau false")
+
+
+def _check_photo_mime(content_type: str | None, raw: bytes | None = None):
     """Reject anything that isn't a real photo (400, casual Indonesian).
 
     `/api/ocr` already rejects `image/heic`; these two endpoints checked size
@@ -251,6 +268,15 @@ def _check_photo_mime(content_type: str | None):
     """
     if (content_type or "") not in _ALLOWED_PHOTO_MIME:
         raise HTTPException(400, "Format foto tidak didukung, pilih JPEG/PNG/WEBP")
+    if raw is None:
+        return
+    signatures = {
+        "image/jpeg": raw.startswith(b"\xff\xd8\xff"),
+        "image/png": raw.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/webp": len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP",
+    }
+    if not signatures[content_type]:
+        raise HTTPException(400, "Isi file tidak cocok dengan format foto")
 
 
 def generate_readable_code() -> str:
@@ -558,18 +584,7 @@ async def set_auto_accept(identity_id: str, request: Request):
         raise HTTPException(403, "Identitas tidak cocok")
     data = await _read_json(request)
     raw = data.get("auto_accept")
-    # strict boolean: bool("false") == True would silently flip ON for any
-    # malformed client (bug found in v64 review)
-    if isinstance(raw, bool):
-        value = raw
-    elif isinstance(raw, (int, float)) and raw in (0, 1):
-        value = bool(raw)
-    elif isinstance(raw, str) and raw.strip().lower() in ("true", "1"):
-        value = True
-    elif isinstance(raw, str) and raw.strip().lower() in ("false", "0", ""):
-        value = False
-    else:
-        raise HTTPException(400, "auto_accept wajib bernilai true atau false")
+    value = _parse_bool(raw, "auto_accept")
     db.set_auto_accept(identity_id, value)
     return {"ok": True}
 
@@ -754,7 +769,7 @@ async def create_bill(request: Request):
     tax = _to_int(data.get("tax"), "Pajak", 0, minv=0, maxv=_MAX_IDR)
     service = _to_int(data.get("service"), "Service", 0, minv=0, maxv=_MAX_IDR)
     total = _to_int(data.get("total"), "Total", 0, minv=0, maxv=_MAX_IDR)
-    tax_included = 1 if data.get("tax_included") else 0
+    tax_included = 1 if _parse_bool(data.get("tax_included"), "tax_included") else 0
     # reject impossible combos instead of persisting a bill whose split can
     # never reconcile (bug: tax_included + tax>0 made sum(people) != total,
     # and an arbitrary total != subtotal+tax+service broke every invariant)
@@ -929,7 +944,8 @@ async def update_bill(bill_id: str, request: Request):
     service_v = _to_int(data.get("service"), "Service", 0, minv=0, maxv=_MAX_IDR)
     total_v = _to_int(data.get("total"), "Total", 0, minv=0, maxv=_MAX_IDR)
     # same impossible-combo guards as create
-    if data.get("tax_included") and tax_v > 0:
+    tax_included_v = _parse_bool(data.get("tax_included"), "tax_included")
+    if tax_included_v and tax_v > 0:
         raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
     if total_v != subtotal_v + tax_v + service_v:
         raise HTTPException(400, "Total tidak sesuai dengan subtotal + pajak + service")
@@ -955,7 +971,7 @@ async def update_bill(bill_id: str, request: Request):
         tax=tax_v,
         service=service_v,
         total=total_v,
-        tax_included=1 if data.get("tax_included") else 0,
+        tax_included=1 if tax_included_v else 0,
     )
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
@@ -1428,8 +1444,8 @@ async def upload_photo(bill_id: str, request: Request, file: UploadFile = File(.
     # every other mutation) (bug: v66 audit)
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
-    _check_photo_mime(file.content_type)
     raw = await file.read()
+    _check_photo_mime(file.content_type, raw)
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(400, "Foto maksimal 5MB")
     filename = secrets.token_hex(8) + ".jpg"
@@ -1464,8 +1480,8 @@ async def upload_photo_standalone(request: Request, file: UploadFile = File(...)
     """Upload a receipt photo WITHOUT scanning (v61) — for the manual create
     flow. Returns the saved path so the client can attach it to a bill."""
     _identity_from_request(request)
-    _check_photo_mime(file.content_type)
     raw = await file.read()
+    _check_photo_mime(file.content_type, raw)
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(400, "Foto maksimal 5MB")
     filename = secrets.token_hex(8) + ".jpg"
