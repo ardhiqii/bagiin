@@ -438,6 +438,15 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Changelog
 
+### 2026-09-06 (v71), OCR receipt gratis yang lebih ketat
+
+- Prompt OCR sekarang membedakan harga satuan, jumlah dibeli, potongan, dan total baris. Contoh `2 × Rp35.000 = Rp70.000` ditulis eksplisit supaya harga baris tidak salah dibaca sebagai harga satuan.
+- Model diminta menyalin nama merchant persis dari header. Kalau header buram atau meragukan, hasilnya harus dikosongkan, bukan ditebak.
+- OpenRouter diminta mengembalikan JSON terstruktur. Fallback hanya dijalankan kalau provider secara eksplisit menolak `response_format`, bukan untuk semua error request.
+- MIME asli JPEG, PNG, atau WebP dipertahankan saat bytes foto tidak diubah. Bytes yang diproses ulang dikirim sebagai JPEG yang sesuai.
+- Contract hasil OCR publik tetap sama: `name`, `price`, `discount`, dan `quantity`. Baris duplikat tetap terpisah, quantity yang hilang tetap `1`, dan total tetap dihitung dari harga satuan, diskon, serta quantity.
+- Regression test mencakup pola quantity struk Ayam Aroma, kontrak JSON OpenRouter, fallback terarah, dan MIME upload.
+
 ### 2026-09-06 (v70), audit logic dan keamanan upload
 
 - OCR sekarang menghitung subtotal berdasarkan harga satuan, diskon, dan quantity, termasuk diskon penuh serta validasi tanggal kalender nyata.
