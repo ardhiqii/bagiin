@@ -472,6 +472,545 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
     }
 
 
+# ---------- identity recap ----------
+
+_RECAP_REASON_ORDER = (
+    "pending_selection",
+    "uncovered_slots",
+    "open_bill",
+    "payer_unresolved",
+    "pending_workflow",
+)
+
+
+def _recap_bill_sort_key(bill_data: dict) -> tuple[str, str]:
+    """Stable bill ordering shared by drilldowns, provisional rows, and actions."""
+    bill = bill_data["bill"]
+    date = bill.get("transacted_at") or bill.get("created_at") or ""
+    return str(date), str(bill.get("id") or "")
+
+
+def _recap_roster_ids(bill_data: dict, response: dict) -> set[str]:
+    """Return real identities currently represented by a bill snapshot."""
+    ids = {
+        p.get("identity_id") for p in response.get("people", [])
+        if p.get("identity_id")
+    }
+    ids.update(
+        p.get("identity_id") for p in bill_data.get("payments", [])
+        if p.get("identity_id")
+    )
+    ids.update(
+        s.get("identity_id") for s in bill_data.get("selections", [])
+        if s.get("identity_id")
+    )
+    bill = bill_data["bill"]
+    if not bill.get("creator_left") and bill.get("creator_identity_id"):
+        ids.add(bill["creator_identity_id"])
+    return ids
+
+
+def _recap_pending_selection_ids(bill_data: dict, response: dict) -> set[str]:
+    """Real non-owner members who have not selected an item yet."""
+    owner_id = _owner_id(bill_data)
+    selected_ids = {
+        s.get("identity_id") for s in bill_data.get("selections", [])
+        if s.get("identity_id")
+    }
+    return {
+        identity_id
+        for identity_id in _recap_roster_ids(bill_data, response)
+        if identity_id != owner_id and identity_id not in selected_ids
+    }
+
+
+def _recap_payer_unresolved(bill_data: dict, response: dict) -> bool:
+    """Whether a display-only payer name has no real identity to resolve."""
+    bill = bill_data["bill"]
+    return bool((bill.get("paid_by_name") or "").strip()) and not response.get("paid_by_id")
+
+
+def _recap_is_final(bill_data: dict, response: dict) -> bool:
+    """Decide final/provisional status without reimplementing split math.
+
+    `_compute_response` is the source of truth for settled/manual-settled and
+    uncovered amounts. A closed bill with a fully allocated but unpaid share is
+    final allocation, so it contributes a real outstanding edge.
+    """
+    if response.get("settled"):
+        return True
+    bill = bill_data["bill"]
+    if bill.get("status") != "closed":
+        return False
+    if not response.get("total_ok", True):
+        return False
+    if response.get("uncovered_idr", 0) > 0:
+        return False
+    if _recap_pending_selection_ids(bill_data, response):
+        return False
+    if _recap_payer_unresolved(bill_data, response):
+        return False
+    return True
+
+
+def _recap_reason_codes(bill_data: dict, response: dict, *, pending_workflow: bool = False) -> list[str]:
+    """Explain why a bill is provisional in a stable contract order."""
+    bill = bill_data["bill"]
+    reasons = set()
+    if _recap_pending_selection_ids(bill_data, response):
+        reasons.add("pending_selection")
+    if response.get("uncovered_idr", 0) > 0:
+        reasons.add("uncovered_slots")
+    if bill.get("status") == "open" and not response.get("settled"):
+        reasons.add("open_bill")
+    if _recap_payer_unresolved(bill_data, response):
+        reasons.add("payer_unresolved")
+    if not response.get("total_ok", True) or pending_workflow:
+        reasons.add("pending_workflow")
+    return [reason for reason in _RECAP_REASON_ORDER if reason in reasons]
+
+
+def _recap_payment_status(bill_data: dict) -> dict[str, str]:
+    """Map persisted payment rows without leaking them into the response."""
+    return {
+        p["identity_id"]: p.get("status", "unpaid")
+        for p in bill_data.get("payments", [])
+        if p.get("identity_id")
+    }
+
+
+def _recap_edges_for_viewer(bill_data: dict, response: dict, viewer_id: str) -> list[dict]:
+    """Return only this viewer's directed, unpaid money edges.
+
+    A settled bill has no outstanding edge even when old payment rows remain
+    unpaid after a manual settle. For all other bills, money goes to the
+    effective owner, never to a payer resolved only by display name.
+    """
+    if response.get("settled"):
+        return []
+    owner_id = _owner_id(bill_data)
+    statuses = _recap_payment_status(bill_data)
+    edges = []
+    for person in response.get("people", []):
+        source_id = person.get("identity_id")
+        amount = int(person.get("total_idr", 0) or 0)
+        if not source_id or amount <= 0 or source_id == owner_id:
+            continue
+        # `_compute_response` marks the resolved payer as paid even when the
+        # persisted payment row is still unpaid. Preserve that canonical bill
+        # semantics (and the manual-settle contract) while routing any other
+        # unpaid share to `_owner_id`.
+        if statuses.get(source_id, "unpaid") == "paid" or person.get("paid") == "paid":
+            continue
+        if viewer_id == source_id:
+            edges.append({
+                "other_id": owner_id,
+                "amount_idr": amount,
+                "direction": "pay",
+            })
+        elif viewer_id == owner_id:
+            edges.append({
+                "other_id": source_id,
+                "amount_idr": amount,
+                "direction": "receive",
+            })
+    return edges
+
+
+def _recap_identity_name(identity_id: str, people_by_id: dict, cache: dict[str, str]) -> str:
+    """Get a safe canonical display name, cached per recap request."""
+    if identity_id in cache:
+        return cache[identity_id]
+    ident = db.get_identity(identity_id)
+    if ident:
+        cache[identity_id] = ident["name"]
+    else:
+        cache[identity_id] = people_by_id.get(identity_id, {}).get("name", "?") or "?"
+    return cache[identity_id]
+
+
+def _recap_current_user_state(
+    bill_data: dict,
+    response: dict,
+    viewer_id: str,
+) -> dict:
+    """Canonical current-user estimate for one provisional bill."""
+    people = {
+        p.get("identity_id"): p
+        for p in response.get("people", [])
+        if p.get("identity_id")
+    }
+    person = people.get(viewer_id) or {}
+    total_idr = int(person.get("total_idr", 0) or 0)
+    status = _recap_payment_status(bill_data).get(viewer_id, "unpaid")
+    owner_id = _owner_id(bill_data)
+    edges = _recap_edges_for_viewer(bill_data, response, viewer_id)
+    payable = sum(e["amount_idr"] for e in edges if e["direction"] == "pay")
+    receivable = sum(e["amount_idr"] for e in edges if e["direction"] == "receive")
+    if payable:
+        direction = "pay"
+    elif receivable:
+        direction = "receive"
+    else:
+        direction = "none"
+    return {
+        "estimated_payable_idr": payable,
+        "estimated_receivable_idr": receivable,
+        "current_user": {
+            "total_idr": total_idr,
+            "paid": viewer_id == owner_id or status == "paid" or person.get("paid") == "paid",
+            "direction": direction,
+        },
+    }
+
+
+def _recap_action(
+    kind: str,
+    owner: str,
+    bill_id: str,
+    title: str,
+    identity_id: str,
+    name: str,
+    amount_idr: int,
+    provisional: bool,
+    **extra,
+) -> dict:
+    action = {
+        "kind": kind,
+        "owner": owner,
+        "bill_id": bill_id,
+        "title": title,
+        "identity_id": identity_id,
+        "name": name,
+        "amount_idr": int(amount_idr),
+        "provisional": bool(provisional),
+        "href": f"#/b/{bill_id}",
+    }
+    action.update(extra)
+    return action
+
+
+def _recap_action_counterparty_id(
+    kind: str,
+    bill_data: dict,
+    viewer_id: str,
+    target_id: str,
+) -> str | None:
+    """Map a shaped action to the other real identity on its bill edge."""
+    if kind in {"select_items", "pay_share"}:
+        owner_id = _owner_id(bill_data)
+        return owner_id if owner_id != viewer_id else None
+    if kind in {"accept_invite", "confirm_payer", "wait_selection", "wait_invite"}:
+        return target_id if target_id != viewer_id else None
+    return None
+
+
+def _recap_provisional_bill(
+    bill_data: dict,
+    response: dict,
+    viewer_id: str,
+    *,
+    pending_workflow: bool = False,
+) -> tuple[dict, dict]:
+    """Shape one provisional bill and return it with its estimate totals."""
+    bill = bill_data["bill"]
+    estimate = _recap_current_user_state(bill_data, response, viewer_id)
+    payload = {
+        "bill_id": bill["id"],
+        "title": bill["title"],
+        "status": bill.get("status", "open"),
+        "reason_codes": _recap_reason_codes(
+            bill_data, response, pending_workflow=pending_workflow,
+        ),
+        "estimated_payable_idr": estimate["estimated_payable_idr"],
+        "estimated_receivable_idr": estimate["estimated_receivable_idr"],
+        "current_user": estimate["current_user"],
+    }
+    return payload, estimate
+
+
+def _build_identity_recap(identity: dict) -> dict:
+    """Build the identity-scoped recap from canonical bill snapshots."""
+    viewer_id = identity["id"]
+    entries = []
+    entry_by_bill_id = {}
+    for row in db.get_bills_for_identity(viewer_id):
+        bill_data = row.get("_bill_data")
+        if not bill_data or bill_data["bill"]["id"] in entry_by_bill_id:
+            continue
+        entry = {
+            "bill_data": bill_data,
+            "response": _compute_response(bill_data, viewer_id),
+            "member": True,
+            "invite_only": False,
+        }
+        entries.append(entry)
+        entry_by_bill_id[bill_data["bill"]["id"]] = entry
+
+    # A pending invite is an identity-scoped way to see a bill before a payment
+    # row exists. Load only those explicit invite targets, never all bills.
+    pending_invites = db.get_pending_invites(viewer_id)
+    for invite in pending_invites:
+        bill_id = invite["bill_id"]
+        if bill_id in entry_by_bill_id:
+            continue
+        bill_data = db.get_bill(bill_id)
+        if not bill_data:
+            continue
+        entry = {
+            "bill_data": bill_data,
+            "response": _compute_response(bill_data, viewer_id),
+            "member": False,
+            "invite_only": True,
+        }
+        entries.append(entry)
+        entry_by_bill_id[bill_id] = entry
+
+    entries.sort(key=lambda entry: _recap_bill_sort_key(entry["bill_data"]))
+    name_cache = {viewer_id: identity["name"]}
+    final_payable = 0
+    final_receivable = 0
+    final_bill_count = 0
+    counterparties = {}
+    provisional_bills = []
+    provisional_payable = 0
+    provisional_receivable = 0
+    current_actions = []
+    waiting_actions = []
+
+    for entry in entries:
+        bill_data = entry["bill_data"]
+        response = entry["response"]
+        bill = bill_data["bill"]
+        bill_id = bill["id"]
+        title = bill["title"]
+        final = _recap_is_final(bill_data, response)
+        if final:
+            final_bill_count += 1
+            for edge in _recap_edges_for_viewer(bill_data, response, viewer_id):
+                amount = edge["amount_idr"]
+                if edge["direction"] == "pay":
+                    final_payable += amount
+                else:
+                    final_receivable += amount
+                other_id = edge["other_id"]
+                person_by_id = {
+                    p.get("identity_id"): p for p in response.get("people", [])
+                    if p.get("identity_id")
+                }
+                counterparty = counterparties.setdefault(other_id, {
+                    "payable_idr": 0,
+                    "receivable_idr": 0,
+                    "bills": [],
+                    "people": person_by_id,
+                })
+                if edge["direction"] == "pay":
+                    counterparty["payable_idr"] += amount
+                else:
+                    counterparty["receivable_idr"] += amount
+                counterparty["bills"].append({
+                    "sort_key": _recap_bill_sort_key(bill_data),
+                    "bill": {
+                        "bill_id": bill_id,
+                        "title": title,
+                        "amount_idr": amount,
+                        "direction": edge["direction"],
+                        "status": bill.get("status", "open"),
+                    },
+                })
+        else:
+            provisional, estimate = _recap_provisional_bill(
+                bill_data,
+                response,
+                viewer_id,
+                pending_workflow=entry["invite_only"],
+            )
+            provisional_bills.append({
+                "sort_key": _recap_bill_sort_key(bill_data),
+                "bill": provisional,
+            })
+            provisional_payable += estimate["estimated_payable_idr"]
+            provisional_receivable += estimate["estimated_receivable_idr"]
+
+        # Pending invites are handled below because their recipient has no bill
+        # row. A closed final allocation can still remind the current debtor of
+        # an unpaid share, while selection/manager workflow actions remain
+        # limited to open bills.
+        if not entry["member"] or response.get("settled"):
+            continue
+        owner_id = _owner_id(bill_data)
+        people_by_id = {
+            p.get("identity_id"): p for p in response.get("people", [])
+            if p.get("identity_id")
+        }
+        selected_ids = {
+            s.get("identity_id") for s in bill_data.get("selections", [])
+            if s.get("identity_id")
+        }
+        if bill.get("status") == "open" and viewer_id != owner_id and viewer_id not in selected_ids:
+            current_actions.append(_recap_action(
+                "select_items", "current_user", bill_id, title,
+                viewer_id, identity["name"], 0, True,
+                counterparty_id=_recap_action_counterparty_id(
+                    "select_items", bill_data, viewer_id, viewer_id,
+                ),
+            ))
+        viewer_person = people_by_id.get(viewer_id) or {}
+        viewer_amount = int(viewer_person.get("total_idr", 0) or 0)
+        viewer_status = _recap_payment_status(bill_data).get(viewer_id, "unpaid")
+        if (
+            viewer_id != owner_id
+            and viewer_amount > 0
+            and viewer_status != "paid"
+            and viewer_person.get("paid") != "paid"
+        ):
+            current_actions.append(_recap_action(
+                "pay_share", "current_user", bill_id, title,
+                viewer_id, identity["name"], viewer_amount, not final,
+                counterparty_id=_recap_action_counterparty_id(
+                    "pay_share", bill_data, viewer_id, viewer_id,
+                ),
+            ))
+        if viewer_id == owner_id and bill.get("status") == "open":
+            paid_by_id = response.get("paid_by_id")
+            if paid_by_id and not response.get("paid_by_confirmed"):
+                payer_name = _recap_identity_name(paid_by_id, people_by_id, name_cache)
+                current_actions.append(_recap_action(
+                    "confirm_payer", "current_user", bill_id, title,
+                    paid_by_id, payer_name, 0, not final,
+                    counterparty_id=_recap_action_counterparty_id(
+                        "confirm_payer", bill_data, viewer_id, paid_by_id,
+                    ),
+                ))
+            for waiting_id in sorted(_recap_pending_selection_ids(bill_data, response)):
+                waiting_name = _recap_identity_name(waiting_id, people_by_id, name_cache)
+                waiting_actions.append(_recap_action(
+                    "wait_selection", "other", bill_id, title,
+                    waiting_id, waiting_name, 0, True,
+                    counterparty_id=_recap_action_counterparty_id(
+                        "wait_selection", bill_data, viewer_id, waiting_id,
+                    ),
+                ))
+            for invite in response.get("pending_invites", []):
+                waiting_actions.append(_recap_action(
+                    "wait_invite", "other", bill_id, title,
+                    invite["identity_id"], invite.get("name") or "?", 0, True,
+                    invite_id=invite["id"],
+                    counterparty_id=_recap_action_counterparty_id(
+                        "wait_invite", bill_data, viewer_id, invite["identity_id"],
+                    ),
+                ))
+
+    # Invite acceptance is scoped by db.get_pending_invites(viewer_id), and
+    # therefore cannot reveal another identity's invite rows.
+    for invite in pending_invites:
+        entry = entry_by_bill_id.get(invite["bill_id"])
+        if not entry:
+            continue
+        bill_data = entry["bill_data"]
+        response = entry["response"]
+        if bill_data["bill"].get("status") != "open" or response.get("settled"):
+            continue
+        current_actions.append(_recap_action(
+            "accept_invite", "current_user", invite["bill_id"],
+            bill_data["bill"]["title"], viewer_id, identity["name"], 0, True,
+            invite_id=invite["id"],
+            invited_by=invite["invited_by"],
+            invited_by_name=invite.get("invited_by_name") or "?",
+            counterparty_id=_recap_action_counterparty_id(
+                "accept_invite", bill_data, viewer_id, invite["invited_by"],
+            ),
+        ))
+
+    # Bill date/id first, then action target id/kind makes every queue stable.
+    bill_dates = {
+        entry["bill_data"]["bill"]["id"]: _recap_bill_sort_key(entry["bill_data"])
+        for entry in entries
+    }
+    action_key = lambda action: (
+        bill_dates.get(action["bill_id"], ("", action["bill_id"])),
+        action.get("identity_id", ""),
+        action["kind"],
+        str(action.get("invite_id", "")),
+    )
+    current_actions.sort(key=action_key)
+    waiting_actions.sort(key=action_key)
+    provisional_bills.sort(key=lambda row: row["sort_key"])
+
+    pending_by_counterparty = {}
+    for section, actions in (
+        ("current_user", current_actions),
+        ("waiting_other", waiting_actions),
+    ):
+        for action in actions:
+            counterparty_id = action.get("counterparty_id")
+            if not counterparty_id:
+                continue
+            pending = pending_by_counterparty.setdefault(counterparty_id, {
+                "count": 0,
+                "current_user": 0,
+                "waiting_other": 0,
+                "bill_ids": set(),
+            })
+            pending["count"] += 1
+            pending[section] += 1
+            pending["bill_ids"].add(action["bill_id"])
+
+    final_rows = []
+    for other_id, counterparty in counterparties.items():
+        net = counterparty["receivable_idr"] - counterparty["payable_idr"]
+        if net == 0:
+            continue
+        bills = sorted(
+            counterparty["bills"],
+            key=lambda row: (row["sort_key"], row["bill"]["direction"], row["bill"]["amount_idr"]),
+        )
+        final_rows.append({
+            "identity_id": other_id,
+            "name": _recap_identity_name(other_id, counterparty["people"], name_cache),
+            "net_idr": net,
+            "direction": "receive" if net > 0 else "pay",
+            "amount_idr": abs(net),
+            "bills": [row["bill"] for row in bills],
+            "pending": {
+                "count": pending_by_counterparty.get(other_id, {}).get("count", 0),
+                "current_user": pending_by_counterparty.get(other_id, {}).get("current_user", 0),
+                "waiting_other": pending_by_counterparty.get(other_id, {}).get("waiting_other", 0),
+                "bill_ids": sorted(
+                    pending_by_counterparty.get(other_id, {}).get("bill_ids", set())
+                ),
+            },
+        })
+    final_rows.sort(key=lambda row: (-abs(row["net_idr"]), row["name"].casefold(), row["identity_id"]))
+
+    provisional_rows = [row["bill"] for row in provisional_bills]
+    return {
+        "identity": {"id": viewer_id, "name": identity["name"]},
+        "final": {
+            "payable_idr": final_payable,
+            "receivable_idr": final_receivable,
+            "net_idr": final_receivable - final_payable,
+            "counterparties": final_rows,
+            "bill_count": final_bill_count,
+        },
+        "provisional": {
+            "bill_count": len(provisional_rows),
+            "payable_idr": provisional_payable,
+            "receivable_idr": provisional_receivable,
+            "bills": provisional_rows,
+        },
+        "actions": {
+            "current_user": current_actions,
+            "waiting_other": waiting_actions,
+        },
+        "counts": {
+            "current_user": len(current_actions),
+            "waiting_other": len(waiting_actions),
+            "provisional_bills": len(provisional_rows),
+        },
+    }
+
+
 # ---------- identity ----------
 
 async def _read_json(request: Request) -> dict:
@@ -765,6 +1304,19 @@ def my_bills(identity_id: str, request: Request):
             row["pending_names"] = []
             row["total_unpaid"] = 0
     return rows
+
+
+@app.get("/api/identities/{identity_id}/recap")
+def identity_recap(identity_id: str, request: Request):
+    """Identity-scoped final/provisional balance recap.
+
+    Authenticate from headers before comparing the public path id. The path id
+    alone is not a credential and must never select whose bills are loaded.
+    """
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas tidak cocok")
+    return _build_identity_recap(ident)
 
 
 # ---------- bills ----------

@@ -7,7 +7,12 @@ const fmt = (n) => "Rp " + Number(n || 0).toLocaleString("id-ID");
 const el = (html) => { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
 
-const LS_KEYS = { ident: "bagiin_identity", name: "bagiin_name", listSort: "bagiin_list_sort" };
+const LS_KEYS = {
+  ident: "bagiin_identity",
+  name: "bagiin_name",
+  listSort: "bagiin_list_sort",
+  recapAliases: "bagiin_recap_aliases",
+};
 
 function lsGet(key, fallback) {
   try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
@@ -553,6 +558,7 @@ function render() {
   // but unrelated screen). Replace, rather than push, so the dead route does
   // not remain in the browser's back stack.
   const knownRoute = !parts.length || parts[0] === "history" ||
+    (parts[0] === "recap" && parts.length === 1) ||
     parts[0] === "settings" ||
     (parts[0] === "create" && (!parts[1] || parts[1] === "verify")) ||
     (parts[0] === "b" && !!parts[1] && parts.length === 2);
@@ -594,6 +600,7 @@ function render() {
   if (!state.identity) { renderOnboarding(); addOnboardingSteps(); return; }
   // History uses the same list data, but keeps its URL and heading honest.
   if (parts[0] === "settings") { app.classList.add("settings-page"); renderSettings(); return; }
+  if (parts[0] === "recap") { renderRecap(); return; }
   if (parts[0] === "create") {
     // #/create/verify is the OCR/manual editor (see renderVerify in
     // screens.js) — a real route so a page load / forward-nav / the guard
