@@ -281,6 +281,10 @@ def _check_photo_mime(content_type: str | None, raw: bytes | None = None):
         raise HTTPException(400, "Isi file tidak cocok dengan format foto")
 
 
+def _photo_suffix(content_type: str | None) -> str:
+    return {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[content_type or ""]
+
+
 def generate_readable_code() -> str:
     """12-char code in 3 groups of 4, unambiguous alphabet (no 0/O/1/I/L)."""
     alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -1294,11 +1298,11 @@ async def set_selections(bill_id: str, request: Request):
                 raise HTTPException(400, f"Slot {it['name']} tersisa {left}")
         elif p["qty"] > 99:
             raise HTTPException(400, f"{it['name']} maksimal 99 porsi")
-    db.claim_participant(bill_id, ident["id"], ident["name"])
     try:
         db.set_selections(bill_id, ident["id"], picks)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    db.claim_participant(bill_id, ident["id"], ident["name"])
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
@@ -1450,7 +1454,7 @@ async def upload_photo(bill_id: str, request: Request, file: UploadFile = File(.
     _check_photo_mime(file.content_type, raw)
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(400, "Foto maksimal 5MB")
-    filename = secrets.token_hex(8) + ".jpg"
+    filename = secrets.token_hex(8) + _photo_suffix(file.content_type)
     path = UPLOAD_DIR / filename
     path.write_bytes(raw)
     db.add_bill_photo(bill_id, str(path))
@@ -1486,7 +1490,7 @@ async def upload_photo_standalone(request: Request, file: UploadFile = File(...)
     _check_photo_mime(file.content_type, raw)
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(400, "Foto maksimal 5MB")
-    filename = secrets.token_hex(8) + ".jpg"
+    filename = secrets.token_hex(8) + _photo_suffix(file.content_type)
     path = UPLOAD_DIR / filename
     path.write_bytes(raw)
     return {"photo_path": str(path), "filename": filename}
@@ -1538,13 +1542,14 @@ async def ocr_upload(request: Request, file: UploadFile = File(...)):
     mime = file.content_type or "image/jpeg"
     if mime == "image/heic":
         raise HTTPException(400, "Format HEIC belum didukung, pilih foto JPEG/PNG")
+    _check_photo_mime(mime, raw)
     try:
         result = ocr_receipt(raw, mime_type=mime)
     except RuntimeError as e:
         # 4xx supaya Cloudflare gak nelen body-nya (5xx diubah CF jadi HTML error page)
         raise HTTPException(422, str(e))
     # keep photo for bill creation
-    filename = secrets.token_hex(8) + ".jpg"
+    filename = secrets.token_hex(8) + _photo_suffix(mime)
     path = UPLOAD_DIR / filename
     path.write_bytes(raw)
     result["photo_path"] = str(path)
@@ -1560,12 +1565,17 @@ def serve_photo(filename: str):
     # decodes to ".." -> UPLOAD_DIR itself, a directory (bug: v66 audit).
     if not path.is_file():
         raise HTTPException(404)
-    return FileResponse(path, media_type="image/jpeg", headers={
+    media_type = {
+        ".jpg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(path.suffix.lower())
+    if not media_type:
+        raise HTTPException(404)
+    return FileResponse(path, media_type=media_type, headers={
         "Cache-Control": "private, max-age=31536000, immutable",
-        # upload endpoints accept png/webp too (v66) but every file here is
-        # served with a forced image/jpeg content type -- if the bytes and
-        # the declared type disagree, don't let a browser sniff and decide
-        # to run them as something else (v67).
+        # upload bytes are served according to their safe filename suffix and
+        # nosniff prevents browsers from overriding that declared type
         "X-Content-Type-Options": "nosniff",
     })
 

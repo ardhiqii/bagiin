@@ -40,6 +40,41 @@ def create_bill(owner, *, tax_included=False):
     return response.json()["id"]
 
 
+def test_selection_failure_does_not_claim_matching_participant(monkeypatch):
+    owner = db.new_identity("logic-race-owner")
+    guest = db.new_identity("logic-race-guest")
+    bill = db.create_bill(
+        creator_id=owner["id"],
+        title="selection failure",
+        tax_mode="proportional",
+        items=[{"name": "slot", "price": 100, "mode": "slot", "slot_count": 1}],
+        participants=[guest["name"]],
+        subtotal=100,
+        tax=0,
+        service=0,
+        total=100,
+    )
+    bill_id = bill["id"]
+    item_id = db.get_bill(bill_id)["items"][0]["id"]
+
+    def fail_set_selections(*args, **kwargs):
+        raise ValueError("Slot tersisa 0")
+
+    monkeypatch.setattr(db, "set_selections", fail_set_selections)
+    response = client.post(
+        f"/api/bills/{bill_id}/selections",
+        headers=headers(guest),
+        json={"picks": [{"item_id": item_id, "qty": 1}]},
+    )
+
+    assert response.status_code == 400
+    live = db.get_bill(bill_id)
+    participant = next(p for p in live["participants"] if p["name"] == guest["name"])
+    assert participant["identity_id"] is None
+    assert not any(p["identity_id"] == guest["id"] for p in live["payments"])
+    assert not any(s["identity_id"] == guest["id"] for s in live["selections"])
+
+
 def test_ocr_normalize_quantity_discount_duplicates_and_zero_reconcile():
     normalized = ocr._normalize({
         "items": [
@@ -139,13 +174,30 @@ def test_photo_uploads_require_matching_magic_bytes():
         assert response.status_code == 400, (path, response.text)
 
 
+def test_ocr_rejects_arbitrary_bytes_before_provider_call():
+    owner = db.new_identity("logic-ocr-bytes")
+    response = client.post(
+        "/api/ocr",
+        headers=headers(owner),
+        files={"file": ("receipt.jpg", b"not-an-image", "image/jpeg")},
+    )
+    assert response.status_code == 400
+    assert "Isi file" in response.text
+
+
 def test_photo_upload_accepts_declared_valid_signatures():
     owner = db.new_identity("logic-valid-photo")
     valid = {
-        "image/jpeg": b"\xff\xd8\xff\xe0minimal",
-        "image/png": b"\x89PNG\r\n\x1a\nminimal",
-        "image/webp": b"RIFFxxxxWEBPminimal",
+        "image/jpeg": (b"\xff\xd8\xff\xe0minimal", ".jpg"),
+        "image/png": (b"\x89PNG\r\n\x1a\nminimal", ".png"),
+        "image/webp": (b"RIFFxxxxWEBPminimal", ".webp"),
     }
-    for mime, raw in valid.items():
+    for mime, (raw, suffix) in valid.items():
         response = client.post("/api/photos", headers=headers(owner), files={"file": ("photo", raw, mime)})
         assert response.status_code == 200, (mime, response.text)
+        filename = response.json()["filename"]
+        assert filename.endswith(suffix)
+        served = client.get(f"/uploads/{filename}")
+        assert served.status_code == 200
+        assert served.headers["content-type"] == mime
+        assert served.headers["x-content-type-options"] == "nosniff"
