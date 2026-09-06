@@ -9,6 +9,7 @@
 
 // ---------- stale identity recovery ----------
 let billListGeneration = 0;
+let inviteGeneration = 0;
 let settingsRenderGeneration = 0;
 
 // A localStorage identity the server has never seen (DB restored from backup,
@@ -119,8 +120,9 @@ function renderOnboarding() {
 // scroll away — see the .list-controls-inline / #list-ctl-btn split below and
 // the matching CSS in index.html.
 function renderHome() {
-  // Invalidate every in-flight list request before replacing the screen.
+  // Invalidate every in-flight home request before replacing the screen.
   billListGeneration += 1;
+  inviteGeneration += 1;
   const app = $("#app");
   // esc() the name — it's user-typed and interpolated into innerHTML; without
   // escaping, a name like `<svg/onload=...>` executed on every home visit
@@ -177,8 +179,8 @@ async function loadHomeInvites() {
   const box = $("#home-invites");
   const app = $("#app");
   const root = app && app.firstElementChild;
-  const generation = billListGeneration;
-  const isCurrent = () => generation === billListGeneration
+  const generation = ++inviteGeneration;
+  const isCurrent = () => generation === inviteGeneration
     && app && app.firstElementChild === root && root && root.isConnected
     && box.isConnected && $("#home-invites") === box;
   if (!box || !state.identity || !root) return;

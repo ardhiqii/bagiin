@@ -17,8 +17,15 @@ assert.match(screens, /const renderGeneration = \+\+settingsRenderGeneration/);
 assert.match(screens, /const isCurrentSettings = \(\) => renderGeneration === settingsRenderGeneration/);
 assert.match(screens, /const info = await api\([^;]+\);\n\s*if \(!isCurrentSettings\(\)\) return;/);
 assert.match(screens, /const accts = await api\([^;]+\);\n\s*if \(!isCurrentSettings\(\)\) return;/);
-assert.match(screens, /const generation = billListGeneration/);
-assert.match(screens, /const isCurrent = \(\) => generation === billListGeneration[\s\S]*box\.isConnected/);
+
+assert.match(screens, /let inviteGeneration\s*=\s*0/);
+assert.match(screens, /function renderHome\(\) \{[\s\S]*?billListGeneration \+= 1;\n\s*inviteGeneration \+= 1;/);
+assert.match(screens, /const generation = \+\+inviteGeneration/);
+assert.match(screens, /const isCurrent = \(\) => generation === inviteGeneration[\s\S]*box\.isConnected/);
+const inviteSource = screens.slice(screens.indexOf("async function loadHomeInvites"), screens.indexOf("/** The row tone"));
+assert.doesNotMatch(inviteSource, /billListGeneration/);
+assert.match(inviteSource, /invites\/\$\{invId\}\/accept[\s\S]*loadHomeInvites\(\);\n\s*loadBillList\(false\)/);
+assert.match(inviteSource, /invites\/\$\{invId\}\/decline[\s\S]*loadHomeInvites\(\);/);
 assert.match(screens, /await api\([^;]+invites[\s\S]*if \(!isCurrent\(\)\) return;\n\s*if \(!invites\.length\)/);
 assert.match(screens, /await apiJson\([^;]+invites\/\$\{invId\}\/accept[\s\S]*if \(!isCurrent\(\)\) return;\n\s*toast/);
 assert.match(screens, /await apiJson\([^;]+invites\/\$\{invId\}\/decline[\s\S]*if \(!isCurrent\(\)\) return;\n\s*toast/);
