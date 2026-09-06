@@ -712,7 +712,12 @@ function renderPickRows(data, me, useServer) {
   if (!data.bill || state.currentBillId !== data.bill.id) return;
   const bd = useServer ? myBreakdown(data, me) : computeMyBreakdown(data, state.selQty);
   const mtEl = $("#my-total");
-  if (mtEl) mtEl.textContent = fmt(bd.total);
+  if (mtEl) {
+    mtEl.textContent = fmt(bd.total);
+    mtEl.setAttribute("aria-label", useServer ? `Total kamu ${fmt(bd.total)}` : `Perkiraan total kamu ${fmt(bd.total)}`);
+  }
+  const totalLabel = $(".dock-total .label");
+  if (totalLabel) totalLabel.textContent = useServer ? "Total kamu" : "Perkiraan total kamu";
   const mbEl = $("#my-breakdown");
   if (mbEl) {
     const subEl = $("#my-sub", mbEl);

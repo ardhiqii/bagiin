@@ -8,6 +8,9 @@
    back the "date renders one day early west of UTC" bug.) */
 
 // ---------- stale identity recovery ----------
+let billListGeneration = 0;
+let settingsRenderGeneration = 0;
+
 // A localStorage identity the server has never seen (DB restored from backup,
 // identity deleted) used to dead-end every screen with "Identity not found"
 // printed as body text and no way out (bug: app permanently bricked for that
@@ -116,6 +119,8 @@ function renderOnboarding() {
 // scroll away — see the .list-controls-inline / #list-ctl-btn split below and
 // the matching CSS in index.html.
 function renderHome() {
+  // Invalidate every in-flight list request before replacing the screen.
+  billListGeneration += 1;
   const app = $("#app");
   // esc() the name — it's user-typed and interpolated into innerHTML; without
   // escaping, a name like `<svg/onload=...>` executed on every home visit
@@ -590,13 +595,20 @@ function updateListSummary(shown, total) {
 async function loadBillList(useCache) {
   const box = $("#home-history");
   if (!box) return;
+  const generation = ++billListGeneration;
+  const isCurrent = () => generation === billListGeneration
+    && $("#home-history") === box && box.isConnected;
   try {
     if (!useCache || !histBills) {
-      histBills = await api("/api/identities/" + state.identity.id + "/bills");
+      const bills = await api("/api/identities/" + state.identity.id + "/bills");
+      if (!isCurrent()) return;
+      histBills = bills;
     }
+    if (!isCurrent()) return;
     const bills = histBills;
     const ctlBtn = $("#list-ctl-btn"), inlineBox = $("#list-controls-inline");
     if (!bills.length) {
+      if (!isCurrent()) return;
       // nothing to filter yet — hide the controls rather than show a live
       // "Atur" button and an inline row over an empty card
       if (ctlBtn) ctlBtn.classList.add("hidden");
@@ -606,6 +618,7 @@ async function loadBillList(useCache) {
         <p>Belum ada bill.</p><p class="muted">Bill yang kamu buat atau kamu ikuti akan muncul di sini.</p></div>`;
       return;
     }
+    if (!isCurrent()) return;
     if (ctlBtn) ctlBtn.classList.remove("hidden");
     // rebuild the year list on every fetch — a conditional append left stale
     // years behind after a delete (bug: deleted bill's year stayed
@@ -613,18 +626,25 @@ async function loadBillList(useCache) {
     // actual option (not a hardcoded default the select falls back to): once
     // a specific year was picked there used to be no way back to "all" (bug:
     // a filter you can't turn off).
-    histYears = availableYears(bills);
+    const nextYears = availableYears(bills);
+    if (!isCurrent()) return;
+    histYears = nextYears;
     if (histState.year !== "all" && !histYears.includes(histState.year)) {
       // the year the user had selected no longer exists (its bills got
       // deleted) — fall back rather than strand them on a dead filter
+      if (!isCurrent()) return;
       histState.year = "all";
     }
+    if (!isCurrent()) return;
     renderListControlsInline();
+    if (!isCurrent()) return;
     syncControlsDom();
 
     const filtered = bills.filter(passHistoryFilter);
+    if (!isCurrent()) return;
     updateListSummary(filtered.length, bills.length);
     if (!filtered.length) {
+      if (!isCurrent()) return;
       box.innerHTML = `<div class="empty-state">${ic("empty")}
         <p>Tidak ada bill yang cocok.</p><p class="muted">Coba ganti filternya.</p>
         <button type="button" class="btn-outline btn-sm" id="list-empty-reset" style="margin-top:14px;">Reset filter</button></div>`;
@@ -649,7 +669,9 @@ async function loadBillList(useCache) {
       const rest = sorted.length - histState.limit;
       html += `<button type="button" class="btn-outline btn-sm" id="home-more" style="width:100%;margin-top:12px;">Muat ${Math.min(rest, HIST_PAGE)} lagi (${rest} tersisa)</button>`;
     }
+    if (!isCurrent()) return;
     box.innerHTML = html;
+    if (!isCurrent()) return;
     bindBillRows(box, () => loadBillList(false));
     const moreBtn = $("#home-more");
     if (moreBtn) moreBtn.addEventListener("click", () => {
@@ -657,6 +679,7 @@ async function loadBillList(useCache) {
       loadBillList(true);
     });
   } catch (e) {
+    if (!isCurrent()) return;
     box.innerHTML = identityErrorHtml(e);
     bindIdentityError(box);
     if (!e || e.status !== 404) toast(e.message);
@@ -711,6 +734,7 @@ function brandChipHtml(code) {
 
 function renderSettings() {
   const app = $("#app");
+  const renderGeneration = ++settingsRenderGeneration;
   const me = state.identity;
   // null = belum ketauan (request /me masih jalan / gagal). Dipakai buat copy
   // logout, jadi default-nya sengaja yang paling hati-hati.
@@ -782,6 +806,9 @@ function renderSettings() {
     </div>
 
     <button class="btn-danger-ghost" id="logout-btn">${ic("logout")} Keluar</button>`);
+  const settingsRoot = app.firstElementChild;
+  const isCurrentSettings = () => renderGeneration === settingsRenderGeneration
+    && app.firstElementChild === settingsRoot && settingsRoot && settingsRoot.isConnected;
   watchDock();
 
   $("#back-btn").addEventListener("click", () => location.hash = "#/");
@@ -858,6 +885,7 @@ function renderSettings() {
   (async () => {
     try {
       const info = await api(`/api/identities/${me.id}/me`);
+      if (!isCurrentSettings()) return;
       renderCodeBox(!!info.has_code);
       const sw = $("#auto-accept-switch");
       if (sw) {
@@ -882,6 +910,7 @@ function renderSettings() {
         });
       }
     } catch (e) {
+      if (!isCurrentSettings()) return;
       const box = $("#code-box");
       if (box) { box.innerHTML = identityErrorHtml(e); bindIdentityError(box); }
     }
@@ -893,6 +922,7 @@ function renderSettings() {
     if (!box) return;
     try {
       const accts = await api(`/api/identities/${me.id}/accounts`);
+      if (!isCurrentSettings()) return;
       if (!accts.length) {
         box.innerHTML = `<div class="empty-state" style="padding:18px 8px;">${ic("wallet")}
           <p class="muted">Belum ada metode bayar.</p></div>`;
@@ -926,6 +956,7 @@ function renderSettings() {
         });
       }));
     } catch (e) {
+      if (!isCurrentSettings()) return;
       box.innerHTML = identityErrorHtml(e);
       bindIdentityError(box);
     }
