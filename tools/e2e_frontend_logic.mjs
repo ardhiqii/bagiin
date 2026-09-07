@@ -83,30 +83,33 @@ assert.match(screens, /id="create-btn"/);
 assert.match(bill, /totalLabel\.textContent = useServer \? "Total kamu" : "Perkiraan total kamu"/);
 assert.match(bill, /useServer \? `Total kamu \$\{fmt\(bd\.total\)\}` : `Perkiraan total kamu/);
 
-// Closing is a creator-only allocation action, not a payment settlement. Keep
-// the dock action open-only and keep every unresolved warning in the confirm
-// copy so a future status-chip cleanup cannot remove the finalization path.
+// A final allocation can remain open and unpaid. The creator no longer has a
+// Close Bill control, but pending allocation warnings, legacy reopen handling,
+// and payment-state rendering must remain intact.
 const creatorView = bill.slice(
   bill.indexOf("function renderCreatorView"),
   bill.indexOf("// ---------- Creator toggles"),
 );
-assert.match(creatorView, /\$\{data\.can_manage && !closed \? `[\s\S]*id="close-bill-btn"/);
-assert.match(creatorView, /closeBtn\.addEventListener\("click", \(\) => openCloseConfirm\(data\)\)/);
-assert.match(creatorView, /data\.can_manage && !closed/);
-assert.match(bill, /function closeBillWarningBody\(data\)/);
+assert.doesNotMatch(creatorView, /close-bill-btn/);
+assert.doesNotMatch(creatorView, /openCloseConfirm|closeBillWarningBody/);
+assert.doesNotMatch(bill, /function closeBillWarningBody\(data\)/);
+assert.doesNotMatch(bill, /function openCloseConfirm\(data\)/);
+assert.doesNotMatch(bill, /\/api\/bills\/\$\{data\.bill\.id\}\/close/);
 assert.match(bill, /function pendingPickerNamesFor\(data\)/);
 assert.match(bill, /pendingPickerNames/);
 assert.match(bill, /data\.uncovered_slots/);
 assert.match(bill, /data\.warnings/);
 assert.match(bill, /pendingPickerNamesFor\(data\)/);
-assert.match(bill, /pendingPickerNames\.map\(name => esc\(name\)/);
-assert.match(bill, /map\(warning => esc\(warning\)/);
-assert.match(bill, /title: "Tutup bill sekarang\?"/);
-assert.match(bill, /body: closeBillWarningBody\(data\)/);
-assert.match(bill, /\/api\/bills\/\$\{data\.bill\.id\}\/close/);
-assert.match(bill, /await withBusy\(closeBtn, "Menutup\.\.\."/);
-assert.match(bill, /data\.bill\.status !== "open" \|\| !data\.can_manage/);
+assert.match(bill, /pendingPickerNames\.map\(m => esc\(m\)/);
+assert.match(creatorView, /const dedup = \(data\.warnings \|\| \[\]\)/);
+assert.match(creatorView, /id="reopen-bill-btn"/);
+assert.match(bill, /function openReopenConfirm\(data\)/);
+assert.match(bill, /\/api\/bills\/\$\{data\.bill\.id\}\/reopen/);
+assert.match(bill, /data\.settled/);
+assert.match(bill, /data\.all_paid/);
+assert.match(bill, /data\.settled_manual/);
+assert.match(app, /function renderBillStatusChip\(data, closed, totalUnpaid, soloSoFar\)/);
+assert.match(app, /if \(data\.settled \|\| data\.all_paid\)/);
 assert.match(app, /if \(method !== "GET" && method !== "HEAD"\) \{[\s\S]*invalidateDerivedData/);
-assert.match(bill, /Menutup bill hanya memfinalkan pembagian, bukan menandai pembayaran lunas/);
 
 console.log("frontend logic regression assertions: PASS");

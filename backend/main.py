@@ -578,17 +578,31 @@ def _recap_payer_unresolved(bill_data: dict, response: dict) -> bool:
     return bool((bill.get("paid_by_name") or "").strip()) and not response.get("paid_by_id")
 
 
-def _recap_is_final(bill_data: dict, response: dict) -> bool:
+def _recap_has_real_selection(bill_data: dict) -> bool:
+    """Whether this snapshot contains at least one identity's selection."""
+    return any(
+        selection.get("identity_id")
+        for selection in bill_data.get("selections", [])
+    )
+
+
+def _recap_is_final(
+    bill_data: dict,
+    response: dict,
+    *,
+    pending_workflow: bool = False,
+) -> bool:
     """Decide final/provisional status without reimplementing split math.
 
     `_compute_response` is the source of truth for settled/manual-settled and
-    uncovered amounts. A closed bill with a fully allocated but unpaid share is
-    final allocation, so it contributes a real outstanding edge.
+    uncovered amounts. A closed bill or a fully allocated open bill with an
+    unpaid share is final allocation, so it contributes a real outstanding edge.
+    A pending invite-only view is still provisional until that workflow is
+    accepted, even when the rest of the allocation is complete.
     """
     if response.get("settled"):
         return True
-    bill = bill_data["bill"]
-    if bill.get("status") != "closed":
+    if pending_workflow:
         return False
     if not response.get("total_ok", True):
         return False
@@ -597,6 +611,11 @@ def _recap_is_final(bill_data: dict, response: dict) -> bool:
     if _recap_pending_selection_ids(bill_data, response):
         return False
     if _recap_payer_unresolved(bill_data, response):
+        return False
+    # An untouched open bill reconciles through the owner fallback, but it is
+    # not a meaningful allocation yet. Closed legacy bills keep their existing
+    # final classification even when they predate a selection.
+    if bill_data["bill"].get("status") == "open" and not _recap_has_real_selection(bill_data):
         return False
     return True
 
@@ -609,7 +628,11 @@ def _recap_reason_codes(bill_data: dict, response: dict, *, pending_workflow: bo
         reasons.add("pending_selection")
     if response.get("uncovered_idr", 0) > 0:
         reasons.add("uncovered_slots")
-    if bill.get("status") == "open" and not response.get("settled"):
+    if (
+        bill.get("status") == "open"
+        and not response.get("settled")
+        and not _recap_has_real_selection(bill_data)
+    ):
         reasons.add("open_bill")
     if _recap_payer_unresolved(bill_data, response):
         reasons.add("payer_unresolved")
@@ -844,7 +867,11 @@ def _build_identity_recap(identity: dict) -> dict:
         bill = bill_data["bill"]
         bill_id = bill["id"]
         title = bill["title"]
-        final = _recap_is_final(bill_data, response)
+        final = _recap_is_final(
+            bill_data,
+            response,
+            pending_workflow=entry["invite_only"],
+        )
         if final:
             final_bill_count += 1
             for edge in _recap_edges_for_viewer(bill_data, response, viewer_id):

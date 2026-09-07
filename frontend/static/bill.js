@@ -1027,7 +1027,7 @@ function hasPickedAny(data, pid) {
     list.some(s => s.id === pid));
 }
 
-// Include declared-but-not-yet-joined participants in the finalization
+// Include declared-but-not-yet-joined participants in the allocation
 // warning. `people` is the live roster, while `participants` also contains
 // names the creator typed during bill creation (bug: "Rina belum pilih"
 // disappeared when Rina had not opened the link yet).
@@ -1542,7 +1542,6 @@ function renderCreatorView(data) {
         : soloSoFar
           ? `<button class="btn-primary" id="dock-share-btn">${ic("share")} Bagikan Link</button>`
           : ""}
-      ${data.can_manage && !closed ? `<button class="${soloSoFar ? "btn-outline" : "btn-primary"}" id="close-bill-btn">${ic("check")} Tutup Bill</button>` : ""}
     </div></div>`;
 
   app.innerHTML = `
@@ -1603,8 +1602,6 @@ function renderCreatorView(data) {
   if (methodsBtn) methodsBtn.addEventListener("click", () => openAccountsSheet(data));
   const editBtn = $("#edit-bill-btn");
   if (editBtn) editBtn.addEventListener("click", () => renderEditBill(data));
-  const closeBtn = $("#close-bill-btn");
-  if (closeBtn) closeBtn.addEventListener("click", () => openCloseConfirm(data));
   const reopenBtn = $("#reopen-bill-btn");
   if (reopenBtn) reopenBtn.addEventListener("click", () => openReopenConfirm(data));
   // v60 bill-level settle buttons removed 2026-08-27: status is derived from
@@ -2399,47 +2396,6 @@ function shareBill(billId, title) {
     }
   });
   $("#share-close", s.sheet).addEventListener("click", s.close);
-}
-
-function closeBillWarningBody(data) {
-  const pendingPickerNames = pendingPickerNamesFor(data);
-  const warnings = [];
-  if (pendingPickerNames.length) {
-    warnings.push(`<strong>Belum pilih item:</strong> ${pendingPickerNames.map(name => esc(name)).join(", ")}`);
-  }
-  if ((data.uncovered_slots || []).length) {
-    warnings.push(`<strong>Bagian kosong belum terambil:</strong> ${(data.uncovered_slots || []).map(slot =>
-      `${esc(slot.name)} (${slot.empty} bagian, ${fmt(slot.amount_idr)})`).join(", ")}`);
-  }
-  const unassignedWarnings = (data.warnings || [])
-    .filter(warning => !String(warning).startsWith("Bagian kosong:"))
-    .map(warning => esc(warning).replace(/(\d),(\d{3})/g, "$1.$2").replace(/-&gt;/g, "→"));
-  if (unassignedWarnings.length) {
-    warnings.push(`<strong>Item perlu dicek:</strong> ${unassignedWarnings.join(" · ")}`);
-  }
-  const warningText = warnings.length ? `<br><br>${warnings.join("<br><br>")}` : "";
-  return `Setelah ditutup, pembagian item dikunci dan orang lain tidak bisa mengubah pilihan.${warningText}<br><br><strong>Catatan:</strong> Menutup bill hanya memfinalkan pembagian, bukan menandai pembayaran lunas. Orang yang belum bayar tetap tercatat belum bayar.`;
-}
-
-async function openCloseConfirm(data) {
-  if (!data || !data.bill || data.bill.status !== "open" || !data.can_manage) return;
-  const ok = await confirmSheet({
-    title: "Tutup bill sekarang?",
-    body: closeBillWarningBody(data),
-    confirmText: "Tutup Bill",
-    cancelText: "Batal, Tunggu yang Lain",
-  });
-  if (!ok) return;
-  const closeBtn = $("#close-bill-btn");
-  await withBusy(closeBtn, "Menutup...", async () => {
-    try {
-      await api(`/api/bills/${data.bill.id}/close`, { method: "POST" });
-      // api() invalidates the shared home/recap cache for every successful
-      // mutation before this closed bill is loaded again.
-      toast("Pembagian difinalkan ✓");
-      loadBillView(data.bill.id);
-    } catch (e) { toast(e.message); }
-  });
 }
 
 function openReopenConfirm(data) {

@@ -297,13 +297,33 @@ def test_open_unpaid_selected_share_has_reciprocal_payment_actions():
     bill_id = _mk_bill(owner, title="Bayar Saat Terbuka", total=70000)
     _join_and_pick(bill_id, guest, _item_ids(bill_id))
 
+    detail = c.get(f"/api/bills/{bill_id}", headers=_H(owner))
+    assert detail.status_code == 200, detail.text
+    detail = detail.json()
+    assert detail["bill"]["status"] == "open"
+    assert detail["settled"] is False
+    assert detail["all_paid"] is False
+    stored = db.get_bill(bill_id)
+    assert stored is not None
+    assert stored["bill"]["status"] == "open"
+    assert next(
+        payment for payment in stored["payments"]
+        if payment["identity_id"] == guest["id"]
+    )["status"] == "unpaid"
+
     owner_recap = _recap(owner)
+    assert owner_recap["final"]["bill_count"] == 1
+    assert owner_recap["final"]["receivable_idr"] == 70000
+    assert owner_recap["final"]["counterparties"][0]["bills"][0]["status"] == "open"
+    assert bill_id not in {
+        bill["bill_id"] for bill in owner_recap["provisional"]["bills"]
+    }
     wait = _action(owner_recap, "waiting_other", "wait_payment", bill_id)
     assert wait["identity_id"] == guest["id"]
     assert wait["name"] == guest["name"]
     assert wait["counterparty_id"] == guest["id"]
     assert wait["amount_idr"] == 70000
-    assert wait["provisional"] is True
+    assert wait["provisional"] is False
     assert wait["href"] == f"#/b/{bill_id}"
     assert not any(
         action["kind"] == "wait_payment" and action["identity_id"] == owner["id"]
@@ -311,11 +331,137 @@ def test_open_unpaid_selected_share_has_reciprocal_payment_actions():
     )
 
     guest_recap = _recap(guest)
+    assert guest_recap["final"]["bill_count"] == 1
+    assert guest_recap["final"]["payable_idr"] == 70000
     pay = _action(guest_recap, "current_user", "pay_share", bill_id)
     assert pay["identity_id"] == guest["id"]
     assert pay["counterparty_id"] == owner["id"]
     assert pay["amount_idr"] == 70000
-    assert pay["provisional"] is True
+    assert pay["provisional"] is False
+
+
+def test_open_untouched_bill_stays_provisional_with_open_bill_reason():
+    owner = db.new_identity("Owner Untouched Open", role="creator")
+    bill_id = _mk_bill(owner, title="Belum Dipilih", total=45000)
+
+    recap = _recap(owner)
+    assert recap["final"]["bill_count"] == 0
+    provisional = next(
+        bill for bill in recap["provisional"]["bills"]
+        if bill["bill_id"] == bill_id
+    )
+    assert provisional["status"] == "open"
+    assert provisional["reason_codes"] == ["open_bill"]
+
+
+def test_open_pending_selection_stays_provisional_with_selection_reason():
+    owner = db.new_identity("Owner Pending Selection Open", role="creator")
+    guest = db.new_identity("Guest Pending Selection Open")
+    bill_id = _mk_bill(owner, title="Masih Pilih", total=50000)
+    joined = c.post(f"/api/bills/{bill_id}/join", headers=_H(guest))
+    assert joined.status_code == 200, joined.text
+
+    recap = _recap(owner)
+    provisional = next(
+        bill for bill in recap["provisional"]["bills"]
+        if bill["bill_id"] == bill_id
+    )
+    assert provisional["reason_codes"] == ["pending_selection", "open_bill"]
+    assert not any(
+        bill["bill_id"] == bill_id
+        for counterparty in recap["final"]["counterparties"]
+        for bill in counterparty["bills"]
+    )
+
+
+def test_open_uncovered_slot_stays_provisional_with_slot_reason():
+    owner = db.new_identity("Owner Uncovered Open", role="creator")
+    guest = db.new_identity("Guest Uncovered Open")
+    bill_id = _mk_bill(
+        owner,
+        title="Slot Belum Penuh",
+        items=[{"name": "Tiket", "price": 100000, "mode": "slot", "slot_count": 2}],
+        total=100000,
+    )
+    _join_and_pick(bill_id, guest, _item_ids(bill_id))
+
+    recap = _recap(owner)
+    provisional = next(
+        bill for bill in recap["provisional"]["bills"]
+        if bill["bill_id"] == bill_id
+    )
+    assert provisional["reason_codes"] == ["uncovered_slots"]
+
+
+def test_open_unresolved_payer_stays_provisional_with_payer_reason():
+    owner = db.new_identity("Owner Unresolved Payer", role="creator")
+    guest = db.new_identity("Guest Unresolved Payer")
+    bill_id = _mk_bill(
+        owner,
+        title="Payer Belum Join",
+        total=80000,
+        paid_by_name="Payer Yang Belum Ada",
+    )
+    _join_and_pick(bill_id, guest, _item_ids(bill_id))
+
+    recap = _recap(owner)
+    provisional = next(
+        bill for bill in recap["provisional"]["bills"]
+        if bill["bill_id"] == bill_id
+    )
+    assert provisional["reason_codes"] == ["payer_unresolved"]
+
+
+def test_pending_invitee_open_allocation_stays_provisional():
+    owner = db.new_identity("Owner Pending Workflow", role="creator")
+    guest = db.new_identity("Guest Pending Workflow")
+    invitee = db.new_identity("Invitee Pending Workflow")
+    bill_id = _mk_bill(owner, title="Undangan Menunggu", total=90000)
+    _join_and_pick(bill_id, guest, _item_ids(bill_id))
+    invite = db.create_invite(bill_id, invitee["id"], owner["id"])
+    assert invite["status"] == "pending"
+
+    recap = _recap(invitee)
+    provisional = next(
+        bill for bill in recap["provisional"]["bills"]
+        if bill["bill_id"] == bill_id
+    )
+    assert provisional["reason_codes"] == ["pending_workflow"]
+    assert not any(
+        bill["bill_id"] == bill_id
+        for counterparty in recap["final"]["counterparties"]
+        for bill in counterparty["bills"]
+    )
+
+
+def test_invalid_total_stays_provisional_with_workflow_reason():
+    bill_data = {
+        "bill": {
+            "id": "invalid-total",
+            "creator_identity_id": "creator",
+            "status": "open",
+            "paid_by_name": None,
+            "paid_by_identity_id": None,
+            "paid_by_confirmed": 0,
+        },
+        "items": [],
+        "participants": [],
+        "selections": [{"identity_id": "guest"}],
+        "payments": [],
+    }
+    response = {
+        "settled": False,
+        "total_ok": False,
+        "uncovered_idr": 0,
+        "paid_by_id": "creator",
+        "people": [
+            {"identity_id": "creator", "total_idr": 0},
+            {"identity_id": "guest", "total_idr": 100},
+        ],
+    }
+
+    assert main._recap_is_final(bill_data, response) is False
+    assert main._recap_reason_codes(bill_data, response) == ["pending_workflow"]
 
 
 def test_owner_sees_selection_and_payment_waiting_separately():
