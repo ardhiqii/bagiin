@@ -296,6 +296,79 @@ try {
       && homeNavGeometry.linkHeights.every(height => height >= 56),
     JSON.stringify(homeNavGeometry));
 
+  const simulateVisualViewportGap = async (gap, editable) => evaluate(`(() => {
+    const nav = document.querySelector('#app-nav');
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'visualViewport');
+    const probe = document.createElement('input');
+    probe.type = 'text';
+    probe.id = 'e2e-keyboard-probe';
+    probe.setAttribute('aria-label', 'E2E keyboard probe');
+    probe.style.cssText = 'position:fixed;left:-1000px;top:0;width:1px;height:1px;opacity:0';
+    document.body.appendChild(probe);
+    if (${editable ? "true" : "false"}) probe.focus();
+    else if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    try {
+      Object.defineProperty(window, 'visualViewport', {
+        configurable: true,
+        value: { offsetTop: 0, height: Math.max(0, window.innerHeight - ${Number(gap)}) },
+      });
+      syncDockSpace();
+      const rect = nav.getBoundingClientRect();
+      return {
+        inlineBottom: nav.style.bottom,
+        rectBottom: rect.bottom,
+        viewportBottom: window.innerHeight,
+        computedBottom: getComputedStyle(nav).bottom,
+      };
+    } finally {
+      if (descriptor) Object.defineProperty(window, 'visualViewport', descriptor);
+      else delete window.visualViewport;
+      probe.remove();
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      syncDockSpace();
+    }
+  })()`);
+  const noFocusViewport = await simulateVisualViewportGap(144, false);
+  check("visual viewport gap without editable focus leaves app nav at viewport bottom",
+    (noFocusViewport.inlineBottom === "" || noFocusViewport.inlineBottom === "0px")
+      && Math.abs(noFocusViewport.rectBottom - noFocusViewport.viewportBottom) <= 0.5,
+    JSON.stringify(noFocusViewport));
+  const focusedViewport = await simulateVisualViewportGap(144, true);
+  check("focused editable control keeps keyboard offset on the active app nav",
+    focusedViewport.inlineBottom === "144px"
+      && Math.abs(focusedViewport.rectBottom - (focusedViewport.viewportBottom - 144)) <= 0.5,
+    JSON.stringify(focusedViewport));
+
+  const pageErrorsBeforeNormalScroll = pageErrors.length;
+  const normalScroll = await evaluate(`(() => {
+    const spacer = document.createElement('div');
+    spacer.id = 'e2e-scroll-spacer';
+    spacer.style.height = '1200px';
+    document.body.appendChild(spacer);
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    return { scrollHeight: document.documentElement.scrollHeight };
+  })()`);
+  await sleep(120);
+  const normalScrollGeometry = await evaluate(`(() => {
+    const nav = document.querySelector('#app-nav');
+    const rect = nav.getBoundingClientRect();
+    document.querySelector('#e2e-scroll-spacer')?.remove();
+    return {
+      scrollHeight: ${JSON.stringify(normalScroll.scrollHeight)},
+      scrollWidth: document.documentElement.scrollWidth,
+      viewport: window.innerWidth,
+      navBottom: rect.bottom,
+      viewportBottom: window.innerHeight,
+      inlineBottom: nav.style.bottom,
+    };
+  })()`);
+  check("mobile normal scroll keeps app nav fixed without horizontal overflow",
+    normalScrollGeometry.scrollWidth <= normalScrollGeometry.viewport + 0.5
+      && Math.abs(normalScrollGeometry.navBottom - normalScrollGeometry.viewportBottom) <= 0.5
+      && (normalScrollGeometry.inlineBottom === "" || normalScrollGeometry.inlineBottom === "0px")
+      && pageErrors.length === pageErrorsBeforeNormalScroll,
+    JSON.stringify({ ...normalScrollGeometry, pageErrors: pageErrors.length - pageErrorsBeforeNormalScroll }));
+
   // Legacy #/history must replace its own entry. Set up a real prior route so
   // two Back presses can prove that the redirect did not trap the user on a
   // second #/ entry or keep re-entering the redirect handler.

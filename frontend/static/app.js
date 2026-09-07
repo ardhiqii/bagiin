@@ -605,6 +605,19 @@ function shell(main, side) {
           <aside class="shell-side">${side}</aside></div>`;
 }
 
+/** Return true only while focus is on a control that can summon an IME.
+ *  A visualViewport gap also appears when mobile browser chrome moves, so
+ *  viewport geometry alone is not enough to decide whether a fixed surface
+ *  should move above the keyboard. */
+function hasEditableFocus() {
+  const active = document.activeElement;
+  if (!active || active === document.body || active.disabled || active.readOnly) return false;
+  if (active.isContentEditable) return true;
+  if (active.tagName === "TEXTAREA" || active.tagName === "SELECT") return true;
+  if (active.tagName !== "INPUT") return false;
+  return !["button", "checkbox", "file", "hidden", "image", "radio", "range", "reset", "submit"].includes(active.type);
+}
+
 /** Reserve exactly as much bottom padding as the dock actually occupies.
  *  The old fixed 96px was ~50px short of the guest bar, so the last item row
  *  sat underneath it and could not be tapped. */
@@ -634,7 +647,9 @@ function syncDockSpace() {
   // visual viewport gap (bug: a fixed dock was left behind the IME).
   const vv = window.visualViewport;
   const visualBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
-  const keyboardGap = Math.max(0, window.innerHeight - visualBottom);
+  const keyboardGap = hasEditableFocus()
+    ? Math.max(0, window.innerHeight - visualBottom)
+    : 0;
   surface.style.bottom = keyboardGap ? `${keyboardGap}px` : "";
   if (surface !== dock && dock) dock.style.bottom = "";
   if (surface !== appNav && appNav) appNav.style.bottom = "";
@@ -653,6 +668,11 @@ function watchDock() {
   if (dock && dockObserver) { dockObserver.disconnect(); dockObserver.observe(dock); }
 }
 window.addEventListener("resize", syncDockSpace);
+// Re-evaluate the keyboard condition when focus changes without a viewport
+// event. Links/buttons can be focused while the browser still reports a gap;
+// only an active editable control should keep the dock lifted.
+document.addEventListener("focusin", syncDockSpace, { passive: true });
+document.addEventListener("focusout", () => setTimeout(syncDockSpace, 0), { passive: true });
 // window.resize is not guaranteed when a mobile IME changes only the visual
 // viewport. These listeners are harmless on desktop and keep the binding
 // single, route-independent, and compatible with browsers without the API.
