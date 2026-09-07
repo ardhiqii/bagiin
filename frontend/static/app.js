@@ -668,6 +668,42 @@ function hasEditableFocus() {
   return !["button", "checkbox", "file", "hidden", "image", "radio", "range", "reset", "submit"].includes(active.type);
 }
 
+// A focused control can outlive its keyboard. Once the visual viewport gap
+// closes, later positive gaps are browser-chrome movement rather than a new
+// keyboard session. A fresh focus session starts the state again. This keeps
+// the keyboard offset while preserving the app nav's viewport anchoring.
+let keyboardGapState = "idle";
+let keyboardGapFocus = null;
+function beginKeyboardGapSession() {
+  keyboardGapFocus = hasEditableFocus() ? document.activeElement : null;
+  keyboardGapState = keyboardGapFocus ? "waiting" : "idle";
+}
+function currentVisualViewportGap() {
+  const vv = window.visualViewport;
+  const visualBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+  return Math.max(0, window.innerHeight - visualBottom);
+}
+function keyboardGapOffset() {
+  const active = hasEditableFocus() ? document.activeElement : null;
+  if (active !== keyboardGapFocus) {
+    keyboardGapFocus = active;
+    keyboardGapState = active ? "waiting" : "idle";
+  }
+  if (!active) {
+    keyboardGapState = "idle";
+    return 0;
+  }
+  if (keyboardGapState === "idle") keyboardGapState = "waiting";
+  const gap = currentVisualViewportGap();
+  if (!gap) {
+    if (keyboardGapState === "open") keyboardGapState = "closed";
+    return 0;
+  }
+  if (keyboardGapState === "closed") return 0;
+  keyboardGapState = "open";
+  return gap;
+}
+
 /** Reserve exactly as much bottom padding as the dock actually occupies.
  *  The old fixed 96px was ~50px short of the guest bar, so the last item row
  *  sat underneath it and could not be tapped. */
@@ -682,6 +718,9 @@ function syncDockSpace() {
   const appNav = $("#app-nav:not([hidden])");
   const activeDock = dock && !(onDesktop && dock.closest(".shell-side")) ? dock : null;
   const surface = activeDock || (!onDesktop ? appNav : null);
+  // Read the viewport even when the nav is hidden/no surface is mounted, so
+  // the session can observe the real keyboard closing before the nav returns.
+  const keyboardGap = keyboardGapOffset();
   if (!surface) {
     app.style.paddingBottom = "";
     app.style.scrollPaddingBottom = "";
@@ -695,11 +734,6 @@ function syncDockSpace() {
   // visualViewport, lift the fixed dock above the occluded portion. Keep the
   // CSS safe-area padding inside the dock; this offset is only the keyboard /
   // visual viewport gap (bug: a fixed dock was left behind the IME).
-  const vv = window.visualViewport;
-  const visualBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
-  const keyboardGap = hasEditableFocus()
-    ? Math.max(0, window.innerHeight - visualBottom)
-    : 0;
   surface.style.bottom = keyboardGap ? `${keyboardGap}px` : "";
   if (surface !== dock && dock) dock.style.bottom = "";
   if (surface !== appNav && appNav) appNav.style.bottom = "";
@@ -721,8 +755,17 @@ window.addEventListener("resize", syncDockSpace);
 // Re-evaluate the keyboard condition when focus changes without a viewport
 // event. Links/buttons can be focused while the browser still reports a gap;
 // only an active editable control should keep the dock lifted.
+document.addEventListener("pointerdown", (event) => {
+  const active = document.activeElement;
+  if (!active || !hasEditableFocus() || !event.target || !active.contains(event.target)) return;
+  // Tapping the still-focused control can reopen a dismissed keyboard without
+  // firing focusin. Only re-arm from a zero-gap baseline, never from a stale
+  // browser-chrome gap.
+  if (!currentVisualViewportGap()) beginKeyboardGapSession();
+}, { capture: true, passive: true });
 document.addEventListener("focusin", () => {
   resetAppNavScrollState();
+  beginKeyboardGapSession();
   syncDockSpace();
 }, { passive: true });
 document.addEventListener("focusout", () => setTimeout(syncDockSpace, 0), { passive: true });
