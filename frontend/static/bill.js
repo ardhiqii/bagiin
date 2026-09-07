@@ -1027,6 +1027,43 @@ function hasPickedAny(data, pid) {
     list.some(s => s.id === pid));
 }
 
+// Include declared-but-not-yet-joined participants in the finalization
+// warning. `people` is the live roster, while `participants` also contains
+// names the creator typed during bill creation (bug: "Rina belum pilih"
+// disappeared when Rina had not opened the link yet).
+function pendingPickerNamesFor(data) {
+  const payerId = data && data.paid_by_id;
+  const people = data && Array.isArray(data.people) ? data.people : [];
+  const names = [];
+  const seen = new Set();
+  const add = (value) => {
+    const name = String(value == null ? "" : value).trim();
+    const key = normName(name);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    names.push(name);
+  };
+
+  people.forEach(person => {
+    if (person.identity_id === payerId || hasPickedAny(data, person.identity_id)) return;
+    add(person.name);
+  });
+  (Array.isArray(data && data.participants) ? data.participants : []).forEach(participant => {
+    const identityId = participant && typeof participant === "object" ? participant.identity_id : null;
+    const name = participant && typeof participant === "object" ? participant.name : participant;
+    if (identityId) {
+      if (identityId === payerId || hasPickedAny(data, identityId)) return;
+    } else if (people.some(person => person.identity_id === payerId
+      && normName(person.name) === normName(name))) {
+      // The creator's typed participant label can remain unclaimed even
+      // though the payer is already represented in the live roster.
+      return;
+    }
+    add(name);
+  });
+  return names;
+}
+
 // ---------- Pay sheet (confirm items -> mark paid) ----------
 function openPaySheet(data, me, alreadyPaid) {
   // This sheet is the last mile of the whole product: the moment someone
@@ -1267,9 +1304,7 @@ function renderCreatorView(data) {
   // counts as "masuk", so a fully-settled bill showed a half-empty bar).
   const moneyOutstanding = owedByOthers > 0 && !data.settled;
   const payerRow = data.people.find(p => p.identity_id === payerId);
-  const pendingPickerNames = data.people
-    .filter(p => p.identity_id !== payerId && !p.subtotal_idr && !hasPickedAny(data, p.identity_id))
-    .map(p => p.name);
+  const pendingPickerNames = pendingPickerNamesFor(data);
   // The dock follows this same derived state so its copy and the status chip
   // never disagree.
   const allSettled = (data.settled || (data.all_paid && data.uncovered_idr === 0))
@@ -1507,6 +1542,7 @@ function renderCreatorView(data) {
         : soloSoFar
           ? `<button class="btn-primary" id="dock-share-btn">${ic("share")} Bagikan Link</button>`
           : ""}
+      ${data.can_manage && !closed ? `<button class="${soloSoFar ? "btn-outline" : "btn-primary"}" id="close-bill-btn">${ic("check")} Tutup Bill</button>` : ""}
     </div></div>`;
 
   app.innerHTML = `
@@ -1567,6 +1603,8 @@ function renderCreatorView(data) {
   if (methodsBtn) methodsBtn.addEventListener("click", () => openAccountsSheet(data));
   const editBtn = $("#edit-bill-btn");
   if (editBtn) editBtn.addEventListener("click", () => renderEditBill(data));
+  const closeBtn = $("#close-bill-btn");
+  if (closeBtn) closeBtn.addEventListener("click", () => openCloseConfirm(data));
   const reopenBtn = $("#reopen-bill-btn");
   if (reopenBtn) reopenBtn.addEventListener("click", () => openReopenConfirm(data));
   // v60 bill-level settle buttons removed 2026-08-27: status is derived from
@@ -2361,6 +2399,47 @@ function shareBill(billId, title) {
     }
   });
   $("#share-close", s.sheet).addEventListener("click", s.close);
+}
+
+function closeBillWarningBody(data) {
+  const pendingPickerNames = pendingPickerNamesFor(data);
+  const warnings = [];
+  if (pendingPickerNames.length) {
+    warnings.push(`<strong>Belum pilih item:</strong> ${pendingPickerNames.map(name => esc(name)).join(", ")}`);
+  }
+  if ((data.uncovered_slots || []).length) {
+    warnings.push(`<strong>Bagian kosong belum terambil:</strong> ${(data.uncovered_slots || []).map(slot =>
+      `${esc(slot.name)} (${slot.empty} bagian, ${fmt(slot.amount_idr)})`).join(", ")}`);
+  }
+  const unassignedWarnings = (data.warnings || [])
+    .filter(warning => !String(warning).startsWith("Bagian kosong:"))
+    .map(warning => esc(warning).replace(/(\d),(\d{3})/g, "$1.$2").replace(/-&gt;/g, "→"));
+  if (unassignedWarnings.length) {
+    warnings.push(`<strong>Item perlu dicek:</strong> ${unassignedWarnings.join(" · ")}`);
+  }
+  const warningText = warnings.length ? `<br><br>${warnings.join("<br><br>")}` : "";
+  return `Setelah ditutup, pembagian item dikunci dan orang lain tidak bisa mengubah pilihan.${warningText}<br><br><strong>Catatan:</strong> Menutup bill hanya memfinalkan pembagian, bukan menandai pembayaran lunas. Orang yang belum bayar tetap tercatat belum bayar.`;
+}
+
+async function openCloseConfirm(data) {
+  if (!data || !data.bill || data.bill.status !== "open" || !data.can_manage) return;
+  const ok = await confirmSheet({
+    title: "Tutup bill sekarang?",
+    body: closeBillWarningBody(data),
+    confirmText: "Tutup Bill",
+    cancelText: "Batal, Tunggu yang Lain",
+  });
+  if (!ok) return;
+  const closeBtn = $("#close-bill-btn");
+  await withBusy(closeBtn, "Menutup...", async () => {
+    try {
+      await api(`/api/bills/${data.bill.id}/close`, { method: "POST" });
+      // api() invalidates the shared home/recap cache for every successful
+      // mutation before this closed bill is loaded again.
+      toast("Pembagian difinalkan ✓");
+      loadBillView(data.bill.id);
+    } catch (e) { toast(e.message); }
+  });
 }
 
 function openReopenConfirm(data) {

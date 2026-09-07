@@ -466,6 +466,13 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Scroll hide berbasis `translateY(100%)` dihapus supaya navigasi utama tidak hilang tanpa aksi user. Contextual dock, editor/create/OCR, bill detail, onboarding/guest, desktop, safe-area, dan keyboard offset tetap mengikuti aturan masing-masing.
 - Regression browser mencakup geometry fixed pada scroll turun/naik, transisi Home/Settings/Rekap, route yang wajib menyembunyikan nav, responsive matrix, dan zero console error.
 
+### 2026-09-07 (v76), finalisasi bill dari tampilan creator
+
+- Creator atau manager kembali punya tombol "Tutup Bill" hanya saat bill masih open. Setelah berhasil, tampilan dimuat ulang dan tombol berubah menjadi "Buka Bill Lagi".
+- Konfirmasi penutupan menampilkan peserta yang belum memilih, bagian slot yang kosong, dan item yang belum dipilih. Warning tersebut tetap terlihat setelah bill ditutup.
+- Menutup bill hanya memfinalkan alokasi item. Aksi ini tidak menandai pembayaran lunas, sehingga orang yang belum bayar tetap terbaca belum bayar.
+- Regression source-level, API, dan browser mencakup warning pending, slot uncovered, batas akses non-owner, guest read-only, dan zero console error.
+
 ### 2026-09-06 (v71), OCR receipt gratis yang lebih ketat
 
 - Prompt OCR sekarang membedakan harga satuan, jumlah dibeli, potongan, dan total baris. Contoh `2 × Rp35.000 = Rp70.000` ditulis eksplisit supaya harga baris tidak salah dibaca sebagai harga satuan.
