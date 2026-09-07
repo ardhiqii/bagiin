@@ -460,6 +460,12 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Direct link guest ke `#/settings`, `#/recap`, dan `#/create` sekarang dikembalikan ke `#/` sebelum onboarding; public `#/b/<id>` tetap bisa dibuka tanpa identity.
 - Regression backend dan browser route-guard mencakup rejection malformed, valid write setelah rejection, canonical hash, public bill preservation, dan zero console error.
 
+### 2026-09-07 (v75), navigasi mobile tetap fixed saat scroll
+
+- Bottom navigation mobile untuk route Home, Rekap, dan Akun tetap terlihat dan menempel di bawah viewport saat scroll normal, termasuk first load dan setelah pindah route.
+- Scroll hide berbasis `translateY(100%)` dihapus supaya navigasi utama tidak hilang tanpa aksi user. Contextual dock, editor/create/OCR, bill detail, onboarding/guest, desktop, safe-area, dan keyboard offset tetap mengikuti aturan masing-masing.
+- Regression browser mencakup geometry fixed pada scroll turun/naik, transisi Home/Settings/Rekap, route yang wajib menyembunyikan nav, responsive matrix, dan zero console error.
+
 ### 2026-09-06 (v71), OCR receipt gratis yang lebih ketat
 
 - Prompt OCR sekarang membedakan harga satuan, jumlah dibeli, potongan, dan total baris. Contoh `2 × Rp35.000 = Rp70.000` ditulis eksplisit supaya harga baris tidak salah dibaca sebagai harga satuan.
