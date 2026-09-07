@@ -310,14 +310,14 @@ try {
       motionHidden: nav.classList.contains('is-scroll-hidden'),
       transform: style.transform,
       transformY,
-      transitionProperty: style.transitionProperty,
-      transitionDuration: style.transitionDuration,
       position: style.position,
       inlineBottom: nav.style.bottom,
       rectTop: rect.top,
       rectBottom: rect.bottom,
       height: rect.height,
       viewportBottom: window.innerHeight,
+      scrollWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
     };
   })()`);
   const scrollAppNavTo = async (y) => {
@@ -337,60 +337,32 @@ try {
   const topNav = await readAppNavMotion();
   check("mobile app nav starts visible and anchored at the top",
     topNav.visible && !topNav.motionHidden && topNav.transform === "none"
-      && topNav.transitionProperty === "transform"
-      && Math.abs(Number.parseFloat(topNav.transitionDuration) - 0.28) <= 0.01
+      && topNav.position === "fixed" && topNav.height > 0
       && Math.abs(topNav.rectBottom - topNav.viewportBottom) <= 0.5,
     JSON.stringify(topNav));
-  check("mobile app nav motion keeps fixed geometry and transform-only transition",
-    topNav.position === "fixed" && topNav.inlineBottom === "" && topNav.height > 0,
+  check("mobile app nav keeps fixed geometry without horizontal overflow",
+    topNav.position === "fixed"
+      && (topNav.inlineBottom === "" || topNav.inlineBottom === "0px")
+      && topNav.scrollWidth <= topNav.viewportWidth + 0.5,
     JSON.stringify(topNav));
 
-  await scrollAppNavTo(12);
-  const belowHideThreshold = await readAppNavMotion();
-  check("mobile app nav stays visible below the 16px downward threshold",
-    !belowHideThreshold.motionHidden && belowHideThreshold.transform === "none",
-    JSON.stringify(belowHideThreshold));
-  await scrollAppNavTo(28);
-  await sleep(85);
-  const hidingNav = await readAppNavMotion();
-  check("mobile app nav hides after accumulated downward travel",
-    hidingNav.motionHidden && hidingNav.transformY > 0 && hidingNav.transformY < hidingNav.height
-      && Math.abs(hidingNav.height - topNav.height) <= 0.5
-      && hidingNav.position === "fixed" && hidingNav.inlineBottom === "",
-    JSON.stringify(hidingNav));
-  await sleep(300);
-  const hiddenNav = await readAppNavMotion();
-  check("mobile app nav finishes fully hidden below the viewport",
-    hiddenNav.motionHidden && hiddenNav.transformY >= hiddenNav.height - 1
-      && hiddenNav.rectTop >= hiddenNav.viewportBottom - 1
-      && hiddenNav.inlineBottom === "",
-    JSON.stringify(hiddenNav));
-
-  await scrollAppNavTo(24);
-  const belowRevealThreshold = await readAppNavMotion();
-  check("mobile app nav stays hidden below the 8px upward threshold",
-    belowRevealThreshold.motionHidden,
-    JSON.stringify(belowRevealThreshold));
-  await scrollAppNavTo(20);
-  await sleep(85);
-  const revealingNav = await readAppNavMotion();
-  check("mobile app nav reveals after accumulated upward travel",
-    !revealingNav.motionHidden && revealingNav.transformY > 0 && revealingNav.transformY < revealingNav.height
-      && Math.abs(revealingNav.height - topNav.height) <= 0.5
-      && revealingNav.position === "fixed" && revealingNav.inlineBottom === "",
-    JSON.stringify(revealingNav));
-  await sleep(300);
-  const revealedNav = await readAppNavMotion();
-  check("mobile app nav finishes visible and anchored after upward travel",
-    !revealedNav.motionHidden && revealedNav.transformY <= 0.5
-      && Math.abs(revealedNav.rectBottom - revealedNav.viewportBottom) <= 0.5,
-    JSON.stringify(revealedNav));
-  await scrollAppNavTo(0);
-  const topResetNav = await readAppNavMotion();
-  check("mobile app nav always reveals and resets at scroll top",
-    topResetNav.scrollY === 0 && !topResetNav.motionHidden && topResetNav.transform === "none"
-      && Math.abs(topResetNav.rectBottom - topResetNav.viewportBottom) <= 0.5,
-    JSON.stringify(topResetNav));
+  for (const [label, y] of [
+    ["downward scroll below the old hide threshold", 12],
+    ["downward scroll beyond the old hide threshold", 28],
+    ["upward scroll", 20],
+    ["upward return to the top", 0],
+  ]) {
+    await scrollAppNavTo(y);
+    const scrolledNav = await readAppNavMotion();
+    check(`mobile app nav stays visible and viewport-fixed after ${label}`,
+      scrolledNav.visible && !scrolledNav.motionHidden && scrolledNav.transform === "none"
+        && scrolledNav.position === "fixed"
+        && Math.abs(scrolledNav.height - topNav.height) <= 0.5
+        && Math.abs(scrolledNav.rectBottom - scrolledNav.viewportBottom) <= 0.5
+        && (scrolledNav.inlineBottom === "" || scrolledNav.inlineBottom === "0px")
+        && scrolledNav.scrollWidth <= scrolledNav.viewportWidth + 0.5,
+      JSON.stringify(scrolledNav));
+  }
 
   const focusGuard = await evaluate(`(() => {
     const nav = document.querySelector('#app-nav');
@@ -409,6 +381,9 @@ try {
       focused: document.activeElement === probe,
       motionHidden: nav.classList.contains('is-scroll-hidden'),
       transform: style.transform,
+      position: style.position,
+      rectBottom: nav.getBoundingClientRect().bottom,
+      viewportBottom: window.innerHeight,
     };
     probe.blur();
     probe.remove();
@@ -417,7 +392,9 @@ try {
     return result;
   })()`);
   check("focused editable control keeps the mobile app nav visible",
-    focusGuard.focused && !focusGuard.motionHidden && focusGuard.transform === "none",
+    focusGuard.focused && !focusGuard.motionHidden && focusGuard.transform === "none"
+      && focusGuard.position === "fixed"
+      && Math.abs(focusGuard.rectBottom - focusGuard.viewportBottom) <= 0.5,
     JSON.stringify(focusGuard));
   await sleep(120);
   await evaluate("document.querySelector('#e2e-nav-scroll-spacer')?.remove(); window.scrollTo(0, 0)");
@@ -669,17 +646,24 @@ try {
   })()`);
   await sleep(100);
   await evaluate("window.scrollTo(0, 28)");
-  await sleep(350);
-  const hiddenBeforeRoute = await readAppNavMotion();
-  check("mobile app nav is hidden before route-reset coverage",
-    hiddenBeforeRoute.motionHidden,
-    JSON.stringify(hiddenBeforeRoute));
+  await sleep(120);
+  const scrolledBeforeRoute = await readAppNavMotion();
+  check("mobile app nav stays visible before route-change coverage",
+    scrolledBeforeRoute.visible && !scrolledBeforeRoute.motionHidden
+      && scrolledBeforeRoute.transform === "none"
+      && scrolledBeforeRoute.position === "fixed"
+      && Math.abs(scrolledBeforeRoute.rectBottom - scrolledBeforeRoute.viewportBottom) <= 0.5,
+    JSON.stringify(scrolledBeforeRoute));
   await evaluate("document.querySelector('[data-app-nav=\"settings\"]').click()");
-  await sleep(320);
-  check("settings route reveals and resets the mobile app nav",
-    await waitFor("location.hash === '#/settings'")
-      && await waitFor("document.querySelector('[data-app-nav=\"settings\"]')?.getAttribute('aria-current') === 'page'")
-      && await evaluate("(() => { const nav = document.querySelector('#app-nav'); return !nav.hidden && !nav.classList.contains('is-scroll-hidden') && getComputedStyle(nav).transform === 'none'; })()"));
+  await sleep(120);
+  const settingsReady = await waitFor("location.hash === '#/settings'")
+    && await waitFor("document.querySelector('[data-app-nav=\"settings\"]')?.getAttribute('aria-current') === 'page'");
+  const settingsNav = await readAppNavMotion();
+  check("settings route keeps the mobile app nav visible and fixed",
+    settingsReady && settingsNav.visible && !settingsNav.motionHidden
+      && settingsNav.transform === "none" && settingsNav.position === "fixed"
+      && Math.abs(settingsNav.rectBottom - settingsNav.viewportBottom) <= 0.5,
+    JSON.stringify(settingsNav));
   await evaluate("location.hash = '#/create'");
   check("create route hides the app nav without stale motion state",
     await waitFor("location.hash === '#/create'")
@@ -690,15 +674,28 @@ try {
     await waitFor("location.hash.startsWith('#/b/')")
       && await evaluate("(() => { const nav = document.querySelector('#app-nav'); return nav.hidden && !nav.classList.contains('is-scroll-hidden'); })()"));
   await evaluate("location.hash = '#/'");
-  check("rapid contextual-to-home transition restores Bill and visible motion state",
-    await waitFor("location.hash === '#/'")
-      && await waitFor("!!document.querySelector('#create-btn')")
-      && await evaluate("(() => { const nav = document.querySelector('#app-nav'); return nav.hidden === false && !nav.classList.contains('is-scroll-hidden') && getComputedStyle(nav).transform === 'none' && document.querySelector('[data-app-nav=\"bill\"]')?.getAttribute('aria-current') === 'page'; })()"));
+  const homeReady = await waitFor("location.hash === '#/'")
+    && await waitFor("!!document.querySelector('#create-btn')");
+  const homeRouteNav = await readAppNavMotion();
+  const homeActive = await evaluate("document.querySelector('[data-app-nav=\"bill\"]')?.getAttribute('aria-current') === 'page'");
+  check("rapid contextual-to-home transition restores a visible fixed Bill nav",
+    homeReady && homeRouteNav.visible && !homeRouteNav.motionHidden
+      && homeRouteNav.transform === "none" && homeRouteNav.position === "fixed"
+      && Math.abs(homeRouteNav.rectBottom - homeRouteNav.viewportBottom) <= 0.5
+      && homeActive,
+    JSON.stringify(homeRouteNav));
   await evaluate("document.querySelector('#e2e-nav-route-spacer')?.remove(); window.scrollTo(0, 0)");
   await sleep(120);
   await evaluate("document.querySelector('[data-app-nav=\"recap\"]').click()");
-  check("recap cache survives route-only navigation", await waitFor("!!document.querySelector('#recap-title')")
-    && await evaluate("window.__recapFetchCount === 1"));
+  const recapRouteReady = await waitFor("!!document.querySelector('#recap-title')");
+  const recapRouteNav = await readAppNavMotion();
+  check("recap route keeps the mobile app nav visible and fixed",
+    recapRouteReady && recapRouteNav.visible && !recapRouteNav.motionHidden
+      && recapRouteNav.transform === "none" && recapRouteNav.position === "fixed"
+      && Math.abs(recapRouteNav.rectBottom - recapRouteNav.viewportBottom) <= 0.5,
+    JSON.stringify(recapRouteNav));
+  check("recap cache survives route-only navigation",
+    recapRouteReady && await evaluate("window.__recapFetchCount === 1"));
 
   // A successful mutation must invalidate the cached recap before the next
   // render. Reopen/close the allocated bill to keep the seed useful for the
