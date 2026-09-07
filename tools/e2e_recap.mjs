@@ -226,12 +226,15 @@ try {
     return {
       width: window.innerWidth,
       navHidden: !nav || nav.hidden || getComputedStyle(nav).display === 'none',
+      navMotionHidden: !!nav && nav.classList.contains('is-scroll-hidden'),
+      navTransform: nav ? getComputedStyle(nav).transform : 'none',
       recapVisible: visible('#recap-btn'),
       settingsVisible: visible('#settings-btn'),
     };
   })()`);
   check("desktop home keeps Rekap and Akun controls while mobile nav stays hidden",
-    desktopHome.navHidden && desktopHome.recapVisible && desktopHome.settingsVisible,
+    desktopHome.navHidden && !desktopHome.navMotionHidden && desktopHome.navTransform === "none"
+      && desktopHome.recapVisible && desktopHome.settingsVisible,
     JSON.stringify(desktopHome));
   await evaluate("document.querySelector('#recap-btn').click()");
   check("desktop Rekap control reaches recap",
@@ -295,6 +298,130 @@ try {
       && homeNavGeometry.linkHeights.length === 3
       && homeNavGeometry.linkHeights.every(height => height >= 56),
     JSON.stringify(homeNavGeometry));
+
+  const readAppNavMotion = async () => evaluate(`(() => {
+    const nav = document.querySelector('#app-nav');
+    const style = getComputedStyle(nav);
+    const rect = nav.getBoundingClientRect();
+    const transformY = style.transform === 'none' ? 0 : new DOMMatrix(style.transform).m42;
+    return {
+      scrollY: window.scrollY,
+      visible: !nav.hidden && style.display !== 'none',
+      motionHidden: nav.classList.contains('is-scroll-hidden'),
+      transform: style.transform,
+      transformY,
+      transitionProperty: style.transitionProperty,
+      transitionDuration: style.transitionDuration,
+      position: style.position,
+      inlineBottom: nav.style.bottom,
+      rectTop: rect.top,
+      rectBottom: rect.bottom,
+      height: rect.height,
+      viewportBottom: window.innerHeight,
+    };
+  })()`);
+  const scrollAppNavTo = async (y) => {
+    await evaluate(`window.scrollTo(0, ${Number(y)})`);
+    await sleep(60);
+  };
+  await evaluate(`(() => {
+    document.querySelector('#e2e-nav-scroll-spacer')?.remove();
+    const spacer = document.createElement('div');
+    spacer.id = 'e2e-nav-scroll-spacer';
+    spacer.style.cssText = 'height:1400px; width:1px; opacity:0; pointer-events:none;';
+    spacer.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(spacer);
+    window.scrollTo(0, 0);
+  })()`);
+  await sleep(120);
+  const topNav = await readAppNavMotion();
+  check("mobile app nav starts visible and anchored at the top",
+    topNav.visible && !topNav.motionHidden && topNav.transform === "none"
+      && topNav.transitionProperty === "transform"
+      && Math.abs(Number.parseFloat(topNav.transitionDuration) - 0.28) <= 0.01
+      && Math.abs(topNav.rectBottom - topNav.viewportBottom) <= 0.5,
+    JSON.stringify(topNav));
+  check("mobile app nav motion keeps fixed geometry and transform-only transition",
+    topNav.position === "fixed" && topNav.inlineBottom === "" && topNav.height > 0,
+    JSON.stringify(topNav));
+
+  await scrollAppNavTo(12);
+  const belowHideThreshold = await readAppNavMotion();
+  check("mobile app nav stays visible below the 16px downward threshold",
+    !belowHideThreshold.motionHidden && belowHideThreshold.transform === "none",
+    JSON.stringify(belowHideThreshold));
+  await scrollAppNavTo(28);
+  await sleep(85);
+  const hidingNav = await readAppNavMotion();
+  check("mobile app nav hides after accumulated downward travel",
+    hidingNav.motionHidden && hidingNav.transformY > 0 && hidingNav.transformY < hidingNav.height
+      && Math.abs(hidingNav.height - topNav.height) <= 0.5
+      && hidingNav.position === "fixed" && hidingNav.inlineBottom === "",
+    JSON.stringify(hidingNav));
+  await sleep(300);
+  const hiddenNav = await readAppNavMotion();
+  check("mobile app nav finishes fully hidden below the viewport",
+    hiddenNav.motionHidden && hiddenNav.transformY >= hiddenNav.height - 1
+      && hiddenNav.rectTop >= hiddenNav.viewportBottom - 1
+      && hiddenNav.inlineBottom === "",
+    JSON.stringify(hiddenNav));
+
+  await scrollAppNavTo(24);
+  const belowRevealThreshold = await readAppNavMotion();
+  check("mobile app nav stays hidden below the 8px upward threshold",
+    belowRevealThreshold.motionHidden,
+    JSON.stringify(belowRevealThreshold));
+  await scrollAppNavTo(20);
+  await sleep(85);
+  const revealingNav = await readAppNavMotion();
+  check("mobile app nav reveals after accumulated upward travel",
+    !revealingNav.motionHidden && revealingNav.transformY > 0 && revealingNav.transformY < revealingNav.height
+      && Math.abs(revealingNav.height - topNav.height) <= 0.5
+      && revealingNav.position === "fixed" && revealingNav.inlineBottom === "",
+    JSON.stringify(revealingNav));
+  await sleep(300);
+  const revealedNav = await readAppNavMotion();
+  check("mobile app nav finishes visible and anchored after upward travel",
+    !revealedNav.motionHidden && revealedNav.transformY <= 0.5
+      && Math.abs(revealedNav.rectBottom - revealedNav.viewportBottom) <= 0.5,
+    JSON.stringify(revealedNav));
+  await scrollAppNavTo(0);
+  const topResetNav = await readAppNavMotion();
+  check("mobile app nav always reveals and resets at scroll top",
+    topResetNav.scrollY === 0 && !topResetNav.motionHidden && topResetNav.transform === "none"
+      && Math.abs(topResetNav.rectBottom - topResetNav.viewportBottom) <= 0.5,
+    JSON.stringify(topResetNav));
+
+  const focusGuard = await evaluate(`(() => {
+    const nav = document.querySelector('#app-nav');
+    const probe = document.createElement('input');
+    probe.type = 'text';
+    probe.id = 'e2e-nav-focus-probe';
+    probe.setAttribute('aria-label', 'E2E nav focus probe');
+    probe.style.cssText = 'position:fixed;left:-1000px;top:0;width:1px;height:1px;opacity:0';
+    document.body.appendChild(probe);
+    window.scrollTo(0, 0);
+    probe.focus();
+    window.scrollTo(0, 80);
+    window.dispatchEvent(new Event('scroll'));
+    const style = getComputedStyle(nav);
+    const result = {
+      focused: document.activeElement === probe,
+      motionHidden: nav.classList.contains('is-scroll-hidden'),
+      transform: style.transform,
+    };
+    probe.blur();
+    probe.remove();
+    window.scrollTo(0, 0);
+    window.dispatchEvent(new Event('scroll'));
+    return result;
+  })()`);
+  check("focused editable control keeps the mobile app nav visible",
+    focusGuard.focused && !focusGuard.motionHidden && focusGuard.transform === "none",
+    JSON.stringify(focusGuard));
+  await sleep(120);
+  await evaluate("document.querySelector('#e2e-nav-scroll-spacer')?.remove(); window.scrollTo(0, 0)");
+  await sleep(120);
 
   const simulateVisualViewportGap = async (gap, editable) => evaluate(`(() => {
     const nav = document.querySelector('#app-nav');
@@ -362,9 +489,9 @@ try {
       inlineBottom: nav.style.bottom,
     };
   })()`);
-  check("mobile normal scroll keeps app nav fixed without horizontal overflow",
+  check("mobile normal scroll keeps app nav out of content without horizontal overflow",
     normalScrollGeometry.scrollWidth <= normalScrollGeometry.viewport + 0.5
-      && Math.abs(normalScrollGeometry.navBottom - normalScrollGeometry.viewportBottom) <= 0.5
+      && normalScrollGeometry.navBottom >= normalScrollGeometry.viewportBottom - 0.5
       && (normalScrollGeometry.inlineBottom === "" || normalScrollGeometry.inlineBottom === "0px")
       && pageErrors.length === pageErrorsBeforeNormalScroll,
     JSON.stringify({ ...normalScrollGeometry, pageErrors: pageErrors.length - pageErrorsBeforeNormalScroll }));
@@ -478,21 +605,45 @@ try {
 
   // App-level routes keep the nav, while contextual bill/create surfaces hide
   // it immediately even if their async renderer has not finished yet.
+  await evaluate(`(() => {
+    const old = document.querySelector('#e2e-nav-route-spacer');
+    old?.remove();
+    const spacer = document.createElement('div');
+    spacer.id = 'e2e-nav-route-spacer';
+    spacer.style.cssText = 'height:900px; width:1px; opacity:0; pointer-events:none;';
+    spacer.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(spacer);
+    window.scrollTo(0, 0);
+  })()`);
+  await sleep(100);
+  await evaluate("window.scrollTo(0, 28)");
+  await sleep(350);
+  const hiddenBeforeRoute = await readAppNavMotion();
+  check("mobile app nav is hidden before route-reset coverage",
+    hiddenBeforeRoute.motionHidden,
+    JSON.stringify(hiddenBeforeRoute));
   await evaluate("document.querySelector('[data-app-nav=\"settings\"]').click()");
-  check("settings route activates Akun", await waitFor("location.hash === '#/settings'")
-    && await waitFor("document.querySelector('[data-app-nav=\"settings\"]')?.getAttribute('aria-current') === 'page'")
-    && await evaluate("!document.querySelector('#app-nav').hidden"));
+  await sleep(320);
+  check("settings route reveals and resets the mobile app nav",
+    await waitFor("location.hash === '#/settings'")
+      && await waitFor("document.querySelector('[data-app-nav=\"settings\"]')?.getAttribute('aria-current') === 'page'")
+      && await evaluate("(() => { const nav = document.querySelector('#app-nav'); return !nav.hidden && !nav.classList.contains('is-scroll-hidden') && getComputedStyle(nav).transform === 'none'; })()"));
   await evaluate("location.hash = '#/create'");
-  check("create route hides the app nav", await waitFor("location.hash === '#/create'")
-    && await waitFor("!!document.querySelector('#dz')")
-    && await evaluate("document.querySelector('#app-nav').hidden"));
+  check("create route hides the app nav without stale motion state",
+    await waitFor("location.hash === '#/create'")
+      && await waitFor("!!document.querySelector('#dz')")
+      && await evaluate("(() => { const nav = document.querySelector('#app-nav'); return nav.hidden && !nav.classList.contains('is-scroll-hidden'); })()"));
   await evaluate(`location.hash = ${JSON.stringify(`#/b/${finalBill.id}`)}`);
-  check("bill detail hides the app nav during async load", await waitFor("location.hash.startsWith('#/b/')")
-    && await evaluate("document.querySelector('#app-nav').hidden"));
+  check("bill detail hides the app nav during async load without stale motion state",
+    await waitFor("location.hash.startsWith('#/b/')")
+      && await evaluate("(() => { const nav = document.querySelector('#app-nav'); return nav.hidden && !nav.classList.contains('is-scroll-hidden'); })()"));
   await evaluate("location.hash = '#/'");
-  check("rapid contextual-to-home transition restores Bill", await waitFor("location.hash === '#/'")
-    && await waitFor("!!document.querySelector('#create-btn')")
-    && await evaluate("document.querySelector('[data-app-nav=\"bill\"]')?.getAttribute('aria-current') === 'page'"));
+  check("rapid contextual-to-home transition restores Bill and visible motion state",
+    await waitFor("location.hash === '#/'")
+      && await waitFor("!!document.querySelector('#create-btn')")
+      && await evaluate("(() => { const nav = document.querySelector('#app-nav'); return nav.hidden === false && !nav.classList.contains('is-scroll-hidden') && getComputedStyle(nav).transform === 'none' && document.querySelector('[data-app-nav=\"bill\"]')?.getAttribute('aria-current') === 'page'; })()"));
+  await evaluate("document.querySelector('#e2e-nav-route-spacer')?.remove(); window.scrollTo(0, 0)");
+  await sleep(120);
   await evaluate("document.querySelector('[data-app-nav=\"recap\"]').click()");
   check("recap cache survives route-only navigation", await waitFor("!!document.querySelector('#recap-title')")
     && await evaluate("window.__recapFetchCount === 1"));
