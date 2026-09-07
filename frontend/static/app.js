@@ -175,6 +175,11 @@ let appNavRoute = null;
 let appNavBadgeTimer = null;
 let appNavBadgeIdentity = null;
 let appNavBadgeExpiresAt = 0;
+const APP_NAV_HIDE_THRESHOLD = 16;
+const APP_NAV_REVEAL_THRESHOLD = 8;
+let appNavScrollY = 0;
+let appNavScrollDirection = 0;
+let appNavScrollDistance = 0;
 
 function initAppNav() {
   const nav = $("#app-nav");
@@ -244,12 +249,55 @@ function updateAppNavBadge(data) {
   }, DERIVED_CACHE_TTL_MS + 25);
 }
 
+function resetAppNavScrollState() {
+  appNavScrollY = Math.max(0, window.scrollY || 0);
+  appNavScrollDirection = 0;
+  appNavScrollDistance = 0;
+  const nav = $("#app-nav");
+  if (nav) nav.classList.remove("is-scroll-hidden");
+}
+
+function updateAppNavScrollState() {
+  const nav = initAppNav();
+  if (!nav || nav.hidden || window.matchMedia("(min-width:1040px)").matches) {
+    resetAppNavScrollState();
+    return;
+  }
+  const active = document.activeElement;
+  if (hasEditableFocus() || (active && nav.contains(active))) {
+    resetAppNavScrollState();
+    return;
+  }
+  const currentY = Math.max(0, window.scrollY || 0);
+  if (currentY <= 0) {
+    resetAppNavScrollState();
+    return;
+  }
+  const delta = currentY - appNavScrollY;
+  appNavScrollY = currentY;
+  if (!delta) return;
+  const direction = delta > 0 ? 1 : -1;
+  if (direction !== appNavScrollDirection) {
+    appNavScrollDirection = direction;
+    appNavScrollDistance = 0;
+  }
+  appNavScrollDistance += Math.abs(delta);
+  if (direction > 0 && appNavScrollDistance >= APP_NAV_HIDE_THRESHOLD) {
+    appNavScrollDistance = 0;
+    nav.classList.add("is-scroll-hidden");
+  } else if (direction < 0 && appNavScrollDistance >= APP_NAV_REVEAL_THRESHOLD) {
+    appNavScrollDistance = 0;
+    nav.classList.remove("is-scroll-hidden");
+  }
+}
+
 function syncAppNav() {
   const nav = initAppNav();
   if (!nav) return false;
   const onDesktop = window.matchMedia("(min-width:1040px)").matches;
   const hasContextualDock = !!$("#app .dock, #app .sticky-bar");
   const eligible = !!(state.identity && appNavRoute && !onDesktop && !hasContextualDock);
+  if (!eligible) resetAppNavScrollState();
   nav.hidden = !eligible;
   nav.setAttribute("aria-hidden", eligible ? "false" : "true");
   APP_NAV_ITEMS.forEach(item => {
@@ -264,7 +312,9 @@ function syncAppNav() {
 }
 
 function setAppNavRoute(route) {
-  appNavRoute = APP_NAV_ITEMS.some(item => item.key === route) ? route : null;
+  const nextRoute = APP_NAV_ITEMS.some(item => item.key === route) ? route : null;
+  if (nextRoute !== appNavRoute) resetAppNavScrollState();
+  appNavRoute = nextRoute;
   syncDockSpace();
 }
 
@@ -671,7 +721,10 @@ window.addEventListener("resize", syncDockSpace);
 // Re-evaluate the keyboard condition when focus changes without a viewport
 // event. Links/buttons can be focused while the browser still reports a gap;
 // only an active editable control should keep the dock lifted.
-document.addEventListener("focusin", syncDockSpace, { passive: true });
+document.addEventListener("focusin", () => {
+  resetAppNavScrollState();
+  syncDockSpace();
+}, { passive: true });
 document.addEventListener("focusout", () => setTimeout(syncDockSpace, 0), { passive: true });
 // window.resize is not guaranteed when a mobile IME changes only the visual
 // viewport. These listeners are harmless on desktop and keep the binding
@@ -685,6 +738,7 @@ if (window.visualViewport) {
 window.addEventListener("scroll", () => {
   const bar = $(".topbar");
   if (bar) bar.classList.toggle("scrolled", window.scrollY > 4);
+  updateAppNavScrollState();
 }, { passive: true });
 
 // ---------- skeletons ----------
