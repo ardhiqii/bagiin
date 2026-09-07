@@ -487,6 +487,12 @@ try {
     await evaluate("invalidateDerivedData(); renderRecap()");
   check("empty response shows an honest empty account state", await waitFor("document.body.textContent.includes('Rekap akan terisi')")
     && await evaluate("!document.querySelector('.recap-person-card') && !document.querySelector('.app-nav-badge')"));
+  const emptyProvisional = await evaluate(`(() => ({
+    section: !!document.querySelector('.recap-provisional'),
+    heading: document.body.textContent.includes('Perkiraan, belum final'),
+  }))()`);
+  check("empty provisional payload hides the provisional section",
+    !emptyProvisional.section && !emptyProvisional.heading, JSON.stringify(emptyProvisional));
   });
   await evaluate("invalidateDerivedData(); renderRecap()");
   await waitFor("!!document.querySelector('#recap-title')");

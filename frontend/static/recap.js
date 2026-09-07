@@ -312,6 +312,7 @@ function recapProvisionalHtml(data) {
   const provisional = data.provisional || {};
   const bills = Array.isArray(provisional.bills) ? provisional.bills : [];
   const count = recapNumber(provisional.bill_count) || bills.length;
+  if (!count) return "";
   return `
     <section class="card recap-provisional" aria-labelledby="recap-provisional-title">
       <div class="recap-section-heading">
