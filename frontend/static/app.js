@@ -910,6 +910,16 @@ function render() {
   sheetDepth = 0;
   document.body.style.overflow = "";
   app.classList.remove("settings-page");
+  // Private screens have no guest representation. Canonicalize before
+  // onboarding so a direct deep link cannot leave the address bar claiming
+  // that a guest is on a screen they cannot access (bug: unauthenticated
+  // settings/create/recap links rendered onboarding but kept the private hash,
+  // making refresh and Back behavior misleading). Public bill links return
+  // above and must stay shareable without an identity.
+  if (!state.identity && (parts[0] === "settings" || parts[0] === "recap" || parts[0] === "create")) {
+    history.replaceState(null, "", "#/");
+    return render();
+  }
   if (!state.identity) { renderOnboarding(); addOnboardingSteps(); return; }
   // History uses the same list data, but keeps its URL and heading honest.
   if (parts[0] === "settings") {
