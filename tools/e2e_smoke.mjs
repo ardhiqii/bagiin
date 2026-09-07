@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Browser smoke test for the guest picker — the one flow where a wrong number
- * costs someone real money.
+ * Browser smoke test for the guest picker and creator finalization — the flows
+ * where a wrong number or an unlocked allocation costs someone real money.
  *
  * It seeds a bill through the API, drives the real UI in Chrome, and asserts
  * that the total the guest is shown equals the total the server computes for
@@ -47,6 +47,8 @@ async function call(method, path, body, ident) {
 const stamp = Date.now().toString(36);
 const host = await call("POST", "/api/identities", { name: "Host" + stamp, creator: true });
 const guest = await call("POST", "/api/identities", { name: "Tamu" + stamp });
+const pendingGuest = await call("POST", "/api/identities", { name: "Pending" + stamp });
+const declaredPendingName = "Belum" + stamp;
 
 // two free items and one 4-slot item, plus tax and service, so the guest's
 // share exercises the proportional tax path AND the uncovered-slot path
@@ -58,9 +60,10 @@ const items = [
 const subtotal = 190000, tax = 20900, service = 9500;
 const bill = await call("POST", "/api/bills", {
   title: "E2E " + stamp, items, subtotal, tax, service,
-  total: subtotal + tax + service,
+  total: subtotal + tax + service, participants: [pendingGuest.name, declaredPendingName],
 }, host);
 await call("POST", `/api/bills/${bill.id}/join`, {}, guest);
+await call("POST", `/api/bills/${bill.id}/join`, {}, pendingGuest);
 
 // ---------- drive the browser ----------
 const tab = await (await fetch(`${CDP}/json/new?about:blank`, { method: "PUT" })).json();
@@ -74,6 +77,8 @@ ws.addEventListener("message", (e) => {
   } else if (m.method === "Runtime.exceptionThrown") {
     pageErrors.push(m.params?.exceptionDetails?.exception?.description
                  || m.params?.exceptionDetails?.text);
+  } else if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") {
+    pageErrors.push(m.params.args?.map(arg => arg.value || arg.description).join(" ") || "console.error");
   }
 });
 const send = (method, params = {}) => new Promise((resolve, reject) => {
@@ -115,6 +120,13 @@ try {
   const start = await picker();
   check("bill screen renders every item", start.rows === items.length, `${start.rows} rows`);
   check("guest starts with nothing picked", start.selected === 0);
+  const guestOpenActions = await evaluate(`({
+    close: !!document.querySelector("#close-bill-btn"),
+    reopen: !!document.querySelector("#reopen-bill-btn"),
+  })`);
+  check("non-owner cannot see the creator finalization action while open",
+        !guestOpenActions.close && !guestOpenActions.reopen,
+        JSON.stringify(guestOpenActions));
 
   // pick a free item, then take one slot of the shared pot
   await evaluate(`[...document.querySelectorAll('#pick-items .item-row')][0].click()`);
@@ -145,6 +157,69 @@ try {
         `selected=${reloaded.selected}`);
   check("total is stable across a reload", reloaded.total === afterFree.total,
         `${afterFree.total} -> ${reloaded.total}`);
+
+  // The creator must be able to finalize an open allocation without turning
+  // that action into a payment settlement. Leave one guest pending and one
+  // slot uncovered so the confirmation and the closed view must keep both
+  // warnings visible.
+  await evaluate(`localStorage.setItem("bagiin_identity", ${JSON.stringify(JSON.stringify(host))})`);
+  await openBill();
+  const creatorOpen = await evaluate(`(() => ({
+    close: !!document.querySelector("#close-bill-btn"),
+    reopen: !!document.querySelector("#reopen-bill-btn"),
+    pending: document.body.textContent.includes(${JSON.stringify(pendingGuest.name)})
+      && document.body.textContent.includes(${JSON.stringify(declaredPendingName)}),
+    uncovered: document.body.textContent.includes("Bagian kosong belum terambil"),
+    itemWarning: document.body.textContent.includes("Ayam Bakar")
+      && document.body.textContent.includes("otomatis dibebankan"),
+    closeHeight: document.querySelector("#close-bill-btn")?.getBoundingClientRect().height || 0,
+  }))()`);
+  check("creator sees finalization only while bill is open",
+        creatorOpen.close && !creatorOpen.reopen && creatorOpen.pending
+          && creatorOpen.uncovered && creatorOpen.itemWarning && creatorOpen.closeHeight >= 44,
+        JSON.stringify(creatorOpen));
+
+  await evaluate("document.querySelector('#close-bill-btn').click()");
+  await sleep(180);
+  const confirm = await evaluate(`(() => ({
+    open: !!document.querySelector(".sheet-overlay"),
+    text: document.querySelector(".sheet-overlay")?.textContent || "",
+  }))()`);
+  check("finalization asks for confirmation with unresolved warnings",
+        confirm.open
+          && confirm.text.includes("Tutup bill sekarang?")
+          && confirm.text.includes(pendingGuest.name)
+          && confirm.text.includes(declaredPendingName)
+          && confirm.text.includes("Bagian kosong belum terambil")
+          && confirm.text.includes("Item perlu dicek")
+          && confirm.text.includes("bukan menandai pembayaran lunas"),
+        JSON.stringify(confirm));
+
+  await evaluate("document.querySelector('.sheet-overlay [data-act=\"ok\"]').click()");
+  await sleep(1400);
+  const creatorClosed = await evaluate(`(() => ({
+    close: !!document.querySelector("#close-bill-btn"),
+    reopen: !!document.querySelector("#reopen-bill-btn"),
+    pending: document.body.textContent.includes(${JSON.stringify(pendingGuest.name)})
+      && document.body.textContent.includes(${JSON.stringify(declaredPendingName)}),
+    uncovered: document.body.textContent.includes("Bagian kosong belum terambil"),
+  }))()`);
+  const closedData = await call("GET", `/api/bills/${bill.id}`, undefined, host);
+  check("creator reloads into closed allocation with warnings intact",
+        !creatorClosed.close && creatorClosed.reopen && creatorClosed.pending && creatorClosed.uncovered
+          && closedData.bill.status === "closed" && closedData.settled === false,
+        JSON.stringify({ ui: creatorClosed, api: { status: closedData.bill.status, settled: closedData.settled } }));
+
+  await evaluate(`localStorage.setItem("bagiin_identity", ${JSON.stringify(JSON.stringify(guest))})`);
+  await openBill();
+  const guestClosed = await evaluate(`(() => ({
+    close: !!document.querySelector("#close-bill-btn"),
+    reopen: !!document.querySelector("#reopen-bill-btn"),
+    readOnly: document.body.textContent.includes("Bill ini sudah ditutup"),
+  }))()`);
+  check("guest stays read-only after creator finalizes",
+        !guestClosed.close && !guestClosed.reopen && guestClosed.readOnly,
+        JSON.stringify(guestClosed));
 
   check("no uncaught page errors", pageErrors.length === 0, [...new Set(pageErrors)].join(" | "));
 } finally {
