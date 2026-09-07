@@ -453,6 +453,13 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - `waiting_other` tidak lagi dianggap kosong atau aman ketika masih ada orang yang belum memilih, belum membayar, atau belum menerima undangan. Nominal provisional tetap dipisahkan dari saldo final.
 - Regression dan browser smoke mencakup pending selection plus pending payment, cache hit, invalidation setelah mutasi, auth/privacy, alias lokal, tema gelap, serta viewport HP dan desktop.
 
+### 2026-09-07 (v74), audit input malformed dan route private guest
+
+- Create/update bill menormalisasi nama dan mode item melalui satu validator, memvalidasi id item sebelum operasi set atau integer, serta membatasi `participant_count` supaya input ekstrem menjadi HTTP 400, bukan HTTP 500 atau overflow SQLite.
+- Validator angka sekarang menolak boolean, pecahan, NaN, Infinity, dan overflow dengan HTTP 400; integer serta string-integer yang kompatibel tetap diterima.
+- Direct link guest ke `#/settings`, `#/recap`, dan `#/create` sekarang dikembalikan ke `#/` sebelum onboarding; public `#/b/<id>` tetap bisa dibuka tanpa identity.
+- Regression backend dan browser route-guard mencakup rejection malformed, valid write setelah rejection, canonical hash, public bill preservation, dan zero console error.
+
 ### 2026-09-06 (v71), OCR receipt gratis yang lebih ketat
 
 - Prompt OCR sekarang membedakan harga satuan, jumlah dibeli, potongan, dan total baris. Contoh `2 × Rp35.000 = Rp70.000` ditulis eksplisit supaya harga baris tidak salah dibaca sebagai harga satuan.

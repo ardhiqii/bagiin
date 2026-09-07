@@ -7,6 +7,7 @@ import secrets
 import time
 import hashlib
 import logging
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -183,9 +184,14 @@ def _to_int(value, field: str, default=None, *, minv=None, maxv=None):
         if default is not None:
             return default
         raise HTTPException(400, f"{field} wajib angka")
+    if isinstance(value, bool):
+        raise HTTPException(400, f"{field} wajib angka")
+    if isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            raise HTTPException(400, f"{field} wajib bilangan bulat")
     try:
         n = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise HTTPException(400, f"{field} wajib angka")
     if minv is not None and n < minv:
         raise HTTPException(400, f"{field} minimal {minv}")
@@ -220,6 +226,7 @@ _MAX_IDR = 10**12  # a trillion rupiah -- comfortably above any real bill,
 # `OverflowError: Python int too large to convert to SQLite INTEGER` -> 500
 # (bug: v66 audit, a 20-digit price in a create/update payload).
 
+_MAX_PARTICIPANT_COUNT = 10_000  # generous for a shared bill, but not unbounded
 _MAX_ITEM_QUANTITY = 99
 _MISSING = object()
 
@@ -237,6 +244,47 @@ def _item_quantity(value, field: str) -> int:
     if value > _MAX_ITEM_QUANTITY:
         raise HTTPException(400, f"{field} maksimal {_MAX_ITEM_QUANTITY}")
     return value
+
+
+def _item_id(value):
+    """Normalize an optional persisted item id before set/int operations."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise HTTPException(400, "ID item wajib angka")
+    return _to_int(value, "ID item", minv=1, maxv=_MAX_IDR)
+
+
+def _normalize_item(raw, *, include_id: bool = False) -> dict:
+    """Validate one bill item and return the canonical DB payload."""
+    if not isinstance(raw, dict):
+        raise HTTPException(400, "Item harus berupa objek")
+    name = _to_str(raw.get("name"), "Nama item", maxlen=120)
+    if not name:
+        raise HTTPException(400, "Nama item wajib diisi")
+    price = _to_int(raw.get("price"), f"Harga {name}", minv=0, maxv=_MAX_IDR)
+    discount = _to_int(raw.get("discount"), f"Diskon {name}", 0, minv=0, maxv=_MAX_IDR)
+    if discount > price:
+        raise HTTPException(400, f"Diskon {name} tidak boleh lebih besar dari harga")
+    mode = _to_str(raw.get("mode", "free"), f"Mode {name}", maxlen=10).lower()
+    if mode not in {"free", "slot"}:
+        raise HTTPException(400, f"Mode {name} harus free atau slot")
+    slot_count = (
+        _to_int(raw.get("slot_count"), f"Slot {name}", 1, minv=1, maxv=_MAX_IDR)
+        if mode == "slot" else None
+    )
+    item = {
+        "name": name,
+        "price": price,
+        "mode": mode,
+        "slot_count": slot_count,
+        "discount": discount,
+        "quantity": _item_quantity(raw.get("quantity", _MISSING), f"Jumlah {name}"),
+    }
+    if include_id:
+        item["id"] = _item_id(raw.get("id"))
+    return item
+
 
 _ALLOWED_PHOTO_MIME = {"image/jpeg", "image/png", "image/webp"}
 
@@ -1363,19 +1411,15 @@ async def create_bill(request: Request):
     items = data.get("items") or []
     if not isinstance(items, list) or not items:
         raise HTTPException(400, "Minimal 1 item")
+    normalized_items = []
     eff_sum = 0
-    for i in items:
-        if not isinstance(i, dict) or not _to_str(i.get("name"), "Nama item", maxlen=120):
-            raise HTTPException(400, "Nama item wajib diisi")
-        price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0, maxv=_MAX_IDR)
-        discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0, maxv=_MAX_IDR)
-        quantity = _item_quantity(i.get("quantity", _MISSING), f"Jumlah {i.get('name')}")
-        if discount > price:
-            raise HTTPException(400, f"Diskon {i['name']} tidak boleh lebih besar dari harga")
-        line_total = (price - discount) * quantity
+    for raw in items:
+        item = _normalize_item(raw)
+        line_total = (item["price"] - item["discount"]) * item["quantity"]
         if line_total > _MAX_IDR or eff_sum > _MAX_IDR - line_total:
             raise HTTPException(400, "Subtotal terlalu besar")
         eff_sum += line_total
+        normalized_items.append(item)
     participants = []
     seen_participants = set()
     for p in (data.get("participants") or []):
@@ -1385,7 +1429,7 @@ async def create_bill(request: Request):
                 seen_participants.add(key)
                 participants.append(p.strip())
     pc = data.get("participant_count")
-    participant_count = _to_int(pc, "Jumlah orang", minv=0) if pc not in (None, "") else None
+    participant_count = _to_int(pc, "Jumlah orang", minv=0, maxv=_MAX_PARTICIPANT_COUNT) if pc not in (None, "") else None
     paid_by_name = _to_str(data.get("paid_by_name"), "Nama pembayar", maxlen=60) or None
     subtotal = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0, maxv=_MAX_IDR)
     tax = _to_int(data.get("tax"), "Pajak", 0, minv=0, maxv=_MAX_IDR)
@@ -1444,14 +1488,7 @@ async def create_bill(request: Request):
         tax=tax,
         service=service,
         total=total,
-        items=[{
-            "name": i["name"],
-            "price": _to_int(i["price"], f"Harga {i['name']}", minv=0, maxv=_MAX_IDR),
-            "mode": i.get("mode", "free"),
-            "slot_count": _to_int(i.get("slot_count"), f"Slot {i['name']}", 1, minv=1) if i.get("mode") == "slot" else None,
-            "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0, maxv=_MAX_IDR),
-            "quantity": _item_quantity(i.get("quantity", _MISSING), f"Jumlah {i['name']}"),
-        } for i in items],
+        items=normalized_items,
         participants=participants,
         photo_path=photo_path,
         photos=photos,
@@ -1479,26 +1516,22 @@ async def update_bill(bill_id: str, request: Request):
     items = data.get("items") or []
     if not isinstance(items, list) or not items:
         raise HTTPException(400, "Minimal 1 item")
+    normalized_items = []
     eff_sum = 0
-    for i in items:
-        if not isinstance(i, dict) or not str(i.get("name") or "").strip():
-            raise HTTPException(400, "Nama item wajib diisi")
-        price = _to_int(i.get("price"), f"Harga {i.get('name')}", minv=0, maxv=_MAX_IDR)
-        discount = _to_int(i.get("discount"), f"Diskon {i.get('name')}", 0, minv=0, maxv=_MAX_IDR)
-        quantity = _item_quantity(i.get("quantity", _MISSING), f"Jumlah {i.get('name')}")
-        if discount > price:
-            raise HTTPException(400, f"Diskon {i['name']} tidak boleh lebih besar dari harga")
-        line_total = (price - discount) * quantity
+    for raw in items:
+        item = _normalize_item(raw, include_id=True)
+        line_total = (item["price"] - item["discount"]) * item["quantity"]
         if line_total > _MAX_IDR or eff_sum > _MAX_IDR - line_total:
             raise HTTPException(400, "Subtotal terlalu besar")
         eff_sum += line_total
+        normalized_items.append(item)
     # the same item id twice would be validated twice but stored once, leaving
     # bill.total_idr permanently larger than the sum of its items (bug: 100k
     # charged to nobody, total_ok false, and no screen surfaces it)
     seen_ids = set()
-    for i in items:
-        iid = i.get("id")
-        if iid in (None, ""):
+    for item in normalized_items:
+        iid = item["id"]
+        if iid is None:
             continue
         if iid in seen_ids:
             raise HTTPException(400, "Ada item dobel di daftar")
@@ -1509,23 +1542,18 @@ async def update_bill(bill_id: str, request: Request):
     taken_by_item: dict[int, int] = {}
     for s in bill_data["selections"]:
         taken_by_item[s["item_id"]] = taken_by_item.get(s["item_id"], 0) + int(s.get("qty", 1))
-    for it in items:
-        iid = it.get("id")
-        mode = it.get("mode", "free")
-        if not iid:
+    for item in normalized_items:
+        iid = item["id"]
+        if iid is None:
             continue
-        cur = cur_items.get(int(iid))
+        cur = cur_items.get(iid)
         if not cur:
             continue
-        if mode == "slot":
-            sc = it.get("slot_count")
-            try:
-                sc = max(1, int(sc or 1))
-            except (TypeError, ValueError):
-                sc = 1
-            taken = taken_by_item.get(int(iid), 0)
+        if item["mode"] == "slot":
+            sc = item["slot_count"]
+            taken = taken_by_item.get(iid, 0)
             if sc < taken:
-                raise HTTPException(400, f"Slot {it['name']} minimal {taken} (sudah terisi {taken})")
+                raise HTTPException(400, f"Slot {item['name']} minimal {taken} (sudah terisi {taken})")
         # Switching slot -> free is clamped by db.update_bill, after every
         # endpoint validation has passed. Do not mutate selections here: an
         # invalid subtotal/total below must leave the existing bill intact.
@@ -1545,7 +1573,7 @@ async def update_bill(bill_id: str, request: Request):
     participant_count = db.UNCHANGED
     if "participant_count" in data:
         pc = data.get("participant_count")
-        participant_count = _to_int(pc, "Jumlah orang", minv=0) if pc not in (None, "") else None
+        participant_count = _to_int(pc, "Jumlah orang", minv=0, maxv=_MAX_PARTICIPANT_COUNT) if pc not in (None, "") else None
     # absent keys mean "leave as is", same reasoning as participants above --
     # merchant/transacted_at used to become NULL unconditionally, and
     # transacted_at drives the history list's ordering and its year/month
@@ -1576,15 +1604,7 @@ async def update_bill(bill_id: str, request: Request):
         transacted_at=transacted_at,
         participants=participants,
         participant_count=participant_count,
-        items=[{
-            "id": i.get("id"),
-            "name": i["name"],
-            "price": _to_int(i["price"], f"Harga {i['name']}", minv=0, maxv=_MAX_IDR),
-            "mode": i.get("mode", "free"),
-            "slot_count": _to_int(i.get("slot_count"), f"Slot {i['name']}", 1, minv=1) if i.get("mode") == "slot" else None,
-            "discount": _to_int(i.get("discount"), f"Diskon {i['name']}", 0, minv=0, maxv=_MAX_IDR),
-            "quantity": _item_quantity(i.get("quantity", _MISSING), f"Jumlah {i['name']}"),
-        } for i in items],
+        items=normalized_items,
         subtotal=subtotal_v,
         tax=tax_v,
         service=service_v,
