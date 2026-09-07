@@ -466,6 +466,58 @@ try {
       && Math.abs(focusedViewport.rectBottom - (focusedViewport.viewportBottom - 144)) <= 0.5,
     JSON.stringify(focusedViewport));
 
+  const keyboardSession = await evaluate(`(() => {
+    const nav = document.querySelector('#app-nav');
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'visualViewport');
+    const probe = document.createElement('input');
+    probe.type = 'text';
+    probe.id = 'e2e-keyboard-session-probe';
+    probe.setAttribute('aria-label', 'E2E keyboard session probe');
+    probe.style.cssText = 'position:fixed;left:-1000px;top:0;width:1px;height:1px;opacity:0';
+    document.body.appendChild(probe);
+    const readGap = (gap) => {
+      Object.defineProperty(window, 'visualViewport', {
+        configurable: true,
+        value: { offsetTop: 0, height: Math.max(0, window.innerHeight - gap) },
+      });
+      syncDockSpace();
+      const rect = nav.getBoundingClientRect();
+      return {
+        inlineBottom: nav.style.bottom,
+        rectBottom: rect.bottom,
+        viewportBottom: window.innerHeight,
+      };
+    };
+    try {
+      probe.focus();
+      const opened = readGap(144);
+      const closed = readGap(0);
+      const stale = readGap(96);
+      readGap(0);
+      probe.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      const reopened = readGap(96);
+      return { opened, closed, stale, reopened };
+    } finally {
+      if (descriptor) Object.defineProperty(window, 'visualViewport', descriptor);
+      else delete window.visualViewport;
+      probe.blur();
+      probe.remove();
+      syncDockSpace();
+    }
+  })()`);
+  check("keyboard session ignores a stale browser-chrome gap after close",
+    keyboardSession.opened.inlineBottom === "144px"
+      && Math.abs(keyboardSession.opened.rectBottom - (keyboardSession.opened.viewportBottom - 144)) <= 0.5
+      && (keyboardSession.closed.inlineBottom === "" || keyboardSession.closed.inlineBottom === "0px")
+      && Math.abs(keyboardSession.closed.rectBottom - keyboardSession.closed.viewportBottom) <= 0.5
+      && (keyboardSession.stale.inlineBottom === "" || keyboardSession.stale.inlineBottom === "0px")
+      && Math.abs(keyboardSession.stale.rectBottom - keyboardSession.stale.viewportBottom) <= 0.5,
+    JSON.stringify(keyboardSession));
+  check("same editable focus can start a fresh keyboard session",
+    keyboardSession.reopened.inlineBottom === "96px"
+      && Math.abs(keyboardSession.reopened.rectBottom - (keyboardSession.reopened.viewportBottom - 96)) <= 0.5,
+    JSON.stringify(keyboardSession));
+
   const pageErrorsBeforeNormalScroll = pageErrors.length;
   const normalScroll = await evaluate(`(() => {
     const spacer = document.createElement('div');
