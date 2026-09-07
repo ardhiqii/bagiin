@@ -116,19 +116,19 @@ body {
 #app-nav {
   position:fixed; left:0; right:0; bottom:0; z-index:var(--z-sticky);
   display:flex; align-items:stretch; gap:4px; overflow:hidden;
-  padding:8px 12px calc(env(safe-area-inset-bottom) + 8px);
+  padding:10px 12px calc(env(safe-area-inset-bottom) + 10px);
   background:color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter:blur(14px) saturate(180%); -webkit-backdrop-filter:blur(14px) saturate(180%);
   border-top:1px solid var(--border);
 }
 .app-nav-link {
-  position:relative; flex:1 1 0; min-width:0; min-height:44px;
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  position:relative; flex:1 1 0; min-width:0; min-height:56px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
   color:var(--text-3); text-decoration:none; border-radius:var(--r-sm);
-  font-size:12px; font-weight:650; line-height:1.15; white-space:nowrap;
+  font-size:13px; font-weight:650; line-height:1.15; white-space:nowrap;
   transition:background .16s var(--ease), color .16s var(--ease), transform .1s var(--ease);
 }
-.app-nav-link .ico { width:20px; height:20px; }
+.app-nav-link .ico { width:22px; height:22px; }
 .app-nav-link.is-active { color:var(--accent); background:var(--accent-soft); }
 .app-nav-link:active { transform:scale(.97); }
 .app-nav-badge {

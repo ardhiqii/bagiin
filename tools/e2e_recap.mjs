@@ -274,6 +274,27 @@ try {
     && JSON.stringify(homeNav.active) === JSON.stringify(["bill"]), JSON.stringify(homeNav));
   check("home replaces duplicate route buttons but keeps one create CTA",
     !homeNav.homeDuplicates && homeNav.createCount === 1, JSON.stringify(homeNav));
+  const homeNavGeometry = await evaluate(`(() => {
+    const nav = document.querySelector('#app-nav');
+    const links = [...document.querySelectorAll('#app-nav [data-app-nav]')];
+    const safeAreaProbe = document.createElement('div');
+    safeAreaProbe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;padding-bottom:env(safe-area-inset-bottom)';
+    document.body.appendChild(safeAreaProbe);
+    const safeAreaBottom = parseFloat(getComputedStyle(safeAreaProbe).paddingBottom) || 0;
+    safeAreaProbe.remove();
+    const navHeight = nav?.getBoundingClientRect().height || 0;
+    return {
+      navHeight,
+      safeAreaBottom,
+      navHeightBeforeSafeArea: navHeight - safeAreaBottom,
+      linkHeights: links.map(link => link.getBoundingClientRect().height),
+    };
+  })()`);
+  check("mobile app nav has roomy touch targets and breathing room",
+    homeNavGeometry.navHeightBeforeSafeArea >= 76
+      && homeNavGeometry.linkHeights.length === 3
+      && homeNavGeometry.linkHeights.every(height => height >= 56),
+    JSON.stringify(homeNavGeometry));
 
   // Legacy #/history must replace its own entry. Set up a real prior route so
   // two Back presses can prove that the redirect did not trap the user on a
