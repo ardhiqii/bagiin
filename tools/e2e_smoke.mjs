@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Browser smoke test for the guest picker and creator finalization — the flows
- * where a wrong number or an unlocked allocation costs someone real money.
+ * Browser smoke test for the guest picker and open creator bill — the flows
+ * where a wrong number or a stale payment state costs someone real money.
  *
  * It seeds a bill through the API, drives the real UI in Chrome, and asserts
  * that the total the guest is shown equals the total the server computes for
@@ -124,7 +124,7 @@ try {
     close: !!document.querySelector("#close-bill-btn"),
     reopen: !!document.querySelector("#reopen-bill-btn"),
   })`);
-  check("non-owner cannot see the creator finalization action while open",
+  check("non-owner cannot see Close Bill or reopen UI while open",
         !guestOpenActions.close && !guestOpenActions.reopen,
         JSON.stringify(guestOpenActions));
 
@@ -158,10 +158,9 @@ try {
   check("total is stable across a reload", reloaded.total === afterFree.total,
         `${afterFree.total} -> ${reloaded.total}`);
 
-  // The creator must be able to finalize an open allocation without turning
-  // that action into a payment settlement. Leave one guest pending and one
-  // slot uncovered so the confirmation and the closed view must keep both
-  // warnings visible.
+  // The creator keeps the allocation live while participants finish choosing.
+  // Leave one guest pending and one slot uncovered so both warnings remain
+  // visible, while payment actions still describe an unpaid open bill.
   await evaluate(`localStorage.setItem("bagiin_identity", ${JSON.stringify(JSON.stringify(host))})`);
   await openBill();
   const creatorOpen = await evaluate(`(() => ({
@@ -172,54 +171,28 @@ try {
     uncovered: document.body.textContent.includes("Bagian kosong belum terambil"),
     itemWarning: document.body.textContent.includes("Ayam Bakar")
       && document.body.textContent.includes("otomatis dibebankan"),
-    closeHeight: document.querySelector("#close-bill-btn")?.getBoundingClientRect().height || 0,
+    paymentAction: !!document.querySelector(".toggle-paid"),
   }))()`);
-  check("creator sees finalization only while bill is open",
-        creatorOpen.close && !creatorOpen.reopen && creatorOpen.pending
-          && creatorOpen.uncovered && creatorOpen.itemWarning && creatorOpen.closeHeight >= 44,
+  const openData = await call("GET", `/api/bills/${bill.id}`, undefined, host);
+  check("creator keeps open allocation warnings without Close Bill UI",
+        !creatorOpen.close && !creatorOpen.reopen && creatorOpen.pending
+          && creatorOpen.uncovered && creatorOpen.itemWarning && creatorOpen.paymentAction,
         JSON.stringify(creatorOpen));
-
-  await evaluate("document.querySelector('#close-bill-btn').click()");
-  await sleep(180);
-  const confirm = await evaluate(`(() => ({
-    open: !!document.querySelector(".sheet-overlay"),
-    text: document.querySelector(".sheet-overlay")?.textContent || "",
-  }))()`);
-  check("finalization asks for confirmation with unresolved warnings",
-        confirm.open
-          && confirm.text.includes("Tutup bill sekarang?")
-          && confirm.text.includes(pendingGuest.name)
-          && confirm.text.includes(declaredPendingName)
-          && confirm.text.includes("Bagian kosong belum terambil")
-          && confirm.text.includes("Item perlu dicek")
-          && confirm.text.includes("bukan menandai pembayaran lunas"),
-        JSON.stringify(confirm));
-
-  await evaluate("document.querySelector('.sheet-overlay [data-act=\"ok\"]').click()");
-  await sleep(1400);
-  const creatorClosed = await evaluate(`(() => ({
-    close: !!document.querySelector("#close-bill-btn"),
-    reopen: !!document.querySelector("#reopen-bill-btn"),
-    pending: document.body.textContent.includes(${JSON.stringify(pendingGuest.name)})
-      && document.body.textContent.includes(${JSON.stringify(declaredPendingName)}),
-    uncovered: document.body.textContent.includes("Bagian kosong belum terambil"),
-  }))()`);
-  const closedData = await call("GET", `/api/bills/${bill.id}`, undefined, host);
-  check("creator reloads into closed allocation with warnings intact",
-        !creatorClosed.close && creatorClosed.reopen && creatorClosed.pending && creatorClosed.uncovered
-          && closedData.bill.status === "closed" && closedData.settled === false,
-        JSON.stringify({ ui: creatorClosed, api: { status: closedData.bill.status, settled: closedData.settled } }));
+  check("open allocation stays unpaid in the bill contract",
+        openData.bill.status === "open" && openData.settled === false && openData.all_paid === false,
+        JSON.stringify({ status: openData.bill.status, settled: openData.settled, all_paid: openData.all_paid }));
 
   await evaluate(`localStorage.setItem("bagiin_identity", ${JSON.stringify(JSON.stringify(guest))})`);
   await openBill();
-  const guestClosed = await evaluate(`(() => ({
+  const guestOpen = await evaluate(`(() => ({
     close: !!document.querySelector("#close-bill-btn"),
     reopen: !!document.querySelector("#reopen-bill-btn"),
-    readOnly: document.body.textContent.includes("Bill ini sudah ditutup"),
+    pay: !!document.querySelector("#pay-btn"),
+    unpaidCopy: document.body.textContent.includes("Tandai sudah bayar"),
   }))()`);
-  check("guest stays read-only after creator finalizes",
-        !guestClosed.close && !guestClosed.reopen && guestClosed.readOnly,
-        JSON.stringify(guestClosed));
+  check("guest keeps the unpaid payment action on the open bill",
+        !guestOpen.close && !guestOpen.reopen && guestOpen.pay && guestOpen.unpaidCopy,
+        JSON.stringify(guestOpen));
 
   check("no uncaught page errors", pageErrors.length === 0, [...new Set(pageErrors)].join(" | "));
 } finally {

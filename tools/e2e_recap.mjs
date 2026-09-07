@@ -2,7 +2,7 @@
 /**
  * Browser regression for Rekap Patungan.
  *
- * It creates a final closed bill and an unresolved open bill on a throwaway
+ * It creates a fully allocated open bill and an unresolved open bill on a throwaway
  * server, then drives the real page in Chromium. The browser checks the route,
  * API-to-UI money mapping, exact bill links, separated workflow sections,
  * device-local aliases, truthful empty/error/retry states, and geometry at the
@@ -55,13 +55,14 @@ function recapPayload(identity) {
   };
 }
 
-// ---------- seed a final bill and a pending bill ----------
+// ---------- seed a final open bill and a pending bill ----------
 const stamp = Date.now().toString(36);
 const host = await call("POST", "/api/identities", { name: `RekapHost${stamp}` });
 const guest = await call("POST", "/api/identities", { name: `RekapGuest${stamp}` });
+const finalTitle = `Rekap final ${stamp}`;
 
 const finalBill = await call("POST", "/api/bills", {
-  title: `Rekap final ${stamp}`,
+  title: finalTitle,
   items: [{ name: "Makan bersama", price: 100000 }],
   subtotal: 100000,
   tax: 0,
@@ -75,7 +76,13 @@ await call("POST", `/api/bills/${finalBill.id}/join`, {}, guest);
 await call("POST", `/api/bills/${finalBill.id}/selections`, {
   picks: [{ item_id: finalItemId, qty: 1 }],
 }, guest);
-await call("POST", `/api/bills/${finalBill.id}/close`, undefined, host);
+const finalOpenData = await call("GET", `/api/bills/${finalBill.id}`, undefined, host);
+check("final fixture stays open and unpaid after allocation",
+  finalOpenData.bill.status === "open"
+    && finalOpenData.settled === false
+    && finalOpenData.all_paid === false,
+  JSON.stringify({ status: finalOpenData.bill.status, settled: finalOpenData.settled,
+    all_paid: finalOpenData.all_paid }));
 
 const pendingBill = await call("POST", "/api/bills", {
   title: `Rekap menunggu ${stamp}`,
@@ -589,6 +596,17 @@ try {
     pendingWaiting: document.querySelector('.recap-pending-waiting')?.textContent.trim() || '',
     waitingText: [...document.querySelectorAll('.recap-waiting-card .recap-action-row')]
       .map(row => row.textContent.trim()).join(' | '),
+    finalStatus: [...document.querySelectorAll('.recap-person-card .recap-bill-row')]
+      .find(row => row.textContent.includes(${JSON.stringify(finalTitle)}))?.textContent.trim() || '',
+    finalPaymentAction: (() => {
+      const row = [...document.querySelectorAll('.recap-waiting-card .recap-action-row')]
+        .find(item => item.textContent.includes(${JSON.stringify(finalTitle)}));
+      return {
+        present: !!row,
+        provisional: !!row?.querySelector('.chip'),
+        text: row?.textContent.trim() || '',
+      };
+    })(),
     finalLinks: [...document.querySelectorAll('.recap-person-card a.recap-bill-link')].map(a => a.getAttribute('href')),
     provisionalLinks: [...document.querySelectorAll('.recap-provisional-row a.recap-bill-link')].map(a => a.getAttribute('href')),
     currentLinks: [...document.querySelectorAll('.recap-current-card a.recap-bill-link')].map(a => a.getAttribute('href')),
@@ -615,6 +633,11 @@ try {
     mapped.waitingText.includes("memilih item")
       && mapped.waitingText.includes("membayar")
       && mapped.waitingText.includes("Rp 100.000"), mapped.waitingText);
+  check("final open bill keeps its open status in the drilldown",
+    mapped.finalStatus.includes("Bill masih terbuka"), mapped.finalStatus);
+  check("final payment action is present without a provisional marker",
+    mapped.finalPaymentAction.present && !mapped.finalPaymentAction.provisional,
+    mapped.finalPaymentAction.text || "missing");
   check("final drilldown links to the exact bill", mapped.finalLinks.includes(`#/b/${finalBill.id}`), JSON.stringify(mapped.finalLinks));
   check("provisional bill is visible with an exact bill link", mapped.provisionalRows === 1
     && mapped.provisionalLinks.includes(`#/b/${pendingBill.id}`), JSON.stringify(mapped.provisionalLinks));
@@ -697,21 +720,17 @@ try {
   check("recap cache survives route-only navigation",
     recapRouteReady && await evaluate("window.__recapFetchCount === 1"));
 
-  // A successful mutation must invalidate the cached recap before the next
-  // render. Reopen/close the allocated bill to keep the seed useful for the
-  // remaining final-balance assertions.
-  const reopenResult = await evaluate(`api("/api/bills/${finalBill.id}/reopen", { method: "POST" })
+  // A successful open-bill mutation must invalidate the cached recap before
+  // the next render. Re-submit the owner's already-effective empty selection;
+  // it changes no allocation and keeps the fixture open for the final checks.
+  const openMutationResult = await evaluate(`api("/api/bills/${finalBill.id}/selections", {
+      method: "POST", json: { picks: [] },
+    })
     .then(() => { renderRecap(); return "ok"; })
     .catch(error => "error:" + error.message)`);
-  check("successful mutation invalidates recap cache", reopenResult === "ok"
+  check("successful open mutation invalidates recap cache", openMutationResult === "ok"
     && await waitFor("!!document.querySelector('#recap-title')")
-    && await evaluate("window.__recapFetchCount === 2"), `${reopenResult} / ${await evaluate("window.__recapFetchCount")}`);
-  const closeResult = await evaluate(`api("/api/bills/${finalBill.id}/close", { method: "POST" })
-    .then(() => { renderRecap(); return "ok"; })
-    .catch(error => "error:" + error.message)`);
-  check("closing the bill refreshes recap after invalidation", closeResult === "ok"
-    && await waitFor("!!document.querySelector('#recap-title')")
-    && await evaluate("window.__recapFetchCount === 3"), `${closeResult} / ${await evaluate("window.__recapFetchCount")}`);
+    && await evaluate("window.__recapFetchCount === 2"), `${openMutationResult} / ${await evaluate("window.__recapFetchCount")}`);
   });
 
   // A positive badge uses the current-user action count only. Exercise the

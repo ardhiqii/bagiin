@@ -51,7 +51,9 @@ Semua kesimpen: history bill.
 ### US-3 Bayar & konfirmasi
 1. Guest tap "Tandai udah bayar" -> bottom sheet: total dia + info kirim (rekening/e-money creator)
 2. Guest konfirmasi -> status paid. Creator liat di summary siapa udah/belum
-3. Creator bisa "tutup bill" -> semua status final, masuk history
+3. Rekap memasukkan bill ke alokasi final setelah semua blocker pembagian selesai. Status
+   pembayaran tetap terpisah: bill bisa masih open dan tetap punya aksi bayar/menunggu
+   sampai transferan benar-benar dicatat.
 
 ### US-4 Riwayat
 - List bill yang pernah dibuat (creator) / yang pernah diikutin (guest, by device)
@@ -67,7 +69,7 @@ Semua kesimpen: history bill.
 |---|---|---|
 | S1 | Onboarding nama | Sheet kecil "Siapa namamu?" (default saran nama Indonesia, bukan "User") |
 | S2 | Buat bill | Tombol foto struk / upload. Loading state OCR. Form verifikasi item |
-| S3 | Bill detail (creator) | Hero total + list item + status tiap orang + tombol share/tutup |
+| S3 | Bill detail (creator) | Hero total + list item + status tiap orang + tombol share/edit |
 | S4 | Item picker (guest) | Item list centang, sticky bottom bar total dia, tombol "udah bayar" |
 | S5 | Konfirmasi bayar | Bottom sheet: total + info kirim (rekening a.n., e-money list) + tombol konfirmasi |
 | S6 | Summary creator | Siapa milih apa, total masing-masing, status paid/unpaid, sisa pembulatan |
@@ -89,14 +91,15 @@ Alur guest (S4-S5) single-page penuh, fokus, tanpa tab.
   siapa aja yang centang. 2 orang centang nasi goreng = dibagi 2, 3 orang = dibagi 3,
   1 orang = full. Simpel & anti-salah (kalau orang berubah pikiran, tinggal centang/
   uncentang, pembagian langsung berubah).
-- **SPLIT SELALU PROVISIONAL SAMPAI BILL DITUTUP.** Ini jawaban buat case "niatnya
-  berdua tapi baru 1 yang centang": sistem gak bisa tau niat, jadi sistem gak pernah
-  mengunci pembagian. Orang yang telat centang (mager/nantian) = pembagian item itu
-  langsung berubah otomatis. Total per orang di UI selalu "live estimate", bukan
-  final. Final cuma terjadi pas creator klik "Tutup bill".
+- **FINAL ALOKASI TIDAK SAMA DENGAN LUNAS.** Ini jawaban buat case "niatnya berdua
+  tapi baru 1 yang centang": sistem gak bisa tau niat, jadi pembagian tetap live selama
+  bill open. Rekap boleh memasukkan bill ke alokasi final kalau semua blocker pembagian
+  sudah hilang, walaupun `status` masih `open`, `settled` masih `false`, dan orang lain
+  masih punya aksi `pay_share`/`wait_payment`. Membaca Rekap tidak mengubah status bill,
+  membuat payment row, atau menandai siapa pun lunas.
 - Creator daftar nama peserta pas bikin bill (nama doang, tanpa akun) - INI FLOW
   STANDAR, bukan opsional. Flow: kelar makan -> creator bikin bill -> tulis nama
-  peserta ("Aufa, Rina") -> share link -> semua centang item -> creator tutup bill.
+  peserta ("Aufa, Rina") -> share link -> semua centang item -> Rekap menghitung alokasi.
   Gunanya: sistem tau SIAPA yang belum centang -> warning "Rina belum pilih".
   (Angka doang "3 orang" KURANG berguna: tau "1 dari 3 belum pilih" tapi gak tau
   siapa. Nama = 5 detik ngetik, dan itu yang ngejawab kebutuhan "gak lupa siapa
@@ -104,13 +107,16 @@ Alur guest (S4-S5) single-page penuh, fokus, tanpa tab.
 - Catatan: daftar nama = label buat warning, BUKAN batasan akses. Guest yang buka
   link tetap bisa centang walau namanya gak ada di daftar (nama dia ke-tambah
   otomatis). Gak ada hard matching.
-- **Konfirmasi tutup bill (safety net):** pas creator mau tutup, tampilkan screen
-  konfirmasi yang jelas:
+- **Peringatan alokasi yang belum lengkap (safety net):** di summary creator, tampilkan
+  peringatan yang jelas selama ada workflow yang belum selesai:
   - "Belum pilih: Rina (2 item belum dibagi)"
   - "Item cuma dicentang 1 orang (kemungkinan dishare): Nasi Goreng Rp 25.000 -> dibagi 1"
-  - Tombol: [Tutup bill] [Batal, tunggu yang lain]
-  Jadi kalau Rina mager gak pernah centang, Nasi Goreng full ke orang yang centang,
-  TAPI creator liat warning-nya dulu dan bisa putusin mau ping Rina atau terima.
+  Creator bisa menunggu, menghubungi peserta, atau memeriksa pembagian; tidak ada
+  tombol "Tutup Bill" di tampilan creator yang mengunci alokasi.
+- Rekap tetap **provisional** bila ada salah satu blocker berikut: identitas nyata yang
+  sudah bergabung belum memilih item, slot masih uncovered, nama payer belum bisa
+  di-resolve ke identitas, `total_ok` false, undangan invite-only belum diterima, atau
+  bill open yang benar-benar belum punya selection sama sekali.
 - Creator juga peserta biasa - dia centang item yang dia makan juga, flow sama.
 - Item yang TIDAK dicentang siapa pun (leftover): default ditanggung **yang
   fronting uang** — payer confirmed kalau ada, kalau belum ya creator (v58;
@@ -375,7 +381,7 @@ Obsidian/VS Code (selera user), satu accent orange, hijau/merah CUMI untuk statu
 - Buat bill: "Foto struknya" / "Biar gak ribet ngetik manual"
 - Picker: "Centang yang kamu tanggung" / "Total kamu: Rp 81.667"
 - Bayar: "Tandai sudah bayar" / "Kirim ke: BCA 1234567890 a.n. Aufa"
-- Summary creator: "Belum bayar: Rina (Rp 81.667)" / "Tutup bill"
+- Summary creator: "Belum bayar: Rina (Rp 81.667)" / "Bagian kosong: Rp 40.000"
 - Identity code: "Simpan kode ini. Jangan dishare ke siapa pun."
 
 ## 13. Roadmap
@@ -472,6 +478,23 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Konfirmasi penutupan menampilkan peserta yang belum memilih, bagian slot yang kosong, dan item yang belum dipilih. Warning tersebut tetap terlihat setelah bill ditutup.
 - Menutup bill hanya memfinalkan alokasi item. Aksi ini tidak menandai pembayaran lunas, sehingga orang yang belum bayar tetap terbaca belum bayar.
 - Regression source-level, API, dan browser mencakup warning pending, slot uncovered, batas akses non-owner, guest read-only, dan zero console error.
+
+### 2026-09-07 (v77), alokasi final Rekap terpisah dari settlement
+
+- Tampilan creator tidak lagi menyediakan tombol **Tutup Bill**. Warning peserta yang
+  belum memilih, slot uncovered, dan item yang belum dipilih tetap tampil sebagai
+  informasi pembagian; jalur `reopen` dan API close lama dipertahankan hanya untuk
+  kompatibilitas bill yang sudah terlanjur closed.
+- Rekap menentukan `final` dari alokasi yang sudah lengkap, bukan dari aksi menutup
+  bill. Bill yang masih `open`, `settled: false`, dan `all_paid: false` boleh masuk
+  saldo final bila semua nominal sudah teralokasi; aksi `pay_share`/`wait_payment`
+  tetap muncul dan tidak lagi diberi tanda provisional.
+- Membaca Rekap adalah klasifikasi turunan: tidak mengubah `status`, tidak membuat
+  payment row, dan tidak menandai pembayaran lunas. `settled`/`all_paid` baru berubah
+  mengikuti state pembayaran yang benar-benar dicatat.
+- Bill tetap provisional bila ada pilihan nyata yang belum masuk, slot yang belum
+  terambil, payer yang belum bisa di-resolve, `total_ok` false, invite-only yang
+  belum menerima undangan, atau bill open tanpa selection sama sekali.
 
 ### 2026-09-06 (v71), OCR receipt gratis yang lebih ketat
 
@@ -995,8 +1018,8 @@ Polesan teks di seluruh app (screens.js, bill.js, index.html):
   Sudah Termasuk Pajak, Yang Bayar, Aku Yang Bayar, Nama Yang Bayar, Kode Pemulihan,
   Metode Bayar, Bank / E-Wallet, Nomor Rekening / E-Money, Atas Nama (Opsional).
 - **Tombol & CTA** → Title Case konsisten: Bikin Manual (Tanpa Foto), Tambah Item,
-  Simpan Perubahan, Edit Bill, Tutup Bill, Tutup Bill Sekarang, Buka Lagi, Buka Bill
-  Lagi, Hapus Selamanya, Hapus Bill, Gabung Bill, Lanjut, Milih Item, Konfirmasi Item,
+  Simpan Perubahan, Edit Bill, Buka Lagi, Buka Bill Lagi, Hapus Selamanya, Hapus Bill,
+  Gabung Bill, Lanjut, Milih Item, Konfirmasi Item,
   Pakai Nama Ini, Pilih Item Kamu, Tambah Foto Struk, Tandai Lunas, Tandai Udah Bayar,
   Salin Link, Kirim Lewat WhatsApp, Bagikan Lewat Aplikasi Lain, Coba Lagi, Tempel Teks.
 - **Heading & status** → Mau Bagi Bill Apa Hari Ini?, Bikin Bill Pertama Kamu Sekarang!,
