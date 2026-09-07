@@ -12,7 +12,8 @@ const index = await readFile(new URL("../frontend/index.html", import.meta.url),
 assert.match(screens, /let billListGeneration\s*=\s*0/);
 assert.match(screens, /const generation = \+\+billListGeneration/);
 assert.match(screens, /const isCurrent = \(\) => generation === billListGeneration/);
-assert.match(screens, /if \(!isCurrent\(\)\) return;\n\s*histBills = bills/);
+assert.doesNotMatch(screens, /histBills|bagiin:derived-invalidated/);
+assert.match(screens, /if \(!isCurrent\(\)\) return;\n\s*if \(!Array\.isArray\(bills\)/);
 assert.match(screens, /if \(!isCurrent\(\)\) return;\n\s*box\.innerHTML = identityErrorHtml\(e\)/);
 
 assert.match(screens, /let settingsRenderGeneration\s*=\s*0/);
@@ -66,10 +67,15 @@ assert.match(app, /counts\.current_user/);
 assert.match(app, /Array\.isArray\(actions\.current_user\)/);
 assert.match(app, /syncDerivedCacheIdentity\(nextId\);[\s\S]*clearAppNavBadge\(\);/);
 assert.match(app, /derivedDataCache\.billList = newDerivedCacheEntry\(\);\n\s*clearAppNavBadge\(\);/);
+assert.doesNotMatch(app, /has-app-nav|bagiin:derived-invalidated/);
+const appNavSetter = app.slice(app.indexOf("function setAppNavRoute"), app.indexOf("// v68b: real brand logos"));
+assert.doesNotMatch(appNavSetter, /syncAppNav\(\)/);
+assert.match(appNavSetter, /syncDockSpace\(\)/);
 assert.match(recap, /updateAppNavBadge\(data\)/);
 assert.match(recap, /Loading and retry states are intentionally badge-free/);
 assert.match(recap, /clearAppNavBadge\(\);\n\s*content\.innerHTML = recapErrorHtml/);
-assert.doesNotMatch(screens, /recap-btn|settings-btn/);
+assert.match(screens, /class="right home-desktop-routes"[\s\S]*id="recap-btn"[\s\S]*id="settings-btn"/);
+assert.match(index, /home-desktop-routes/);
 assert.match(screens, /id="create-btn"/);
 
 // The optimistic split remains available for the picker, but its number must

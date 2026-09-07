@@ -153,6 +153,10 @@ body {
 }
 .topbar.scrolled { border-bottom-color:var(--border); }
 .topbar .right { display:flex; gap:8px; align-items:center; }
+.topbar .home-desktop-routes { display:none; }
+@media (min-width:1040px) {
+  .topbar .home-desktop-routes { display:flex; }
+}
 .topbar-title {
   font-size:16px; font-weight:700; letter-spacing:-.01em; text-align:center;
   flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;

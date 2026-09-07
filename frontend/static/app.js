@@ -33,7 +33,7 @@ const state = {
 // The recap and home list have different payloads, but share the same identity,
 // TTL, generation and invalidation rules so a successful mutation cannot leave
 // one screen reading a different snapshot than the other (bug: home reused an
-// indefinitely stale histBills array while recap was freshly fetched).
+// indefinitely stale list while recap was freshly fetched).
 const DERIVED_CACHE_TTL_MS = 15_000;
 function newDerivedCacheEntry() {
   return { data: null, fetchedAt: 0, promise: null, promiseGeneration: -1, promiseIdentity: null };
@@ -88,9 +88,6 @@ function invalidateDerivedData({ billId, identityId } = {}) {
   derivedDataCache.recap = newDerivedCacheEntry();
   derivedDataCache.billList = newDerivedCacheEntry();
   clearAppNavBadge();
-  if (typeof window !== "undefined" && typeof window.CustomEvent === "function") {
-    window.dispatchEvent(new CustomEvent("bagiin:derived-invalidated", { detail: { billId } }));
-  }
 }
 
 /* ---------- icons ----------
@@ -255,7 +252,6 @@ function syncAppNav() {
   const eligible = !!(state.identity && appNavRoute && !onDesktop && !hasContextualDock);
   nav.hidden = !eligible;
   nav.setAttribute("aria-hidden", eligible ? "false" : "true");
-  document.body.classList.toggle("has-app-nav", eligible);
   APP_NAV_ITEMS.forEach(item => {
     const link = $(`[data-app-nav="${item.key}"]`, nav);
     if (!link) return;
@@ -269,7 +265,6 @@ function syncAppNav() {
 
 function setAppNavRoute(route) {
   appNavRoute = APP_NAV_ITEMS.some(item => item.key === route) ? route : null;
-  syncAppNav();
   syncDockSpace();
 }
 

@@ -127,6 +127,53 @@ const evaluate = async (expression) => {
   }
   return result.result?.value;
 };
+const restoreRecapFetch = async () => {
+  await evaluate(`(() => {
+    if (window.__recapRealFetch) window.fetch = window.__recapRealFetch;
+    window.__recapRealFetch = null;
+    window.__recapGate = null;
+    window.__recapRelease = null;
+  })()`);
+};
+const withRecapFetchStub = async ({ mode, payload = null, error = "", resetCount = false }, run) => {
+  const options = JSON.stringify({
+    mode,
+    body: payload === null ? null : JSON.stringify(payload),
+    error,
+    resetCount,
+  });
+  try {
+    await evaluate(`(() => {
+      const options = ${options};
+      window.__recapRealFetch = window.fetch.bind(window);
+      window.__recapFetchCount = Number.isFinite(window.__recapFetchCount)
+        ? window.__recapFetchCount : 0;
+      const isRecap = (input) => String(input?.url || input || "").includes("/recap");
+      if (options.resetCount) window.__recapFetchCount = 0;
+      if (options.mode === "gate") {
+        window.__recapGate = new Promise(resolve => { window.__recapRelease = resolve; });
+        window.fetch = (input, init) => isRecap(input)
+          ? (window.__recapFetchCount += 1, window.__recapGate.then(() => window.__recapRealFetch(input, init)))
+          : window.__recapRealFetch(input, init);
+      } else if (options.mode === "response") {
+        window.fetch = (input, init) => isRecap(input)
+          ? Promise.resolve(new Response(options.body, {
+              status: 200, headers: { "Content-Type": "application/json" },
+            }))
+          : window.__recapRealFetch(input, init);
+      } else if (options.mode === "reject") {
+        window.fetch = (input, init) => isRecap(input)
+          ? Promise.reject(new Error(options.error))
+          : window.__recapRealFetch(input, init);
+      } else {
+        throw new Error("Unknown recap fetch stub mode: " + options.mode);
+      }
+    })()`);
+    return await run();
+  } finally {
+    await restoreRecapFetch();
+  }
+};
 const waitFor = async (expression, timeout = 7000) => {
   const started = Date.now();
   while (Date.now() - started < timeout) {
@@ -166,16 +213,57 @@ try {
   await signIn(host);
   await go("#/");
 
+  await setViewport(1280);
+  const desktopHome = await evaluate(`(() => {
+    const visible = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return false;
+      const style = getComputedStyle(node), rect = node.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden'
+        && rect.width > 0 && rect.height > 0;
+    };
+    const nav = document.querySelector('#app-nav');
+    return {
+      width: window.innerWidth,
+      navHidden: !nav || nav.hidden || getComputedStyle(nav).display === 'none',
+      recapVisible: visible('#recap-btn'),
+      settingsVisible: visible('#settings-btn'),
+    };
+  })()`);
+  check("desktop home keeps Rekap and Akun controls while mobile nav stays hidden",
+    desktopHome.navHidden && desktopHome.recapVisible && desktopHome.settingsVisible,
+    JSON.stringify(desktopHome));
+  await evaluate("document.querySelector('#recap-btn').click()");
+  check("desktop Rekap control reaches recap",
+    await waitFor("location.hash === '#/recap' && !!document.querySelector('#recap-back')"),
+    await evaluate("location.hash"));
+  await evaluate("document.querySelector('#recap-back').click()");
+  check("desktop recap Back returns home", await waitFor("location.hash === '#/' && !!document.querySelector('#recap-btn')"));
+  await evaluate("document.querySelector('#settings-btn').click()");
+  check("desktop Akun control reaches settings",
+    await waitFor("location.hash === '#/settings' && !!document.querySelector('#back-btn')"),
+    await evaluate("location.hash"));
+  await evaluate("document.querySelector('#back-btn').click()");
+  check("desktop settings Back returns home", await waitFor("location.hash === '#/' && !!document.querySelector('#settings-btn')"));
+  await setViewport(390);
+
   const homeNav = await evaluate(`(() => {
     const nav = document.querySelector('#app-nav');
     const links = [...document.querySelectorAll('#app-nav [data-app-nav]')];
+    const visible = (node) => {
+      if (!node) return false;
+      const style = getComputedStyle(node), rect = node.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden'
+        && rect.width > 0 && rect.height > 0;
+    };
     return {
       visible: !!nav && !nav.hidden && getComputedStyle(nav).display !== 'none',
       count: links.length,
       labels: links.map(link => link.querySelector(':scope > span:not(.app-nav-badge)')?.textContent.trim() || ''),
       hrefs: links.map(link => link.getAttribute('href')),
       active: links.filter(link => link.getAttribute('aria-current') === 'page').map(link => link.dataset.appNav),
-      homeDuplicates: !!document.querySelector('#recap-btn, #settings-btn'),
+      homeDuplicates: visible(document.querySelector('#recap-btn'))
+        || visible(document.querySelector('#settings-btn')),
       createCount: document.querySelectorAll('#create-btn').length,
     };
   })()`);
@@ -227,20 +315,8 @@ try {
       length: afterLegacyBackLength, entries: afterLegacyBack.entries.length }));
   await go("#/");
 
-  await evaluate(`(() => {
-    window.__recapRealFetch = window.fetch.bind(window);
-    window.__recapFetchCount = 0;
-    window.__recapGate = new Promise(resolve => { window.__recapRelease = resolve; });
-    window.fetch = (input, init) => {
-      const url = String(input?.url || input || '');
-      if (url.includes('/recap')) {
-        window.__recapFetchCount += 1;
-        return window.__recapGate.then(() => window.__recapRealFetch(input, init));
-      }
-      return window.__recapRealFetch(input, init);
-    };
-    document.querySelector('[data-app-nav="recap"]').click();
-  })()`);
+  await withRecapFetchStub({ mode: "gate", resetCount: true }, async () => {
+    await evaluate("document.querySelector('[data-app-nav=\"recap\"]').click()");
   check("home navigation reaches canonical recap route", await waitFor("location.hash === '#/recap'"), await evaluate("location.hash"));
   check("recap loading skeleton exists before the response", await evaluate("!!document.querySelector('.recap-loading')"));
   await evaluate("window.__recapRelease()");
@@ -342,7 +418,7 @@ try {
   check("closing the bill refreshes recap after invalidation", closeResult === "ok"
     && await waitFor("!!document.querySelector('#recap-title')")
     && await evaluate("window.__recapFetchCount === 3"), `${closeResult} / ${await evaluate("window.__recapFetchCount")}`);
-  await evaluate("window.fetch = window.__recapRealFetch; window.__recapRealFetch = null; window.__recapGate = null; window.__recapRelease = null");
+  });
 
   // A positive badge uses the current-user action count only. Exercise the
   // documented fallback by omitting counts.current_user while keeping two
@@ -353,16 +429,8 @@ try {
     { kind: "pay_share", bill_id: pendingBill.id, title: "Badge dua", name: host.name, amount_idr: 12000, provisional: true },
   ];
   delete badgePayload.counts.current_user;
-  await evaluate(`(() => {
-    window.__recapRealFetch = window.fetch.bind(window);
-    window.fetch = (input, init) => {
-      const url = String(input?.url || input || '');
-      if (url.includes('/recap')) return Promise.resolve(new Response(${JSON.stringify(JSON.stringify(badgePayload))}, { status: 200, headers: { 'Content-Type': 'application/json' } }));
-      return window.__recapRealFetch(input, init);
-    };
-    invalidateDerivedData();
-    renderRecap();
-  })()`);
+  await withRecapFetchStub({ mode: "response", payload: badgePayload }, async () => {
+    await evaluate("invalidateDerivedData(); renderRecap()");
   check("recap badge reflects current-user actions and has an accessible label", await waitFor("!!document.querySelector('.app-nav-badge')")
     && await evaluate(`(() => {
       const badge = document.querySelector('.app-nav-badge');
@@ -370,59 +438,36 @@ try {
       return badge?.textContent.trim() === '2'
         && link?.getAttribute('aria-label') === 'Rekap, 2 tindakan yang perlu kamu lakukan';
     })()`));
-  await evaluate("window.fetch = window.__recapRealFetch; window.__recapRealFetch = null; invalidateDerivedData(); renderRecap()");
+  });
+  await evaluate("invalidateDerivedData(); renderRecap()");
   await waitFor("!!document.querySelector('#recap-title')");
 
   // Loading is deterministic here: hold the response so the old positive
   // badge cannot flash while the recap is being replaced.
-  await evaluate(`(() => {
-    window.__recapRealFetch = window.fetch.bind(window);
-    window.__recapGate = new Promise(resolve => { window.__recapRelease = resolve; });
-    window.fetch = (input, init) => {
-      const url = String(input?.url || input || '');
-      if (url.includes('/recap')) return window.__recapGate.then(() => window.__recapRealFetch(input, init));
-      return window.__recapRealFetch(input, init);
-    };
-    invalidateDerivedData();
-    renderRecap();
-  })()`);
+  await withRecapFetchStub({ mode: "gate" }, async () => {
+    await evaluate("invalidateDerivedData(); renderRecap()");
   check("recap loading state clears the badge", await evaluate("!!document.querySelector('.recap-loading') && !document.querySelector('.app-nav-badge')"));
   await evaluate("window.__recapRelease()");
   check("recap reloads after the held response", await waitFor("!!document.querySelector('#recap-title')"));
-  await evaluate("window.fetch = window.__recapRealFetch; window.__recapRealFetch = null; window.__recapGate = null; window.__recapRelease = null");
+  });
 
   // Error state is tested with a temporary page-local fetch failure. No fake
   // totals may appear while the recap request is unavailable.
-  await evaluate(`(() => {
-    window.__recapRealFetch = window.fetch.bind(window);
-    window.fetch = (input, init) => {
-      const url = String(input?.url || input || '');
-      if (url.includes('/recap')) return Promise.reject(new Error('Uji koneksi gagal'));
-      return window.__recapRealFetch(input, init);
-    };
-    invalidateDerivedData();
-    renderRecap();
-  })()`);
+  await withRecapFetchStub({ mode: "reject", error: "Uji koneksi gagal" }, async () => {
+    await evaluate("invalidateDerivedData(); renderRecap()");
   check("API error shows a truthful retry state", await waitFor("!!document.querySelector('#recap-retry')")
     && await evaluate("!document.querySelector('.recap-summary') && !document.querySelector('.app-nav-badge')"));
-  await evaluate("window.fetch = window.__recapRealFetch; window.__recapRealFetch = null");
+  });
   await evaluate("document.querySelector('#recap-retry').click()");
   check("retry reloads the recap", await waitFor("!!document.querySelector('#recap-title')"));
 
   const empty = recapPayload(host);
-  await evaluate(`(() => {
-    window.__recapRealFetch = window.fetch.bind(window);
-    window.fetch = (input, init) => {
-      const url = String(input?.url || input || '');
-      if (url.includes('/recap')) return Promise.resolve(new Response(${JSON.stringify(JSON.stringify(empty))}, { status: 200, headers: { 'Content-Type': 'application/json' } }));
-      return window.__recapRealFetch(input, init);
-    };
-    invalidateDerivedData();
-    renderRecap();
-  })()`);
+  await withRecapFetchStub({ mode: "response", payload: empty }, async () => {
+    await evaluate("invalidateDerivedData(); renderRecap()");
   check("empty response shows an honest empty account state", await waitFor("document.body.textContent.includes('Rekap akan terisi')")
     && await evaluate("!document.querySelector('.recap-person-card') && !document.querySelector('.app-nav-badge')"));
-  await evaluate("window.fetch = window.__recapRealFetch; window.__recapRealFetch = null; invalidateDerivedData(); renderRecap()");
+  });
+  await evaluate("invalidateDerivedData(); renderRecap()");
   await waitFor("!!document.querySelector('#recap-title')");
 
   // The alias sheet only writes the device-local map. The API name remains in
