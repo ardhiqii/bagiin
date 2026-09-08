@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import socket
 import time
 from datetime import date as _date
 import urllib.error
@@ -15,7 +16,49 @@ log = logging.getLogger("bagiin.ocr")
 GEMINI_MODEL = os.environ.get("BAGIIN_OCR_MODEL", "gemini-3.5-flash")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 OR_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-OR_MODEL = os.environ.get("OPENROUTER_OCR_MODEL", "google/gemma-4-26b-a4b-it:free")
+
+DEFAULT_OPENROUTER_OCR_MODELS = (
+    "google/gemma-4-26b-a4b-it:free",
+    "google/gemma-4-31b-it:free",
+    "dots-studio/dots-3-note-preview:free",
+    "thinkingmachines/inkling-small:free",
+    "thinkingmachines/inkling:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "openrouter/free",
+)
+
+
+def _is_free_openrouter_model(model: str) -> bool:
+    return model == "openrouter/free" or model.endswith(":free")
+
+
+def _parse_openrouter_models(models_value=None, legacy_model=None) -> tuple[str, ...]:
+    """Read the ordered free-model override without ever selecting paid IDs."""
+    if models_value is None:
+        models_value = os.environ.get("OPENROUTER_OCR_MODELS", "")
+    if legacy_model is None:
+        legacy_model = os.environ.get("OPENROUTER_OCR_MODEL", "")
+
+    configured = str(models_value or "").strip()
+    if not configured:
+        configured = str(legacy_model or "").strip()
+    if not configured:
+        configured = ",".join(DEFAULT_OPENROUTER_OCR_MODELS)
+
+    models = []
+    for raw_model in configured.split(","):
+        model = raw_model.strip()
+        if not model or not _is_free_openrouter_model(model) or model in models:
+            continue
+        models.append(model)
+    return tuple(models) or DEFAULT_OPENROUTER_OCR_MODELS
+
+
+OPENROUTER_OCR_MODELS = _parse_openrouter_models()
+# Keep the old singular constant for callers that import it directly. New
+# requests use OR_MODELS and pass the selected model explicitly per payload.
+OR_MODELS = OPENROUTER_OCR_MODELS
+OR_MODEL = OR_MODELS[0]
 MAX_ATTEMPTS = 3
 RETRY_CODES = (429, 500, 502, 503, 504)
 # (bug v66: Gemini alone could retry up to 3x60s + backoff, then OpenRouter fallback
@@ -25,6 +68,12 @@ RETRY_CODES = (429, 500, 502, 503, 504)
 OCR_BUDGET_SECONDS = 45.0
 _ATTEMPT_TIMEOUT_CAP = 15.0
 _MIN_ATTEMPT_SECONDS = 3.0
+_OPENROUTER_MAX_ATTEMPTS = 2
+# Keep a bounded slice for the fallback instead of letting a slow primary
+# consume the shared deadline. The ratio makes tiny test budgets scale down,
+# while the cap keeps production fallback latency predictable.
+_OPENROUTER_FALLBACK_RATIO = 1 / 3
+_OPENROUTER_FALLBACK_MAX_SECONDS = 15.0
 
 SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Output JSON EXACTLY:
 {"merchant":"nama tempat makan/toko","date":"YYYY-MM-DD","items":[{"name":"nama item","price":harga_satuan,"discount":diskon,"quantity":jumlah}],"subtotal":N,"tax":N,"service":N,"total":N,"tax_included":true/false}
@@ -54,27 +103,39 @@ def ocr_receipt(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
         log.error("OCR tidak berjalan: GEMINI_API_KEY dan OPENROUTER_API_KEY sama-sama kosong")
         raise RuntimeError("Fitur baca struk otomatis belum disetel di server. Isi manual dulu ya.")
 
-    deadline = time.monotonic() + OCR_BUDGET_SECONDS
-    errors = []
+    started = time.monotonic()
+    deadline = started + max(0.0, OCR_BUDGET_SECONDS)
+    # (bug v66 review: Gemini dulu menerima deadline penuh, jadi provider yang
+    # menggantung bisa menghabiskan seluruh budget sebelum fallback dimulai.)
+    # Reserve only when a fallback is configured; Gemini keeps the full budget
+    # when there is no second provider to call.
+    fallback_seconds = 0.0
+    if OR_API_KEY:
+        fallback_seconds = min(
+            _OPENROUTER_FALLBACK_MAX_SECONDS,
+            max(0.0, OCR_BUDGET_SECONDS * _OPENROUTER_FALLBACK_RATIO),
+        )
+    primary_deadline = deadline - fallback_seconds
+    providers_tried = []
     if GEMINI_API_KEY:
         try:
-            return _gemini_ocr(image_bytes, mime_type, deadline)
-        except RuntimeError as e:
-            errors.append(f"Gemini: {e}")
-            log.warning("Gemini OCR gagal, coba OpenRouter: %s", e)
+            return _gemini_ocr(image_bytes, mime_type, primary_deadline)
+        except RuntimeError:
+            providers_tried.append("Gemini")
+            log.warning("Gemini OCR model=%s failure=provider, coba OpenRouter", GEMINI_MODEL)
     else:
         log.warning("GEMINI_API_KEY kosong, langsung coba OpenRouter")
 
     if OR_API_KEY:
         try:
             return _openrouter_ocr(image_bytes, deadline, mime_type=mime_type)
-        except RuntimeError as e:
-            errors.append(f"cadangan: {e}")
-            log.warning("OpenRouter OCR gagal: %s", e)
+        except RuntimeError:
+            providers_tried.append("OpenRouter")
+            log.warning("OpenRouter OCR fallback exhausted")
     else:
         log.warning("OPENROUTER_API_KEY kosong, tidak ada fallback")
 
-    log.error("OCR gagal total: %s", "; ".join(errors) or "no provider berhasil dipanggil")
+    log.error("OCR gagal total: providers=%s", ",".join(providers_tried) or "none")
     raise RuntimeError(
         "Layanan AI gratis sedang penuh atau mengalami gangguan. Coba lagi beberapa menit kemudian atau isi secara manual."
     )
@@ -122,7 +183,13 @@ def _gemini_ocr(image_bytes: bytes, mime_type: str, deadline: float) -> dict:
         except urllib.error.HTTPError as e:
             code = e.code
             body = e.read().decode()[:300]
-            log.warning("Gemini HTTP %d (attempt %d/%d): %s", code, attempt + 1, MAX_ATTEMPTS, body)
+            log.warning(
+                "Gemini OCR model=%s failure=http status=%d attempt=%d/%d",
+                GEMINI_MODEL,
+                code,
+                attempt + 1,
+                MAX_ATTEMPTS,
+            )
             if code == 429 and "quota" in body.lower():
                 raise RuntimeError("kuota harian habis (reset tengah malam)")
             backoff = 2 * (attempt + 1)
@@ -131,7 +198,12 @@ def _gemini_ocr(image_bytes: bytes, mime_type: str, deadline: float) -> dict:
                 continue
             raise RuntimeError(f"HTTP {code}: {body}")
         except Exception as e:
-            log.warning("Gemini request gagal (attempt %d/%d): %s", attempt + 1, MAX_ATTEMPTS, e)
+            log.warning(
+                "Gemini OCR model=%s failure=request attempt=%d/%d",
+                GEMINI_MODEL,
+                attempt + 1,
+                MAX_ATTEMPTS,
+            )
             backoff = 2 * (attempt + 1)
             if attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
                 time.sleep(backoff)
@@ -141,11 +213,59 @@ def _gemini_ocr(image_bytes: bytes, mime_type: str, deadline: float) -> dict:
         raise RuntimeError("Kegagalan setelah beberapa percobaan (waktu habis)")
 
     try:
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
+        text = _gemini_response_text(data)
         parsed = _parse_json_text(text)
     except Exception:
         raise RuntimeError("respons tidak bisa dibaca")
     return _normalize(parsed)
+
+
+def _gemini_response_text(data) -> str:
+    """Join answer text parts while ignoring Gemini's internal thoughts."""
+    parts = data["candidates"][0]["content"]["parts"]
+    return "".join(
+        part["text"]
+        for part in parts
+        if isinstance(part, dict)
+        and isinstance(part.get("text"), str)
+        and part.get("thought") is not True
+    )
+
+
+class _OpenRouterFailure(RuntimeError):
+    """Internal failure with a safe-to-log class/status only."""
+
+    def __init__(self, kind: str, status: int | None = None):
+        self.kind = kind
+        self.status = status
+        label = kind if status is None else f"{kind} status={status}"
+        super().__init__(label)
+
+
+def _active_openrouter_models() -> tuple[str, ...]:
+    # OR_MODEL was the only selector before the ordered override existed;
+    # honor a direct mutation by older callers while keeping the new list
+    # authoritative for normal configuration.
+    configured_models = OR_MODELS
+    if (
+        configured_models == OPENROUTER_OCR_MODELS
+        and OR_MODEL != OPENROUTER_OCR_MODELS[0]
+    ):
+        configured_models = (OR_MODEL,)
+    models = tuple(
+        model.strip()
+        for model in configured_models
+        if isinstance(model, str) and model.strip() and _is_free_openrouter_model(model.strip())
+    )
+    return models or DEFAULT_OPENROUTER_OCR_MODELS
+
+
+def _openrouter_model_deadline(deadline: float, remaining_models: int) -> float:
+    """Give every remaining model a fair slice of the shared wall-clock budget."""
+    now = time.monotonic()
+    remaining = max(0.0, deadline - now)
+    share = remaining / max(1, remaining_models)
+    return min(deadline, now + min(_ATTEMPT_TIMEOUT_CAP, share))
 
 
 def _openrouter_ocr(
@@ -162,74 +282,89 @@ def _openrouter_ocr(
         else (mime_type or "application/octet-stream")
     )
     b64 = base64.b64encode(prepared_image).decode()
-    payload = _openrouter_payload(b64, prepared_mime, structured=True)
-    req = _openrouter_request(payload)
-    structured = True
-    data = None
-    for attempt in range(MAX_ATTEMPTS):
-        remaining = deadline - time.monotonic()
-        if remaining < _MIN_ATTEMPT_SECONDS:
-            log.warning(
-                "budget waktu habis sebelum attempt %d/%d (sisa %.1fs)",
-                attempt + 1, MAX_ATTEMPTS, remaining,
-            )
+    models = _active_openrouter_models()
+
+    for index, model in enumerate(models):
+        if deadline <= time.monotonic():
             break
-        timeout = min(_ATTEMPT_TIMEOUT_CAP, remaining)
+        model_deadline = _openrouter_model_deadline(deadline, len(models) - index)
         try:
-            resp = urllib.request.urlopen(req, timeout=timeout)
-            data = json.loads(resp.read())
-            break
-        except urllib.error.HTTPError as e:
-            code = e.code
-            body = e.read().decode()[:300]
+            return _openrouter_model_ocr(
+                b64,
+                prepared_mime,
+                model,
+                model_deadline,
+            )
+        except _OpenRouterFailure as failure:
+            # (bug v66: provider bodies can contain receipt fields or other
+            # sensitive response data; only the selected model and a safe
+            # class/status are allowed into logs.)
+            log.warning("OpenRouter OCR model=%s failure=%s", model, failure)
+        except Exception:
+            # Keep an unexpected model-specific failure from preventing later
+            # free candidates, while avoiding exception text in logs.
+            log.warning("OpenRouter OCR model=%s failure=unexpected", model)
+
+    raise RuntimeError("Kegagalan setelah beberapa percobaan (waktu habis)")
+
+
+def _openrouter_model_ocr(
+    image_b64: str,
+    image_mime: str,
+    model: str,
+    deadline: float,
+) -> dict:
+    """Try one model, retrying only the optional structured-output hint."""
+    structured = True
+    for _ in range(_OPENROUTER_MAX_ATTEMPTS):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise _OpenRouterFailure("timeout")
+        payload = _openrouter_payload(
+            image_b64,
+            image_mime,
+            structured=structured,
+            model=model,
+        )
+        req = _openrouter_request(payload)
+        try:
+            response = urllib.request.urlopen(
+                req,
+                timeout=min(_ATTEMPT_TIMEOUT_CAP, remaining),
+            )
+            try:
+                data = json.loads(response.read())
+            except (TypeError, ValueError, json.JSONDecodeError) as error:
+                raise _OpenRouterFailure("invalid_json") from error
+            return _normalize_openrouter_response(data)
+        except urllib.error.HTTPError as error:
+            code = error.code
+            body = _read_http_error_body(error)
             if structured and _structured_response_rejected(code, body):
                 # Some free OpenRouter models reject response_format even
-                # though they accept the same vision prompt. Retry this
-                # attempt without the optional hint, then keep that fallback
-                # for subsequent attempts instead of sending the rejected
-                # payload repeatedly.
-                log.warning("OpenRouter menolak structured JSON, coba format kompatibel: %s", body)
+                # though they accept the same vision prompt. Retry this model
+                # once without the optional hint, then move to the next model
+                # for every other failure.
                 structured = False
-                req = _openrouter_request(_openrouter_payload(b64, prepared_mime, structured=False))
-                fallback_remaining = deadline - time.monotonic()
-                if fallback_remaining >= _MIN_ATTEMPT_SECONDS:
-                    try:
-                        resp = urllib.request.urlopen(
-                            req,
-                            timeout=min(_ATTEMPT_TIMEOUT_CAP, fallback_remaining),
-                        )
-                        data = json.loads(resp.read())
-                        break
-                    except urllib.error.HTTPError as fallback_error:
-                        code = fallback_error.code
-                        body = fallback_error.read().decode()[:300]
-                    except Exception as fallback_error:
-                        log.warning("OpenRouter request fallback gagal: %s", fallback_error)
-                        backoff = 3 * (attempt + 1)
-                        if attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
-                            time.sleep(backoff)
-                            continue
-                        raise RuntimeError(f"Permintaan gagal: {fallback_error}")
-                else:
-                    break
-            log.warning("OpenRouter HTTP %d (attempt %d/%d): %s", code, attempt + 1, MAX_ATTEMPTS, body)
-            if code == 429 and "quota" in body.lower():
-                raise RuntimeError("kuota harian OpenRouter habis")
-            backoff = 3 * (attempt + 1)
-            if code in RETRY_CODES and attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
-                time.sleep(backoff)
                 continue
-            raise RuntimeError(f"HTTP {code}: {body}")
-        except Exception as e:
-            log.warning("OpenRouter request gagal (attempt %d/%d): %s", attempt + 1, MAX_ATTEMPTS, e)
-            backoff = 3 * (attempt + 1)
-            if attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
-                time.sleep(backoff)
-                continue
-            raise RuntimeError(f"Permintaan gagal: {e}")
-    if data is None:
-        raise RuntimeError("Kegagalan setelah beberapa percobaan (waktu habis)")
+            raise _OpenRouterFailure(_http_failure_class(code), status=code) from error
+        except _OpenRouterFailure:
+            raise
+        except (socket.timeout, TimeoutError) as error:
+            raise _OpenRouterFailure("timeout") from error
+        except urllib.error.URLError as error:
+            if isinstance(error.reason, (socket.timeout, TimeoutError)):
+                raise _OpenRouterFailure("timeout") from error
+            raise _OpenRouterFailure("request_error") from error
+        except OSError as error:
+            raise _OpenRouterFailure("request_error") from error
+        except Exception as error:
+            raise _OpenRouterFailure("request_error") from error
 
+    raise _OpenRouterFailure("timeout")
+
+
+def _normalize_openrouter_response(data) -> dict:
     try:
         content = data["choices"][0]["message"]["content"]
         if isinstance(content, list):
@@ -237,14 +372,49 @@ def _openrouter_ocr(
                 c.get("text", "") for c in content if isinstance(c, dict)
             )
         parsed = _parse_json_text(content)
+        return _normalize(parsed)
+    except _OpenRouterFailure:
+        raise
+    except Exception as error:
+        raise _OpenRouterFailure("invalid_response") from error
+
+
+def _read_http_error_body(error: urllib.error.HTTPError) -> str:
+    try:
+        body = error.read(4096)
+    except TypeError:
+        # A small fake HTTPError in a test or adapter may expose read() without
+        # urllib's optional byte-count argument.
+        try:
+            body = error.read()
+        except Exception:
+            return ""
     except Exception:
-        raise RuntimeError("respons tidak bisa dibaca")
-    return _normalize(parsed)
+        return ""
+    if isinstance(body, bytes):
+        return body.decode("utf-8", "replace")[:4096]
+    return str(body)[:4096]
 
 
-def _openrouter_payload(image_b64: str, image_mime: str, *, structured: bool) -> dict:
+def _http_failure_class(code: int) -> str:
+    if code == 404:
+        return "not_found"
+    if code == 429:
+        return "rate_limited"
+    if 500 <= code <= 599:
+        return "provider_error"
+    return "http_error"
+
+
+def _openrouter_payload(
+    image_b64: str,
+    image_mime: str,
+    *,
+    structured: bool,
+    model: str | None = None,
+) -> dict:
     payload = {
-        "model": OR_MODEL,
+        "model": model or OR_MODEL,
         "messages": [{
             "role": "user",
             "content": [
@@ -277,9 +447,10 @@ def _structured_response_rejected(code: int, body: str) -> bool:
     if code not in (400, 422):
         return False
     text = body.lower()
-    return any(
-        marker in text
-        for marker in ("response_format", "structured", "json_object", "unsupported", "not support")
+    if "response_format" in text or "json_object" in text:
+        return True
+    return "structured" in text and any(
+        marker in text for marker in ("unsupported", "not support", "not supported")
     )
 
 

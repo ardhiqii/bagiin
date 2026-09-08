@@ -8,11 +8,14 @@ from email.message import Message
 import io
 import json
 import os
+import socket
 import sys
 import tempfile
 import time
 import urllib.error
 from pathlib import Path
+
+import pytest
 
 os.environ.setdefault("BAGIIN_DB", str(Path(tempfile.mkdtemp()) / "ocr-accuracy.db"))
 os.environ.setdefault("BAGIIN_UPLOAD_DIR", str(Path(tempfile.mkdtemp()) / "uploads"))
@@ -27,6 +30,20 @@ class _Response:
 
     def read(self):
         return self._payload
+
+
+class _RawResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def read(self):
+        return self._payload
+
+
+def _gemini_response(parts):
+    return _Response({
+        "candidates": [{"content": {"parts": parts}}],
+    })
 
 
 def _provider_response():
@@ -48,6 +65,72 @@ def _provider_response():
 
 def _request_payload(request):
     return json.loads(request.data.decode())
+
+
+def _model_from_request(request):
+    return _request_payload(request)["model"]
+
+
+def test_gemini_ignores_thought_part_when_answer_text_is_present(monkeypatch):
+    thought = {
+        "thought": True,
+        "text": json.dumps({
+            "merchant": "Thought only",
+            "items": [],
+            "subtotal": 0,
+            "tax": 0,
+            "service": 0,
+            "total": 0,
+            "tax_included": False,
+        }),
+    }
+    answer = {
+        "text": json.dumps({
+            "merchant": "Warung Nyata",
+            "items": [{"name": "Nasi Goreng", "price": 25000}],
+            "subtotal": 25000,
+            "tax": 0,
+            "service": 0,
+            "total": 25000,
+            "tax_included": False,
+        }),
+    }
+    monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
+    monkeypatch.setattr(
+        ocr.urllib.request,
+        "urlopen",
+        lambda request, timeout=None: _gemini_response([thought, answer]),
+    )
+
+    result = ocr._gemini_ocr(b"image", "image/jpeg", time.monotonic() + 5)
+
+    assert result["merchant"] == "Warung Nyata"
+    assert result["items"] == [{"name": "Nasi Goreng", "price": 25000, "discount": 0, "quantity": 1}]
+
+
+def test_gemini_keeps_single_text_part_compatibility(monkeypatch):
+    answer = {
+        "text": json.dumps({
+            "merchant": "Satu Bagian",
+            "items": [{"name": "Teh", "price": 5000}],
+            "subtotal": 5000,
+            "tax": 0,
+            "service": 0,
+            "total": 5000,
+            "tax_included": False,
+        }),
+    }
+    monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
+    monkeypatch.setattr(
+        ocr.urllib.request,
+        "urlopen",
+        lambda request, timeout=None: _gemini_response([answer]),
+    )
+
+    result = ocr._gemini_ocr(b"image", "image/jpeg", time.monotonic() + 5)
+
+    assert result["merchant"] == "Satu Bagian"
+    assert result["total"] == 5000
 
 
 def test_system_prompt_explains_unit_price_quantity_discount_and_line_total():
@@ -146,11 +229,117 @@ def test_openrouter_retries_without_json_option_when_provider_rejects_it(monkeyp
     assert result["items"] == [{"name": "Item", "price": 100, "discount": 0, "quantity": 1}]
 
 
-def urllib_http_error(request, body):
+def test_openrouter_model_config_preserves_order_and_legacy_override():
+    assert ocr._parse_openrouter_models(
+        " second:free, first:free, second:free, paid/model",
+        "legacy:free",
+    ) == ("second:free", "first:free")
+    assert ocr._parse_openrouter_models("", "legacy:free") == ("legacy:free",)
+    assert ocr._parse_openrouter_models("paid/model", "legacy:free") == ocr.DEFAULT_OPENROUTER_OCR_MODELS
+    assert ocr.DEFAULT_OPENROUTER_OCR_MODELS[0] == "google/gemma-4-26b-a4b-it:free"
+    assert ocr.DEFAULT_OPENROUTER_OCR_MODELS[-1] == "openrouter/free"
+    assert all(ocr._is_free_openrouter_model(model) for model in ocr.DEFAULT_OPENROUTER_OCR_MODELS)
+
+
+def test_openrouter_passes_selected_model_in_each_payload(monkeypatch):
+    requests = []
+    monkeypatch.setattr(ocr, "OR_MODELS", ("first:free", "second:free"))
+    monkeypatch.setattr(ocr, "_downscale", lambda image: image)
+
+    def fake_urlopen(request, timeout=None):
+        requests.append(request)
+        return _provider_response()
+
+    monkeypatch.setattr(ocr.urllib.request, "urlopen", fake_urlopen)
+    ocr._openrouter_ocr(b"image", time.monotonic() + 5)
+
+    assert [_model_from_request(request) for request in requests] == ["first:free"]
+
+
+def test_openrouter_status_failures_advance_in_order_to_next_model(monkeypatch):
+    requests = []
+    models = ("first:free", "second:free", "third:free")
+    monkeypatch.setattr(ocr, "OR_MODELS", models)
+    monkeypatch.setattr(ocr, "_downscale", lambda image: image)
+
+    def fake_urlopen(request, timeout=None):
+        requests.append(request)
+        model = _model_from_request(request)
+        if model == "first:free":
+            raise urllib_http_error(request, b'{"error":"quota receipt fields"}', code=429)
+        if model == "second:free":
+            raise urllib_http_error(request, b'{"error":"model unavailable"}', code=404)
+        return _provider_response()
+
+    monkeypatch.setattr(ocr.urllib.request, "urlopen", fake_urlopen)
+    result = ocr._openrouter_ocr(b"image", time.monotonic() + 5)
+
+    assert result["total"] == 100
+    assert [_model_from_request(request) for request in requests] == list(models)
+
+
+def test_openrouter_timeout_advances_to_next_model(monkeypatch):
+    requests = []
+    monkeypatch.setattr(ocr, "OR_MODELS", ("first:free", "second:free"))
+    monkeypatch.setattr(ocr, "_downscale", lambda image: image)
+
+    def fake_urlopen(request, timeout=None):
+        requests.append((request, timeout))
+        if len(requests) == 1:
+            raise socket.timeout("provider timeout")
+        return _provider_response()
+
+    monkeypatch.setattr(ocr.urllib.request, "urlopen", fake_urlopen)
+    result = ocr._openrouter_ocr(b"image", time.monotonic() + 5)
+
+    assert result["total"] == 100
+    assert [_model_from_request(request) for request, _ in requests] == ["first:free", "second:free"]
+    assert all(timeout > 0 for _, timeout in requests)
+
+
+def test_openrouter_malformed_output_advances_to_next_model(monkeypatch):
+    requests = []
+    monkeypatch.setattr(ocr, "OR_MODELS", ("first:free", "second:free"))
+    monkeypatch.setattr(ocr, "_downscale", lambda image: image)
+
+    def fake_urlopen(request, timeout=None):
+        requests.append(request)
+        if len(requests) == 1:
+            return _RawResponse(b"not json at all")
+        return _provider_response()
+
+    monkeypatch.setattr(ocr.urllib.request, "urlopen", fake_urlopen)
+    result = ocr._openrouter_ocr(b"image", time.monotonic() + 5)
+
+    assert result["total"] == 100
+    assert [_model_from_request(request) for request in requests] == ["first:free", "second:free"]
+
+
+def test_openrouter_exhausted_chain_raises_short_runtime_error(monkeypatch, caplog):
+    requests = []
+    models = ("first:free", "second:free")
+    monkeypatch.setattr(ocr, "OR_MODELS", models)
+    monkeypatch.setattr(ocr, "_downscale", lambda image: image)
+
+    def fake_urlopen(request, timeout=None):
+        requests.append(request)
+        raise urllib_http_error(request, b'{"private":"receipt data"}', code=500)
+
+    monkeypatch.setattr(ocr.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(RuntimeError, match="Kegagalan setelah beberapa percobaan"):
+        ocr._openrouter_ocr(b"image", time.monotonic() + 5)
+
+    assert [_model_from_request(request) for request in requests] == list(models)
+    assert "receipt data" not in caplog.text
+    assert "first:free" in caplog.text
+    assert "status=500" in caplog.text
+
+
+def urllib_http_error(request, body, code=400):
     """Build a provider-like 400 without putting a credential in the fixture."""
     return urllib.error.HTTPError(
         request.full_url,
-        400,
+        code,
         "bad request",
         Message(),
         io.BytesIO(body),
