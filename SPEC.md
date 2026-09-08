@@ -472,6 +472,13 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Scroll hide berbasis `translateY(100%)` dihapus supaya navigasi utama tidak hilang tanpa aksi user. Contextual dock, editor/create/OCR, bill detail, onboarding/guest, desktop, safe-area, dan keyboard offset tetap mengikuti aturan masing-masing.
 - Regression browser mencakup geometry fixed pada scroll turun/naik, transisi Home/Settings/Rekap, route yang wajib menyembunyikan nav, responsive matrix, dan zero console error.
 
+### 2026-09-08 (v78), fallback OCR gratis multi-model
+
+- OpenRouter OCR sekarang punya urutan model vision gratis, dimulai dari `google/gemma-4-26b-a4b-it:free`, lalu lanjut ke kandidat gratis lain bila provider mengembalikan rate limit, model unavailable, timeout, output tidak valid, atau format JSON terstruktur ditolak.
+- Override `OPENROUTER_OCR_MODELS` menerima daftar comma-separated dan tetap kompatibel dengan `OPENROUTER_OCR_MODEL` lama. ID berbayar tidak dipilih oleh parser fallback.
+- Budget OCR tetap satu deadline bersama, tetapi sebagian waktu dicadangkan untuk OpenRouter supaya Gemini yang lambat tidak mematikan fallback. Contract hasil OCR publik tidak berubah.
+- Fallback ini meningkatkan peluang saat satu provider penuh, tetapi tidak menggandakan kuota gratis OpenRouter yang tetap dibatasi di level akun dan kapasitas upstream.
+
 ### 2026-09-07 (v76), finalisasi bill dari tampilan creator
 
 - Creator atau manager kembali punya tombol "Tutup Bill" hanya saat bill masih open. Setelah berhasil, tampilan dimuat ulang dan tombol berubah menjadi "Buka Bill Lagi".

@@ -147,6 +147,59 @@ def test_ocr_receipt_respects_shared_budget_when_every_attempt_hangs(monkeypatch
         assert "OPENROUTER_API_KEY" not in str(e)
 
 
+def test_slow_gemini_cannot_consume_reserved_openrouter_budget(monkeypatch):
+    """A Gemini failure at its primary deadline still leaves fallback time."""
+    monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
+    monkeypatch.setattr(ocr, "OR_API_KEY", "fake-openrouter-key")
+    monkeypatch.setattr(ocr, "OCR_BUDGET_SECONDS", 3.0)
+
+    class _Clock:
+        def __init__(self):
+            self.now = 100.0
+
+        def monotonic(self):
+            return self.now
+
+    clock = _Clock()
+    monkeypatch.setattr(ocr, "time", clock)
+    observed = {}
+    fallback_result = {
+        "merchant": "",
+        "date": "",
+        "items": [],
+        "subtotal": 0,
+        "tax": 0,
+        "service": 0,
+        "total": 0,
+        "tax_included": False,
+    }
+
+    def slow_gemini(image_bytes, mime_type, deadline):
+        observed["start"] = clock.now
+        observed["gemini_deadline"] = deadline
+        clock.now = deadline
+        raise RuntimeError("simulated slow provider")
+
+    def fallback(image_bytes, deadline, mime_type="image/jpeg"):
+        observed["openrouter_deadline"] = deadline
+        observed["fallback_remaining"] = deadline - clock.now
+        return fallback_result
+
+    monkeypatch.setattr(ocr, "_gemini_ocr", slow_gemini)
+    monkeypatch.setattr(ocr, "_openrouter_ocr", fallback)
+
+    assert ocr.ocr_receipt(b"fake-image-bytes", "image/jpeg") is fallback_result
+
+    expected_reserve = min(
+        ocr._OPENROUTER_FALLBACK_MAX_SECONDS,
+        ocr.OCR_BUDGET_SECONDS * ocr._OPENROUTER_FALLBACK_RATIO,
+    )
+    assert observed["openrouter_deadline"] - observed["gemini_deadline"] == expected_reserve
+    assert observed["fallback_remaining"] == expected_reserve
+    assert observed["openrouter_deadline"] - observed["start"] == ocr.OCR_BUDGET_SECONDS
+    assert observed["fallback_remaining"] > 0
+
+
 def test_gemini_attempt_stops_once_budget_spent():
     """A near-zero deadline must stop _gemini_ocr from even starting a
     network call rather than blocking for the old fixed 60s timeout."""
