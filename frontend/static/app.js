@@ -312,9 +312,12 @@ function brandLogoHtml(code) {
 // else that delegates here. `closed` prefixes "Ditutup · " on terminal states,
 // and settled beats totalUnpaid — settled_manual deliberately leaves payment
 // rows unpaid, so a totalUnpaid-first order made the header claim both
-// "Lunas" and "Rp X belum dibayar" on one screen.
+// "Lunas" and "Rp X belum dibayar" on one screen. `all_paid` is only a
+// fallback after actual unpaid rows and uncovered slots have been explained.
 function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
   const closedTag = closed ? "Ditutup · " : "";
+  const uncoveredValue = Number(data.uncovered_idr);
+  const uncoveredIdr = Number.isFinite(uncoveredValue) ? Math.max(0, uncoveredValue) : 0;
   const pendingPickers = (data.people || []).filter((p) =>
     p.identity_id !== data.paid_by_id &&
     !p.subtotal_idr && !Object.values(data.sel_by_item || {}).some(list =>
@@ -329,7 +332,7 @@ function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
     }
     return `<span class="chip chip-grey">Menunggu ${pendingPickers.length} orang memilih item</span>`;
   }
-  if (data.settled || data.all_paid)
+  if (data.settled)
     return `<span class="chip chip-green">${ic("check")}${closedTag}Lunas</span>`;
   const total = Math.max(0, data.bill.total_idr || 0);
   const collected = Math.max(0, Math.min(total, (data.people || [])
@@ -340,7 +343,11 @@ function renderBillStatusChip(data, closed, totalUnpaid, soloSoFar) {
       return `<span class="chip chip-red">${closedTag}Sebagian lunas<br><small>Sudah masuk ${fmt(collected)} · Belum ${fmt(totalUnpaid)}</small></span>`;
     return `<span class="chip chip-red">${closedTag}${fmt(totalUnpaid)} belum dibayar</span>`;
   }
-  if (data.uncovered_idr > 0) return `<span class="chip chip-red">${closedTag}${fmt(data.uncovered_idr)} belum terambil</span>`;
+  if (uncoveredIdr > 0) return `<span class="chip chip-red">${closedTag}${fmt(uncoveredIdr)} belum terambil</span>`;
+  // Do not restore the old `if (data.settled || data.all_paid)` shortcut:
+  // all_paid can be true while slot money is still uncovered (v51).
+  if (data.all_paid)
+    return `<span class="chip chip-green">${ic("check")}${closedTag}Lunas</span>`;
   if (soloSoFar) return `<span class="chip chip-grey">Belum ada yang gabung</span>`;
   return `<span class="chip chip-grey">Belum ada yang memilih</span>`;
 }

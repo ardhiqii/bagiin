@@ -267,8 +267,14 @@ async function loadHomeInvites() {
 /** The row tone follows the same precedence and summary fields as the chip.
  *  In particular, a pending picker keeps a settled-looking bill neutral, and
  *  money still outstanding wins over the green settled state. */
+function billListUncoveredIdr(b) {
+  const value = Number(b && b.uncovered_idr);
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
 function billListStatus(b) {
   const pendingPickers = Array.isArray(b.pending_names) ? b.pending_names.length : 0;
+  const uncoveredIdr = billListUncoveredIdr(b);
   // v68: pending pickers block settle server-side now — show it first.
   if (pendingPickers) {
     return { tone: "idle", label: "Menunggu memilih item", icon: "people" };
@@ -278,7 +284,7 @@ function billListStatus(b) {
   // manually settled bill say "Belum lunas" here while every bill screen said
   // "Lunas" (bug: v60 settled-manual list inconsistency).
   if (b.settled) return { tone: "ok", label: "Lunas", icon: "check" };
-  if (Number(b.total_unpaid) > 0 || Number(b.uncovered_idr) > 0) {
+  if (Number(b.total_unpaid) > 0 || uncoveredIdr > 0) {
     return { tone: "due", label: "Belum lunas", icon: "receipt" };
   }
   return { tone: "idle", label: "Belum ada yang memilih", icon: "receipt" };
@@ -286,6 +292,7 @@ function billListStatus(b) {
 
 function billListStatusChip(b) {
   const myTotal = Number(b.my_total_idr || 0);
+  const uncoveredIdr = billListUncoveredIdr(b);
   // settled_manual deliberately leaves payment rows unpaid; the bill-level
   // decision must win over the viewer's stale payment record.
   if (b.settled) return `<span class="chip chip-green">Lunas</span>`;
@@ -302,7 +309,7 @@ function billListStatusChip(b) {
       : [],
     sel_by_item: {},
     paid_by_id: b.paid_by_identity_id, settled: b.settled,
-    all_paid: b.all_paid, uncovered_idr: b.uncovered_idr,
+    all_paid: b.all_paid, uncovered_idr: uncoveredIdr,
   };
   return renderBillStatusChip(data, b.status === "closed", b.total_unpaid || 0, false);
 }

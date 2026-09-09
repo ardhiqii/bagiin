@@ -110,7 +110,17 @@ assert.match(bill, /data\.settled/);
 assert.match(bill, /data\.all_paid/);
 assert.match(bill, /data\.settled_manual/);
 assert.match(app, /function renderBillStatusChip\(data, closed, totalUnpaid, soloSoFar\)/);
-assert.match(app, /if \(data\.settled \|\| data\.all_paid\)/);
+const statusChip = app.slice(
+  app.indexOf("function renderBillStatusChip"),
+  app.indexOf("// ---------- API ----------"),
+);
+const uncoveredCheck = statusChip.indexOf("if (uncoveredIdr > 0)");
+const allPaidCheck = statusChip.indexOf("if (data.all_paid)");
+assert.ok(uncoveredCheck >= 0, "status chip must explain uncovered money");
+assert.ok(allPaidCheck > uncoveredCheck, "all_paid must not mask uncovered money");
+assert.match(statusChip, /if \(data\.settled\)\s*\n\s*return [\s\S]*Lunas/);
+assert.match(screens, /function billListUncoveredIdr\(b\)/);
+assert.match(screens, /all_paid: b\.all_paid, uncovered_idr: uncoveredIdr/);
 assert.match(app, /if \(method !== "GET" && method !== "HEAD"\) \{[\s\S]*invalidateDerivedData/);
 
 // The create flow sends a selected receipt batch as one ordered OCR request,

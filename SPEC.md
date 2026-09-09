@@ -488,6 +488,13 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Backend menghitung dan menyimpan subtotal dari item yang sudah dinormalisasi. Subtotal client yang stale atau tidak dikirim tidak menjadi sumber kebenaran, sedangkan total, diskon pesanan, dan invariant integer tetap divalidasi.
 - Nilai jumlah yang tidak valid atau diskon item yang melebihi harga memblokir penyimpanan dan menyembunyikan total turunan stale. Regression backend, payload, HTTP, manual, OCR, editor tersimpan, reload, responsive browser, dan zero console error ditambahkan.
 
+### 2026-09-09 (v81), status bill konsisten saat slot belum terambil
+
+- History bill sekarang mengembalikan `uncovered_idr`, `all_paid`, dan `settled` dari snapshot kalkulasi yang sama dengan detail bill. Slot kosong tetap terlihat sebagai nominal yang belum terambil, walaupun semua pembayaran peserta sudah tercatat.
+- Status chip memakai satu prioritas bersama, peserta yang masih menunggu dan pembayaran yang belum masuk dijelaskan lebih dulu, lalu slot uncovered, baru status hijau. Label "Lunas" tidak lagi menutupi sisa slot.
+- Fallback payload lama tetap aman, dan nilai uncovered yang malformed atau negatif dinormalisasi menjadi nol di adapter frontend.
+- Regression mencakup fixture item gratis yang dipilih plus slot kosong, konsistensi API detail/history, status chip, history row, dan fallback payload lama.
+
 ### 2026-09-08 (v78), fallback OCR gratis multi-model
 
 - OpenRouter OCR sekarang punya urutan model vision gratis, dimulai dari `google/gemma-4-26b-a4b-it:free`, lalu lanjut ke kandidat gratis lain bila provider mengembalikan rate limit, model unavailable, timeout, output tidak valid, atau format JSON terstruktur ditolak.
