@@ -495,6 +495,13 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Fallback payload lama tetap aman, dan nilai uncovered yang malformed atau negatif dinormalisasi menjadi nol di adapter frontend.
 - Regression mencakup fixture item gratis yang dipilih plus slot kosong, konsistensi API detail/history, status chip, history row, dan fallback payload lama.
 
+### 2026-09-09 (v83), repair pasca-review upload dan regression harness
+
+- Transaksi penambahan foto selalu di-rollback dan koneksinya ditutup saat insert gagal, sehingga FK error tidak meninggalkan SQLite dalam keadaan locked untuk writer berikutnya.
+- Root upload relatif dinormalisasi menjadi path absolut sejak startup. Path hasil `/api/photos` tetap dapat dipakai langsung saat membuat bill, tanpa menggandakan root konfigurasi.
+- Fixture diskon checkout memakai subtotal item efektif yang benar, terpisah dari diskon pesanan. Harness brand fallback mengeksekusi helper escaping production dan menguji input brand tidak dikenal yang berbahaya.
+- Regression mencakup FK failure lalu write berikutnya, konfigurasi upload relatif, validasi fixture diskon, dan escaping brand melalui kode production.
+
 ### 2026-09-09 (v82), audit integrasi halaman dan komponen
 
 - Field koleksi untuk peserta, pilihan item, dan item legacy yang malformed sekarang ditolak sebagai HTTP 400, bukan error 500 atau TypeError yang lolos ke pengguna. Target pembayaran yang belum menjadi member bill juga tidak dapat diubah statusnya.

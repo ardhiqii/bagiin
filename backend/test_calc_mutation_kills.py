@@ -1,4 +1,6 @@
 """Additional behavioral tests targeting calc.py mutation survivors."""
+from typing import Any, cast
+
 import calc
 
 
@@ -246,9 +248,16 @@ def test_equal_tax_excludes_zero_subtotal_identity():
 
 def test_proportional_tax_reconciles_when_fallback_has_no_subtotal():
     result = calc.compute(
-        bill(11, tax=5), [{"id": 1, "name": "meal", "price_idr": 6}],
-        [{"item_id": 1, "identity_id": "guest"}], [], "owner")
-    assert person(result, "guest")["tax_idr"] == 5
+        bill(5, tax=2),
+        [{"id": 1, "name": "small", "price_idr": 1},
+         {"id": 2, "name": "large", "price_idr": 2}],
+        [{"item_id": 1, "identity_id": "guest"},
+         {"item_id": 2, "identity_id": "other"}], [], "owner")
+    assert person(result, "guest")["tax_idr"] == 0
+    assert person(result, "other")["tax_idr"] == 1
+    assert person(result, "owner")["tax_idr"] == 1
+    assert person(result, "owner")["item_subtotal_idr"] == 0
+    assert person(result, "owner")["order_discount_idr"] == 0
     assert result["total_ok"] is True
 
 
@@ -342,7 +351,7 @@ def test_proportional_allocator_caps_request_at_total_base():
 def test_order_discount_allocates_to_people_and_uncovered_slots_without_loss():
     result = calc.compute(
         bill={
-            "subtotal_idr": 4,
+            "subtotal_idr": 5,
             "tax_idr": 0,
             "service_idr": 0,
             "total_idr": 4,
@@ -371,7 +380,7 @@ def test_order_discount_allocates_to_people_and_uncovered_slots_without_loss():
 
     uncovered = calc.compute(
         bill={
-            "subtotal_idr": 2,
+            "subtotal_idr": 4,
             "tax_idr": 0,
             "service_idr": 0,
             "total_idr": 2,
@@ -389,3 +398,174 @@ def test_order_discount_allocates_to_people_and_uncovered_slots_without_loss():
     }]
     assert uncovered["warnings"] == ["Bagian kosong: tiny 1 bagian belum terisi (total Rp 1)"]
     assert uncovered["total_ok"] is True
+
+
+def test_allocator_skips_invalid_bucket_and_invalid_amount():
+    assert calc._allocate_proportionally(
+        cast(Any, [("bad", "not-a-number"), ("good", 5)]), 1
+    ) == {"good": 1}
+    assert calc._allocate_proportionally(
+        [("owner", 5)], cast(Any, "not-a-number")
+    ) == {"owner": 0}
+
+
+def test_allocator_keeps_remainder_after_small_bucket_reaches_cap():
+    result = calc._allocate_proportionally(
+        [("small", 1), ("guest", 100), ("other", 100)], 100
+    )
+    assert result == {"small": 1, "guest": 50, "other": 49}
+    assert sum(result.values()) == 100
+    assert result["small"] <= 1
+
+
+def test_one_rupiah_uncovered_bucket_receives_order_discount():
+    result = calc.compute(
+        bill={
+            "subtotal_idr": 2,
+            "tax_idr": 0,
+            "service_idr": 0,
+            "total_idr": 0,
+            "tax_mode": "proportional",
+            "order_discount_idr": 2,
+        },
+        items=[{"id": 1, "name": "tiny", "price_idr": 2, "mode": "slot", "slot_count": 2}],
+        selections=[{"item_id": 1, "identity_id": "alice", "qty": 1}],
+        participants=[],
+        fallback_id="alice",
+    )
+    assert person(result, "alice")["order_discount_idr"] == 1
+    assert result["uncovered_idr"] == 0
+    assert result["uncovered_slots"] == []
+    assert result["total_ok"] is True
+
+
+def test_order_discount_reduces_each_uncovered_slot_by_its_allocated_share():
+    result = calc.compute(
+        bill={
+            "subtotal_idr": 30,
+            "tax_idr": 0,
+            "service_idr": 0,
+            "total_idr": 25,
+            "tax_mode": "proportional",
+            "order_discount_idr": 5,
+        },
+        items=[
+            {"id": 1, "name": "a", "price_idr": 10, "mode": "slot", "slot_count": 2},
+            {"id": 2, "name": "b", "price_idr": 20, "mode": "slot", "slot_count": 2},
+        ],
+        selections=[],
+        participants=[],
+        fallback_id="owner",
+    )
+    assert [slot["amount_idr"] for slot in result["uncovered_slots"]] == [8, 17]
+    assert result["uncovered_idr"] == 25
+    assert result["total_ok"] is True
+
+
+def test_fully_discounted_uncovered_slots_are_removed():
+    result = calc.compute(
+        bill={
+            "subtotal_idr": 10,
+            "tax_idr": 0,
+            "service_idr": 0,
+            "total_idr": 0,
+            "tax_mode": "proportional",
+            "order_discount_idr": 10,
+        },
+        items=[{"id": 1, "name": "free", "price_idr": 10, "mode": "slot", "slot_count": 2}],
+        selections=[],
+        participants=[],
+        fallback_id="owner",
+    )
+    assert result["uncovered_slots"] == []
+    assert result["uncovered_idr"] == 0
+    assert result["total_ok"] is True
+
+
+def test_tax_included_zero_service_does_not_invent_tax():
+    result = calc.compute(
+        {
+            "subtotal_idr": 5,
+            "tax_idr": 0,
+            "service_idr": 0,
+            "total_idr": 5,
+            "tax_mode": "proportional",
+            "tax_included": True,
+        },
+        [{"id": 1, "name": "meal", "price_idr": 5}],
+        [{"item_id": 1, "identity_id": "alice"}],
+        [],
+        "owner",
+    )
+    assert person(result, "alice")["tax_idr"] == 0
+    assert person(result, "alice")["total_idr"] == 5
+    assert result["total_ok"] is True
+
+
+def test_tax_included_missing_service_defaults_to_zero():
+    result = calc.compute(
+        {
+            "subtotal_idr": 5,
+            "tax_idr": 0,
+            "total_idr": 5,
+            "tax_mode": "proportional",
+            "tax_included": True,
+        },
+        [{"id": 1, "name": "meal", "price_idr": 5}],
+        [{"item_id": 1, "identity_id": "alice"}],
+        [],
+        "owner",
+    )
+    assert person(result, "alice")["tax_idr"] == 0
+    assert person(result, "alice")["total_idr"] == 5
+    assert result["total_ok"] is True
+
+
+def test_missing_tax_and_service_default_to_zero():
+    result = calc.compute(
+        {"subtotal_idr": 3, "total_idr": 3, "tax_mode": "proportional"},
+        [{"id": 1, "name": "meal", "price_idr": 3}],
+        [{"item_id": 1, "identity_id": "alice"}],
+        [],
+        "owner",
+    )
+    assert person(result, "alice")["tax_idr"] == 0
+    assert person(result, "alice")["total_idr"] == 3
+    assert result["total_ok"] is True
+
+
+def test_malformed_order_discount_is_zeroed():
+    result = calc.compute(
+        {
+            "subtotal_idr": 3,
+            "tax_idr": 0,
+            "service_idr": 0,
+            "total_idr": 3,
+            "tax_mode": "proportional",
+            "order_discount_idr": "not-a-number",
+        },
+        [{"id": 1, "name": "meal", "price_idr": 3}],
+        [{"item_id": 1, "identity_id": "alice"}],
+        [],
+        "owner",
+    )
+    assert person(result, "alice")["order_discount_idr"] == 0
+    assert person(result, "alice")["total_idr"] == 3
+    assert result["total_ok"] is True
+
+
+def test_total_ok_rejects_mismatched_direct_bill_total():
+    result = calc.compute(
+        {
+            "subtotal_idr": 3,
+            "tax_idr": 0,
+            "service_idr": 0,
+            "total_idr": 99,
+            "tax_mode": "proportional",
+        },
+        [{"id": 1, "name": "meal", "price_idr": 3}],
+        [{"item_id": 1, "identity_id": "alice"}],
+        [],
+        "owner",
+    )
+    assert result["total_ok"] is False
