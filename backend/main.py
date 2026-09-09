@@ -178,6 +178,39 @@ def _names_for_identities(ident_ids: list[str]) -> dict[str, str]:
     return out
 
 
+def _settlement_flags(
+    bill_data: dict,
+    result: dict,
+    people: list[dict],
+    paid_by_id: str | None,
+) -> tuple[bool, bool, bool]:
+    """Return the manual, ``all_paid``, and ``settled`` flags.
+
+    The bill detail and identity-list payloads must agree even when a picked
+    item is free: ``all_paid`` can be true while an empty slot keeps the bill
+    unsettled. Keep the roster/payment rules in one place so the list cannot
+    drift from ``_compute_response`` again.
+    """
+    bill = bill_data["bill"]
+    sel_ids = {s["identity_id"] for s in bill_data["selections"]}
+    owed_ids = {p["identity_id"] for p in result["people"] if p["total_idr"] > 0}
+    paid_ids = {p["identity_id"] for p in bill_data["payments"] if p["status"] == "paid"}
+    if paid_by_id:
+        paid_ids.add(paid_by_id)
+    settled_manual = bool(bill.get("settled_manual"))
+    joined_roster = {p["identity_id"] for p in people}
+    non_payer_ids = joined_roster - ({paid_by_id} if paid_by_id else set())
+    auto_all_paid = (
+        bool(sel_ids)
+        and len(people) > 1
+        and owed_ids <= paid_ids
+        and non_payer_ids <= sel_ids
+    )
+    all_paid = settled_manual or auto_all_paid
+    settled = settled_manual or (auto_all_paid and result["uncovered_idr"] == 0)
+    return settled_manual, all_paid, settled
+
+
 def _to_int(value, field: str, default=None, *, minv=None, maxv=None):
     """Parse an int from user input; 400 on malformed values instead of 500."""
     if value is None or value == "":
@@ -473,29 +506,9 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
     # with Rp 75.000 of empty slots and an unpaid guest still showed a green
     # "Lunas" chip in history while the person's own row said "belum" (bug:
     # two contradicting statements one scroll apart).
-    sel_ids = {s["identity_id"] for s in bill_data["selections"]}
-    owed_ids = {p["identity_id"] for p in result["people"] if p["total_idr"] > 0}
-    paid_ids = {p["identity_id"] for p in bill_data["payments"] if p["status"] == "paid"}
-    if paid_by_id:
-        paid_ids.add(paid_by_id)
-    # v60: the owner can declare the WHOLE bill settled in one click (cash
-    # settled outside the app, or a genuinely solo bill that can never
-    # auto-settle). Manual override wins — it says "bill ini udah beres",
-    # regardless of the roster/paid math below.
-    settled_manual = bool(bill.get("settled_manual"))
-    # v68: a joined non-payer must have picked before the bill may
-    # auto-settle. A non-picker owes 0 only because unclaimed money falls
-    # back to the payer — counting that as "all paid" settled bills while
-    # someone was still choosing, and their later pick silently changed
-    # amounts under a settled banner (freeze regression in test_e2e_users).
-    # Payers are exempt: fronting the money IS their participation. Guests
-    # who will never pick still have the manual settle / leave / remove paths.
-    joined_roster = {p["identity_id"] for p in result["people"]}
-    non_payer_ids = joined_roster - ({paid_by_id} if paid_by_id else set())
-    auto_all_paid = (bool(sel_ids) and len(result["people"]) > 1
-                     and owed_ids <= paid_ids and non_payer_ids <= sel_ids)
-    all_paid = settled_manual or auto_all_paid
-    settled = settled_manual or (auto_all_paid and result["uncovered_idr"] == 0)
+    settled_manual, all_paid, settled = _settlement_flags(
+        bill_data, result, result["people"], paid_by_id,
+    )
     # who may edit/close/delete (v57): the CONFIRMED payer is the sole
     # manager. Before any payer is confirmed the creator manages; after
     # confirmation the creator is a regular participant like everyone else.
@@ -1346,8 +1359,10 @@ def delete_account(account_id: int, request: Request):
     return {"ok": True}
 
 
-def _list_pick_state(bill_data: dict) -> tuple[list[str], int, list[dict]]:
-    """Return pick-state summary and computed people for bill-list fields."""
+def _list_pick_state(
+    bill_data: dict,
+) -> tuple[list[str], int, list[dict], int, bool, bool]:
+    """Return pick-state summary and canonical status for bill-list fields."""
     bill = bill_data["bill"]
     result = calc.compute(
         bill=bill, items=bill_data["items"], selections=bill_data["selections"],
@@ -1379,7 +1394,10 @@ def _list_pick_state(bill_data: dict) -> tuple[list[str], int, list[dict]]:
                if p["identity_id"] != paid_by_id and p["identity_id"] not in selected_ids]
     total_unpaid = sum(max(0, p.get("total_idr", 0)) for p in people
                        if p.get("identity_id") not in paid_ids)
-    return pending, total_unpaid, people
+    _, all_paid, settled = _settlement_flags(
+        bill_data, result, people, paid_by_id,
+    )
+    return pending, total_unpaid, people, result["uncovered_idr"], all_paid, settled
 
 
 @app.get("/api/identities/{identity_id}/bills")
@@ -1401,7 +1419,14 @@ def my_bills(identity_id: str, request: Request):
     for row in rows:
         bill_data = row.pop("_bill_data", None)
         if bill_data:
-            row["pending_names"], row["total_unpaid"], people = _list_pick_state(bill_data)
+            (
+                row["pending_names"],
+                row["total_unpaid"],
+                people,
+                row["uncovered_idr"],
+                row["all_paid"],
+                row["settled"],
+            ) = _list_pick_state(bill_data)
             row["owner_id"] = _owner_id(bill_data)
             row["can_manage"] = _can_manage(bill_data, identity_id)
             # personal payment state for THIS viewer: the resolved payer is
