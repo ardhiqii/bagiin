@@ -84,9 +84,13 @@ const brandSource = app.slice(
 assert.match(brandSource, /function brandLogoFile\(code\)/);
 assert.match(brandSource, /brandLogoFile\(chip\.dataset\.code\)/);
 assert.match(brandSource, /const file = brandLogoFile\(code\)/);
+const escSource = app.match(/function esc\(s\) \{[^\n]*\}/)?.[0];
+const brandChipHtmlSource = screens.match(/function brandChipHtml\(code\) \{[\s\S]*?\n\}/)?.[0];
 const brandLogoFileSource = brandSource.match(/function brandLogoFile\(code\) \{[\s\S]*?\n\}/)?.[0];
 const brandLogoHtmlSource = brandSource.match(/function brandLogoHtml\(code\) \{[\s\S]*?\n\}/)?.[0];
 const upgradeBrandChipsSource = brandSource.match(/function upgradeBrandChips\(root\) \{[\s\S]*?\n\}/)?.[0];
+assert.ok(escSource, "production esc renderer must be executable");
+assert.ok(brandChipHtmlSource, "production brand chip renderer must be executable");
 assert.ok(brandLogoFileSource, "brand manifest lookup must be executable");
 assert.ok(brandLogoHtmlSource, "brand logo renderer must be executable");
 assert.ok(upgradeBrandChipsSource, "async brand upgrade must be executable");
@@ -116,12 +120,14 @@ const fakeDocument = {
 };
 const brandHarness = vm.runInNewContext(`
   const BRAND_LOGOS = { BCA: "bca.svg", Mandiri: "mandiri.svg" };
-  function esc(value) { return String(value == null ? "" : value); }
-  function brandChipHtml(code) { return "fallback:" + esc(code); }
+  function brandInfo() { return null; }
+  function chipTextColor() { return "#fff"; }
+  ${escSource}
+  ${brandChipHtmlSource}
   ${brandLogoFileSource}
   ${brandLogoHtmlSource}
   ${upgradeBrandChipsSource}
-  ({ brandLogoFile, brandLogoHtml, upgradeBrandChips });
+  ({ brandLogoFile, brandLogoHtml, brandChipHtml, upgradeBrandChips });
 `, { document: fakeDocument });
 assert.equal(brandHarness.brandLogoFile("bca"), "bca.svg");
 assert.equal(brandHarness.brandLogoFile("BCA"), "bca.svg");
@@ -130,8 +136,22 @@ assert.equal(brandHarness.brandLogoFile("mystery-bank"), null);
 assert.equal(brandHarness.brandLogoFile("toString"), null);
 assert.match(brandHarness.brandLogoHtml("bca"), /class="brand-logo"/);
 assert.match(brandHarness.brandLogoHtml("bca"), /\/bca\.svg/);
-assert.equal(brandHarness.brandLogoHtml("mystery-bank"), "fallback:mystery-bank");
-assert.equal(brandHarness.brandLogoHtml("toString"), "fallback:toString");
+assert.equal(
+  brandHarness.brandLogoHtml("mystery-bank"),
+  '<span class="brand-chip" data-code="mystery-bank" style="background:#6B6259;color:#fff">mystery-bank</span>',
+);
+assert.equal(
+  brandHarness.brandLogoHtml("toString"),
+  '<span class="brand-chip" data-code="toString" style="background:#6B6259;color:#fff">toString</span>',
+);
+const maliciousUnknownBrand = '"><script>alert(\'x\')</script>&';
+const escapedMaliciousUnknownBrand = "&quot;&gt;&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;&amp;";
+const maliciousFallback = brandHarness.brandLogoHtml(maliciousUnknownBrand);
+assert.equal(
+  maliciousFallback,
+  `<span class="brand-chip" data-code="${escapedMaliciousUnknownBrand}" style="background:#6B6259;color:#fff">${escapedMaliciousUnknownBrand}</span>`,
+);
+assert.doesNotMatch(maliciousFallback, /<script\b/i);
 brandHarness.upgradeBrandChips(fakeRoot);
 assert.equal(chips[0].replacedWith, upgradedLogoNode);
 assert.equal(chips[1].replacedWith, undefined);

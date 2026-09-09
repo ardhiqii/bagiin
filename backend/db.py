@@ -12,7 +12,9 @@ DB_PATH = Path(os.environ.get("BAGIIN_DB", Path(__file__).parent / "bagiin.db"))
 # Capture the configured upload root once, alongside DB_PATH. The app and this
 # module must use the same root even when a test module changes the environment
 # after importing them.
-UPLOAD_DIR = Path(os.environ.get("BAGIIN_UPLOAD_DIR", "/var/www/bagiin-uploads"))
+UPLOAD_DIR = Path(
+    os.environ.get("BAGIIN_UPLOAD_DIR", "/var/www/bagiin-uploads")
+).expanduser().resolve()
 
 # uploads are named secrets.token_hex(8)+ a safe photo suffix — only ever unlink those
 _PHOTO_NAME_RE = re.compile(r"^[0-9a-f]{16}\.(?:jpg|png|webp)$")
@@ -855,19 +857,23 @@ def update_bill_photo(bill_id: str, photo_path: str | None):
 def add_bill_photo(bill_id: str, photo_path: str) -> int:
     """Attach another receipt photo (v61). Returns the new row id."""
     conn = get_db()
-    cur = conn.execute(
-        "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM bill_photo WHERE bill_id = ?",
-        (bill_id,),
-    ).fetchone()
-    next_order = cur[0]
-    c = conn.execute(
-        "INSERT INTO bill_photo (bill_id, path, sort_order) VALUES (?, ?, ?)",
-        (bill_id, photo_path, next_order),
-    )
-    conn.commit()
-    new_id = c.lastrowid or 0
-    conn.close()
-    return new_id
+    try:
+        cur = conn.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM bill_photo WHERE bill_id = ?",
+            (bill_id,),
+        ).fetchone()
+        next_order = cur[0]
+        c = conn.execute(
+            "INSERT INTO bill_photo (bill_id, path, sort_order) VALUES (?, ?, ?)",
+            (bill_id, photo_path, next_order),
+        )
+        conn.commit()
+        return c.lastrowid or 0
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def delete_bill_photo(bill_id: str, photo_id: int) -> str | None:
