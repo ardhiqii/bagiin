@@ -9,9 +9,58 @@ from pathlib import Path
 import calc
 
 DB_PATH = Path(os.environ.get("BAGIIN_DB", Path(__file__).parent / "bagiin.db"))
+# Capture the configured upload root once, alongside DB_PATH. The app and this
+# module must use the same root even when a test module changes the environment
+# after importing them.
+UPLOAD_DIR = Path(os.environ.get("BAGIIN_UPLOAD_DIR", "/var/www/bagiin-uploads"))
 
 # uploads are named secrets.token_hex(8)+ a safe photo suffix — only ever unlink those
 _PHOTO_NAME_RE = re.compile(r"^[0-9a-f]{16}\.(?:jpg|png|webp)$")
+
+
+def _photo_path_aliases(photo_path) -> set[str]:
+    """Return stored-path spellings for one generated upload.
+
+    Older clients stored the bare filename while newer ones store the
+    absolute path. Treat those two spellings as the same reference when
+    checking whether a file may be removed.
+    """
+    raw = str(photo_path)
+    aliases = {raw}
+    try:
+        path = Path(raw)
+        if not _PHOTO_NAME_RE.match(path.name):
+            return aliases
+        upload_root = UPLOAD_DIR.resolve()
+        if path.is_absolute():
+            if path.parent.resolve() != upload_root:
+                return aliases
+            absolute = upload_root / path.name
+        else:
+            if path.parent != Path("."):
+                return aliases
+            absolute = upload_root / path.name
+        aliases.update({path.name, str(absolute)})
+    except (OSError, RuntimeError, ValueError):
+        pass
+    return aliases
+
+
+def _safe_upload_photo_path(photo_path) -> Path | None:
+    """Resolve a generated photo path without allowing outside-root unlinking."""
+    if not photo_path:
+        return None
+    try:
+        path = Path(str(photo_path))
+        if not _PHOTO_NAME_RE.match(path.name):
+            return None
+        upload_root = UPLOAD_DIR.resolve()
+        candidate = path if path.is_absolute() else upload_root / path
+        if candidate.parent.resolve() != upload_root:
+            return None
+        return candidate
+    except (OSError, RuntimeError, ValueError):
+        return None
 
 
 def _unlink_photo(photo_path):
@@ -28,8 +77,8 @@ def _unlink_photo(photo_path):
     try:
         if _photo_in_use(photo_path):
             return
-        p = Path(photo_path)
-        if _PHOTO_NAME_RE.match(p.name):
+        p = _safe_upload_photo_path(photo_path)
+        if p is not None:
             p.unlink(missing_ok=True)
     except Exception:
         pass
@@ -39,10 +88,12 @@ def _photo_in_use(photo_path) -> bool:
     """Is this file still referenced by any bill (new table or legacy column)?"""
     conn = get_db()
     try:
+        aliases = sorted(_photo_path_aliases(photo_path))
+        placeholders = ",".join("?" * len(aliases))
         row = conn.execute(
-            "SELECT 1 FROM bill_photo WHERE path = ? "
-            "UNION ALL SELECT 1 FROM bill WHERE photo_path = ? LIMIT 1",
-            (photo_path, photo_path),
+            f"SELECT 1 FROM bill_photo WHERE path IN ({placeholders}) "
+            f"UNION ALL SELECT 1 FROM bill WHERE photo_path IN ({placeholders}) LIMIT 1",
+            (*aliases, *aliases),
         ).fetchone()
         return row is not None
     finally:

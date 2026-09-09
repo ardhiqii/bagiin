@@ -47,7 +47,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_DIR = Path(os.environ.get("BAGIIN_UPLOAD_DIR", "/var/www/bagiin-uploads"))
+UPLOAD_DIR = db.UPLOAD_DIR
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -340,6 +340,25 @@ def _normalize_item(raw, *, include_id: bool = False) -> dict:
     if include_id:
         item["id"] = _item_id(raw.get("id"))
     return item
+
+
+def _normalize_participants(value) -> list[str]:
+    """Validate the optional creator-declared participant list."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise HTTPException(400, "Daftar peserta harus berupa array")
+    participants = []
+    seen = set()
+    for participant in value:
+        if not isinstance(participant, str) or not participant.strip():
+            continue
+        name = participant.strip()
+        key = name.lower()
+        if key not in seen:
+            seen.add(key)
+            participants.append(name)
+    return participants
 
 
 _ALLOWED_PHOTO_MIME = {"image/jpeg", "image/png", "image/webp"}
@@ -1506,14 +1525,7 @@ async def create_bill(request: Request):
             raise HTTPException(400, "Subtotal terlalu besar")
         effective_subtotal += line_total
         normalized_items.append(item)
-    participants = []
-    seen_participants = set()
-    for p in (data.get("participants") or []):
-        if isinstance(p, str) and p.strip():
-            key = p.strip().lower()
-            if key not in seen_participants:
-                seen_participants.add(key)
-                participants.append(p.strip())
+    participants = _normalize_participants(data.get("participants"))
     pc = data.get("participant_count")
     participant_count = _to_int(pc, "Jumlah orang", minv=0, maxv=_MAX_PARTICIPANT_COUNT) if pc not in (None, "") else None
     paid_by_name = _to_str(data.get("paid_by_name"), "Nama pembayar", maxlen=60) or None
@@ -1655,14 +1667,7 @@ async def update_bill(bill_id: str, request: Request):
     # names that hadn't joined yet vanished from the "Yang bayar" picker)
     participants = None
     if "participants" in data:
-        participants = []
-        seen_participants = set()
-        for p in (data.get("participants") or []):
-            if isinstance(p, str) and p.strip():
-                key = p.strip().lower()
-                if key not in seen_participants:
-                    seen_participants.add(key)
-                    participants.append(p.strip())
+        participants = _normalize_participants(data.get("participants"))
     participant_count = db.UNCHANGED
     if "participant_count" in data:
         pc = data.get("participant_count")
@@ -1992,10 +1997,27 @@ async def set_selections(bill_id: str, request: Request):
         raise HTTPException(403, "Bill sudah ditutup")
     _ensure_editable(bill_data)
     ident = _identity_from_request(request)
-    raw_picks = data.get("picks") or []
-    # legacy: bare item_ids list (qty 1 each)
-    if not raw_picks and data.get("item_ids"):
-        raw_picks = [{"item_id": i} for i in data.get("item_ids")]
+    raw_picks = data.get("picks")
+    if "picks" in data:
+        if raw_picks is None:
+            raw_picks = []
+        elif not isinstance(raw_picks, list):
+            raise HTTPException(400, "Daftar pilihan harus berupa array")
+        # legacy: bare item_ids list (qty 1 each)
+        if not raw_picks and "item_ids" in data:
+            legacy_item_ids = data.get("item_ids")
+            if legacy_item_ids is None:
+                legacy_item_ids = []
+            if not isinstance(legacy_item_ids, list):
+                raise HTTPException(400, "Daftar item harus berupa array")
+            raw_picks = [{"item_id": i} for i in legacy_item_ids]
+    else:
+        legacy_item_ids = data.get("item_ids")
+        if legacy_item_ids is None:
+            legacy_item_ids = []
+        if not isinstance(legacy_item_ids, list):
+            raise HTTPException(400, "Daftar item harus berupa array")
+        raw_picks = [{"item_id": i} for i in legacy_item_ids]
     picks = []
     for p in raw_picks:
         if isinstance(p, dict):
@@ -2121,6 +2143,8 @@ def mark_unpaid(bill_id: str, identity_id: str, request: Request):
     ident = _identity_from_request(request)
     if ident["id"] != identity_id and not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Tidak dapat mengubah status pembayaran orang lain")
+    if not db.get_identity(identity_id) or not _is_bill_member(bill_data, identity_id):
+        raise HTTPException(404, "Orang itu belum join bill ini")
     db.mark_unpaid(bill_id, identity_id)
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
@@ -2188,7 +2212,19 @@ async def upload_photo(bill_id: str, request: Request, file: UploadFile = File(.
     filename = secrets.token_hex(8) + _photo_suffix(file.content_type)
     path = UPLOAD_DIR / filename
     path.write_bytes(raw)
-    db.add_bill_photo(bill_id, str(path))
+    try:
+        db.add_bill_photo(bill_id, str(path))
+    except Exception:
+        # The DB insert and file write are separate resources. If the insert
+        # fails (for example, a concurrent bill delete), do not leave an
+        # unattached receipt behind on disk.
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            logging.getLogger("bagiin").warning(
+                "Gagal membersihkan foto bill yang gagal di-attach"
+            )
+        raise
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
 

@@ -716,7 +716,15 @@ def _normalize(parsed) -> dict:
     # is True in Python, which silently flipped bills into tax-included mode
     # (bug: tax zeroed, total rewritten). Only real true/1 count.
     ti = parsed.get("tax_included")
-    tax_included = ti is True or (isinstance(ti, str) and ti.strip().lower() == "true")
+    tax_included = (
+        ti is True
+        or (
+            isinstance(ti, (int, float))
+            and not isinstance(ti, bool)
+            and ti == 1
+        )
+        or (isinstance(ti, str) and ti.strip().lower() == "true")
+    )
     subtotal = max(0, _to_int_truncated(parsed.get("subtotal")))
     tax = max(0, _to_int_truncated(parsed.get("tax")))
     service = max(0, _to_int_truncated(parsed.get("service")))

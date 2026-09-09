@@ -308,3 +308,84 @@ def test_remaining_to_creator_subtracts_uncovered_slots():
     assert result["remaining_to_creator"] == 0
     assert result["uncovered_idr"] == 5
     assert result["total_ok"] is True
+
+
+def test_proportional_allocator_keeps_one_rupiah_bucket_and_priority():
+    assert calc._allocate_proportionally([("owner", 1)], 1, "owner") == {"owner": 1}
+    assert calc._allocate_proportionally(
+        [("guest", 2), ("owner", 1), ("other", 1)], 2, "owner"
+    ) == {"guest": 1, "owner": 1, "other": 0}
+
+
+def test_proportional_allocator_preserves_owner_first_remainder_order():
+    result = calc._allocate_proportionally(
+        [("guest", 100), ("owner", 100), ("other", 100)], 298, "owner"
+    )
+    assert result == {"guest": 99, "owner": 100, "other": 99}
+    assert sum(result.values()) == 298
+    assert all(result[key] <= base for key, base in [("guest", 100), ("owner", 100), ("other", 100)])
+
+    weighted = calc._allocate_proportionally(
+        [("guest", 5), ("owner", 1), ("other", 1)], 3, "owner"
+    )
+    assert weighted == {"guest": 2, "owner": 1, "other": 0}
+
+
+def test_proportional_allocator_caps_request_at_total_base():
+    result = calc._allocate_proportionally(
+        [("owner", 2), ("guest", 3)], 99, "owner"
+    )
+    assert result == {"owner": 2, "guest": 3}
+    assert sum(result.values()) == 5
+
+
+def test_order_discount_allocates_to_people_and_uncovered_slots_without_loss():
+    result = calc.compute(
+        bill={
+            "subtotal_idr": 4,
+            "tax_idr": 0,
+            "service_idr": 0,
+            "total_idr": 4,
+            "tax_mode": "proportional",
+            "order_discount_idr": 1,
+        },
+        items=[
+            {"id": 1, "name": "a", "price_idr": 3},
+            {"id": 2, "name": "b", "price_idr": 2},
+        ],
+        selections=[
+            {"item_id": 1, "identity_id": "alice"},
+            {"item_id": 2, "identity_id": "bob"},
+        ],
+        participants=[],
+        fallback_id="alice",
+    )
+    assert person(result, "alice")["item_subtotal_idr"] == 3
+    assert person(result, "alice")["order_discount_idr"] == 1
+    assert person(result, "alice")["subtotal_idr"] == 2
+    assert person(result, "bob")["item_subtotal_idr"] == 2
+    assert person(result, "bob")["order_discount_idr"] == 0
+    assert person(result, "bob")["subtotal_idr"] == 2
+    assert result["uncovered_idr"] == 0
+    assert result["total_ok"] is True
+
+    uncovered = calc.compute(
+        bill={
+            "subtotal_idr": 2,
+            "tax_idr": 0,
+            "service_idr": 0,
+            "total_idr": 2,
+            "tax_mode": "proportional",
+            "order_discount_idr": 2,
+        },
+        items=[{"id": 1, "name": "tiny", "price_idr": 4, "mode": "slot", "slot_count": 2}],
+        selections=[{"item_id": 1, "identity_id": "owner", "qty": 1}],
+        participants=[],
+        fallback_id="owner",
+    )
+    assert uncovered["uncovered_idr"] == 1
+    assert uncovered["uncovered_slots"] == [{
+        "item_id": 1, "name": "tiny", "per_slot": 2, "empty": 1, "amount_idr": 1,
+    }]
+    assert uncovered["warnings"] == ["Bagian kosong: tiny 1 bagian belum terisi (total Rp 1)"]
+    assert uncovered["total_ok"] is True

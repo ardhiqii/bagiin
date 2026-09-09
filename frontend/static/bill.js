@@ -2317,7 +2317,7 @@ function renderEditItems() {
     const lineTotal = editItemLineTotal(it);
     const slotCount = it.slot_count || 2;
     return `
-    <div class="item-row edit-item" style="flex-wrap:wrap;">
+    <div class="item-row edit-item" data-idx="${idx}" style="flex-wrap:wrap;">
       <div class="edit-name" style="flex:2;min-width:140px;">
         <input data-role="name" data-idx="${idx}" value="${esc(it.name)}" placeholder="Nama Item" aria-label="Nama item" style="padding:9px 10px;">
       </div>

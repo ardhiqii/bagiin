@@ -283,9 +283,19 @@ function setAppNavRoute(route) {
 //    so typed form input in open sheets/screens survives).
 let BRAND_LOGOS = null;
 try { BRAND_LOGOS = JSON.parse(localStorage.getItem("bagiin_brand_logos") || "null"); } catch (e) {}
+function brandLogoFile(code) {
+  if (!BRAND_LOGOS) return null;
+  const exact = Object.prototype.hasOwnProperty.call(BRAND_LOGOS, code)
+    ? BRAND_LOGOS[code] : null;
+  if (exact) return exact;
+  const normalized = String(code == null ? "" : code).trim().toLowerCase();
+  if (!normalized) return null;
+  const key = Object.keys(BRAND_LOGOS).find(k => String(k).trim().toLowerCase() === normalized);
+  return key ? BRAND_LOGOS[key] || null : null;
+}
 function upgradeBrandChips(root) {
   (root || document).querySelectorAll(".brand-chip[data-code]").forEach(chip => {
-    if (!BRAND_LOGOS || !BRAND_LOGOS[chip.dataset.code]) return;
+    if (!brandLogoFile(chip.dataset.code)) return;
     const tpl = document.createElement("template");
     tpl.innerHTML = brandLogoHtml(chip.dataset.code).trim();
     const node = tpl.content.firstElementChild;
@@ -300,7 +310,7 @@ fetch("/static/assets/brands/manifest.json").then(r => r.ok ? r.json() : null).t
   }
 }).catch(() => {});
 function brandLogoHtml(code) {
-  const file = BRAND_LOGOS && BRAND_LOGOS[code];
+  const file = brandLogoFile(code);
   if (!file) return brandChipHtml(code);
   return `<span class="brand-logo"><img src="/static/assets/brands/${file}" alt="${esc(code)}" loading="lazy"
     onerror="this.closest('.brand-logo').outerHTML = brandChipHtml('${esc(code)}')"></span>`;
