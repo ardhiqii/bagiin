@@ -78,7 +78,7 @@ _OPENROUTER_FALLBACK_MAX_SECONDS = 15.0
 
 SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Semua gambar dalam satu permintaan adalah halaman atau potongan dari SATU pesanan yang sama.
 Gabungkan bukti dari semua gambar dan jangan menghitung baris, diskon, pajak, atau total yang tumpang tindih dua kali. Output JSON EXACTLY:
-{"merchant":"nama tempat makan/toko","date":"YYYY-MM-DD","items":[{"name":"nama item","price":harga_satuan,"discount":diskon,"quantity":jumlah}],"subtotal":N,"tax":N,"service":N,"total":N,"tax_included":true/false}
+{"merchant":"nama tempat makan/toko","date":"YYYY-MM-DD","items":[{"name":"nama item","price":harga_satuan,"discount":diskon,"quantity":jumlah}],"subtotal":N,"order_discount":diskon_pesanan,"tax":N,"service":N,"total":N,"tax_included":true/false}
 Rules:
 - Gambar dapat merupakan halaman 1 dan 2 atau potongan berbeda dari pesanan yang sama; cocokkan baris yang sama sebelum menjumlahkan. Jangan menggandakan item atau angka yang muncul di lebih dari satu gambar.
 - merchant = salin persis nama tempat makan/toko dari header struk, karakter dan ejaannya apa adanya; jangan menerjemahkan, memperbaiki, atau mengarang nama. Kalau satu bagian header buram atau meragukan, merchant = ""; kosongkan juga kalau nama tidak ada
@@ -87,14 +87,14 @@ Rules:
 - quantity = jumlah unit yang tercetak jelas pada baris item (bilangan bulat 1 sampai 99). Line total/total baris dihitung sebagai (price - discount) x quantity, bukan dimasukkan ke price. Contoh struk "2 x AYAM 35.000 70.000" berarti price = 35000, quantity = 2, line total = 70000. Kalau hanya tertulis "AYAM 70.000" tanpa pengali 2 yang jelas, pakai price = 70000 dan quantity = 1; jangan membagi harga atau menebak quantity.
 - discount = potongan harga item dalam Rupiah integer (0 kalau tidak ada). Struk sering mencetak baris diskon di bawah item, contoh "CLR-4ProdDis349" lalu "-5.500", gabungkan diskon itu ke item yang tepat di atasnya sebagai discount. Kalau struk tidak mencetak diskon, discount = 0.
 - Jika satu gambar menunjukkan harga satuan asli sebelum diskon dan gambar lain menunjukkan harga yang dibayar, gunakan price = harga satuan asli dan discount = selisih asli dikurangi dibayar PER UNIT. Contoh harga asli 23000, dibayar 18000, quantity 2 berarti discount 5000 dan subtotal 36000.
-- Diskon promo tingkat pesanan atau diskon persentase jangan dibagi atau dipindahkan ke item discount. Biaya handling yang terpisah dilaporkan sebagai service.
+- Diskon promo tingkat pesanan atau voucher checkout yang tercetak sebagai nominal Rupiah masuk ke order_discount, BUKAN item discount. Diskon persentase jangan dikarang menjadi nominal dan jangan dibagi atau dipindahkan ke item discount. Biaya handling yang terpisah dilaporkan sebagai service.
 - Kalau pengali/jumlah tidak jelas, meragukan, atau hanya terlihat sebagai baris struk yang berulang, quantity = 1 dan pertahankan setiap baris item terpisah; jangan menggabungkan item dengan nama sama.
 - tax = PPN/PB1, service = service charge/SC (0 kalau tidak ada)
 - tax_included = true kalau struk menyebut harga sudah termasuk pajak (misal tulisan "termasuk PAJAK", "trmasuk pajak", "harga sudah termasuk pajak", "tax included", "Tax Invoice"). Kalau true: subtotal = jumlah item setelah diskon, tax = 0 (PPN sudah nempel di harga item, jangan dihitung dobel) TAPI service charge/SC tetap dilaporkan apa adanya kalau ada tulisannya di struk, SC itu biaya terpisah dari pajak, bukan bagian dari harga item. Kalau false: subtotal = jumlah sebelum pajak, tax = PPN/PB1, service = SC
-- subtotal = jumlah semua line total (setelah diskon); total = yang dibayar
+- subtotal = jumlah semua line total (setelah diskon item); order_discount = diskon voucher/promo untuk seluruh pesanan (0 kalau tidak tercetak jelas); total = subtotal + tax + service - order_discount. Jangan menebak order_discount dari selisih subtotal dan total.
 - Semua nilai Rupiah output harus bilangan bulat Rupiah, tanpa pecahan atau desimal. Jangan menambahkan field item selain name, price, discount, quantity.
 - Jangan menebak item yang tidak jelas; nama sesingkat mungkin tapi tetap terbaca. Pertahankan bentuk output item yang ada: name, price, discount, quantity; jangan tambahkan field line_total.
-- Kalau struk tidak terbaca sama sekali, output: {"merchant":"","date":"","items":[],"subtotal":0,"tax":0,"service":0,"total":0,"tax_included":false}"""
+- Kalau struk tidak terbaca sama sekali, output: {"merchant":"","date":"","items":[],"subtotal":0,"order_discount":0,"tax":0,"service":0,"total":0,"tax_included":false}"""
 
 
 def _image_records(
@@ -649,6 +649,18 @@ _PAID_PRICE_KEYS = (
     "sale_price",
 )
 
+_ORDER_DISCOUNT_KEYS = (
+    "order_discount",
+    "order_discount_idr",
+    "order_level_discount",
+    "checkout_discount",
+    "checkout_discount_idr",
+    "voucher_discount",
+    "voucher_discount_idr",
+    "promo_discount",
+    "promo_discount_idr",
+)
+
 
 def _normalize(parsed) -> dict:
     # (bug v66: model kadang balikin JSON valid tapi bukan object - array telanjang,
@@ -709,6 +721,15 @@ def _normalize(parsed) -> dict:
     tax = max(0, _to_int_truncated(parsed.get("tax")))
     service = max(0, _to_int_truncated(parsed.get("service")))
     total = max(0, _to_int_truncated(parsed.get("total")))
+    raw_order_discount = _first_present(parsed, _ORDER_DISCOUNT_KEYS)
+    has_order_discount = (
+        raw_order_discount is not None
+        and not _is_percentage(raw_order_discount)
+    )
+    order_discount = (
+        max(0, _to_int_truncated(raw_order_discount))
+        if has_order_discount else 0
+    )
     eff_sum = sum((i["price"] - i["discount"]) * i["quantity"] for i in items)
 
     if tax_included:
@@ -720,17 +741,16 @@ def _normalize(parsed) -> dict:
         # toggle-nya. Duitnya nyangkut diam-diam ke siapa pun yang udah nalangin.)
         subtotal = eff_sum
         tax = 0
-        total = subtotal + service
+        total = max(0, subtotal + service - order_discount)
     else:
         # reconcile LLM-hallucinated numbers so bill-create's strict validation
         # (subtotal == sum items, total == subtotal+tax+service) doesn't 400 on
         # a receipt that OCR read almost-right
         if items and subtotal != eff_sum:
             subtotal = eff_sum
-        if total <= 0:
-            total = subtotal + tax + service
-        elif total != subtotal + tax + service:
-            total = subtotal + tax + service
+        expected_total = subtotal + tax + service - order_discount
+        if total <= 0 or total != expected_total:
+            total = max(0, expected_total)
     # (bug v66: model kadang balikin tanggal non-ISO ("08/08/2026", "8 Agustus 2026").
     # <input type="date"> gak render itu -> kelihatan KOSONG di form verifikasi, tapi
     # nilainya tetep kebawa kalau user gak sadar dan langsung submit; lolos ke bill
@@ -749,6 +769,7 @@ def _normalize(parsed) -> dict:
         "date": date,
         "items": items,
         "subtotal": subtotal,
+        "order_discount": order_discount,
         "tax": tax,
         "service": service,
         "total": total,

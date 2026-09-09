@@ -240,8 +240,9 @@ def test_order_level_percentage_or_discount_is_not_item_rupiah(monkeypatch):
     })
 
     assert normalized["items"][0]["discount"] == 0
+    assert normalized["order_discount"] == 5000
     assert normalized["subtotal"] == 10000
-    assert normalized["total"] == 10000
+    assert normalized["total"] == 5000
 
 
 # Endpoint upload contract

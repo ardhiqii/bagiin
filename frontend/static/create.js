@@ -314,7 +314,7 @@ function blankBillForVerify() {
   // one empty row, not zero: a manual bill always needs at least one item, and
   // an empty card under a paragraph explaining "Bebas vs Slot" is an
   // explanation with nothing to point at
-  return { items: [{ name: "", price: 0, quantity: 1, mode: "free" }], subtotal: 0, tax: 0,
+  return { items: [{ name: "", price: 0, quantity: 1, mode: "free" }], subtotal: 0, order_discount: 0, tax: 0,
            service: 0, total: 0, photo_path: null, merchant: "", date: "", photos: [],
            ocrRetryFiles: [], ocrRetryFile: null };
 }
@@ -582,7 +582,8 @@ function expandPhoto(img) {
 }
 
 let verifyState = {
-  items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null, photos: [],
+  items: [], subtotal: 0, order_discount: 0, tax: 0, service: 0, total: 0, photo_path: null, photos: [],
+  calculationInvalid: false, ocrSubtotal: 0,
   title: "", merchant: "", transacted_at: "", manual: false, paid_by_name: null,
   tax_included: false, taxSaved: 0,
   ocrRetryFiles: [], ocrRetryFile: null,
@@ -603,7 +604,7 @@ let verifyEntryPending = true;
 // under-counted what "typed content" meant).
 function verifyHasTypedContent() {
   return !!(String(verifyState.title || "").trim() ||
-    verifyState.tax || verifyState.service ||
+    verifyState.order_discount || verifyState.tax || verifyState.service ||
     verifyState.transacted_at ||
     (verifyState.photos || []).length ||
     (!verifyState.paidByMyself && String(verifyState.paid_by_name || "").trim()) ||
@@ -886,6 +887,37 @@ function itemQuantity(it) {
   return validQuantity(it.quantity) || 1;
 }
 
+// The verify editor keeps price, discount, and purchased quantity as the
+// canonical item draft. A quantity draft is deliberately not coerced to 1 for
+// calculations: showing the previous valid amount while the user is typing
+// made the subtotal/total look valid even though the bill could not be saved.
+function verifyItemLineTotal(it) {
+  if (!it || it.quantityDraft != null) return null;
+  const quantity = validQuantity(it.quantity);
+  if (quantity == null) return null;
+  const price = Math.max(0, Number(it.price) || 0);
+  const discount = Math.max(0, Number(it.discount) || 0);
+  return Math.max(0, price - discount) * quantity;
+}
+
+function verifyItemTotals(items) {
+  let subtotal = 0;
+  let invalidQuantityIndex = -1;
+  (items || []).forEach((item, idx) => {
+    const lineTotal = verifyItemLineTotal(item);
+    if (lineTotal == null) {
+      if (invalidQuantityIndex < 0) invalidQuantityIndex = idx;
+      return;
+    }
+    subtotal += lineTotal;
+  });
+  return { subtotal, invalidQuantityIndex };
+}
+
+function verifyMoneyText(value) {
+  return value == null ? "—" : fmt(value);
+}
+
 function renderVerify(ocr, manual = false) {
   ocr = ocr || {};
   verifyEntryPending = true;
@@ -902,12 +934,20 @@ function renderVerify(ocr, manual = false) {
   verifyState = {
         items: (ocr.items || []).map(i => {
           const quantity = validQuantity(i.quantity);
-          return { ...i, quantity: quantity || 1, quantityDraft: quantity ? null : (i.quantity == null ? null : String(i.quantity)) };
+          return { ...i,
+            price: Math.max(0, Number(i.price) || 0),
+            discount: Math.max(0, Number(i.discount) || 0),
+            quantity: quantity || 1,
+            quantityDraft: quantity ? null : (i.quantity == null ? null : String(i.quantity)),
+          };
         }),
-        subtotal: ocr.subtotal || 0,
-        tax: ocr.tax || 0,
-        service: ocr.service || 0,
-        total: ocr.total || 0,
+        subtotal: Math.max(0, Number(ocr.subtotal) || 0),
+        order_discount: Math.max(0, Number(ocr.order_discount) || 0),
+        tax: Math.max(0, Number(ocr.tax) || 0),
+        service: Math.max(0, Number(ocr.service) || 0),
+        total: Number(ocr.total) || 0,
+        calculationInvalid: false,
+        ocrSubtotal: Math.max(0, Number(ocr.ocrSubtotal ?? ocr.subtotal) || 0),
         photo_path: photos[0] || null,
         photos,
         title: ocr.title || ocr.merchant || "",
@@ -929,7 +969,7 @@ function renderVerify(ocr, manual = false) {
         // paste) feeds verifyState back through here — reading only `tax` lost
         // the saved number whenever "termasuk pajak" was on, because that
         // forces tax to 0 (bug: PPN vanished after attaching a photo)
-        taxSaved: (ocr && typeof ocr.taxSaved === "number") ? ocr.taxSaved : (ocr.tax || 0),
+        taxSaved: Math.max(0, Number(ocr && typeof ocr.taxSaved === "number" ? ocr.taxSaved : (ocr.tax || 0)) || 0),
         participants: (ocr && ocr.participants) || [],
         extraNames: (ocr && ocr.extraNames) || [],
         // why OCR failed, if that's how we got here (see uploadAndOcr's catch
@@ -939,17 +979,11 @@ function renderVerify(ocr, manual = false) {
         ocrRetryFiles: retryFiles,
         ocrRetryFile: retryFiles[0] || null,
       };
-  // subtotal auto-follows the item sum UNLESS the user explicitly typed their
-  // own subtotal. For OCR: when the receipt's subtotal differs from the items
-  // (LLM missed an item line), keep the receipt value & show the warning —
-  // otherwise let it follow the items so editing a price updates the total.
-  const _sumItems = (verifyState.items || []).reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)) * itemQuantity(i), 0);
-  // preserve the user's "I typed this" flag across re-renders instead of
-  // recomputing it — recomputing made a typed subtotal that happened to equal
-  // the item sum silently switch back to auto-follow (bug: user input ignored)
-  verifyState.subtotalTouched = (ocr && typeof ocr.subtotalTouched === "boolean")
-    ? ocr.subtotalTouched
-    : (!manual && _sumItems !== (verifyState.subtotal || 0));
+  // Subtotal is derived from the canonical item draft in both OCR and manual
+  // flows. OCR's reported subtotal is useful context while scanning, but it is
+  // never an independent authority after the editor opens (bug: an OCR
+  // mismatch left subtotalTouched=true and item edits changed only the line).
+  verifyState.subtotalTouched = false;
 
   const main = `
     ${VERIFY_CSS}
@@ -1036,10 +1070,17 @@ function renderVerify(ocr, manual = false) {
       <div class="vf-grid">
         <div class="vf-sub">
           <label for="subtotal-input">Subtotal (Rp)</label>
-          <input class="input-money" type="text" inputmode="numeric" id="subtotal-input" placeholder="0" maxlength="16" value="${rupiahFmt(verifyState.subtotal)}">
+          <input class="input-money" type="text" inputmode="numeric" id="subtotal-input" placeholder="0" maxlength="16" value="${rupiahFmt(verifyState.subtotal)}" readonly aria-readonly="true">
+          <p class="muted" style="margin-top:5px;">Dihitung otomatis dari harga × jumlah dibeli − potongan.</p>
         </div>
       </div>
-      <details class="progressive-section" ${verifyState.tax || verifyState.service || verifyState.tax_included ? "open" : ""}>
+      <div class="field" style="margin-top:10px;">
+        <label for="order-discount-input">Diskon pesanan / voucher (Rp)</label>
+        <input class="input-money" type="text" inputmode="numeric" id="order-discount-input" placeholder="0" maxlength="16" value="${rupiahFmt(verifyState.order_discount)}" aria-describedby="order-discount-helper order-discount-warn">
+        <p class="muted" id="order-discount-helper" style="margin-top:5px;">Berlaku untuk seluruh pesanan, bukan satu item.</p>
+        <p id="order-discount-warn" class="error-text hidden" style="margin-top:5px;"></p>
+      </div>
+      <details class="progressive-section" ${verifyState.order_discount || verifyState.tax || verifyState.service || verifyState.tax_included ? "open" : ""}>
         <summary class="label-strong">PPN &amp; service <span class="muted">(opsional)</span></summary>
         <div class="vf-grid">
           <div>
@@ -1174,7 +1215,8 @@ function renderVerify(ocr, manual = false) {
       : (verifyState.ocrRetryFile ? [verifyState.ocrRetryFile] : []);
     const preserved = { title: verifyState.title, merchant: verifyState.merchant,
       transacted_at: verifyState.transacted_at, items: verifyState.items.map(i => ({ ...i })),
-      subtotal: verifyState.subtotal, tax: verifyState.tax, service: verifyState.service,
+      subtotal: verifyState.subtotal, order_discount: verifyState.order_discount,
+      tax: verifyState.tax, service: verifyState.service,
       total: verifyState.total, subtotalTouched: verifyState.subtotalTouched,
       tax_included: verifyState.tax_included, taxSaved: verifyState.taxSaved,
       paidByMyself: verifyState.paidByMyself, paid_by_name: verifyState.paid_by_name,
@@ -1349,9 +1391,19 @@ function renderVerify(ocr, manual = false) {
   dateInput.addEventListener("input", (e) => { verifyState.transacted_at = e.target.value; syncDatePlaceholder(); });
   dateInput.addEventListener("change", (e) => { verifyState.transacted_at = e.target.value; syncDatePlaceholder(); });
   syncDatePlaceholder();
-  bindRupiahInput($("#subtotal-input"), () => { verifyState.subtotalTouched = true; updateVerifyTotal(); });
-  bindRupiahInput($("#tax-input"), (v) => { verifyState.taxSaved = v; updateVerifyTotal(); });
-  bindRupiahInput($("#service-input"), () => updateVerifyTotal());
+  // Kept as a bound input for compatibility with scripted/legacy edits, but
+  // subtotal is read-only and every recalculation derives it from item rows.
+  bindRupiahInput($("#subtotal-input"), () => updateVerifyTotal());
+  bindRupiahInput($("#order-discount-input"), (v) => { verifyState.order_discount = v; updateVerifyTotal(); });
+  bindRupiahInput($("#tax-input"), (v) => {
+    verifyState.taxSaved = v;
+    verifyState.tax = v;
+    updateVerifyTotal();
+  });
+  bindRupiahInput($("#service-input"), (v) => {
+    verifyState.service = v;
+    updateVerifyTotal();
+  });
 
   const paidByMe = $("#paid-by-me");
   const payerChoices = $$("input[name=payer-choice]");
@@ -1396,9 +1448,11 @@ function renderVerify(ocr, manual = false) {
       // was wrong (bug: toggling by accident wiped PPN + service permanently).
       if (e.target.checked) {
         if (ti) verifyState.taxSaved = rupiahParse(ti.value);
+        verifyState.tax = 0;
       } else if (ti) {
         ti.disabled = false;
         ti.value = rupiahFmt(verifyState.taxSaved || 0);
+        verifyState.tax = verifyState.taxSaved || 0;
       }
       verifyState.tax_included = e.target.checked;
       updateVerifyTotal();
@@ -1411,16 +1465,21 @@ function updateVerifyLineTotal(idx) {
   const it = verifyState.items[idx];
   const row = $(`#items-list .vf-item[data-idx="${idx}"]`);
   const line = row && row.querySelector("[data-role=line-total] strong");
-  if (line) line.textContent = rupiahFmt(Math.max(0, (it.price || 0) - (it.discount || 0)) * itemQuantity(it));
+  const lineTotal = verifyItemLineTotal(it);
+  if (line) line.textContent = lineTotal == null ? "—" : rupiahFmt(lineTotal);
+  return lineTotal;
 }
 
 function renderVerifyItems() {
   const elList = $("#items-list");
   if (!elList) return;
   elList.innerHTML = verifyState.items.map((it, idx) => {
-    const eff = Math.max(0, (it.price || 0) - (it.discount || 0));
+    const price = Math.max(0, Number(it.price) || 0);
+    const discount = Math.max(0, Number(it.discount) || 0);
+    const eff = Math.max(0, price - discount);
     const quantity = itemQuantity(it);
     const quantityDraft = it.quantityDraft != null ? String(it.quantityDraft) : String(quantity);
+    const lineTotal = verifyItemLineTotal(it);
     const slots = it.slot_count || 2;
     const isSlot = it.mode === "slot";
     return `
@@ -1448,7 +1507,7 @@ function renderVerifyItems() {
           <span class="error-text quantity-error${it.quantityDraft != null ? "" : " hidden"}" data-role="quantity-error">Jumlah harus bilangan bulat 1–99.</span>
         </div>
       </div>
-      <div class="vf-line-total" data-role="line-total"><span>Total baris</span><strong>${rupiahFmt(eff * quantity)}</strong></div>
+      <div class="vf-line-total" data-role="line-total"><span>Total baris</span><strong>${lineTotal == null ? "—" : rupiahFmt(lineTotal)}</strong></div>
 
       <div class="vf-full vf-discount">
         <label class="label-sm vf-discount-label vf-mobile-label" for="disc-${idx}" style="margin:0;">Potongan</label>
@@ -1495,7 +1554,6 @@ function renderVerifyItems() {
   $$("[data-role=price]", elList).forEach(inp => bindRupiahInput(inp, (v) => {
     verifyState.items[+inp.dataset.idx].price = v;
     inp.style.borderColor = "";
-    updateVerifyLineTotal(+inp.dataset.idx);
     updateVerifyTotal();
   }));
   $$("[data-role=quantity]", elList).forEach(inp => {
@@ -1510,7 +1568,6 @@ function renderVerifyItems() {
         // Keep the raw draft visible, but immediately recompute validation so
         // a filled bill cannot retain an enabled CTA after typing 1.5, blank,
         // 0, or abc (bug: invalid branch returned before updateVerifyTotal()).
-        updateVerifyLineTotal(idx);
         updateVerifyTotal();
         settleVerifyDock();
         return;
@@ -1518,7 +1575,6 @@ function renderVerifyItems() {
       it.quantity = value;
       it.quantityDraft = null;
       if (error) error.classList.add("hidden");
-      updateVerifyLineTotal(idx);
       updateVerifyTotal();
       settleVerifyDock();
     };
@@ -1528,14 +1584,18 @@ function renderVerifyItems() {
   $$(".qty-dec", elList).forEach(btn => btn.addEventListener("click", () => {
     const it = verifyState.items[+btn.dataset.idx];
     it.quantityDraft = null;
-    it.quantity = Math.max(1, (it.quantity || 1) - 1);
-    renderVerifyItems(); updateVerifyTotal();
+    it.quantity = Math.max(1, itemQuantity(it) - 1);
+    updateVerifyTotal();
+    renderVerifyItems();
+    settleVerifyDock();
   }));
   $$(".qty-inc", elList).forEach(btn => btn.addEventListener("click", () => {
     const it = verifyState.items[+btn.dataset.idx];
     it.quantityDraft = null;
-    it.quantity = Math.min(99, (it.quantity || 1) + 1);
-    renderVerifyItems(); updateVerifyTotal();
+    it.quantity = Math.min(99, itemQuantity(it) + 1);
+    updateVerifyTotal();
+    renderVerifyItems();
+    settleVerifyDock();
   }));
   $$("[data-role=discount]", elList).forEach(inp => bindRupiahInput(inp, (v) => {
     const it = verifyState.items[+inp.dataset.idx];
@@ -1543,8 +1603,7 @@ function renderVerifyItems() {
     inp.style.borderColor = "";
     const row = inp.closest(".vf-item");
     let bayar = row ? row.querySelector(".disc-bayar") : null;
-    const eff = Math.max(0, (it.price || 0) - v);
-    updateVerifyLineTotal(+inp.dataset.idx);
+    const eff = Math.max(0, (Number(it.price) || 0) - v);
     if (v > 0) {
       if (!bayar && row) {
         bayar = document.createElement("span");
@@ -1558,129 +1617,153 @@ function renderVerifyItems() {
   }));
   $$("[data-role=del]", elList).forEach(btn => btn.addEventListener("click", () => {
     verifyState.items.splice(+btn.dataset.idx, 1);
-    renderVerifyItems();
     updateVerifyTotal();
+    renderVerifyItems();
+    settleVerifyDock();
   }));
   $$(".item-mode-btn", elList).forEach(btn => btn.addEventListener("click", () => {
     const it = verifyState.items[+btn.dataset.idx];
     const mode = btn.dataset.mode;
     it.mode = mode;
     if (mode === "slot" && !it.slot_count) it.slot_count = 2;
-    renderVerifyItems();
     updateVerifyTotal();
+    renderVerifyItems();
+    settleVerifyDock();
   }));
   $$(".slot-inc", elList).forEach(btn => btn.addEventListener("click", () => {
     const it = verifyState.items[+btn.dataset.idx];
     it.slot_count = Math.min(99, (it.slot_count || 2) + 1);
+    updateVerifyTotal();
     renderVerifyItems();
   }));
   $$(".slot-dec", elList).forEach(btn => btn.addEventListener("click", () => {
     const it = verifyState.items[+btn.dataset.idx];
     it.slot_count = Math.max(2, (it.slot_count || 2) - 1);
+    updateVerifyTotal();
     renderVerifyItems();
   }));
 }
 
-function updateVerifyTotal() {
-  const sumItems = verifyState.items.reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)) * itemQuantity(i), 0);
-  // subtotal auto-follows items unless the user typed their own value
-  // (bug: manual-mode-only check meant OCR bills never updated the total when
-  // item prices were edited)
+function recalculateVerifyDraft() {
+  const itemTotals = verifyItemTotals(verifyState.items);
+  const invalidQuantityIndex = itemTotals.invalidQuantityIndex;
+  const invalidDiscountIndex = verifyState.items.findIndex(item =>
+    Math.max(0, Number(item.discount) || 0) > Math.max(0, Number(item.price) || 0));
   const si = $("#subtotal-input");
   const ti = $("#tax-input");
   const svi = $("#service-input");
-  if (!si) return;
-  let subtotal = rupiahParse(si.value);
-  if (!verifyState.subtotalTouched) {
-    subtotal = sumItems;
-    si.value = rupiahFmt(subtotal);
+  const money = value => Math.max(0, Number(value) || 0);
+  const orderDiscount = money(verifyState.order_discount);
+  let tax = money(verifyState.tax);
+  const service = money(verifyState.service);
+  const subtotal = invalidQuantityIndex >= 0 ? null : itemTotals.subtotal;
+  const orderDiscountTooHigh = subtotal != null && orderDiscount > subtotal;
+  const calculationInvalid = invalidQuantityIndex >= 0
+    || invalidDiscountIndex >= 0 || orderDiscountTooHigh;
+
+  // All item mutations re-enter derived mode. Keep the old flag only for
+  // compatibility with drafts restored from an older build; it must never
+  // control the canonical value sent to the API.
+  verifyState.subtotalTouched = false;
+  verifyState.calculationInvalid = calculationInvalid;
+  verifyState.subtotal = subtotal;
+  verifyState.order_discount = orderDiscount;
+  verifyState.service = service;
+
+  if (si) {
+    si.readOnly = true;
+    si.setAttribute("aria-readonly", "true");
+    si.value = subtotal == null ? "" : rupiahFmt(subtotal);
   }
-  let tax = ti ? rupiahParse(ti.value) : 0;
-  const service = svi ? rupiahParse(svi.value) : 0;
   if (verifyState.tax_included) {
-    // prices include tax -> subtotal = items and PPN is forced to 0 (the
-    // backend 400s on tax > 0 here). Service is NOT touched: calc.py still
-    // splits a service charge on a tax-included bill.
-    subtotal = sumItems;
-    si.value = rupiahFmt(subtotal);
-    // disabled, not just overwritten: a keystroke here used to still fire
-    // (this field isn't readonly) and set subtotalTouched = true even
-    // though the value it "typed" was instantly stomped right back to
-    // sumItems above. Turning tax-included back OFF then stopped
-    // re-deriving the subtotal at all (subtotalTouched was already true),
-    // so editing any item price left it permanently mismatched with no fix
-    // but retyping the subtotal by hand (bug: CTA stuck on "Subtotal belum
-    // cocok sama item" forever). Disabling means the keystroke never happens.
-    si.disabled = true;
-    if (ti) { ti.value = ""; ti.disabled = true; }
+    // Item prices already include PPN. Service remains a separate charge and
+    // must continue into the bill total (bug: tax-included editing blanked it).
     tax = 0;
-  } else {
-    si.disabled = false;
-    if (ti) ti.disabled = false;
+    verifyState.tax = 0;
+    if (ti) { ti.value = ""; ti.disabled = true; }
+  } else if (ti) {
+    ti.disabled = false;
   }
-  const total = subtotal + tax + service;
-  verifyState.subtotal = subtotal; verifyState.tax = tax; verifyState.service = service;
+  verifyState.tax = tax;
+  const total = calculationInvalid || subtotal == null
+    ? null : subtotal + tax + service - orderDiscount;
   verifyState.total = total;
+
+  verifyState.items.forEach((_, idx) => updateVerifyLineTotal(idx));
   const td = $("#total-display");
-  if (td) td.textContent = fmt(total);
+  if (td) td.textContent = verifyMoneyText(total);
   const badge = $("#tax-included-badge");
   if (badge) badge.classList.toggle("hidden", !verifyState.tax_included);
 
-  // OCR that found no items (receipt unreadable) isn't the user's error —
-    // forcing them to "match" numbers they can't see blocked the CTA on a
-    // mistake they didn't make (bug: fake mismatch blamed the user)
-    const ocrEmpty = !verifyState.manual && verifyState.items.length === 0 && (verifyState.subtotal || 0) > 0;
-    const mismatch = sumItems !== subtotal && !ocrEmpty;
+  const ocrEmpty = !verifyState.manual && verifyState.items.length === 0
+    && Number(verifyState.ocrSubtotal || 0) > 0;
+  const orderDiscountWarn = $("#order-discount-warn");
+  if (orderDiscountWarn) {
+    orderDiscountWarn.classList.toggle("hidden", !orderDiscountTooHigh);
+    orderDiscountWarn.textContent = orderDiscountTooHigh
+      ? `Diskon pesanan (${fmt(orderDiscount)}) tidak boleh lebih besar dari subtotal (${fmt(subtotal)}).`
+      : "";
+  }
   const warn = $("#sum-warn");
   if (warn) {
-    if (ocrEmpty) {
+    warn.style.color = "";
+    if (invalidQuantityIndex >= 0) {
       warn.classList.remove("hidden");
-      warn.textContent = "Struknya tidak terbaca jelas — tambahkan item manual saja, subtotal dipertahankan dari struk.";
+      warn.textContent = `Jumlah item baris ${invalidQuantityIndex + 1} belum valid — subtotal dan total disembunyikan sampai diperbaiki.`;
+    } else if (invalidDiscountIndex >= 0) {
+      warn.classList.remove("hidden");
+      warn.textContent = `Potongan baris ${invalidDiscountIndex + 1} tidak boleh lebih besar dari harga item.`;
+    } else if (orderDiscountTooHigh) {
+      warn.classList.remove("hidden");
+      warn.textContent = `Diskon pesanan (${fmt(orderDiscount)}) lebih besar dari Subtotal (${fmt(subtotal)}). Kecilkan voucher dulu.`;
+    } else if (ocrEmpty) {
+      warn.classList.remove("hidden");
       warn.style.color = "var(--accent)";
-    } else if (mismatch) {
-      warn.classList.remove("hidden");
-      warn.style.color = "";
-      if (sumItems === total) {
-        warn.textContent = `Harga item (${fmt(sumItems)}) tampaknya sudah TERMASUK pajak, tetapi kamu mengisi Subtotal ${fmt(subtotal)} + PPN. Aktifkan toggle "Harga item sudah termasuk pajak" agar tidak dihitung ganda.`;
-      } else {
-        warn.textContent = `Total item (${fmt(sumItems)}) beda dari Subtotal (${fmt(subtotal)}). Samain dulu — cek harga & kolom Diskon tiap item.`;
-      }
-    } else warn.classList.add("hidden");
+      warn.textContent = "Struknya tidak terbaca jelas — tambahkan item manual saja agar subtotal dan total bisa dihitung.";
+    } else {
+      warn.classList.add("hidden");
+      warn.textContent = "";
+    }
   }
-  // The server hard-rejects subtotal != sum(item price - discount) with a 400,
-  // so this was never just advisory (bug: the CTA looked ready, then failed
-  // with a raw error toast). Block the button until the numbers reconcile.
+
   const cta = $("#create-bill-btn");
   if (cta) {
     // `some()` made a partially filled form look ready: after tapping Tambah
     // Item, one named row was enough to enable the CTA even when the new row
     // was blank. The submit validator caught it only after a confusing tap.
     const unnamedIndex = verifyState.items.findIndex(i => !String(i.name || "").trim());
-    const invalidQuantityIndex = verifyState.items.findIndex(i => i.quantityDraft != null || validQuantity(i.quantity) == null);
-    const invalidDiscountIndex = verifyState.items.findIndex(i => (i.discount || 0) > (i.price || 0));
     const allItemsNamed = verifyState.items.length > 0 && unnamedIndex === -1;
     const hasValidQuantities = invalidQuantityIndex === -1;
     const hasValidDiscounts = invalidDiscountIndex === -1;
-    const hasTotal = total > 0;
+    const hasTotal = total != null && total > 0;
     const payerChosen = !!verifyState.paidByMyself || !!String(verifyState.paid_by_name || "").trim();
     const missing = [];
     if (!allItemsNamed) missing.push(unnamedIndex >= 0 ? `nama item baris ${unnamedIndex + 1}` : "nama item");
     if (!hasValidQuantities) missing.push(`jumlah item baris ${invalidQuantityIndex + 1}`);
     if (!hasValidDiscounts) missing.push(`potongan baris ${invalidDiscountIndex + 1}`);
+    if (orderDiscountTooHigh) missing.push("diskon pesanan");
     if (!hasTotal) missing.push("total");
     if (!payerChosen) missing.push("pembayar");
-    cta.disabled = mismatch || !allItemsNamed || !hasValidQuantities || !hasValidDiscounts || !hasTotal || !payerChosen;
-    cta.textContent = mismatch ? "Subtotal belum cocok sama item" : "Buat Tagihan";
+    cta.disabled = calculationInvalid || !allItemsNamed || !hasTotal || !payerChosen;
+    cta.textContent = orderDiscountTooHigh ? "Diskon pesanan kebesaran" : "Buat Tagihan";
     const helper = $("#create-bill-helper");
-    if (helper) helper.textContent = mismatch ? "Samakan subtotal dengan total item untuk lanjut." :
-      (missing.length ? `Lengkapi ${missing.join(", ")} untuk lanjut.` : "Siap membuat tagihan.");
+    if (helper) helper.textContent = orderDiscountTooHigh
+      ? "Diskon pesanan harus lebih kecil atau sama dengan subtotal."
+      : (missing.length ? `Lengkapi ${missing.join(", ")} untuk lanjut.` : "Siap membuat tagihan.");
   }
+  return {
+    subtotal, orderDiscount, tax, service, total, calculationInvalid,
+    invalidQuantityIndex, invalidDiscountIndex, orderDiscountTooHigh,
+  };
 }
+
+function updateVerifyTotal() { return recalculateVerifyDraft(); }
 
 function bindVerifyInputs() { updateVerifyTotal(); }
 
 async function createBillFinal() {
   const btn = $("#create-bill-btn");
+  const totals = updateVerifyTotal();
   const items = verifyState.items;
   if (!items.length) { toast("Minimal 1 item"); return; }
 
@@ -1698,7 +1781,7 @@ async function createBillFinal() {
     } else if (it.quantityDraft != null || validQuantity(it.quantity) == null) {
       badInput = $(`#items-list [data-role=quantity][data-idx="${idx}"]`);
       badMsg = `Jumlah item baris ${idx + 1} harus bilangan bulat 1–99`;
-    } else if ((it.discount || 0) > (it.price || 0)) {
+    } else if (Math.max(0, Number(it.discount) || 0) > Math.max(0, Number(it.price) || 0)) {
       badInput = $(`#items-list [data-role=discount][data-idx="${idx}"]`);
       badMsg = `Potongan "${it.name}" lebih gede dari harganya`;
     }
@@ -1707,6 +1790,16 @@ async function createBillFinal() {
     badInput.style.borderColor = "var(--red)";
     try { badInput.focus(); keepVerifyFocusAboveDock(badInput, true); } catch (e) {}
     toast(badMsg);
+    return;
+  }
+  if (totals.subtotal == null || totals.total == null) {
+    toast("Perbaiki jumlah item dulu");
+    return;
+  }
+  if (totals.orderDiscount > totals.subtotal) {
+    const input = $("#order-discount-input");
+    if (input) { input.style.borderColor = "var(--red)"; input.focus(); keepVerifyFocusAboveDock(input, true); }
+    toast(`Diskon pesanan tidak boleh lebih besar dari subtotal (${fmt(totals.subtotal)})`);
     return;
   }
   // paid-by-someone needs a name — sending null while the flag says "not me"
@@ -1728,15 +1821,16 @@ async function createBillFinal() {
         merchant: verifyState.merchant || null,
         transacted_at: verifyState.transacted_at || null,
         tax_mode: "proportional",
-        subtotal: verifyState.subtotal,
-        tax: verifyState.tax,
-        service: verifyState.service,
-        total: verifyState.subtotal + verifyState.tax + verifyState.service,
+        subtotal: totals.subtotal,
+        order_discount: totals.orderDiscount,
+        tax: totals.tax,
+        service: totals.service,
+        total: totals.total,
         items: items.map(i => ({
           name: i.name,
-          price: i.price || 0,
-          discount: i.discount || 0,
-          quantity: i.quantity || 1,
+          price: Math.max(0, Number(i.price) || 0),
+          discount: Math.max(0, Number(i.discount) || 0),
+          quantity: validQuantity(i.quantity),
           mode: i.mode === "slot" ? "slot" : "free",
           slot_count: i.mode === "slot" ? (i.slot_count || 2) : null,
         })),

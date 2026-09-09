@@ -3,7 +3,7 @@
 Covers:
 - account takeover: identity endpoints must operate on the authenticated
   identity, not the path identity_id (set_code / name / accounts / my_bills)
-- subtotal validation on create + update (subtotal != sum item eff -> 400)
+- canonical subtotal on create + update; inconsistent canonical totals -> 400
 - duplicate participant names deduped instead of 500
 - participant_count >= 0
 - mark_paid with unknown identity -> 404, and no SQLite lock wedge
@@ -120,7 +120,7 @@ def test_own_identity_endpoints_still_work():
 
 # ---------- subtotal validation ----------
 
-def test_create_rejects_subtotal_mismatch():
+def test_create_rejects_total_mismatch_after_ignoring_stale_subtotal():
     alice = db.new_identity("Alice47g")
     H = _H(alice["id"])
     r = c.post("/api/bills", json={
@@ -130,7 +130,7 @@ def test_create_rejects_subtotal_mismatch():
         "tax_mode": "proportional", "tax_included": False,
     }, headers=H)
     assert r.status_code == 400, r.text
-    assert "Subtotal" in r.json()["detail"]
+    assert "Total" in r.json()["detail"]
 
 
 def test_create_accepts_matching_subtotal_with_discount():
@@ -145,7 +145,7 @@ def test_create_accepts_matching_subtotal_with_discount():
     assert r.status_code == 200, r.text
 
 
-def test_update_rejects_subtotal_mismatch():
+def test_update_rejects_total_mismatch_after_ignoring_stale_subtotal():
     alice = db.new_identity("Alice47i")
     H = _H(alice["id"])
     bid = _mk_bill(alice, subtotal=5000, total=5000,

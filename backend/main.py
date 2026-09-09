@@ -246,6 +246,29 @@ def _item_quantity(value, field: str) -> int:
     return value
 
 
+def _validate_bill_totals(*, subtotal: int, tax: int, service: int,
+                          order_discount: int, total: int,
+                          tax_included: bool) -> None:
+    """Validate the bill-level money equation before touching SQLite.
+
+    ``subtotal`` is already the canonical sum of normalized item lines.  The
+    value sent by the client is only a cached/OCR summary and is intentionally
+    not part of this equation.
+    """
+    if tax_included and tax > 0:
+        raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
+    if order_discount > subtotal:
+        raise HTTPException(400, "Diskon pesanan tidak boleh lebih besar dari subtotal")
+    expected_total = subtotal + tax + service - order_discount
+    if expected_total < 0:
+        raise HTTPException(400, "Total tidak boleh negatif setelah diskon pesanan")
+    if total != expected_total:
+        raise HTTPException(
+            400,
+            "Total tidak sesuai dengan subtotal + pajak + service - diskon pesanan",
+        )
+
+
 def _item_id(value):
     """Normalize an optional persisted item id before set/int operations."""
     if value is None or value == "":
@@ -395,7 +418,9 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
     known_ids = {p["identity_id"] for p in result["people"]}
     for jid in joined_ids - known_ids:
         result["people"].append({
-            "identity_id": jid, "subtotal_idr": 0, "tax_idr": 0, "total_idr": 0,
+            "identity_id": jid, "item_subtotal_idr": 0,
+            "order_discount_idr": 0, "subtotal_idr": 0, "tax_idr": 0,
+            "total_idr": 0,
         })
     # the creator is part of the bill while they're still in it: visible in the
     # split even before picking. Once they walk out (v58 — only possible when a
@@ -403,7 +428,9 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
     creator_id = bill["creator_identity_id"]
     if not bill.get("creator_left") and creator_id not in {p["identity_id"] for p in result["people"]}:
         result["people"].append({
-            "identity_id": creator_id, "subtotal_idr": 0, "tax_idr": 0, "total_idr": 0,
+            "identity_id": creator_id, "item_subtotal_idr": 0,
+            "order_discount_idr": 0, "subtotal_idr": 0, "tax_idr": 0,
+            "total_idr": 0,
         })
     result["people"].sort(key=lambda p: -p["total_idr"])
     all_ids = [p["identity_id"] for p in result["people"]]
@@ -1330,10 +1357,14 @@ def _list_pick_state(bill_data: dict) -> tuple[list[str], int, list[dict]]:
     joined_ids = {p["identity_id"] for p in bill_data["payments"]}
     known_ids = {p["identity_id"] for p in people}
     for jid in joined_ids - known_ids:
-        people.append({"identity_id": jid, "subtotal_idr": 0, "total_idr": 0})
+        people.append({"identity_id": jid, "item_subtotal_idr": 0,
+                       "order_discount_idr": 0, "subtotal_idr": 0,
+                       "total_idr": 0})
     creator_id = bill["creator_identity_id"]
     if not bill.get("creator_left") and creator_id not in {p["identity_id"] for p in people}:
-        people.append({"identity_id": creator_id, "subtotal_idr": 0, "total_idr": 0})
+        people.append({"identity_id": creator_id, "item_subtotal_idr": 0,
+                       "order_discount_idr": 0, "subtotal_idr": 0,
+                       "total_idr": 0})
     claimed = {p["identity_id"]: p["name"] for p in bill_data["participants"]
                if p.get("identity_id")}
     names = _names_for_identities([p["identity_id"] for p in people])
@@ -1442,13 +1473,13 @@ async def create_bill(request: Request):
     if not isinstance(items, list) or not items:
         raise HTTPException(400, "Minimal 1 item")
     normalized_items = []
-    eff_sum = 0
+    effective_subtotal = 0
     for raw in items:
         item = _normalize_item(raw)
         line_total = (item["price"] - item["discount"]) * item["quantity"]
-        if line_total > _MAX_IDR or eff_sum > _MAX_IDR - line_total:
+        if line_total > _MAX_IDR or effective_subtotal > _MAX_IDR - line_total:
             raise HTTPException(400, "Subtotal terlalu besar")
-        eff_sum += line_total
+        effective_subtotal += line_total
         normalized_items.append(item)
     participants = []
     seen_participants = set()
@@ -1461,20 +1492,26 @@ async def create_bill(request: Request):
     pc = data.get("participant_count")
     participant_count = _to_int(pc, "Jumlah orang", minv=0, maxv=_MAX_PARTICIPANT_COUNT) if pc not in (None, "") else None
     paid_by_name = _to_str(data.get("paid_by_name"), "Nama pembayar", maxlen=60) or None
-    subtotal = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0, maxv=_MAX_IDR)
+    # The submitted subtotal may be stale after an item edit (especially when
+    # it came from OCR). Keep validating its shape/range for compatibility,
+    # but never use it as the source of truth for the bill.
+    _submitted_subtotal = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0, maxv=_MAX_IDR)
     tax = _to_int(data.get("tax"), "Pajak", 0, minv=0, maxv=_MAX_IDR)
     service = _to_int(data.get("service"), "Service", 0, minv=0, maxv=_MAX_IDR)
+    order_discount = _to_int(
+        data.get("order_discount"), "Diskon pesanan", 0,
+        minv=0, maxv=_MAX_IDR,
+    )
     total = _to_int(data.get("total"), "Total", 0, minv=0, maxv=_MAX_IDR)
     tax_included = 1 if _parse_bool(data.get("tax_included"), "tax_included", default=False) else 0
     # reject impossible combos instead of persisting a bill whose split can
     # never reconcile (bug: tax_included + tax>0 made sum(people) != total,
     # and an arbitrary total != subtotal+tax+service broke every invariant)
-    if tax_included and tax > 0:
-        raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
-    if total != subtotal + tax + service:
-        raise HTTPException(400, "Total tidak sesuai dengan subtotal + pajak + service")
-    if subtotal != eff_sum:
-        raise HTTPException(400, f"Subtotal tidak sesuai dengan isi item (seharusnya Rp {eff_sum:,})")
+    _validate_bill_totals(
+        subtotal=effective_subtotal, tax=tax, service=service,
+        order_discount=order_discount, total=total,
+        tax_included=bool(tax_included),
+    )
     # a non-string here reached sqlite3 and raised InterfaceError -> 500, and
     # Cloudflare replaces 5xx bodies with its own error page (bug: v64 audit)
     #
@@ -1514,9 +1551,10 @@ async def create_bill(request: Request):
         tax_mode=_to_str(data.get("tax_mode"), "Cara bagi pajak", maxlen=20) or "proportional",
         participant_count=participant_count,
         tax_included=tax_included,
-        subtotal=subtotal,
+        subtotal=effective_subtotal,
         tax=tax,
         service=service,
+        order_discount=order_discount,
         total=total,
         items=normalized_items,
         participants=participants,
@@ -1547,13 +1585,13 @@ async def update_bill(bill_id: str, request: Request):
     if not isinstance(items, list) or not items:
         raise HTTPException(400, "Minimal 1 item")
     normalized_items = []
-    eff_sum = 0
+    effective_subtotal = 0
     for raw in items:
         item = _normalize_item(raw, include_id=True)
         line_total = (item["price"] - item["discount"]) * item["quantity"]
-        if line_total > _MAX_IDR or eff_sum > _MAX_IDR - line_total:
+        if line_total > _MAX_IDR or effective_subtotal > _MAX_IDR - line_total:
             raise HTTPException(400, "Subtotal terlalu besar")
-        eff_sum += line_total
+        effective_subtotal += line_total
         normalized_items.append(item)
     # the same item id twice would be validated twice but stored once, leaving
     # bill.total_idr permanently larger than the sum of its items (bug: 100k
@@ -1615,18 +1653,23 @@ async def update_bill(bill_id: str, request: Request):
     transacted_at = db.UNCHANGED
     if "transacted_at" in data:
         transacted_at = _to_str(data.get("transacted_at"), "Tanggal", maxlen=40) or None
-    subtotal_v = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0, maxv=_MAX_IDR)
+    # Validate the optional client summary, but derive the persisted subtotal
+    # from the normalized item price, discount, and purchased quantity above.
+    _submitted_subtotal = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0, maxv=_MAX_IDR)
     tax_v = _to_int(data.get("tax"), "Pajak", 0, minv=0, maxv=_MAX_IDR)
     service_v = _to_int(data.get("service"), "Service", 0, minv=0, maxv=_MAX_IDR)
+    order_discount_v = _to_int(
+        data.get("order_discount"), "Diskon pesanan", 0,
+        minv=0, maxv=_MAX_IDR,
+    )
     total_v = _to_int(data.get("total"), "Total", 0, minv=0, maxv=_MAX_IDR)
     # same impossible-combo guards as create
     tax_included_v = _parse_bool(data.get("tax_included"), "tax_included", default=False)
-    if tax_included_v and tax_v > 0:
-        raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
-    if total_v != subtotal_v + tax_v + service_v:
-        raise HTTPException(400, "Total tidak sesuai dengan subtotal + pajak + service")
-    if subtotal_v != eff_sum:
-        raise HTTPException(400, f"Subtotal tidak sesuai dengan isi item (seharusnya Rp {eff_sum:,})")
+    _validate_bill_totals(
+        subtotal=effective_subtotal, tax=tax_v, service=service_v,
+        order_discount=order_discount_v, total=total_v,
+        tax_included=tax_included_v,
+    )
     db.update_bill(
         bill_id,
         title=_to_str(data.get("title"), "Judul bill", maxlen=120) or bill_data["bill"]["title"],
@@ -1635,9 +1678,10 @@ async def update_bill(bill_id: str, request: Request):
         participants=participants,
         participant_count=participant_count,
         items=normalized_items,
-        subtotal=subtotal_v,
+        subtotal=effective_subtotal,
         tax=tax_v,
         service=service_v,
+        order_discount=order_discount_v,
         total=total_v,
         tax_included=1 if tax_included_v else 0,
     )

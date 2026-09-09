@@ -283,6 +283,12 @@ def init_db():
     if "settled_manual" not in bcols:
         conn.execute(
             "ALTER TABLE bill ADD COLUMN settled_manual INTEGER NOT NULL DEFAULT 0")
+    # migration: checkout-wide order discount. Keep the original item price and
+    # per-unit item discount untouched; old bills continue to use zero.
+    bcols = {r[1] for r in conn.execute("PRAGMA table_info(bill)").fetchall()}
+    if "order_discount_idr" not in bcols:
+        conn.execute(
+            "ALTER TABLE bill ADD COLUMN order_discount_idr INTEGER NOT NULL DEFAULT 0")
     # migration: multi-photo (v61). bill.photo_path (single, legacy) is
     # converted into bill_photo rows — one per existing photo — and the old
     # column is KEPT untouched (never dropped, never written again) so
@@ -696,17 +702,19 @@ def create_bill(creator_id: str, title: str, tax_mode: str,
                 transacted_at: str | None = None,
                 paid_by_name: str | None = None,
                 tax_included: int = 0,
-                photos: list[str] | None = None) -> dict:
+                photos: list[str] | None = None,
+                order_discount: int = 0) -> dict:
     conn = get_db()
     try:
         bill_id = new_id()
         conn.execute(
             """INSERT INTO bill (id, creator_identity_id, title, merchant, transacted_at,
-               photo_path, paid_by_name, subtotal_idr, tax_idr, service_idr, total_idr, tax_mode, participant_count, tax_included)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               photo_path, paid_by_name, subtotal_idr, tax_idr, service_idr,
+               order_discount_idr, total_idr, tax_mode, participant_count, tax_included)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (bill_id, creator_id, title, merchant, transacted_at, photo_path,
-             paid_by_name, subtotal, tax, service, total, tax_mode, participant_count,
-             1 if tax_included else 0),
+             paid_by_name, subtotal, tax, service, order_discount, total,
+             tax_mode, participant_count, 1 if tax_included else 0),
         )
         for i, p in enumerate(participants):
             conn.execute(
@@ -848,7 +856,8 @@ def update_bill(bill_id: str, title: str, merchant=UNCHANGED,
                 items: list[dict] = None, subtotal: int = 0, tax: int = 0,
                 service: int = 0, total: int = 0,
                 participant_count=UNCHANGED,
-                tax_included: int = 0):
+                tax_included: int = 0,
+                order_discount: int = 0):
     """Full bill update with item diffing.
 
     - Items that keep their id -> updated in place, selections preserved.
@@ -867,8 +876,9 @@ def update_bill(bill_id: str, title: str, merchant=UNCHANGED,
     """
     conn = get_db()
     set_cols = ["title = ?", "subtotal_idr = ?", "tax_idr = ?", "service_idr = ?",
-                "total_idr = ?", "tax_included = ?"]
-    params = [title, subtotal, tax, service, total, 1 if tax_included else 0]
+                "order_discount_idr = ?", "total_idr = ?", "tax_included = ?"]
+    params = [title, subtotal, tax, service, order_discount, total,
+              1 if tax_included else 0]
     if merchant is not UNCHANGED:
         set_cols.append("merchant = ?")
         params.append(merchant)
@@ -1460,7 +1470,7 @@ def get_bills_for_identity(identity_id: str):
     conn = get_db()
     rows = conn.execute(
         """SELECT DISTINCT b.id, b.title, b.merchant, b.transacted_at,
-                  b.total_idr, b.status, b.created_at, b.closed_at,
+                  b.total_idr, b.order_discount_idr, b.status, b.created_at, b.closed_at,
                   b.creator_identity_id, b.paid_by_identity_id, b.paid_by_confirmed
           FROM bill b
           LEFT JOIN payment p ON p.bill_id = b.id AND p.identity_id = ?
