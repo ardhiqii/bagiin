@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 
 const screens = await readFile(new URL("../frontend/static/screens.js", import.meta.url), "utf8");
 const bill = await readFile(new URL("../frontend/static/bill.js", import.meta.url), "utf8");
@@ -72,6 +73,69 @@ assert.doesNotMatch(app, /has-app-nav|bagiin:derived-invalidated/);
 const appNavSetter = app.slice(app.indexOf("function setAppNavRoute"), app.indexOf("// v68b: real brand logos"));
 assert.doesNotMatch(appNavSetter, /syncAppNav\(\)/);
 assert.match(appNavSetter, /syncDockSpace\(\)/);
+
+// Payment brand values are persisted as entered, so both the initial HTML
+// renderer and the async chip upgrade must resolve manifest keys by casing,
+// while unknown values keep the escaped text-chip fallback.
+const brandSource = app.slice(
+  app.indexOf("// v68b: real brand logos"),
+  app.indexOf("// Shared bill status source of truth"),
+);
+assert.match(brandSource, /function brandLogoFile\(code\)/);
+assert.match(brandSource, /brandLogoFile\(chip\.dataset\.code\)/);
+assert.match(brandSource, /const file = brandLogoFile\(code\)/);
+const brandLogoFileSource = brandSource.match(/function brandLogoFile\(code\) \{[\s\S]*?\n\}/)?.[0];
+const brandLogoHtmlSource = brandSource.match(/function brandLogoHtml\(code\) \{[\s\S]*?\n\}/)?.[0];
+const upgradeBrandChipsSource = brandSource.match(/function upgradeBrandChips\(root\) \{[\s\S]*?\n\}/)?.[0];
+assert.ok(brandLogoFileSource, "brand manifest lookup must be executable");
+assert.ok(brandLogoHtmlSource, "brand logo renderer must be executable");
+assert.ok(upgradeBrandChipsSource, "async brand upgrade must be executable");
+
+const upgradedLogoNode = { kind: "bca-logo" };
+const chips = [
+  { dataset: { code: "bca" }, replaceWith(node) { this.replacedWith = node; } },
+  { dataset: { code: "mystery-bank" }, replaceWith(node) { this.replacedWith = node; } },
+];
+const fakeRoot = {
+  querySelectorAll(selector) {
+    assert.equal(selector, ".brand-chip[data-code]");
+    return chips;
+  },
+};
+const fakeDocument = {
+  createElement(tag) {
+    assert.equal(tag, "template");
+    const template = { content: { firstElementChild: null } };
+    Object.defineProperty(template, "innerHTML", {
+      set(value) {
+        template.content.firstElementChild = value.includes("/bca.svg") ? upgradedLogoNode : null;
+      },
+    });
+    return template;
+  },
+};
+const brandHarness = vm.runInNewContext(`
+  const BRAND_LOGOS = { BCA: "bca.svg", Mandiri: "mandiri.svg" };
+  function esc(value) { return String(value == null ? "" : value); }
+  function brandChipHtml(code) { return "fallback:" + esc(code); }
+  ${brandLogoFileSource}
+  ${brandLogoHtmlSource}
+  ${upgradeBrandChipsSource}
+  ({ brandLogoFile, brandLogoHtml, upgradeBrandChips });
+`, { document: fakeDocument });
+assert.equal(brandHarness.brandLogoFile("bca"), "bca.svg");
+assert.equal(brandHarness.brandLogoFile("BCA"), "bca.svg");
+assert.equal(brandHarness.brandLogoFile(" bca "), "bca.svg");
+assert.equal(brandHarness.brandLogoFile("mystery-bank"), null);
+assert.equal(brandHarness.brandLogoFile("toString"), null);
+assert.match(brandHarness.brandLogoHtml("bca"), /class="brand-logo"/);
+assert.match(brandHarness.brandLogoHtml("bca"), /\/bca\.svg/);
+assert.equal(brandHarness.brandLogoHtml("mystery-bank"), "fallback:mystery-bank");
+assert.equal(brandHarness.brandLogoHtml("toString"), "fallback:toString");
+brandHarness.upgradeBrandChips(fakeRoot);
+assert.equal(chips[0].replacedWith, upgradedLogoNode);
+assert.equal(chips[1].replacedWith, undefined);
+
 assert.match(recap, /updateAppNavBadge\(data\)/);
 assert.match(recap, /Loading and retry states are intentionally badge-free/);
 assert.match(recap, /clearAppNavBadge\(\);\n\s*content\.innerHTML = recapErrorHtml/);

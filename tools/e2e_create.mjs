@@ -788,6 +788,12 @@ const readCase = async (width, color) => evaluate(`(() => {
           check(`${prefix}: saved-bill editor starts from server subtotal`,
             editInitial.subtotal === "10.000" && editInitial.total.includes("10.000"), JSON.stringify(editInitial));
           await setInput('[data-role="price"]', "12000");
+          const editPriceOnly = await readTotals();
+          check(`${prefix}: saved-bill price edit refreshes its row line total`,
+            editPriceOnly.line.includes("12.000")
+              && editPriceOnly.subtotal === "12.000"
+              && editPriceOnly.total.includes("12.000"),
+            JSON.stringify(editPriceOnly));
           await evaluate(`document.querySelector(".edit-qty-inc")?.click()`);
           const editPlus = await readTotals();
           check(`${prefix}: saved-bill editor price and quantity update canonical totals`,

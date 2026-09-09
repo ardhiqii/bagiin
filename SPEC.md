@@ -495,6 +495,15 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Fallback payload lama tetap aman, dan nilai uncovered yang malformed atau negatif dinormalisasi menjadi nol di adapter frontend.
 - Regression mencakup fixture item gratis yang dipilih plus slot kosong, konsistensi API detail/history, status chip, history row, dan fallback payload lama.
 
+### 2026-09-09 (v82), audit integrasi halaman dan komponen
+
+- Field koleksi untuk peserta, pilihan item, dan item legacy yang malformed sekarang ditolak sebagai HTTP 400, bukan error 500 atau TypeError yang lolos ke pengguna. Target pembayaran yang belum menjadi member bill juga tidak dapat diubah statusnya.
+- Root upload disamakan antara modul database dan aplikasi. Path foto bare filename dan path absolut diperlakukan sebagai referensi yang sama saat proteksi penghapusan, dan file upload dibersihkan kembali kalau penyimpanan relasi foto gagal.
+- Nilai numerik `tax_included: 1` dari provider OCR dinormalisasi sebagai boolean true, sehingga pajak tidak ikut terhitung dua kali.
+- Brand rekening/e-wallet di semua halaman mencocokkan manifest tanpa membedakan huruf besar-kecil. Brand yang tidak dikenal tetap memakai chip teks yang di-escape, tanpa memperluas data brand atau menyuntikkan HTML berbahaya.
+- Editor bill tersimpan sekarang memberi identitas pada setiap baris item sehingga perubahan harga atau diskon langsung menyegarkan total baris yang terlihat, sementara perubahan jumlah tetap memakai kalkulasi canonical yang sama.
+- Regression v82 mencakup validasi collection, membership pembayaran, cleanup upload gagal, normalisasi OCR, proteksi path foto legacy, brand casing/fallback, dan edit bill tersimpan di browser.
+
 ### 2026-09-08 (v78), fallback OCR gratis multi-model
 
 - OpenRouter OCR sekarang punya urutan model vision gratis, dimulai dari `google/gemma-4-26b-a4b-it:free`, lalu lanjut ke kandidat gratis lain bila provider mengembalikan rate limit, model unavailable, timeout, output tidak valid, atau format JSON terstruktur ditolak.
