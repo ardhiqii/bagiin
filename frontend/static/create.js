@@ -12,6 +12,61 @@ function isCoarsePointer() {
 // Module-level so the global paste handlers honour the toggle too.
 let scanMode = true;
 let createFlowSession = 0;
+
+// A draft can carry two receipt pages, but every upload path (picker, drop,
+// clipboard, OCR fallback, and verify attachments) shares the same cap. The
+// backend applies the byte limits again; these checks keep an accidental third
+// file or an obviously oversized batch from starting any network work.
+const MAX_RECEIPT_PHOTOS = 2;
+const MAX_RECEIPT_PHOTO_BYTES = 5 * 1024 * 1024;
+const MAX_RECEIPT_BATCH_BYTES = 10 * 1024 * 1024;
+const RECEIPT_PHOTO_LIMIT_COPY = "Maksimal 2 foto struk, pilih halaman 1 dan 2 saja.";
+const RECEIPT_PHOTO_SIZE_COPY = "Ukuran foto maksimal 5 MiB per foto, total 10 MiB.";
+const RECEIPT_PHOTO_GUIDE_COPY = "Kalau ada foto harga asli dan harga diskon, pilih keduanya.";
+
+function validateReceiptPhotoBatch(files, maxCount = MAX_RECEIPT_PHOTOS) {
+  const source = files && typeof files.type === "string" ? [files] : files;
+  const photoFiles = Array.from(source || []).filter(Boolean);
+  if (!photoFiles.length) return null;
+  if (photoFiles.length > maxCount) {
+    toast(RECEIPT_PHOTO_LIMIT_COPY);
+    return null;
+  }
+  let totalBytes = 0;
+  for (const file of photoFiles) {
+    if (!file.type || !file.type.startsWith("image/")) {
+      toast("File harus gambar");
+      return null;
+    }
+    if (file.size > MAX_RECEIPT_PHOTO_BYTES) {
+      toast("Foto maksimal 5 MiB");
+      return null;
+    }
+    totalBytes += Number(file.size) || 0;
+  }
+  if (totalBytes > MAX_RECEIPT_BATCH_BYTES) {
+    toast(RECEIPT_PHOTO_SIZE_COPY);
+    return null;
+  }
+  return photoFiles;
+}
+
+function photoPathsFromResponse(result) {
+  const photos = [];
+  const legacyPath = typeof result?.photo_path === "string" && result.photo_path
+    ? result.photo_path : null;
+  if (legacyPath) photos.push(legacyPath);
+  if (Array.isArray(result?.photos)) result.photos.forEach(path => {
+    if (typeof path === "string" && path && !photos.includes(path)) photos.push(path);
+  });
+  return photos;
+}
+
+function normalizePhotoResponse(result) {
+  const photos = photoPathsFromResponse(result);
+  return { ...(result || {}), photos, photo_path: photos[0] || null };
+}
+
 function newCreateFlow() {
   createFlowSession += 1;
   scanMode = true;
@@ -77,9 +132,11 @@ function renderCreate(opts = {}) {
         <div style="font-weight:700;font-size:16px;color:var(--text);">Scan struk otomatis</div>
         <div class="muted">Foto struk, lalu item dan harga dibaca otomatis</div>
         <div class="muted" style="margin-top:4px;">${hint}</div>
+        <div class="muted" style="margin-top:8px;font-size:12px;">${RECEIPT_PHOTO_GUIDE_COPY}</div>
+        <div class="muted" style="margin-top:4px;font-size:12px;">${RECEIPT_PHOTO_LIMIT_COPY} ${RECEIPT_PHOTO_SIZE_COPY}</div>
         <div class="muted" id="dz-scan-state" style="margin-top:8px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:5px;">${dzScanStateHtml()}</div>
       </button>
-      <input type="file" id="file-input" accept="image/*" class="hidden" tabindex="-1" aria-hidden="true">
+      <input type="file" id="file-input" accept="image/*" multiple class="hidden" tabindex="-1" aria-hidden="true">
       <button class="btn-outline" id="manual-btn" style="margin-top:12px;">${ic("pencil")} Isi manual tanpa scan</button>
     </div>`);
   watchDock();
@@ -96,12 +153,11 @@ function renderCreate(opts = {}) {
     fileInput.click();
   };
 
-  const handleImageFile = async (f) => {
-    if (!f) return;
-    if (!f.type || !f.type.startsWith("image/")) { toast("File harus gambar"); return; }
-    if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
-    if (scanMode) await uploadAndOcr(f, session);
-    else await uploadAndAttach(f, undefined, session);
+  const handleImageFiles = async (files) => {
+    const photoFiles = validateReceiptPhotoBatch(files);
+    if (!photoFiles) return;
+    if (scanMode) await uploadAndOcr(photoFiles, session);
+    else await uploadAndAttach(photoFiles, undefined, session);
   };
 
   dz.addEventListener("click", () => {
@@ -168,37 +224,40 @@ function renderCreate(opts = {}) {
     dz.classList.remove("dragover");
   }));
   dz.addEventListener("drop", e => {
-    const f = (e.dataTransfer && e.dataTransfer.files) ? e.dataTransfer.files[0] : null;
-    if (!f) return;
+    const photoFiles = Array.from(e.dataTransfer?.files || []);
+    if (!photoFiles.length) return;
     // dropped files respect the sheet's toggle — no separate choice here
-    handleImageFile(f);
+    handleImageFiles(photoFiles);
   });
   fileInput.addEventListener("change", async () => {
-    await handleImageFile(fileInput.files[0]);
+    await handleImageFiles(Array.from(fileInput.files || []));
   });
 
   $("#manual-btn").addEventListener("click", () => renderVerify(blankBillForVerify(), true));
   if (opts.ocrError) {
     $("#ocr-retry").addEventListener("click", () => {
-      if (!opts.ocrFile) { renderCreate({ preserveSession: true }); return; }
+      const retryFiles = opts.ocrFiles || (opts.ocrFile ? [opts.ocrFile] : []);
+      if (!retryFiles.length) { renderCreate({ preserveSession: true }); return; }
       // retry the SAME flow that failed: if this was the OCR-fallback upload
       // (uploadAndOcr's catch, re-uploading after a scan failure) go back
       // through OCR; if this was a plain no-scan upload, retry the plain
       // upload — see the G3 comment on the card above
-      if (opts.wasScan) uploadAndOcr(opts.ocrFile, session);
-      else uploadAndAttach(opts.ocrFile, undefined, session);
+      if (opts.wasScan) uploadAndOcr(retryFiles, session);
+      else uploadAndAttach(retryFiles, undefined, session);
     });
     $("#ocr-manual").addEventListener("click", () => renderVerify(blankBillForVerify(), true));
   }
 }
 
-// v61: upload a photo WITHOUT scanning — it gets attached to the bill and
-// the user fills items by hand. OCR failure also lands here (photo kept,
-// items manual) instead of throwing the photo away.
+// v61: upload photos WITHOUT scanning, they get attached to the bill and the
+// user fills items by hand. OCR failure also lands here (photos kept, items
+// manual) instead of throwing the photos away.
 // `ocrReason`, when set, is why OCR failed upstream (see uploadAndOcr's
 // catch) — carried through so the manual editor that opens can explain
 // itself instead of just appearing blank with no context.
-async function uploadAndAttach(file, ocrReason, session = createFlowSession, preserved = null) {
+async function uploadAndAttach(files, ocrReason, session = createFlowSession, preserved = null) {
+  const photoFiles = validateReceiptPhotoBatch(files);
+  if (!photoFiles) return;
   const body = $("#create-body");
   if (body) {
     body.innerHTML = `<div class="card" style="text-align:center;padding:40px 16px;">
@@ -207,23 +266,47 @@ async function uploadAndAttach(file, ocrReason, session = createFlowSession, pre
     </div>`;
   }
   const routeAtStart = location.hash;
+  const uploadedPhotoPaths = [];
+  const releaseUploadedPhotoPaths = () => {
+    const retained = new Set((verifyState.photos || []).map(String));
+    releaseAbandonedPhotos(uploadedPhotoPaths.filter(path => !retained.has(String(path))));
+  };
   try {
-    const fd = new FormData();
-    fd.append("file", file);
-    const result = await api("/api/photos", { method: "POST", body: fd });
-    if (location.hash !== routeAtStart || session !== createFlowSession) {
-      releaseReturnedPhotos([result.photo_path]);
-      return;
+    for (const file of photoFiles) {
+      if (location.hash !== routeAtStart || session !== createFlowSession) {
+        releaseUploadedPhotoPaths();
+        return;
+      }
+      const fd = new FormData();
+      fd.append("file", file);
+      const result = await api("/api/photos", { method: "POST", body: fd });
+      const paths = photoPathsFromResponse(result);
+      if (paths.length > 1) releaseAbandonedPhotos(paths.slice(1));
+      if (!paths[0]) throw new Error("Foto tidak tersimpan, coba lagi ya");
+      uploadedPhotoPaths.push(paths[0]);
+      if (location.hash !== routeAtStart || session !== createFlowSession) {
+        releaseUploadedPhotoPaths();
+        return;
+      }
     }
-    // keep the photo; items are filled manually
-    renderVerify({ ...blankBillForVerify(), ...(preserved || {}), photos: [result.photo_path],
-      ocrError: ocrReason || null, ocrRetryFile: ocrReason ? file : null }, true);
+    // keep every uploaded photo, items are filled manually
+    renderVerify({ ...blankBillForVerify(), ...(preserved || {}), photos: uploadedPhotoPaths.slice(),
+      photo_path: uploadedPhotoPaths[0] || null, ocrError: ocrReason || null,
+      ocrRetryFiles: ocrReason ? photoFiles.slice() : [],
+      ocrRetryFile: ocrReason ? photoFiles[0] : null }, true);
   } catch (e) {
+    // A batch fallback is sequential because /api/photos is intentionally a
+    // one-file endpoint. Release both completed uploads and any path exposed
+    // by an adapter that rejects after writing.
+    releaseUploadedPhotoPaths();
+    releaseReturnedPhotos(returnedPhotoPaths(e));
+    if (ocrReason && preserved && preserved.photos) releaseAbandonedPhotos(preserved.photos);
     if (location.hash !== routeAtStart || session !== createFlowSession) return;
     // ocrReason set = this call came from uploadAndOcr's catch (scan failed,
     // now the plain re-upload failed too); unset = this was always a plain
     // no-scan upload. wasScan tells the retry button which flow to resume.
-    renderCreate({ ocrError: e.message, ocrFile: file, wasScan: !!ocrReason, preserveSession: true });
+    renderCreate({ ocrError: e.message, ocrFiles: photoFiles, ocrFile: photoFiles[0],
+      wasScan: !!ocrReason, preserveSession: true });
   }
 }
 
@@ -232,15 +315,31 @@ function blankBillForVerify() {
   // an empty card under a paragraph explaining "Bebas vs Slot" is an
   // explanation with nothing to point at
   return { items: [{ name: "", price: 0, quantity: 1, mode: "free" }], subtotal: 0, tax: 0,
-           service: 0, total: 0, photo_path: null, merchant: "", date: "", photos: [] };
+           service: 0, total: 0, photo_path: null, merchant: "", date: "", photos: [],
+           ocrRetryFiles: [], ocrRetryFile: null };
 }
 
 // attach a photo to the MANUAL verify screen (upload now, path carried into the
 // bill on submit) — separate from uploadAndAttach because that one re-renders a
 // blank verify with a single photo; here we must preserve every field the user
 // already typed and push onto the existing photos array.
-async function verifyAttachPhoto(file) {
-  if (file.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
+let verifyPhotoUploadChain = Promise.resolve();
+function verifyAttachPhoto(file) {
+  // Paste events can arrive while an earlier upload is still in flight. Queue
+  // them so two checks cannot both observe one free slot and create a third
+  // attachment (bug: the visual cap was correct, but concurrent paste escaped).
+  const upload = verifyPhotoUploadChain.then(() => verifyAttachPhotoNow(file));
+  verifyPhotoUploadChain = upload.catch(() => {});
+  return upload;
+}
+async function verifyAttachPhotoNow(file) {
+  const photoFiles = validateReceiptPhotoBatch([file]);
+  if (!photoFiles) return;
+  if ((verifyState.photos || []).length >= MAX_RECEIPT_PHOTOS) {
+    toast(RECEIPT_PHOTO_LIMIT_COPY);
+    return;
+  }
+  file = photoFiles[0];
   // the button was looked up and never used, so a Ctrl+V on the editor spent
   // several silent seconds uploading and a second paste queued a duplicate
   const btn = $("#verify-add-photo");
@@ -251,11 +350,19 @@ async function verifyAttachPhoto(file) {
   const upload = async () => {
     try {
       const result = await api("/api/photos", { method: "POST", body: fd });
+      const paths = photoPathsFromResponse(result);
+      if (paths.length > 1) releaseAbandonedPhotos(paths.slice(1));
+      if (!paths[0]) throw new Error("Foto tidak tersimpan, coba lagi ya");
       if (location.hash !== routeAtStart || session !== createFlowSession) {
-        releaseReturnedPhotos([result.photo_path]);
+        releaseReturnedPhotos([paths[0]]);
         return;
       }
-      const next = { ...verifyState, photos: [...verifyState.photos, result.photo_path] };
+      if ((verifyState.photos || []).length >= MAX_RECEIPT_PHOTOS) {
+        releaseReturnedPhotos([paths[0]]);
+        toast(RECEIPT_PHOTO_LIMIT_COPY);
+        return;
+      }
+      const next = { ...verifyState, photos: [...(verifyState.photos || []), paths[0]] };
       next.photo_path = next.photos[0] || null;
       renderVerify(next, verifyState.manual);
     } catch (e) {
@@ -309,14 +416,16 @@ function releaseAbandonedPhoto(path) {
     .catch(e => console.warn("releaseAbandonedPhoto: gagal hapus " + filename, e));
 }
 function releaseAbandonedPhotos(paths) {
-  (paths || []).forEach(releaseAbandonedPhoto);
+  [...new Set((paths || []).filter(Boolean).map(String))].forEach(releaseAbandonedPhoto);
 }
 function releaseReturnedPhotos(paths) {
   const retained = new Set((verifyState.photos || []).map(String));
   releaseAbandonedPhotos((paths || []).filter(path => path && !retained.has(String(path))));
 }
 
-async function uploadAndOcr(file, session = createFlowSession, preserved = null) {
+async function uploadAndOcr(files, session = createFlowSession, preserved = null) {
+  const photoFiles = validateReceiptPhotoBatch(files);
+  if (!photoFiles) return;
   const body = $("#create-body");
   if (body) {
     body.innerHTML = `<div class="card" style="text-align:center;padding:40px 16px;">
@@ -331,13 +440,20 @@ async function uploadAndOcr(file, session = createFlowSession, preserved = null)
   const routeAtStart = location.hash;
   try {
     const fd = new FormData();
-    fd.append("file", file);
+    for (const file of photoFiles) {
+      fd.append("file", file);
+    }
     const result = await api("/api/ocr", { method: "POST", body: fd });
+    const normalizedResult = normalizePhotoResponse(result);
     if (location.hash !== routeAtStart || session !== createFlowSession) {
-      releaseReturnedPhotos(result.photos || (result.photo_path ? [result.photo_path] : []));
+      releaseReturnedPhotos(normalizedResult.photos);
       return;
     }
-    renderVerify(preserved ? { ...result, ...preserved, photos: result.photos || (result.photo_path ? [result.photo_path] : []) } : result);
+    renderVerify(preserved
+      ? { ...normalizedResult, ...preserved, photos: normalizedResult.photos,
+          photo_path: normalizedResult.photo_path, ocrError: null,
+          ocrRetryFiles: [], ocrRetryFile: null }
+      : normalizedResult);
   } catch (e) {
     // OCR failures can still carry the upload path; the manual fallback below
     // performs a fresh upload, so the failed request's path must be released.
@@ -351,7 +467,7 @@ async function uploadAndOcr(file, session = createFlowSession, preserved = null)
     // 2.6s toast had usually already expired and nobody knew why they were
     // suddenly looking at "Isi Manual" (bug). Carry it into the editor
     // instead, where it can't disappear before it's read.
-    await uploadAndAttach(file, e.message, session, preserved);
+    await uploadAndAttach(photoFiles, e.message, session, preserved);
   }
 }
 
@@ -366,10 +482,11 @@ function pasteImageHandler(e) {
       const f = it.getAsFile();
       if (!f) continue;
       e.preventDefault();
-      if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
+      const photoFiles = validateReceiptPhotoBatch([f]);
+      if (!photoFiles) return;
       // manual verify screen has its own photo row — attach there too, not
       // just the dropzone (user pasted a screenshot while filling the form)
-      if (document.getElementById("verify-add-photo")) { verifyAttachPhoto(f); return; }
+      if (document.getElementById("create-bill-btn")) { verifyAttachPhoto(f); return; }
       if (!document.getElementById("dz")) {
         // create screen is mid-OCR (dropzone replaced by the spinner) or the
         // screen changed; don't hijack paste elsewhere, but don't swallow it
@@ -378,8 +495,8 @@ function pasteImageHandler(e) {
         if (document.getElementById("create-body")) toast("Masih diproses — tunggu bentar");
         return;
       }
-      if (scanMode) uploadAndOcr(f);
-      else uploadAndAttach(f);
+      if (scanMode) uploadAndOcr(photoFiles, createFlowSession);
+      else uploadAndAttach(photoFiles, undefined, createFlowSession);
       return;
     }
   }
@@ -406,10 +523,11 @@ async function readClipboardImage() {
       if (!imgType) continue;
       const blob = await it.getType(imgType);
       const f = new File([blob], "clipboard-image.png", { type: blob.type });
-      if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
-      if (document.getElementById("verify-add-photo")) { await verifyAttachPhoto(f); return; }
-      if (scanMode) await uploadAndOcr(f);
-      else await uploadAndAttach(f);
+      const photoFiles = validateReceiptPhotoBatch([f]);
+      if (!photoFiles) return;
+      if (document.getElementById("create-bill-btn")) { await verifyAttachPhoto(f); return; }
+      if (scanMode) await uploadAndOcr(photoFiles, createFlowSession);
+      else await uploadAndAttach(photoFiles, undefined, createFlowSession);
       return;
     }
     toast("Clipboard kamu tidak ada gambarnya");
@@ -464,9 +582,10 @@ function expandPhoto(img) {
 }
 
 let verifyState = {
-  items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null,
+  items: [], subtotal: 0, tax: 0, service: 0, total: 0, photo_path: null, photos: [],
   title: "", merchant: "", transacted_at: "", manual: false, paid_by_name: null,
   tax_included: false, taxSaved: 0,
+  ocrRetryFiles: [], ocrRetryFile: null,
   // people invited from the create screen: kontak = proven contacts with
   // identity ids (chained into /invite after the bill exists); extraNames =
   // free-typed names with no identity (sent as legacy participant placeholders)
@@ -768,11 +887,18 @@ function itemQuantity(it) {
 }
 
 function renderVerify(ocr, manual = false) {
+  ocr = ocr || {};
   verifyEntryPending = true;
   // v61: photos is an array now; legacy single photo_path folds in so OCR
-  // results (which still carry photo_path) keep working
-  const photos = Array.isArray(ocr.photos) ? ocr.photos.slice()
-    : (ocr.photo_path ? [ocr.photo_path] : []);
+  // results (which still carry photo_path) keep working. The cap is defensive
+  // too, a malformed response must never paint or carry a third draft photo.
+  const normalizedPhotos = normalizePhotoResponse(ocr);
+  const photos = normalizedPhotos.photos.slice(0, MAX_RECEIPT_PHOTOS);
+  if (normalizedPhotos.photos.length > MAX_RECEIPT_PHOTOS) {
+    releaseAbandonedPhotos(normalizedPhotos.photos.slice(MAX_RECEIPT_PHOTOS));
+  }
+  const retryFiles = Array.isArray(ocr.ocrRetryFiles) ? ocr.ocrRetryFiles.slice()
+    : (ocr.ocrRetryFile ? [ocr.ocrRetryFile] : []);
   verifyState = {
         items: (ocr.items || []).map(i => {
           const quantity = validQuantity(i.quantity);
@@ -810,7 +936,8 @@ function renderVerify(ocr, manual = false) {
         // and uploadAndAttach) — carried across re-renders (photo add/remove)
         // the same way every other field here is, by reading it off `ocr`.
         ocrError: (ocr && ocr.ocrError) || null,
-        ocrRetryFile: (ocr && ocr.ocrRetryFile) || null,
+        ocrRetryFiles: retryFiles,
+        ocrRetryFile: retryFiles[0] || null,
       };
   // subtotal auto-follows the item sum UNLESS the user explicitly typed their
   // own subtotal. For OCR: when the receipt's subtotal differs from the items
@@ -841,9 +968,10 @@ function renderVerify(ocr, manual = false) {
         </div>`).join("")}
       </div>
       <div class="vf-photo-actions">
+        ${verifyState.photos.length < MAX_RECEIPT_PHOTOS ? `
         <button class="btn-outline btn-sm" id="verify-add-photo">${ic("camera")} Tambah Foto</button>
-        <button class="btn-outline btn-sm" id="verify-paste-photo">${ic("clipboard")} Tempel</button>
-        <p class="muted">Ketuk foto untuk memperbesar.</p>
+        <button class="btn-outline btn-sm" id="verify-paste-photo">${ic("clipboard")} Tempel</button>` : ""}
+        <p class="muted">${verifyState.photos.length}/${MAX_RECEIPT_PHOTOS} foto, maksimal 2 foto. Ketuk foto untuk memperbesar.</p>
       </div>
     </div>` : (manual ? `
     <div class="card verify-photo-card manual-photo-card" style="padding:8px;">
@@ -851,7 +979,7 @@ function renderVerify(ocr, manual = false) {
         <button class="btn-outline" id="verify-add-photo">${ic("camera")} Tambah Foto Struk</button>
         <button class="btn-outline" id="verify-paste-photo">${ic("clipboard")} Tempel dari Clipboard</button>
       </div>
-      <p class="muted" style="text-align:center;margin-top:6px;">Opsional, foto hanya dilampirkan, tidak dibaca otomatis.</p>
+      <p class="muted" style="text-align:center;margin-top:6px;">0/2 foto, maksimal 2 foto. Opsional, foto hanya dilampirkan, tidak dibaca otomatis.</p>
     </div>` : "")}
 
     <div class="card verify-detail-card">
@@ -881,7 +1009,7 @@ function renderVerify(ocr, manual = false) {
           <p class="muted" style="margin-top:4px;">${esc(verifyState.ocrError)}</p>
           <p class="muted" style="margin-top:4px;">Foto tersimpan — isi secara manual di bawah, atau coba baca otomatis lagi.</p></div>
       </div>
-      ${verifyState.ocrRetryFile ? `
+      ${verifyState.ocrRetryFiles.length ? `
       <div class="btn-row" style="margin-top:12px;">
         <button class="btn-outline btn-sm" id="verify-retry-scan">${ic("refresh")} Coba Scan Lagi</button>
       </div>` : ""}
@@ -1041,7 +1169,9 @@ function renderVerify(ocr, manual = false) {
   if (pastePhotoBtn) pastePhotoBtn.addEventListener("click", () => readClipboardImage());
   const retryScanBtn = $("#verify-retry-scan");
   if (retryScanBtn) retryScanBtn.addEventListener("click", async () => {
-    const f = verifyState.ocrRetryFile;
+    const retryFiles = verifyState.ocrRetryFiles.length
+      ? verifyState.ocrRetryFiles.slice()
+      : (verifyState.ocrRetryFile ? [verifyState.ocrRetryFile] : []);
     const preserved = { title: verifyState.title, merchant: verifyState.merchant,
       transacted_at: verifyState.transacted_at, items: verifyState.items.map(i => ({ ...i })),
       subtotal: verifyState.subtotal, tax: verifyState.tax, service: verifyState.service,
@@ -1058,7 +1188,7 @@ function renderVerify(ocr, manual = false) {
     }
     // a File held across a bfcache restore or a stale re-render could still
     // end up here empty — never leave the button silently dead (J3)
-    if (!f) { toast("Foto aslinya sudah tidak ada — upload ulang ya"); return; }
+    if (!retryFiles.length) { toast("Foto aslinya sudah tidak ada, upload ulang ya"); return; }
     const staleOnRetry = verifyState.photos.slice();
     // route through #/create first (clearing the guard on the way): this is
     // a deliberate hop back into the OCR flow, not a "leave and lose data"
@@ -1074,42 +1204,31 @@ function renderVerify(ocr, manual = false) {
     clearHashGuard();
     history.replaceState(null, "", "#/create");
     renderCreate({ preserveSession: true });
-    await uploadAndOcr(f, createFlowSession, preserved);
+    await uploadAndOcr(retryFiles, createFlowSession, preserved);
     // uploadAndOcr always ends by replacing verifyState wholesale (success:
     // renderVerify(result); OCR-fail-again: uploadAndAttach's own re-upload)
     // with a FRESH upload — the file(s) attached before this retry are now
     // orphaned server-side unless the new state still points at them (J1)
-    releaseAbandonedPhotos(staleOnRetry.filter(p => !verifyState.photos.includes(p)));
+    const retainedAfterRetry = location.hash === "#/create/verify" && document.getElementById("create-bill-btn")
+      ? verifyState.photos : [];
+    releaseAbandonedPhotos(staleOnRetry.filter(p => !retainedAfterRetry.includes(p)));
   });
   if (addPhotoBtn) {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*";
+    input.multiple = true;
     input.className = "hidden";
     addPhotoBtn.insertAdjacentElement("afterend", input);
     addPhotoBtn.addEventListener("click", () => input.click());
     input.addEventListener("change", async () => {
-      const f = input.files[0];
-      if (!f) return;
-      if (f.size > 5 * 1024 * 1024) { toast("Foto maksimal 5MB"); return; }
-      await withBusy(addPhotoBtn, "Upload...", async () => {
-        const routeAtStart = location.hash;
-        const session = createFlowSession;
-        try {
-          const fd = new FormData();
-          fd.append("file", f);
-          const result = await api("/api/photos", { method: "POST", body: fd });
-          if (location.hash !== routeAtStart || session !== createFlowSession) {
-            releaseReturnedPhotos([result.photo_path]);
-            return;
-          }
-          verifyState.photos.push(result.photo_path);
-          renderVerify({ ...verifyState, photos: verifyState.photos, paid_by_name: verifyState.paid_by_name }, verifyState.manual);
-        } catch (e) {
-          releaseReturnedPhotos(returnedPhotoPaths(e));
-          toast(e.message);
-        }
-      });
+      const remaining = Math.max(0, MAX_RECEIPT_PHOTOS - (verifyState.photos || []).length);
+      const photoFiles = validateReceiptPhotoBatch(Array.from(input.files || []), remaining);
+      input.value = "";
+      if (!photoFiles) return;
+      // /api/photos intentionally remains a one-file endpoint, the shared
+      // queue preserves picker order and re-checks the cap after each upload.
+      for (const file of photoFiles) await verifyAttachPhoto(file);
     });
   }
   renderVerifyItems();

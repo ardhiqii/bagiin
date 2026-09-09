@@ -5,6 +5,7 @@ const screens = await readFile(new URL("../frontend/static/screens.js", import.m
 const bill = await readFile(new URL("../frontend/static/bill.js", import.meta.url), "utf8");
 const app = await readFile(new URL("../frontend/static/app.js", import.meta.url), "utf8");
 const recap = await readFile(new URL("../frontend/static/recap.js", import.meta.url), "utf8");
+const create = await readFile(new URL("../frontend/static/create.js", import.meta.url), "utf8");
 const index = await readFile(new URL("../frontend/index.html", import.meta.url), "utf8");
 
 // Regression contracts for async screen races. Keep these source-level and
@@ -111,5 +112,50 @@ assert.match(bill, /data\.settled_manual/);
 assert.match(app, /function renderBillStatusChip\(data, closed, totalUnpaid, soloSoFar\)/);
 assert.match(app, /if \(data\.settled \|\| data\.all_paid\)/);
 assert.match(app, /if \(method !== "GET" && method !== "HEAD"\) \{[\s\S]*invalidateDerivedData/);
+
+// The create flow sends a selected receipt batch as one ordered OCR request,
+// while the manual fallback still uses the existing one-photo endpoint. Keep
+// these source-level so the two-photo cap and cleanup wiring stay deterministic
+// without needing a browser, server, or provider credentials.
+assert.match(create, /const MAX_RECEIPT_PHOTOS = 2/);
+assert.match(create, /const MAX_RECEIPT_PHOTO_BYTES = 5 \* 1024 \* 1024/);
+assert.match(create, /const MAX_RECEIPT_BATCH_BYTES = 10 \* 1024 \* 1024/);
+assert.match(create, /RECEIPT_PHOTO_GUIDE_COPY = .*harga asli dan harga diskon/);
+assert.doesNotMatch(create, /RECEIPT_PHOTO_(?:LIMIT|SIZE|GUIDE)_COPY = [^;\n]*—/);
+assert.match(create, /function validateReceiptPhotoBatch\(files/);
+assert.match(create, /const source = files && typeof files\.type === "string" \? \[files\] : files/);
+assert.match(create, /if \(photoFiles\.length > maxCount\)/);
+assert.match(create, /if \(totalBytes > MAX_RECEIPT_BATCH_BYTES\)/);
+assert.match(create, /Array\.from\(e\.dataTransfer\?\.files \|\| \[\]\)/);
+assert.match(create, /Array\.from\(fileInput\.files \|\| \[\]\)/);
+assert.match(create, /accept="image\/\*" multiple/);
+
+const photoNormalizer = create.slice(
+  create.indexOf("function photoPathsFromResponse"),
+  create.indexOf("function newCreateFlow"),
+);
+assert.match(photoNormalizer, /if \(legacyPath\) photos\.push\(legacyPath\)/);
+assert.match(photoNormalizer, /!photos\.includes\(path\)/);
+assert.match(photoNormalizer, /photo_path: photos\[0\] \|\| null/);
+
+const ocrSource = create.slice(
+  create.indexOf("async function uploadAndOcr"),
+  create.indexOf("// ---------- Clipboard", create.indexOf("async function uploadAndOcr")),
+);
+assert.match(ocrSource, /const fd = new FormData\(\);/);
+assert.match(ocrSource, /for \(const file of photoFiles\) \{\s*fd\.append\("file", file\);\s*\}/);
+assert.equal((ocrSource.match(/api\(["']\/api\/ocr["']/g) || []).length, 1,
+  "a selected photo batch must make exactly one /api/ocr request");
+assert.match(ocrSource, /normalizedResult\.photos/);
+
+// The editor remains compatible with legacy photo_path responses, preserves
+// the first path, and keeps the same hard limit after re-renders and retry.
+assert.match(create, /ocrRetryFiles/);
+assert.match(create, /verifyState\.photos\.length < MAX_RECEIPT_PHOTOS/);
+assert.match(create, /\(verifyState\.photos \|\| \[\]\)\.length >= MAX_RECEIPT_PHOTOS/);
+assert.match(create, /input\.multiple = true/);
+assert.match(create, /const uploadedPhotoPaths = \[\]/);
+assert.match(create, /releaseAbandonedPhotos\(uploadedPhotoPaths\.filter/);
+assert.match(create, /releaseReturnedPhotos\(returnedPhotoPaths\(e\)\)/);
 
 console.log("frontend logic regression assertions: PASS");
