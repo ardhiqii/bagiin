@@ -287,6 +287,9 @@ def _normalize_item(raw, *, include_id: bool = False) -> dict:
 
 
 _ALLOWED_PHOTO_MIME = {"image/jpeg", "image/png", "image/webp"}
+_MAX_OCR_IMAGES = 2
+_MAX_OCR_FILE_BYTES = 5 * 1024 * 1024
+_MAX_OCR_TOTAL_BYTES = 10 * 1024 * 1024
 
 
 def _parse_bool(value, field: str, *, default=None) -> bool:
@@ -2192,26 +2195,82 @@ def delete_photo_standalone(filename: str, request: Request):
 
 @app.post("/api/ocr")
 @limiter.limit("10/minute")
-async def ocr_upload(request: Request, file: UploadFile = File(...)):
-    """OCR a receipt photo -> structured items (draft, belum disimpan)."""
+async def ocr_upload(request: Request, file: list[UploadFile] = File(...)):
+    """OCR one or two receipt photos as one draft request.
+
+    The repeated multipart key remains ``file`` for existing one-photo
+    clients. All bytes are validated before OCR, and files are persisted only
+    after OCR succeeds.
+    """
     _identity_from_request(request)
-    raw = await file.read()
-    if len(raw) > 5 * 1024 * 1024:
-        raise HTTPException(400, "Foto maksimal 5MB")
-    mime = file.content_type or "image/jpeg"
-    if mime == "image/heic":
-        raise HTTPException(400, "Format HEIC belum didukung, pilih foto JPEG/PNG")
-    _check_photo_mime(mime, raw)
+    uploads = file if isinstance(file, (list, tuple)) else [file]
+    if not uploads:
+        raise HTTPException(400, "Minimal satu foto diperlukan")
+    if len(uploads) > _MAX_OCR_IMAGES:
+        raise HTTPException(400, "Maksimal 2 foto struk dalam satu pembacaan")
+
+    images = []
+    total_bytes = 0
+    for upload in uploads:
+        raw = await upload.read()
+        if len(raw) > _MAX_OCR_FILE_BYTES:
+            raise HTTPException(400, "Foto maksimal 5MB")
+        mime = upload.content_type or "image/jpeg"
+        if mime == "image/heic":
+            raise HTTPException(400, "Format HEIC belum didukung, pilih foto JPEG/PNG")
+        _check_photo_mime(mime, raw)
+        total_bytes += len(raw)
+        if total_bytes > _MAX_OCR_TOTAL_BYTES:
+            raise HTTPException(400, "Total foto maksimal 10MB")
+        images.append((raw, mime))
+
+    # Keep legacy one-file bytes and use ordered records for a batch.
+    provider_input = images[0][0] if len(images) == 1 else images
     try:
-        result = ocr_receipt(raw, mime_type=mime)
-    except RuntimeError as e:
+        result = ocr_receipt(provider_input, mime_type=images[0][1])
+    except RuntimeError as error:
         # 4xx supaya Cloudflare gak nelen body-nya (5xx diubah CF jadi HTML error page)
-        raise HTTPException(422, str(e))
-    # keep photo for bill creation
-    filename = secrets.token_hex(8) + _photo_suffix(mime)
-    path = UPLOAD_DIR / filename
-    path.write_bytes(raw)
-    result["photo_path"] = str(path)
+        safe_messages = {
+            "Fitur baca struk otomatis belum disetel di server. Isi manual dulu ya.",
+            "kuota harian habis (reset tengah malam)",
+            "Layanan AI gratis sedang penuh atau mengalami gangguan. Coba lagi beberapa menit kemudian atau isi secara manual.",
+            "Data gambar tidak sesuai format, coba foto ulang.",
+            "Minimal satu foto diperlukan untuk membaca struk.",
+            "Hasil pembacaan AI tidak sesuai format, coba foto ulang atau isi secara manual.",
+            "respons tidak bisa dibaca",
+        }
+        detail = str(error)
+        if detail not in safe_messages:
+            detail = "Layanan AI gratis sedang penuh atau mengalami gangguan. Coba lagi beberapa menit kemudian atau isi secara manual."
+        raise HTTPException(422, detail)
+    except Exception:
+        raise HTTPException(422, "Layanan AI sedang mengalami gangguan. Isi manual dulu ya.")
+
+    if not isinstance(result, dict):
+        raise HTTPException(422, "Hasil pembacaan AI tidak sesuai format, isi manual dulu ya.")
+
+    # Keep photos for bill creation only after the provider succeeds. Include
+    # the current path before writing so a partial write can be rolled back.
+    saved_paths = []
+    try:
+        for raw, mime in images:
+            filename = secrets.token_hex(8) + _photo_suffix(mime)
+            path = UPLOAD_DIR / filename
+            saved_paths.append(path)
+            path.write_bytes(raw)
+    except Exception:
+        for path in saved_paths:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logging.getLogger("bagiin").warning(
+                    "Gagal membersihkan foto OCR yang gagal disimpan"
+                )
+        raise HTTPException(500, "Foto hasil pembacaan gagal disimpan")
+
+    photos = [str(path) for path in saved_paths]
+    result["photos"] = photos
+    result["photo_path"] = photos[0]
     return result
 
 

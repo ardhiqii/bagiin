@@ -1,5 +1,6 @@
 """Bagiin - OCR service: Gemini free tier primary, OpenRouter free vision fallback."""
 import base64
+from decimal import Decimal, ROUND_DOWN
 import io
 import json
 import logging
@@ -75,23 +76,74 @@ _OPENROUTER_MAX_ATTEMPTS = 2
 _OPENROUTER_FALLBACK_RATIO = 1 / 3
 _OPENROUTER_FALLBACK_MAX_SECONDS = 15.0
 
-SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Output JSON EXACTLY:
+SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Semua gambar dalam satu permintaan adalah halaman atau potongan dari SATU pesanan yang sama.
+Gabungkan bukti dari semua gambar dan jangan menghitung baris, diskon, pajak, atau total yang tumpang tindih dua kali. Output JSON EXACTLY:
 {"merchant":"nama tempat makan/toko","date":"YYYY-MM-DD","items":[{"name":"nama item","price":harga_satuan,"discount":diskon,"quantity":jumlah}],"subtotal":N,"tax":N,"service":N,"total":N,"tax_included":true/false}
 Rules:
+- Gambar dapat merupakan halaman 1 dan 2 atau potongan berbeda dari pesanan yang sama; cocokkan baris yang sama sebelum menjumlahkan. Jangan menggandakan item atau angka yang muncul di lebih dari satu gambar.
 - merchant = salin persis nama tempat makan/toko dari header struk, karakter dan ejaannya apa adanya; jangan menerjemahkan, memperbaiki, atau mengarang nama. Kalau satu bagian header buram atau meragukan, merchant = ""; kosongkan juga kalau nama tidak ada
 - date = tanggal transaksi yang tertera di struk, dalam format YYYY-MM-DD (misal struk tulis 8/8/26 -> "2026-08-08"); kalau hanya ada tanggal tanpa tahun, asumsikan tahun berjalan; kosongkan kalau tidak ada
 - price = harga satuan (unit price) SEBELUM diskon, dalam Rupiah integer (tanpa 'Rp', tanpa titik). price BUKAN line total/total baris.
 - quantity = jumlah unit yang tercetak jelas pada baris item (bilangan bulat 1 sampai 99). Line total/total baris dihitung sebagai (price - discount) x quantity, bukan dimasukkan ke price. Contoh struk "2 x AYAM 35.000 70.000" berarti price = 35000, quantity = 2, line total = 70000. Kalau hanya tertulis "AYAM 70.000" tanpa pengali 2 yang jelas, pakai price = 70000 dan quantity = 1; jangan membagi harga atau menebak quantity.
-- discount = potongan harga item dalam Rupiah integer (0 kalau tidak ada). Struk sering mencetak baris diskon di bawah item, contoh "CLR-4ProdDis349" lalu "-5.500" — gabungkan diskon itu ke item yang tepat di atasnya sebagai discount. Kalau struk tidak mencetak diskon, discount = 0.
+- discount = potongan harga item dalam Rupiah integer (0 kalau tidak ada). Struk sering mencetak baris diskon di bawah item, contoh "CLR-4ProdDis349" lalu "-5.500", gabungkan diskon itu ke item yang tepat di atasnya sebagai discount. Kalau struk tidak mencetak diskon, discount = 0.
+- Jika satu gambar menunjukkan harga satuan asli sebelum diskon dan gambar lain menunjukkan harga yang dibayar, gunakan price = harga satuan asli dan discount = selisih asli dikurangi dibayar PER UNIT. Contoh harga asli 23000, dibayar 18000, quantity 2 berarti discount 5000 dan subtotal 36000.
+- Diskon promo tingkat pesanan atau diskon persentase jangan dibagi atau dipindahkan ke item discount. Biaya handling yang terpisah dilaporkan sebagai service.
 - Kalau pengali/jumlah tidak jelas, meragukan, atau hanya terlihat sebagai baris struk yang berulang, quantity = 1 dan pertahankan setiap baris item terpisah; jangan menggabungkan item dengan nama sama.
 - tax = PPN/PB1, service = service charge/SC (0 kalau tidak ada)
-- tax_included = true kalau struk menyebut harga sudah termasuk pajak (misal tulisan "termasuk PAJAK", "trmasuk pajak", "harga sudah termasuk pajak", "tax included", "Tax Invoice"). Kalau true: subtotal = jumlah item setelah diskon, tax = 0 (PPN sudah nempel di harga item, jangan dihitung dobel) TAPI service charge/SC tetap dilaporkan apa adanya kalau ada tulisannya di struk — SC itu biaya terpisah dari pajak, bukan bagian dari harga item. Kalau false: subtotal = jumlah sebelum pajak, tax = PPN/PB1, service = SC
+- tax_included = true kalau struk menyebut harga sudah termasuk pajak (misal tulisan "termasuk PAJAK", "trmasuk pajak", "harga sudah termasuk pajak", "tax included", "Tax Invoice"). Kalau true: subtotal = jumlah item setelah diskon, tax = 0 (PPN sudah nempel di harga item, jangan dihitung dobel) TAPI service charge/SC tetap dilaporkan apa adanya kalau ada tulisannya di struk, SC itu biaya terpisah dari pajak, bukan bagian dari harga item. Kalau false: subtotal = jumlah sebelum pajak, tax = PPN/PB1, service = SC
 - subtotal = jumlah semua line total (setelah diskon); total = yang dibayar
+- Semua nilai Rupiah output harus bilangan bulat Rupiah, tanpa pecahan atau desimal. Jangan menambahkan field item selain name, price, discount, quantity.
 - Jangan menebak item yang tidak jelas; nama sesingkat mungkin tapi tetap terbaca. Pertahankan bentuk output item yang ada: name, price, discount, quantity; jangan tambahkan field line_total.
 - Kalau struk tidak terbaca sama sekali, output: {"merchant":"","date":"","items":[],"subtotal":0,"tax":0,"service":0,"total":0,"tax_included":false}"""
 
 
-def ocr_receipt(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
+def _image_records(
+    image_bytes,
+    mime_type: str | list[str] = "image/jpeg",
+) -> list[tuple[bytes, str]]:
+    """Normalize legacy bytes and ordered image records for provider calls."""
+    byte_types = (bytes, bytearray, memoryview)
+    if isinstance(image_bytes, byte_types):
+        scalar_mime = mime_type if isinstance(mime_type, str) and mime_type else "image/jpeg"
+        return [(bytes(image_bytes), scalar_mime)]
+
+    if (
+        isinstance(image_bytes, (tuple, list))
+        and len(image_bytes) == 2
+        and isinstance(image_bytes[0], byte_types)
+        and (image_bytes[1] is None or isinstance(image_bytes[1], str))
+    ):
+        raw_images = [image_bytes]
+    else:
+        try:
+            raw_images = list(image_bytes)
+        except TypeError as error:
+            raise RuntimeError("Data gambar tidak sesuai format, coba foto ulang.") from error
+    if not raw_images:
+        raise RuntimeError("Minimal satu foto diperlukan untuk membaca struk.")
+
+    mime_values = mime_type if isinstance(mime_type, (list, tuple)) else None
+    if mime_values is not None and len(mime_values) != len(raw_images):
+        raise RuntimeError("Data gambar tidak sesuai format, coba foto ulang.")
+
+    records = []
+    for index, entry in enumerate(raw_images):
+        entry_mime = mime_values[index] if mime_values is not None else mime_type
+        raw = entry
+        if (
+            isinstance(entry, (tuple, list))
+            and len(entry) == 2
+        ):
+            raw, entry_mime = entry
+        if not isinstance(raw, byte_types):
+            raise RuntimeError("Data gambar tidak sesuai format, coba foto ulang.")
+        if not isinstance(entry_mime, str) or not entry_mime:
+            entry_mime = "image/jpeg"
+        records.append((bytes(raw), entry_mime))
+    return records
+
+
+def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
     """OCR via Gemini; kalau Gemini gagal (quota/error), fallback ke OpenRouter gratis."""
     # (bug v66: pesan error dulu nge-leak nama env var mentah-mentah ke toast user,
     # misal "Gemini: GEMINI_API_KEY not set; cadangan: OPENROUTER_API_KEY not set" -
@@ -103,6 +155,8 @@ def ocr_receipt(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
         log.error("OCR tidak berjalan: GEMINI_API_KEY dan OPENROUTER_API_KEY sama-sama kosong")
         raise RuntimeError("Fitur baca struk otomatis belum disetel di server. Isi manual dulu ya.")
 
+    records = _image_records(image_bytes, mime_type)
+    provider_input = image_bytes if isinstance(image_bytes, (bytes, bytearray, memoryview)) else records
     started = time.monotonic()
     deadline = started + max(0.0, OCR_BUDGET_SECONDS)
     # (bug v66 review: Gemini dulu menerima deadline penuh, jadi provider yang
@@ -119,7 +173,7 @@ def ocr_receipt(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
     providers_tried = []
     if GEMINI_API_KEY:
         try:
-            return _gemini_ocr(image_bytes, mime_type, primary_deadline)
+            return _gemini_ocr(provider_input, mime_type, primary_deadline)
         except RuntimeError:
             providers_tried.append("Gemini")
             log.warning("Gemini OCR model=%s failure=provider, coba OpenRouter", GEMINI_MODEL)
@@ -128,7 +182,7 @@ def ocr_receipt(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
 
     if OR_API_KEY:
         try:
-            return _openrouter_ocr(image_bytes, deadline, mime_type=mime_type)
+            return _openrouter_ocr(provider_input, deadline, mime_type=mime_type)
         except RuntimeError:
             providers_tried.append("OpenRouter")
             log.warning("OpenRouter OCR fallback exhausted")
@@ -141,15 +195,26 @@ def ocr_receipt(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
     )
 
 
-def _gemini_ocr(image_bytes: bytes, mime_type: str, deadline: float) -> dict:
-    b64 = base64.b64encode(image_bytes).decode()
+def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline: float | None = None) -> dict:
+    if deadline is None and isinstance(mime_type, (int, float)):
+        deadline = float(mime_type)
+        mime_type = "image/jpeg"
+    if deadline is None:
+        deadline = time.monotonic() + OCR_BUDGET_SECONDS
+    records = _image_records(image_bytes, mime_type)
+    image_parts = [
+        {
+            "inline_data": {
+                "mime_type": image_mime,
+                "data": base64.b64encode(raw).decode(),
+            }
+        }
+        for raw, image_mime in records
+    ]
     payload = {
         "contents": [
             {
-                "parts": [
-                    {"inline_data": {"mime_type": mime_type, "data": b64}},
-                    {"text": SYSTEM_PROMPT},
-                ]
+                "parts": image_parts + [{"text": SYSTEM_PROMPT}]
             }
         ],
         "generationConfig": {
@@ -196,8 +261,8 @@ def _gemini_ocr(image_bytes: bytes, mime_type: str, deadline: float) -> dict:
             if code in RETRY_CODES and attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
                 time.sleep(backoff)
                 continue
-            raise RuntimeError(f"HTTP {code}: {body}")
-        except Exception as e:
+            raise RuntimeError(f"HTTP {code}")
+        except Exception:
             log.warning(
                 "Gemini OCR model=%s failure=request attempt=%d/%d",
                 GEMINI_MODEL,
@@ -208,7 +273,7 @@ def _gemini_ocr(image_bytes: bytes, mime_type: str, deadline: float) -> dict:
             if attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
                 time.sleep(backoff)
                 continue
-            raise RuntimeError(f"Permintaan gagal: {e}")
+            raise RuntimeError("Permintaan OCR gagal")
     if data is None:
         raise RuntimeError("Kegagalan setelah beberapa percobaan (waktu habis)")
 
@@ -269,19 +334,22 @@ def _openrouter_model_deadline(deadline: float, remaining_models: int) -> float:
 
 
 def _openrouter_ocr(
-    image_bytes: bytes,
+    image_bytes,
     deadline: float,
-    mime_type: str = "image/jpeg",
+    mime_type: str | list[str] = "image/jpeg",
 ) -> dict:
-    prepared_image = _downscale(image_bytes)
-    # _downscale returns the original object when Pillow is unavailable or the
-    # input cannot be decoded. Only transformed bytes are always JPEG.
-    prepared_mime = (
-        "image/jpeg"
-        if prepared_image is not image_bytes
-        else (mime_type or "application/octet-stream")
-    )
-    b64 = base64.b64encode(prepared_image).decode()
+    records = _image_records(image_bytes, mime_type)
+    prepared_records = []
+    for raw, image_mime in records:
+        prepared_image = _downscale(raw)
+        # _downscale returns the original object when Pillow is unavailable or
+        # the input cannot be decoded. Transformed bytes are always JPEG.
+        prepared_mime = "image/jpeg" if prepared_image is not raw else image_mime
+        prepared_records.append((prepared_image, prepared_mime))
+    encoded_images = [base64.b64encode(raw).decode() for raw, _ in prepared_records]
+    image_mimes = [image_mime for _, image_mime in prepared_records]
+    payload_images = encoded_images[0] if len(encoded_images) == 1 else encoded_images
+    payload_mimes = image_mimes[0] if len(image_mimes) == 1 else image_mimes
     models = _active_openrouter_models()
 
     for index, model in enumerate(models):
@@ -290,8 +358,8 @@ def _openrouter_ocr(
         model_deadline = _openrouter_model_deadline(deadline, len(models) - index)
         try:
             return _openrouter_model_ocr(
-                b64,
-                prepared_mime,
+                payload_images,
+                payload_mimes,
                 model,
                 model_deadline,
             )
@@ -309,8 +377,8 @@ def _openrouter_ocr(
 
 
 def _openrouter_model_ocr(
-    image_b64: str,
-    image_mime: str,
+    image_b64: str | list[str],
+    image_mime: str | list[str],
     model: str,
     deadline: float,
 ) -> dict:
@@ -407,20 +475,37 @@ def _http_failure_class(code: int) -> str:
 
 
 def _openrouter_payload(
-    image_b64: str,
-    image_mime: str,
+    image_b64: str | list[str],
+    image_mime: str | list[str],
     *,
     structured: bool,
     model: str | None = None,
 ) -> dict:
+    b64_values = [image_b64] if isinstance(image_b64, str) else list(image_b64)
+    mime_values = (
+        [image_mime] * len(b64_values)
+        if isinstance(image_mime, str)
+        else list(image_mime)
+    )
+    if (
+        not b64_values
+        or len(b64_values) != len(mime_values)
+        or not all(isinstance(value, str) and value for value in b64_values)
+        or not all(isinstance(value, str) and value for value in mime_values)
+    ):
+        raise RuntimeError("Data gambar tidak sesuai format, coba foto ulang.")
+    image_parts = [
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime};base64,{b64}"},
+        }
+        for b64, mime in zip(b64_values, mime_values)
+    ]
     payload = {
         "model": model or OR_MODEL,
         "messages": [{
             "role": "user",
-            "content": [
-                {"type": "text", "text": SYSTEM_PROMPT},
-                {"type": "image_url", "image_url": {"url": f"data:{image_mime};base64,{image_b64}"}},
-            ],
+            "content": [{"type": "text", "text": SYSTEM_PROMPT}] + image_parts,
         }],
         "temperature": 0.1,
     }
@@ -483,6 +568,88 @@ def _parse_json_text(text: str) -> dict:
     return json.loads(text)
 
 
+def _rupiah_decimal(value) -> Decimal:
+    """Parse a provider money value without rounding fractional Rupiah."""
+    if value is None:
+        return Decimal(0)
+    if isinstance(value, bool):
+        return Decimal(1 if value else 0)
+    if isinstance(value, Decimal):
+        number = value
+    elif isinstance(value, (int, float)):
+        number = Decimal(str(value))
+    else:
+        text = str(value).strip().replace(" ", "")
+        if not text:
+            return Decimal(0)
+        text = re.sub(r"(?i)rp", "", text)
+        text = re.sub(r"\.(?=\d{3}(?:\D|$))", "", text)
+        text = text.replace(",", ".")
+        number = Decimal(text)
+    if not number.is_finite():
+        raise ValueError("non-finite money")
+    return number
+
+
+def _to_int_truncated(value) -> int:
+    """Convert provider money to Rupiah by truncating toward zero."""
+    try:
+        return int(_rupiah_decimal(value).to_integral_value(rounding=ROUND_DOWN))
+    except Exception:
+        return 0
+
+
+def _first_present(mapping: dict, keys: tuple[str, ...]):
+    for key in keys:
+        if key not in mapping:
+            continue
+        value = mapping[key]
+        if value is None or (isinstance(value, str) and not value.strip()):
+            continue
+        return value
+    return None
+
+
+def _is_percentage(value) -> bool:
+    return isinstance(value, str) and "%" in value
+
+
+def _has_percentage_discount(item: dict) -> bool:
+    if _is_percentage(item.get("discount")):
+        return True
+    return any(
+        key in item and item[key] not in (None, "")
+        for key in (
+            "discount_percent",
+            "discount_percentage",
+            "discount_rate",
+            "discount_pct",
+            "percentage_discount",
+        )
+    )
+
+
+_ORIGINAL_PRICE_KEYS = (
+    "original_price",
+    "original_unit_price",
+    "regular_price",
+    "list_price",
+    "catalog_price",
+    "unit_price",
+)
+_PAID_PRICE_KEYS = (
+    "paid_price",
+    "paid_unit_price",
+    "discounted_price",
+    "discounted_unit_price",
+    "net_price",
+    "net_unit_price",
+    "final_price",
+    "final_unit_price",
+    "sale_price",
+)
+
+
 def _normalize(parsed) -> dict:
     # (bug v66: model kadang balikin JSON valid tapi bukan object - array telanjang,
     # `null`, atau string biasa. `_parse_json_text` cuma nyelametin teks yang ada
@@ -499,12 +666,26 @@ def _normalize(parsed) -> dict:
         if not isinstance(it, dict):
             continue
         try:
-            price = _to_int(it.get("price"))
+            price = _to_int_truncated(it.get("price"))
         except Exception:
             price = 0
         try:
-            discount = _to_int(it.get("discount"))
+            discount = _to_int_truncated(it.get("discount"))
         except Exception:
+            discount = 0
+
+        original_raw = _first_present(it, _ORIGINAL_PRICE_KEYS)
+        paid_raw = _first_present(it, _PAID_PRICE_KEYS)
+        if original_raw is not None and not _is_percentage(original_raw):
+            price = _to_int_truncated(original_raw)
+        if (
+            paid_raw is not None
+            and not _is_percentage(paid_raw)
+            and (original_raw is not None or "price" in it)
+        ):
+            paid_price = _to_int_truncated(paid_raw)
+            discount = max(0, min(price, price - paid_price))
+        elif _has_percentage_discount(it):
             discount = 0
         raw_quantity = it.get("quantity", 1)
         # Only a real integer emitted in the dedicated quantity field counts
@@ -524,10 +705,10 @@ def _normalize(parsed) -> dict:
     # (bug: tax zeroed, total rewritten). Only real true/1 count.
     ti = parsed.get("tax_included")
     tax_included = ti is True or (isinstance(ti, str) and ti.strip().lower() == "true")
-    subtotal = max(0, _to_int(parsed.get("subtotal")))
-    tax = max(0, _to_int(parsed.get("tax")))
-    service = max(0, _to_int(parsed.get("service")))
-    total = max(0, _to_int(parsed.get("total")))
+    subtotal = max(0, _to_int_truncated(parsed.get("subtotal")))
+    tax = max(0, _to_int_truncated(parsed.get("tax")))
+    service = max(0, _to_int_truncated(parsed.get("service")))
+    total = max(0, _to_int_truncated(parsed.get("total")))
     eff_sum = sum((i["price"] - i["discount"]) * i["quantity"] for i in items)
 
     if tax_included:
