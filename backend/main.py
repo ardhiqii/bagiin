@@ -247,9 +247,14 @@ def _item_quantity(value, field: str) -> int:
 
 
 def _validate_bill_totals(*, subtotal: int, tax: int, service: int,
-                          order_discount: int, total: int, eff_sum: int,
+                          order_discount: int, total: int,
                           tax_included: bool) -> None:
-    """Validate the bill-level money equation before touching SQLite."""
+    """Validate the bill-level money equation before touching SQLite.
+
+    ``subtotal`` is already the canonical sum of normalized item lines.  The
+    value sent by the client is only a cached/OCR summary and is intentionally
+    not part of this equation.
+    """
     if tax_included and tax > 0:
         raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
     if order_discount > subtotal:
@@ -262,8 +267,6 @@ def _validate_bill_totals(*, subtotal: int, tax: int, service: int,
             400,
             "Total tidak sesuai dengan subtotal + pajak + service - diskon pesanan",
         )
-    if subtotal != eff_sum:
-        raise HTTPException(400, f"Subtotal tidak sesuai dengan isi item (seharusnya Rp {eff_sum:,})")
 
 
 def _item_id(value):
@@ -1470,13 +1473,13 @@ async def create_bill(request: Request):
     if not isinstance(items, list) or not items:
         raise HTTPException(400, "Minimal 1 item")
     normalized_items = []
-    eff_sum = 0
+    effective_subtotal = 0
     for raw in items:
         item = _normalize_item(raw)
         line_total = (item["price"] - item["discount"]) * item["quantity"]
-        if line_total > _MAX_IDR or eff_sum > _MAX_IDR - line_total:
+        if line_total > _MAX_IDR or effective_subtotal > _MAX_IDR - line_total:
             raise HTTPException(400, "Subtotal terlalu besar")
-        eff_sum += line_total
+        effective_subtotal += line_total
         normalized_items.append(item)
     participants = []
     seen_participants = set()
@@ -1489,7 +1492,10 @@ async def create_bill(request: Request):
     pc = data.get("participant_count")
     participant_count = _to_int(pc, "Jumlah orang", minv=0, maxv=_MAX_PARTICIPANT_COUNT) if pc not in (None, "") else None
     paid_by_name = _to_str(data.get("paid_by_name"), "Nama pembayar", maxlen=60) or None
-    subtotal = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0, maxv=_MAX_IDR)
+    # The submitted subtotal may be stale after an item edit (especially when
+    # it came from OCR). Keep validating its shape/range for compatibility,
+    # but never use it as the source of truth for the bill.
+    _submitted_subtotal = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0, maxv=_MAX_IDR)
     tax = _to_int(data.get("tax"), "Pajak", 0, minv=0, maxv=_MAX_IDR)
     service = _to_int(data.get("service"), "Service", 0, minv=0, maxv=_MAX_IDR)
     order_discount = _to_int(
@@ -1502,8 +1508,8 @@ async def create_bill(request: Request):
     # never reconcile (bug: tax_included + tax>0 made sum(people) != total,
     # and an arbitrary total != subtotal+tax+service broke every invariant)
     _validate_bill_totals(
-        subtotal=subtotal, tax=tax, service=service,
-        order_discount=order_discount, total=total, eff_sum=eff_sum,
+        subtotal=effective_subtotal, tax=tax, service=service,
+        order_discount=order_discount, total=total,
         tax_included=bool(tax_included),
     )
     # a non-string here reached sqlite3 and raised InterfaceError -> 500, and
@@ -1545,7 +1551,7 @@ async def create_bill(request: Request):
         tax_mode=_to_str(data.get("tax_mode"), "Cara bagi pajak", maxlen=20) or "proportional",
         participant_count=participant_count,
         tax_included=tax_included,
-        subtotal=subtotal,
+        subtotal=effective_subtotal,
         tax=tax,
         service=service,
         order_discount=order_discount,
@@ -1579,13 +1585,13 @@ async def update_bill(bill_id: str, request: Request):
     if not isinstance(items, list) or not items:
         raise HTTPException(400, "Minimal 1 item")
     normalized_items = []
-    eff_sum = 0
+    effective_subtotal = 0
     for raw in items:
         item = _normalize_item(raw, include_id=True)
         line_total = (item["price"] - item["discount"]) * item["quantity"]
-        if line_total > _MAX_IDR or eff_sum > _MAX_IDR - line_total:
+        if line_total > _MAX_IDR or effective_subtotal > _MAX_IDR - line_total:
             raise HTTPException(400, "Subtotal terlalu besar")
-        eff_sum += line_total
+        effective_subtotal += line_total
         normalized_items.append(item)
     # the same item id twice would be validated twice but stored once, leaving
     # bill.total_idr permanently larger than the sum of its items (bug: 100k
@@ -1647,7 +1653,9 @@ async def update_bill(bill_id: str, request: Request):
     transacted_at = db.UNCHANGED
     if "transacted_at" in data:
         transacted_at = _to_str(data.get("transacted_at"), "Tanggal", maxlen=40) or None
-    subtotal_v = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0, maxv=_MAX_IDR)
+    # Validate the optional client summary, but derive the persisted subtotal
+    # from the normalized item price, discount, and purchased quantity above.
+    _submitted_subtotal = _to_int(data.get("subtotal"), "Subtotal", 0, minv=0, maxv=_MAX_IDR)
     tax_v = _to_int(data.get("tax"), "Pajak", 0, minv=0, maxv=_MAX_IDR)
     service_v = _to_int(data.get("service"), "Service", 0, minv=0, maxv=_MAX_IDR)
     order_discount_v = _to_int(
@@ -1658,8 +1666,8 @@ async def update_bill(bill_id: str, request: Request):
     # same impossible-combo guards as create
     tax_included_v = _parse_bool(data.get("tax_included"), "tax_included", default=False)
     _validate_bill_totals(
-        subtotal=subtotal_v, tax=tax_v, service=service_v,
-        order_discount=order_discount_v, total=total_v, eff_sum=eff_sum,
+        subtotal=effective_subtotal, tax=tax_v, service=service_v,
+        order_discount=order_discount_v, total=total_v,
         tax_included=tax_included_v,
     )
     db.update_bill(
@@ -1670,7 +1678,7 @@ async def update_bill(bill_id: str, request: Request):
         participants=participants,
         participant_count=participant_count,
         items=normalized_items,
-        subtotal=subtotal_v,
+        subtotal=effective_subtotal,
         tax=tax_v,
         service=service_v,
         order_discount=order_discount_v,

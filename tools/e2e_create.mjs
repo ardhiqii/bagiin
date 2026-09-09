@@ -602,6 +602,240 @@ const readCase = async (width, color) => evaluate(`(() => {
           })()`);
           check(`${prefix}: OCR review preserves duplicate rows and quantity`, ocr.rows === 2 && JSON.stringify(ocr.quantities) === JSON.stringify(["2", "1"]) && ocr.title === "Warung E2E", JSON.stringify(ocr));
         }
+
+        if (color === "light" && width === 320) {
+          const readTotals = () => evaluate(`(() => ({
+            line: document.querySelector('[data-role="line-total"]')?.textContent || "",
+            subtotal: document.querySelector("#subtotal-input")?.value || "",
+            total: document.querySelector("#total-display")?.textContent || "",
+            warning: document.querySelector("#sum-warn")?.textContent || "",
+            ctaDisabled: Boolean(document.querySelector("#create-bill-btn")?.disabled),
+          }))()`);
+          const setInput = (selector, value) => evaluate(`(() => {
+            const input = document.querySelector(${JSON.stringify(selector)});
+            if (!input) throw new Error("missing " + ${JSON.stringify(selector)});
+            input.value = ${JSON.stringify(value)};
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          })()`);
+
+          const ocrMismatchInitial = await evaluate(`(() => {
+            renderVerify({
+              title: "OCR mismatch",
+              paidByMyself: true,
+              items: [{ name: "OCR item", price: 10000, discount: 0, quantity: 1, mode: "free" }],
+              subtotal: 9000,
+              tax: 0,
+              service: 0,
+              total: 9000,
+              photos: [],
+            }, false);
+            return {
+              line: document.querySelector('[data-role="line-total"]')?.textContent || "",
+              subtotal: document.querySelector("#subtotal-input")?.value || "",
+              total: document.querySelector("#total-display")?.textContent || "",
+              warning: document.querySelector("#sum-warn")?.textContent || "",
+              ctaDisabled: Boolean(document.querySelector("#create-bill-btn")?.disabled),
+            };
+          })()`);
+          check(`${prefix}: OCR mismatch immediately derives subtotal and total`,
+            ocrMismatchInitial.line.includes("10.000")
+              && ocrMismatchInitial.subtotal === "10.000"
+              && ocrMismatchInitial.total.includes("10.000")
+              && !ocrMismatchInitial.warning
+              && ocrMismatchInitial.ctaDisabled === false,
+            JSON.stringify(ocrMismatchInitial));
+
+          await setInput('[data-role="price"]', "12000");
+          const ocrPrice = await readTotals();
+          check(`${prefix}: OCR price edit updates line, subtotal, and total`,
+            ocrPrice.line.includes("12.000") && ocrPrice.subtotal === "12.000" && ocrPrice.total.includes("12.000"),
+            JSON.stringify(ocrPrice));
+
+          await evaluate(`document.querySelector(".qty-inc")?.click()`);
+          const ocrPlus = await readTotals();
+          check(`${prefix}: OCR quantity plus updates canonical totals`,
+            ocrPlus.line.includes("24.000") && ocrPlus.subtotal === "24.000" && ocrPlus.total.includes("24.000"),
+            JSON.stringify(ocrPlus));
+          await evaluate(`document.querySelector(".qty-dec")?.click()`);
+          const ocrMinus = await readTotals();
+          check(`${prefix}: OCR quantity minus updates canonical totals`,
+            ocrMinus.line.includes("12.000") && ocrMinus.subtotal === "12.000" && ocrMinus.total.includes("12.000"),
+            JSON.stringify(ocrMinus));
+
+          await setInput("#subtotal-input", "9999");
+          const derivedAfterTypedSubtotal = await readTotals();
+          check(`${prefix}: item edit wins over a typed subtotal`,
+            derivedAfterTypedSubtotal.subtotal === "12.000"
+              && derivedAfterTypedSubtotal.total.includes("12.000")
+              && !derivedAfterTypedSubtotal.warning,
+            JSON.stringify(derivedAfterTypedSubtotal));
+
+          await setInput('[data-role="quantity"]', "");
+          const invalidQuantity = await readTotals();
+          check(`${prefix}: invalid quantity hides stale derived totals`,
+            invalidQuantity.line.includes("—")
+              && invalidQuantity.subtotal === ""
+              && invalidQuantity.total.includes("—")
+              && invalidQuantity.ctaDisabled === true,
+            JSON.stringify(invalidQuantity));
+          await setInput('[data-role="quantity"]', "1");
+          await evaluate(`document.querySelector(".qty-inc")?.click()`);
+
+          const createCapture = await evaluate(`(async () => {
+            const originalApiJson = apiJson;
+            window.__e2eCreatePayload = null;
+            apiJson = async (path, method, payload) => {
+              window.__e2eCreatePayload = { path, method, payload };
+              return originalApiJson(path, method, payload);
+            };
+            try { await createBillFinal(); }
+            finally { apiJson = originalApiJson; }
+            return window.__e2eCreatePayload;
+          })()`);
+          const createPayload = createCapture?.payload;
+          check(`${prefix}: create payload uses canonical edited price, quantity, subtotal, and total`,
+            createCapture?.path === "/api/bills"
+              && createCapture?.method === "POST"
+              && createPayload?.items?.[0]?.price === 12000
+              && createPayload?.items?.[0]?.quantity === 2
+              && createPayload?.subtotal === 24000
+              && createPayload?.total === 24000,
+            JSON.stringify(createCapture));
+
+          const manual = await evaluate(`(() => {
+            renderVerify({
+              title: "Manual",
+              paidByMyself: true,
+              items: [{ name: "Manual item", price: 5000, discount: 0, quantity: 1, mode: "free" }],
+              subtotal: 5000,
+              tax: 0,
+              service: 0,
+              total: 5000,
+              photos: [],
+            }, true);
+            const input = document.querySelector('[data-role="price"]');
+            input.value = "12000";
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            const afterPrice = {
+              line: document.querySelector('[data-role="line-total"]')?.textContent || "",
+              subtotal: document.querySelector("#subtotal-input")?.value || "",
+              total: document.querySelector("#total-display")?.textContent || "",
+            };
+            document.querySelector(".qty-inc")?.click();
+            const afterPlus = {
+              line: document.querySelector('[data-role="line-total"]')?.textContent || "",
+              subtotal: document.querySelector("#subtotal-input")?.value || "",
+              total: document.querySelector("#total-display")?.textContent || "",
+            };
+            document.querySelector(".qty-dec")?.click();
+            const afterMinus = {
+              line: document.querySelector('[data-role="line-total"]')?.textContent || "",
+              subtotal: document.querySelector("#subtotal-input")?.value || "",
+              total: document.querySelector("#total-display")?.textContent || "",
+            };
+            return { afterPrice, afterPlus, afterMinus };
+          })()`);
+          check(`${prefix}: manual price and quantity plus/minus share canonical recalculation`,
+            manual.afterPrice.line.includes("12.000") && manual.afterPrice.subtotal === "12.000"
+              && manual.afterPrice.total.includes("12.000")
+              && manual.afterPlus.line.includes("24.000") && manual.afterPlus.subtotal === "24.000"
+              && manual.afterPlus.total.includes("24.000")
+              && manual.afterMinus.line.includes("12.000") && manual.afterMinus.subtotal === "12.000"
+              && manual.afterMinus.total.includes("12.000"),
+            JSON.stringify(manual));
+
+          const manualHash = await evaluate(`(async () => {
+            renderVerify({
+              title: "Manual submitted",
+              paidByMyself: true,
+              items: [{ name: "Manual submitted item", price: 12000, discount: 0, quantity: 2, mode: "free" }],
+              subtotal: 24000,
+              tax: 0,
+              service: 0,
+              total: 24000,
+              photos: [],
+            }, true);
+            await createBillFinal();
+            return location.hash;
+          })()`);
+          const manualId = String(manualHash || "").startsWith("#/b/") ? String(manualHash).slice(4) : "";
+          const manualStored = manualId ? await api("GET", `/api/bills/${manualId}`, undefined, identity) : null;
+          check(`${prefix}: manual bill submits and persists canonical edited quantity`,
+            Boolean(manualId)
+              && manualStored?.bill?.subtotal_idr === 24000
+              && manualStored?.bill?.total_idr === 24000
+              && manualStored?.items?.[0]?.price_idr === 12000
+              && manualStored?.items?.[0]?.quantity === 2,
+            JSON.stringify({ hash: manualHash, bill: manualStored?.bill, item: manualStored?.items?.[0] }));
+
+          const saved = await api("POST", "/api/bills", {
+            title: `Edit E2E ${Date.now().toString(36)}`,
+            items: [{ name: "Saved item", price: 10000, discount: 0, quantity: 1, mode: "free" }],
+            subtotal: 10000,
+            tax: 0,
+            service: 0,
+            total: 10000,
+            tax_included: false,
+          }, identity);
+          await navigate(`${BASE_URL}/?e2e=${Date.now()}#/b/${saved.id}`);
+          await sleep(400);
+          const editButton = await evaluate(`Boolean(document.querySelector("#edit-bill-btn"))`);
+          if (!editButton) throw new Error("saved bill editor control was not rendered");
+          await evaluate(`document.querySelector("#edit-bill-btn")?.click()`);
+          await sleep(250);
+          const editInitial = await readTotals();
+          check(`${prefix}: saved-bill editor starts from server subtotal`,
+            editInitial.subtotal === "10.000" && editInitial.total.includes("10.000"), JSON.stringify(editInitial));
+          await setInput('[data-role="price"]', "12000");
+          await evaluate(`document.querySelector(".edit-qty-inc")?.click()`);
+          const editPlus = await readTotals();
+          check(`${prefix}: saved-bill editor price and quantity update canonical totals`,
+            editPlus.line.includes("24.000") && editPlus.subtotal === "24.000" && editPlus.total.includes("24.000"),
+            JSON.stringify(editPlus));
+          await evaluate(`document.querySelector(".edit-qty-dec")?.click()`);
+          const editMinus = await readTotals();
+          check(`${prefix}: saved-bill editor quantity minus updates canonical totals`,
+            editMinus.line.includes("12.000") && editMinus.subtotal === "12.000" && editMinus.total.includes("12.000"),
+            JSON.stringify(editMinus));
+          await evaluate(`document.querySelector(".edit-qty-inc")?.click()`);
+          const editCapture = await evaluate(`(async () => {
+            const originalApiJson = apiJson;
+            const originalConfirmSheet = confirmSheet;
+            window.__e2eEditPayload = null;
+            apiJson = async (path, method, payload) => {
+              if (method === "PUT") window.__e2eEditPayload = { path, method, payload };
+              return originalApiJson(path, method, payload);
+            };
+            confirmSheet = async () => true;
+            try { await saveEditBill(${JSON.stringify(saved.id)}); }
+            finally { apiJson = originalApiJson; confirmSheet = originalConfirmSheet; }
+            return window.__e2eEditPayload;
+          })()`);
+          const editPayload = editCapture?.payload;
+          check(`${prefix}: saved-bill payload uses canonical edited price, quantity, subtotal, and total`,
+            editCapture?.path === `/api/bills/${saved.id}`
+              && editCapture?.method === "PUT"
+              && editPayload?.items?.[0]?.price === 12000
+              && editPayload?.items?.[0]?.quantity === 2
+              && editPayload?.subtotal === 24000
+              && editPayload?.total === 24000,
+            JSON.stringify(editCapture));
+          await sleep(500);
+          const reloadedEdit = await evaluate(`(() => {
+            const button = document.querySelector("#edit-bill-btn");
+            if (button) button.click();
+            return Boolean(button);
+          })()`);
+          if (!reloadedEdit) throw new Error("saved bill did not reload after edit");
+          await sleep(250);
+          const editReloaded = await readTotals();
+          check(`${prefix}: saved-bill editor reload preserves edited price, quantity, and derived totals`,
+            editReloaded.line.includes("24.000")
+              && editReloaded.subtotal === "24.000"
+              && editReloaded.total.includes("24.000"),
+            JSON.stringify(editReloaded));
+        }
       } catch (error) {
         check(`${color} ${width}px: case executes`, false, error.message);
       }

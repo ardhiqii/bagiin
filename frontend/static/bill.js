@@ -2082,7 +2082,7 @@ function renderCreatorPick(data) {
 }
 
 // ---------- Creator edit bill ----------
-let editState = { items: [], subtotal: 0, order_discount: 0, tax: 0, service: 0, total: 0, title: "", transacted_at: "", merchant: "", tax_included: false };
+let editState = { items: [], subtotal: 0, order_discount: 0, tax: 0, service: 0, total: 0, title: "", transacted_at: "", merchant: "", tax_included: false, taxSaved: 0, calculationInvalid: false };
 
 // Full-screen editors are pseudo-layers: they hijack the whole app shell but
 // have NO route of their own, so a raw system Back popped the real previous
@@ -2122,15 +2122,62 @@ function beginEditorLayer(billId) {
   };
 }
 
+function editValidQuantity(value) {
+  return /^(?:[1-9]|[1-9][0-9])$/.test(String(value ?? "")) ? Number(value) : null;
+}
+
+function editItemQuantity(it) {
+  return editValidQuantity(it.quantity) || 1;
+}
+
+function editItemLineTotal(it) {
+  if (!it || it.quantityDraft != null) return null;
+  const quantity = editValidQuantity(it.quantity);
+  if (quantity == null) return null;
+  const price = Math.max(0, Number(it.price) || 0);
+  const discount = Math.max(0, Number(it.discount) || 0);
+  return Math.max(0, price - discount) * quantity;
+}
+
+function editItemTotals(items) {
+  let subtotal = 0;
+  let invalidQuantityIndex = -1;
+  let invalidDiscountIndex = -1;
+  (items || []).forEach((item, idx) => {
+    const price = Math.max(0, Number(item?.price) || 0);
+    const discount = Math.max(0, Number(item?.discount) || 0);
+    if (invalidDiscountIndex < 0 && discount > price) invalidDiscountIndex = idx;
+    const lineTotal = editItemLineTotal(item);
+    if (lineTotal == null) {
+      if (invalidQuantityIndex < 0) invalidQuantityIndex = idx;
+      return;
+    }
+    subtotal += lineTotal;
+  });
+  return { subtotal, invalidQuantityIndex, invalidDiscountIndex };
+}
+
+function editMoneyText(value) {
+  return value == null ? "—" : fmt(value);
+}
+
 function renderEditBill(data) {
   const app = $("#app");
   editState = {
-    items: data.items.map(it => ({ id: it.id, name: it.name, price: it.price_idr, discount: it.discount_idr || 0, quantity: Math.max(1, Math.min(99, Number(it.quantity) || 1)), mode: it.mode || "free", slot_count: it.slot_count || null })),
-    subtotal: data.bill.subtotal_idr || 0,
-    order_discount: data.bill.order_discount_idr || 0,
-    tax: data.bill.tax_idr || 0,
-    service: data.bill.service_idr || 0,
-    total: data.bill.total_idr || 0,
+    items: data.items.map(it => {
+      const quantity = editValidQuantity(it.quantity);
+      return { id: it.id, name: it.name, price: Math.max(0, Number(it.price_idr) || 0),
+        discount: Math.max(0, Number(it.discount_idr) || 0), quantity: quantity || 1,
+        quantityDraft: quantity ? null : (it.quantity == null ? null : String(it.quantity)),
+        mode: it.mode || "free", slot_count: it.slot_count || null };
+    }),
+    subtotal: Math.max(0, Number(data.bill.subtotal_idr) || 0),
+    order_discount: Math.max(0, Number(data.bill.order_discount_idr) || 0),
+    tax: Math.max(0, Number(data.bill.tax_idr) || 0),
+    service: Math.max(0, Number(data.bill.service_idr) || 0),
+    total: Number(data.bill.total_idr) || 0,
+    taxSaved: Math.max(0, Number(data.bill.tax_idr) || 0),
+    calculationInvalid: false,
     title: data.bill.title || "",
     transacted_at: data.bill.transacted_at || "",
     merchant: data.bill.merchant || "",
@@ -2173,7 +2220,7 @@ function renderEditBill(data) {
     <div class="card">
       <div class="card-title">Total</div>
       <div class="field-row">
-        <div><label for="subtotal-input">Subtotal</label><input type="text" inputmode="numeric" class="input-money" id="subtotal-input" value="${rupiahFmt(editState.subtotal)}"></div>
+        <div><label for="subtotal-input">Subtotal</label><input type="text" inputmode="numeric" class="input-money" id="subtotal-input" value="${rupiahFmt(editState.subtotal)}" readonly aria-readonly="true"><p class="muted" style="margin-top:5px;">Dihitung otomatis dari harga × jumlah dibeli − potongan.</p></div>
         <div><label for="tax-input">PPN</label><input type="text" inputmode="numeric" class="input-money" id="tax-input" value="${rupiahFmt(editState.tax)}"></div>
         <div><label for="service-input">Service</label><input type="text" inputmode="numeric" class="input-money" id="service-input" value="${rupiahFmt(editState.service)}"></div>
       </div>
@@ -2189,7 +2236,7 @@ function renderEditBill(data) {
         </span>
         <input type="checkbox" id="tax-included-toggle" ${editState.tax_included ? "checked" : ""}>
       </label>
-      <div id="tax-included-badge" class="info-box ${editState.tax_included ? "" : "hidden"}" style="margin-top:8px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — PPN &amp; service tidak diisi, total mengikuti item</div>
+      <div id="tax-included-badge" class="info-box ${editState.tax_included ? "" : "hidden"}" style="margin-top:8px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — PPN tidak diisi, service tetap masuk total</div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;">
         <span class="label-sm">Total</span>
         <span class="money" style="font-size:22px;font-weight:800;" id="total-display">${fmt(editState.total)}</span>
@@ -2204,6 +2251,7 @@ function renderEditBill(data) {
         <span class="money" id="dock-total-display">${fmt(editState.total)}</span>
       </div>
       <button class="btn-primary" id="save-bill-btn">Simpan Perubahan</button>
+      <p id="save-bill-helper" aria-live="polite"></p>
     </div></div>`;
 
   app.innerHTML = `
@@ -2217,18 +2265,40 @@ function renderEditBill(data) {
   $("#back-btn").addEventListener("click", () => editState._layer.finish(false));
   renderEditItems();
   updateEditTotal();
+  // Kept bound for compatibility with scripted/legacy edits, but subtotal is
+  // read-only and the canonical value always comes from the item draft.
   bindRupiahInput($("#subtotal-input"), () => updateEditTotal());
   bindRupiahInput($("#order-discount-input"), (v) => { editState.order_discount = v; updateEditTotal(); });
-  bindRupiahInput($("#tax-input"), () => updateEditTotal());
-  bindRupiahInput($("#service-input"), () => updateEditTotal());
+  bindRupiahInput($("#tax-input"), (v) => {
+    editState.taxSaved = v;
+    editState.tax = v;
+    updateEditTotal();
+  });
+  bindRupiahInput($("#service-input"), (v) => {
+    editState.service = v;
+    updateEditTotal();
+  });
   const taxIncToggle = $("#tax-included-toggle");
   if (taxIncToggle) {
     taxIncToggle.addEventListener("change", (e) => {
+      const ti = $("#tax-input");
+      if (e.target.checked) {
+        if (ti) editState.taxSaved = rupiahParse(ti.value);
+        editState.tax = 0;
+      } else if (ti) {
+        ti.disabled = false;
+        ti.value = rupiahFmt(editState.taxSaved || 0);
+        editState.tax = editState.taxSaved || 0;
+      }
       editState.tax_included = e.target.checked;
       updateEditTotal();
     });
   }
-  $("#add-item-btn").addEventListener("click", () => { editState.items.push({ id: null, name: "", price: 0, discount: 0, quantity: 1 }); renderEditItems(); });
+  $("#add-item-btn").addEventListener("click", () => {
+    editState.items.push({ id: null, name: "", price: 0, discount: 0, quantity: 1 });
+    updateEditTotal();
+    renderEditItems();
+  });
   $("#title-input").addEventListener("input", (e) => editState.title = e.target.value);
   $("#date-input").addEventListener("input", (e) => editState.transacted_at = e.target.value);
   $("#save-bill-btn").addEventListener("click", () => saveEditBill(data.bill.id));
@@ -2239,15 +2309,20 @@ function renderEditItems() {
   const elList = $("#items-list");
   if (!elList) return;
   elList.innerHTML = editState.items.map((it, idx) => {
-    const quantity = billItemQuantity(it);
+    const price = Math.max(0, Number(it.price) || 0);
+    const discount = Math.max(0, Number(it.discount) || 0);
+    const effectivePrice = Math.max(0, price - discount);
+    const quantity = editItemQuantity(it);
     const quantityDraft = it.quantityDraft != null ? String(it.quantityDraft) : String(quantity);
+    const lineTotal = editItemLineTotal(it);
+    const slotCount = it.slot_count || 2;
     return `
     <div class="item-row edit-item" style="flex-wrap:wrap;">
       <div class="edit-name" style="flex:2;min-width:140px;">
         <input data-role="name" data-idx="${idx}" value="${esc(it.name)}" placeholder="Nama Item" aria-label="Nama item" style="padding:9px 10px;">
       </div>
       <div style="flex:1;min-width:100px;">
-        <input data-role="price" data-idx="${idx}" type="text" inputmode="numeric" class="input-money" value="${rupiahFmt(it.price)}" placeholder="0" aria-label="Harga item" style="padding:9px 10px;">
+        <input data-role="price" data-idx="${idx}" type="text" inputmode="numeric" class="input-money" value="${rupiahFmt(price)}" placeholder="0" aria-label="Harga item" style="padding:9px 10px;">
       </div>
       <div class="edit-quantity" style="display:flex;align-items:center;gap:4px;min-width:170px;">
         <span class="label-sm" style="white-space:nowrap;">Jumlah dibeli</span>
@@ -2255,13 +2330,13 @@ function renderEditItems() {
         <input data-role="quantity" data-idx="${idx}" type="number" min="1" max="99" value="${esc(quantityDraft)}" aria-label="Jumlah dibeli" style="width:48px;height:44px;text-align:center;padding:6px 3px;">
         <button type="button" class="btn-outline btn-sm edit-qty-inc" data-idx="${idx}" aria-label="Tambah jumlah dibeli" style="width:44px;height:44px;padding:0;"${quantity >= 99 ? " disabled" : ""}>+</button>
         <span class="error-text quantity-error${it.quantityDraft != null ? "" : " hidden"}" data-role="quantity-error">Jumlah harus bilangan bulat 1–99.</span>
-        <span class="muted" data-role="line-total" style="font-size:12px;white-space:nowrap;">Total ${fmt(Math.max(0, (it.price || 0) - (it.discount || 0)) * billItemQuantity(it))}</span>
+        <span class="muted" data-role="line-total" style="font-size:12px;white-space:nowrap;">Total ${editMoneyText(lineTotal)}</span>
       </div>
       <button data-role="del" data-idx="${idx}" class="icon-btn" aria-label="Hapus item ini" style="color:var(--red);">${ic("trash")}</button>
       <div style="flex-basis:100%;padding:6px 0 0;display:flex;align-items:center;gap:8px;">
         <span class="label-sm" style="flex-shrink:0;">Potongan (diskon):</span>
-        <input data-role="discount" data-idx="${idx}" type="text" inputmode="numeric" class="input-money" value="${rupiahFmt(it.discount)}" placeholder="0" aria-label="Potongan atau diskon item" style="padding:7px 9px;max-width:110px;">
-        ${it.discount > 0 ? `<span class="disc-bayar" style="color:var(--green);font-weight:700;font-size:13px;">→ bayar ${rupiahFmt(Math.max(0, it.price - it.discount))}</span>` : ""}
+        <input data-role="discount" data-idx="${idx}" type="text" inputmode="numeric" class="input-money" value="${rupiahFmt(discount)}" placeholder="0" aria-label="Potongan atau diskon item" style="padding:7px 9px;max-width:110px;">
+        ${discount > 0 ? `<span class="disc-bayar" style="color:var(--green);font-weight:700;font-size:13px;">→ bayar ${rupiahFmt(effectivePrice)}</span>` : ""}
       </div>
       <div style="flex-basis:100%;padding:2px 0 8px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
@@ -2272,7 +2347,7 @@ function renderEditItems() {
           <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
             <span class="muted">bagi</span>
             <button class="btn-outline btn-sm slot-dec" data-idx="${idx}" aria-label="Kurangi bagian">−</button>
-            <span class="slot-count" style="font-weight:700;min-width:18px;text-align:center;">${it.slot_count || 2}</span>
+            <span class="slot-count" style="font-weight:700;min-width:18px;text-align:center;">${slotCount}</span>
             <button class="btn-outline btn-sm slot-inc" data-idx="${idx}" aria-label="Tambah bagian">＋</button>
             <span class="muted">bagian</span>
           </div>` : ""}
@@ -2283,51 +2358,54 @@ function renderEditItems() {
               bill screen). The "bebas" explainer is the same for every row —
               it lives once above the list instead of under all of them. */ ""}
         ${it.mode === "slot" ? `<div class="muted" style="font-size:12px;line-height:1.45;">
-          Dibagi ${it.slot_count || 2} bagian tetap${it.price > 0 ? ` · ${rupiahFmt(Math.floor(Math.max(0, (it.price || 0) - (it.discount || 0)) * billItemQuantity(it) / (it.slot_count || 2)))}/bagian` : ""}. Tiap orang bisa ambil 1+ bagian, yang kosong keliatan.
+          Dibagi ${slotCount} bagian tetap${lineTotal != null && lineTotal > 0 ? ` · ${rupiahFmt(Math.floor(lineTotal / slotCount))}/bagian` : ""}. Tiap orang bisa ambil 1+ bagian, yang kosong keliatan.
         </div>` : ""}
       </div>
     </div>`}).join("");
   $$("[data-role=name]", elList).forEach(inp => inp.addEventListener("input", (e) => {
     editState.items[+e.target.dataset.idx].name = e.target.value;
+    updateEditTotal();
   }));
   $$("[data-role=price]", elList).forEach(inp => bindRupiahInput(inp, (v) => {
     editState.items[+inp.dataset.idx].price = v;
-    updateEditLineTotal(+inp.dataset.idx);
     updateEditTotal();
   }));
   $$("[data-role=quantity]", elList).forEach(inp => {
     const commit = () => {
       const it = editState.items[+inp.dataset.idx];
-      const value = /^(?:[1-9]|[1-9][0-9])$/.test(inp.value) ? Number(inp.value) : null;
+      const value = editValidQuantity(inp.value);
       const error = inp.parentElement.querySelector("[data-role=quantity-error]");
       if (value == null) {
         it.quantityDraft = inp.value;
         if (error) error.classList.remove("hidden");
+        updateEditTotal();
         return;
       }
       it.quantity = value;
       it.quantityDraft = null;
       if (error) error.classList.add("hidden");
-      renderEditItems(); updateEditTotal();
+      updateEditTotal();
+      renderEditItems();
     };
     inp.addEventListener("input", commit);
     inp.addEventListener("change", commit);
   });
   $$(".edit-qty-dec", elList).forEach(btn => btn.addEventListener("click", () => {
-    const it = editState.items[+btn.dataset.idx]; it.quantityDraft = null; it.quantity = Math.max(1, (it.quantity || 1) - 1);
-    renderEditItems(); updateEditTotal();
+    const it = editState.items[+btn.dataset.idx]; it.quantityDraft = null; it.quantity = Math.max(1, editItemQuantity(it) - 1);
+    updateEditTotal();
+    renderEditItems();
   }));
   $$(".edit-qty-inc", elList).forEach(btn => btn.addEventListener("click", () => {
-    const it = editState.items[+btn.dataset.idx]; it.quantityDraft = null; it.quantity = Math.min(99, (it.quantity || 1) + 1);
-    renderEditItems(); updateEditTotal();
+    const it = editState.items[+btn.dataset.idx]; it.quantityDraft = null; it.quantity = Math.min(99, editItemQuantity(it) + 1);
+    updateEditTotal();
+    renderEditItems();
   }));
   $$("[data-role=discount]", elList).forEach(inp => bindRupiahInput(inp, (v) => {
     const it = editState.items[+inp.dataset.idx];
     it.discount = v;
     const row = inp.closest(".item-row");
     let bayar = row ? row.querySelector(".disc-bayar") : null;
-    const eff = Math.max(0, (it.price || 0) - v);
-    updateEditLineTotal(+inp.dataset.idx);
+    const eff = Math.max(0, (Number(it.price) || 0) - v);
     if (v > 0) {
       if (!bayar && row) {
         bayar = document.createElement("span");
@@ -2341,24 +2419,27 @@ function renderEditItems() {
   }));
   $$("[data-role=del]", elList).forEach(btn => btn.addEventListener("click", () => {
     editState.items.splice(+btn.dataset.idx, 1);
-    renderEditItems();
     updateEditTotal();
+    renderEditItems();
   }));
   $$(".item-mode-btn", elList).forEach(btn => btn.addEventListener("click", () => {
     const it = editState.items[+btn.dataset.idx];
     const mode = btn.dataset.mode;
     it.mode = mode;
     if (mode === "slot" && !it.slot_count) it.slot_count = 2;
+    updateEditTotal();
     renderEditItems();
   }));
   $$(".slot-inc", elList).forEach(btn => btn.addEventListener("click", () => {
     const it = editState.items[+btn.dataset.idx];
     it.slot_count = Math.min(99, (it.slot_count || 2) + 1);
+    updateEditTotal();
     renderEditItems();
   }));
   $$(".slot-dec", elList).forEach(btn => btn.addEventListener("click", () => {
     const it = editState.items[+btn.dataset.idx];
     it.slot_count = Math.max(2, (it.slot_count || 2) - 1);
+    updateEditTotal();
     renderEditItems();
   }));
 }
@@ -2367,54 +2448,95 @@ function updateEditLineTotal(idx) {
   const it = editState.items[idx];
   const row = $(`#items-list .edit-item[data-idx="${idx}"]`);
   const line = row && row.querySelector("[data-role=line-total]");
-  if (line) line.textContent = `Total ${fmt(Math.max(0, (it.price || 0) - (it.discount || 0)) * billItemQuantity(it))}`;
+  if (line) line.textContent = `Total ${editMoneyText(editItemLineTotal(it))}`;
 }
 
 function updateEditTotal() {
-  let subtotal = rupiahParse($("#subtotal-input").value);
-  const orderDiscount = rupiahParse($("#order-discount-input").value);
-  let tax = rupiahParse($("#tax-input").value);
-  let service = rupiahParse($("#service-input").value);
-  const sumItems = editState.items.reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)) * (i.quantity || 1), 0);
+  const subtotalInput = $("#subtotal-input");
+  const taxInput = $("#tax-input");
+  const namedItems = editState.items.filter(item => String(item.name || "").trim());
+  const itemTotals = editItemTotals(namedItems);
+  const subtotal = itemTotals.invalidQuantityIndex >= 0 ? null : itemTotals.subtotal;
+  const orderDiscount = Math.max(0, Number(editState.order_discount) || 0);
+  let tax = Math.max(0, Number(editState.tax) || 0);
+  const service = Math.max(0, Number(editState.service) || 0);
   if (editState.tax_included) {
-    subtotal = sumItems;
-    const si = $("#subtotal-input"); if (si) si.value = rupiahFmt(subtotal);
-    const ti = $("#tax-input"); if (ti) ti.value = "";
-    const svi = $("#service-input"); if (svi) svi.value = "";
-    tax = 0; service = 0;
+    tax = 0;
+    if (taxInput) {
+      taxInput.value = "";
+      taxInput.disabled = true;
+    }
+  } else if (taxInput) {
+    taxInput.disabled = false;
   }
-  const total = subtotal + tax + service - orderDiscount;
-  editState.subtotal = subtotal; editState.order_discount = orderDiscount;
-  editState.tax = tax; editState.service = service;
+  if (subtotalInput) subtotalInput.value = subtotal == null ? "" : rupiahFmt(subtotal);
+  const orderDiscountTooHigh = subtotal != null && orderDiscount > subtotal;
+  const invalidDiscountIndex = itemTotals.invalidDiscountIndex;
+  const invalidQuantityIndex = itemTotals.invalidQuantityIndex;
+  const calculationInvalid = invalidQuantityIndex >= 0
+    || invalidDiscountIndex >= 0 || orderDiscountTooHigh;
+  const total = calculationInvalid || subtotal == null
+    ? null : subtotal + tax + service - orderDiscount;
+  editState.subtotal = subtotal;
+  editState.order_discount = orderDiscount;
+  editState.tax = tax;
+  editState.service = service;
+  editState.total = total;
+  editState.calculationInvalid = calculationInvalid;
+  editState.items.forEach((item, idx) => {
+    updateEditLineTotal(idx);
+    const row = $(`#items-list .edit-item[data-idx="${idx}"]`);
+    const discountText = row && row.querySelector(".disc-bayar");
+    if (discountText) {
+      const price = Math.max(0, Number(item.price) || 0);
+      const discount = Math.max(0, Number(item.discount) || 0);
+      discountText.textContent = `→ bayar ${rupiahFmt(Math.max(0, price - discount))}`;
+    }
+  });
   const td = $("#total-display");
-  if (td) td.textContent = fmt(total);
+  if (td) td.textContent = editMoneyText(total);
   const dt = $("#dock-total-display");
-  if (dt) dt.textContent = fmt(total);
+  if (dt) dt.textContent = editMoneyText(total);
   const badge = $("#tax-included-badge");
   if (badge) badge.classList.toggle("hidden", !editState.tax_included);
-  const orderDiscountTooHigh = orderDiscount > subtotal;
   const warn = $("#sum-warn");
   if (warn) {
-    if (orderDiscountTooHigh) {
+    if (invalidQuantityIndex >= 0) {
+      warn.classList.remove("hidden");
+      const item = namedItems[invalidQuantityIndex];
+      warn.textContent = `Jumlah item${item?.name ? ` “${item.name}”` : ""} harus bilangan bulat 1–99 sebelum disimpan.`;
+    } else if (invalidDiscountIndex >= 0) {
+      warn.classList.remove("hidden");
+      const item = namedItems[invalidDiscountIndex];
+      warn.textContent = `Diskon ${item.name ? `“${item.name}” ` : "item "}tidak boleh lebih besar dari harga.`;
+    } else if (!namedItems.length) {
+      warn.classList.remove("hidden");
+      warn.textContent = "Minimal 1 item bernama harus diisi sebelum disimpan.";
+    } else if (orderDiscountTooHigh) {
       warn.classList.remove("hidden");
       warn.textContent = `Diskon pesanan (${fmt(orderDiscount)}) tidak boleh lebih besar dari subtotal (${fmt(subtotal)}).`;
-    } else if (sumItems !== subtotal) {
-      warn.classList.remove("hidden");
-      if (editState.tax_included) {
-        warn.textContent = `Total item (${fmt(sumItems)}) beda dari subtotal (${fmt(subtotal)}). Total item ini yang dipakai — cek harga & diskon tiap item.`;
-      } else if (sumItems === total) {
-        warn.textContent = `Harga item (${fmt(sumItems)}) tampaknya sudah TERMASUK pajak, tetapi kamu mengisi subtotal ${fmt(subtotal)} + PPN. Aktifkan toggle "Harga item sudah termasuk pajak" agar tidak dihitung ganda.`;
-      } else {
-        warn.textContent = `Total item (${fmt(sumItems)}) beda dari subtotal (${fmt(subtotal)}). Cek kolom diskon tiap item.`;
-      }
     } else warn.classList.add("hidden");
   }
+  const save = $("#save-bill-btn");
+  if (save) save.disabled = calculationInvalid || !namedItems.length;
+  const helper = $("#save-bill-helper");
+  if (helper) {
+    helper.className = calculationInvalid || !namedItems.length ? "error-text" : "muted";
+    helper.textContent = calculationInvalid
+      ? "Perbaiki nilai yang ditandai sebelum menyimpan."
+      : (!namedItems.length ? "Isi minimal 1 item bernama." : "Subtotal dan total dihitung dari item di atas.");
+  }
+  return {
+    subtotal, orderDiscount, tax, service, total, calculationInvalid,
+    invalidQuantityIndex, invalidDiscountIndex, orderDiscountTooHigh, namedItems,
+  };
 }
 
 async function saveEditBill(billId) {
   const btn = $("#save-bill-btn");
-  const items = editState.items.filter(i => i.name && String(i.name).trim());
-  const invalidQuantity = items.find(i => i.quantityDraft != null || !/^(?:[1-9]|[1-9][0-9])$/.test(String(i.quantity ?? "")));
+  const totals = updateEditTotal();
+  const items = totals.namedItems;
+  const invalidQuantity = items.find(i => i.quantityDraft != null || editValidQuantity(i.quantity) == null);
   if (invalidQuantity) {
     toast("Jumlah item harus bilangan bulat 1–99");
     const input = $(`#items-list [data-role=quantity][data-idx="${editState.items.indexOf(invalidQuantity)}"]`);
@@ -2424,10 +2546,22 @@ async function saveEditBill(billId) {
   // price 0 is legal (free item the backend accepts with minv=0) — only
   // blank rows are dropped (bug: saving an edit silently deleted free items)
   if (!items.length) { toast("Minimal 1 item"); return; }
-  if (editState.order_discount > editState.subtotal) {
+  const invalidDiscount = items.find(i =>
+    Math.max(0, Number(i.discount) || 0) > Math.max(0, Number(i.price) || 0));
+  if (invalidDiscount) {
+    toast(`Diskon "${invalidDiscount.name}" lebih gede dari harganya`);
+    const input = $(`#items-list [data-role=discount][data-idx="${editState.items.indexOf(invalidDiscount)}"]`);
+    if (input) { input.style.borderColor = "var(--red)"; input.focus(); }
+    return;
+  }
+  if (totals.orderDiscountTooHigh) {
     const input = $("#order-discount-input");
     if (input) { input.style.borderColor = "var(--red)"; input.focus(); }
-    toast(`Diskon pesanan tidak boleh lebih besar dari subtotal (${fmt(editState.subtotal)})`);
+    toast(`Diskon pesanan tidak boleh lebih besar dari subtotal (${fmt(totals.subtotal)})`);
+    return;
+  }
+  if (totals.subtotal == null || totals.total == null) {
+    toast("Perbaiki nilai item dulu");
     return;
   }
   await withBusy(btn, "Nyimpen...", async () => {
@@ -2460,18 +2594,18 @@ async function saveEditBill(billId) {
         title: editState.title || editState.merchant || "Bill",
         merchant: editState.merchant || null,
         transacted_at: editState.transacted_at || null,
-        subtotal: editState.subtotal,
-        order_discount: editState.order_discount,
-        tax: editState.tax,
-        service: editState.service,
-        total: editState.subtotal + editState.tax + editState.service - editState.order_discount,
+        subtotal: totals.subtotal,
+        order_discount: totals.orderDiscount,
+        tax: totals.tax,
+        service: totals.service,
+        total: totals.total,
         tax_included: editState.tax_included ? 1 : 0,
         items: items.map(i => ({
           id: i.id,
           name: i.name,
-          price: i.price,
-          discount: i.discount || 0,
-          quantity: i.quantity || 1,
+          price: Math.max(0, Number(i.price) || 0),
+          discount: Math.max(0, Number(i.discount) || 0),
+          quantity: editValidQuantity(i.quantity),
           mode: i.mode === "slot" ? "slot" : "free",
           slot_count: i.mode === "slot" ? (i.slot_count || 2) : null,
         })),

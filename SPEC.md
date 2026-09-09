@@ -480,6 +480,14 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Form verifikasi dan edit bill menerima field diskon pesanan terpisah. Tampilan bill menunjukkan subtotal item, diskon voucher, fee, dan total final dari server, termasuk kasus GoFood subtotal Rp81.000, diskon Rp45.000, service Rp12.500, total Rp48.500.
 - Regression mencakup create/update HTTP, migrasi database, alokasi free/slot/uncovered, OCR, old payload tanpa field baru, full pytest, frontend logic, serta browser E2E.
 
+### 2026-09-09 (v80), sinkronisasi harga dan jumlah item saat edit bill
+
+- Editor verifikasi OCR dan pembuatan bill manual memakai state item canonical yang sama. Perubahan harga satuan, diskon item, dan jumlah dibeli langsung menghitung ulang total baris, subtotal, diskon pesanan, pajak/service, serta total akhir.
+- Subtotal sekarang ditampilkan sebagai nilai turunan dari harga efektif dikali jumlah dibeli. Subtotal OCR yang stale tidak lagi mengunci kalkulasi setelah pengguna mengubah item.
+- Tombol jumlah `+` dan `-`, input jumlah langsung, rerender, payload create/update, editor bill tersimpan, dan reload memakai nilai harga serta jumlah terbaru.
+- Backend menghitung dan menyimpan subtotal dari item yang sudah dinormalisasi. Subtotal client yang stale atau tidak dikirim tidak menjadi sumber kebenaran, sedangkan total, diskon pesanan, dan invariant integer tetap divalidasi.
+- Nilai jumlah yang tidak valid atau diskon item yang melebihi harga memblokir penyimpanan dan menyembunyikan total turunan stale. Regression backend, payload, HTTP, manual, OCR, editor tersimpan, reload, responsive browser, dan zero console error ditambahkan.
+
 ### 2026-09-08 (v78), fallback OCR gratis multi-model
 
 - OpenRouter OCR sekarang punya urutan model vision gratis, dimulai dari `google/gemma-4-26b-a4b-it:free`, lalu lanjut ke kandidat gratis lain bila provider mengembalikan rate limit, model unavailable, timeout, output tidak valid, atau format JSON terstruktur ditolak.
