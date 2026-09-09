@@ -208,16 +208,118 @@ function myPersonRow(data, me) {
   if (!data || !me) return null;
   return (data.people || []).find(p => p.identity_id === me.id) || null;
 }
+function moneyField(value) {
+  return Math.max(0, Number(value) || 0);
+}
+function billOrderDiscount(data) {
+  return moneyField(data && data.bill && data.bill.order_discount_idr);
+}
+function serverPersonBreakdown(row) {
+  const netSub = moneyField(row && row.subtotal_idr);
+  // `subtotal_idr` was already the post-item-discount amount in old payloads;
+  // never infer a checkout discount from gross - net or old per-item discounts.
+  const grossSub = row && row.item_subtotal_idr != null
+    ? moneyField(row.item_subtotal_idr) : netSub;
+  const orderDiscount = row && row.order_discount_idr != null
+    ? moneyField(row.order_discount_idr) : 0;
+  return {
+    grossSub,
+    orderDiscount,
+    sub: netSub,
+    tax: moneyField(row && row.tax_idr),
+    total: moneyField(row && row.total_idr),
+  };
+}
 function myBreakdown(data, me, selQty) {
   const row = myPersonRow(data, me);
-  if (row) return { sub: row.subtotal_idr || 0, tax: row.tax_idr || 0, total: row.total_idr || 0 };
+  if (row) return serverPersonBreakdown(row);
   // A public read of a closed bill does not create a participant row for a
   // guest who never joined. There is no server-calculated amount for that
   // identity, so showing a client-derived split here would invent an amount
   // (bug: a late guest saw a non-zero total that the server never assigned).
   // Estimates are allowed only in renderPickRows(false), while a pending tap
   // is being saved; every settled/displayed breakdown must come from `people`.
-  return { sub: 0, tax: 0, total: 0 };
+  return { grossSub: 0, orderDiscount: 0, sub: 0, tax: 0, total: 0 };
+}
+
+function billCostSummaryHtml(data) {
+  const bill = data && data.bill ? data.bill : {};
+  const orderDiscount = billOrderDiscount(data);
+  // Keep zero/missing order-discount payloads byte-for-byte in the old visual
+  // path. The extra reconciliation card is only useful when a checkout promo
+  // actually exists.
+  if (!(orderDiscount > 0)) return "";
+  const subtotal = moneyField(bill.subtotal_idr);
+  const tax = moneyField(bill.tax_idr);
+  const service = moneyField(bill.service_idr);
+  const feeRows = [
+    tax > 0 ? `<div class="break-row"><span>PPN</span><span class="money">${fmt(tax)}</span></div>` : "",
+    service > 0 ? `<div class="break-row"><span>Service</span><span class="money">${fmt(service)}</span></div>` : "",
+  ].join("");
+  return `
+    <div class="card card-flat bill-cost-summary">
+      <div class="card-title"><span>Rincian total</span><span class="muted">dari server</span></div>
+      <div class="break-row"><span>Subtotal item</span><span class="money">${fmt(subtotal)}</span></div>
+      <div class="break-row"><span>Diskon pesanan</span><span class="money" style="color:var(--green);">−${fmt(orderDiscount)}</span></div>
+      ${feeRows}
+      <div class="break-row" style="margin-top:4px;padding-top:9px;border-top:1px solid var(--border);font-weight:700;">
+        <span>Total final</span><span class="money">${fmt(moneyField(bill.total_idr))}</span>
+      </div>
+      <p class="muted" style="margin-top:8px;">Voucher berlaku ke seluruh pesanan dan dibagi proporsional ke bagian item masing-masing. Angka per orang mengikuti hitungan server.</p>
+    </div>`;
+}
+
+function personBreakdownRowsHtml(data, bd, withIds = false) {
+  const showOrder = billOrderDiscount(data) > 0 || bd.orderDiscount > 0;
+  const idFor = key => withIds ? ` id="${key}"` : "";
+  if (!showOrder) {
+    return `<span>Item <b class="money-sm"${idFor("my-sub")}>${fmt(bd.sub)}</b></span>
+      <span>Pajak &amp; service <b class="money-sm"${idFor("my-tax")} style="color:var(--accent);">${fmt(bd.tax)}</b></span>`;
+  }
+  return `<span style="display:flex;justify-content:space-between;gap:8px;">
+      <span>Item sebelum diskon</span><b class="money-sm"${idFor("my-gross-sub")}>${fmt(bd.grossSub)}</b>
+    </span>
+    <span style="display:flex;justify-content:space-between;gap:8px;">
+      <span>Diskon pesanan</span><b class="money-sm"${idFor("my-order-discount")} style="color:var(--green);">−${fmt(bd.orderDiscount)}</b>
+    </span>
+    <span style="display:flex;justify-content:space-between;gap:8px;">
+      <span>Item setelah diskon</span><b class="money-sm"${idFor("my-sub")}>${fmt(bd.sub)}</b>
+    </span>
+    <span style="display:flex;justify-content:space-between;gap:8px;">
+      <span>PPN &amp; service</span><b class="money-sm"${idFor("my-tax")} style="color:var(--accent);">${fmt(bd.tax)}</b>
+    </span>`;
+}
+
+function personalBreakdownHtml(data, bd, id = "", extraStyle = "") {
+  const orderTotal = billOrderDiscount(data);
+  const hasOrderRows = orderTotal > 0 || bd.orderDiscount > 0;
+  const hasShare = bd.grossSub > 0 || bd.sub > 0 || bd.orderDiscount > 0;
+  const hasFee = taxServiceTotal(data) > 0 || bd.tax > 0;
+  const visible = hasFee || (hasOrderRows && hasShare);
+  if (!id && !visible) return "";
+  const rowsStyle = hasOrderRows ? "flex-direction:column;align-items:stretch;gap:4px;" : "";
+  return `<div class="dock-split"${id ? ` id="${id}"` : ""} style="flex-wrap:wrap;${visible ? "" : "display:none;"}${rowsStyle}${extraStyle}">
+    ${personBreakdownRowsHtml(data, bd, !!id)}
+  </div>`;
+}
+
+function creatorPersonSubHtml(data, person) {
+  const bd = serverPersonBreakdown(person);
+  const hasPicked = hasPickedAny(data, person.identity_id);
+  const hasOrderBreakdown = billOrderDiscount(data) > 0
+    || person.item_subtotal_idr != null || person.order_discount_idr != null;
+  if (hasOrderBreakdown && (bd.grossSub > 0 || bd.sub > 0 || bd.orderDiscount > 0 || hasPicked)) {
+    const grossLabel = bd.grossSub > 0 ? fmt(bd.grossSub) : "item gratis";
+    return `<span style="white-space:nowrap">${grossLabel} item</span> · <span style="white-space:nowrap;color:var(--green);">−${fmt(bd.orderDiscount)} promo</span> · <span style="white-space:nowrap">${fmt(bd.sub)} setelah promo</span> · <span style="white-space:nowrap">${fmt(bd.tax)} pajak &amp; service</span>`;
+  }
+  return (person.subtotal_idr || hasPicked)
+    ? (person.subtotal_idr
+      // nowrap per segment: a 390px row wraps this line mid-amount
+      // ("Rp" orphaned at the end, visually colliding with the
+      // person-total column) — keep each segment an unbreakable unit
+      ? `<span style="white-space:nowrap">${fmt(person.subtotal_idr)} item</span> · <span style="white-space:nowrap">${fmt(person.tax_idr)} pajak</span>`
+      : `<span style="white-space:nowrap">item gratis</span> · <span style="white-space:nowrap">${fmt(person.tax_idr)} pajak</span>`)
+    : "belum pilih item";
 }
 
 // Merge a mutating endpoint's payload into the bill object every open screen
@@ -349,6 +451,7 @@ function renderGuestNamePrompt(billId, data) {
           ? `Dibuat <strong style="color:var(--text);">${esc(data.creator_name)}</strong> — nanti bayarnya ke dia`
           : `Dibuat ${esc(data.creator_name)} · nanti bayarnya ke <strong style="color:var(--text);">${esc(payerName)}</strong>`}</p>
       </div>
+      ${billCostSummaryHtml(data)}
       <div class="card">
         <form id="guest-form" novalidate>
           <div class="field" style="margin-bottom:10px;">
@@ -421,7 +524,6 @@ function renderGuestView(data, me) {
   });
   state.selQty = mySel;
   const bd = myBreakdown(data, me, mySel);
-  const hasTax = taxServiceTotal(data) > 0 || (data.bill.service_idr || 0) > 0;
 
   const main = `
     <div class="card">
@@ -445,6 +547,7 @@ function renderGuestView(data, me) {
       ${uncoveredNoteHtml(data)}
       ${data.all_paid && !closed && !soloSoFar ? `<p class="muted" style="margin-top:8px;color:var(--green);">${ic("check")} Semua yang memilih item sudah lunas 🎉</p>` : ""}
     </div>
+    ${billCostSummaryHtml(data)}
     <div class="card card-flat payment-destination">
       <div class="card-title">Bayar ke ${esc(payment.name)}</div>
       <p class="muted" style="margin-top:4px;">Bagian kamu: <strong style="color:var(--text);">${fmt(bd.total)}</strong>. Transfer ke ${esc(payment.name)} lewat kanal berikut:</p>
@@ -465,11 +568,7 @@ function renderGuestView(data, me) {
           ? `<span class="chip chip-grey">Kamu yang nalangin</span>`
           : `<span class="chip ${myPaid ? "chip-green" : "chip-red"}">${myPaid ? `${ic("check")} Sudah bayar` : "Belum bayar"}</span>`}
       </div>
-      ${hasTax ? `
-      <div class="dock-split" style="margin-top:10px;flex-wrap:wrap;background:var(--surface-3);">
-        <span>Item <b class="money-sm">${fmt(bd.sub)}</b></span>
-        <span>Pajak &amp; service <b class="money-sm" style="color:var(--accent);">${fmt(bd.tax)}</b></span>
-      </div>` : ""}
+      ${personalBreakdownHtml(data, bd, "", "margin-top:10px;background:var(--surface-3);")}
       ${!iAmPayer && !myPaid ? `
       <p class="muted" style="margin-top:10px;">Status bayar tidak bisa diubah lagi di bill yang sudah ditutup.
       Kalau kamu sudah transfer, beri tahu ${esc(payerName)} langsung ya — dia yang bisa menandai.</p>` : ""}
@@ -495,10 +594,7 @@ function renderGuestView(data, me) {
         <span class="label">Total kamu</span>
         <span class="money" id="my-total">${fmt(bd.total)}</span>
       </div>
-      <div class="dock-split" id="my-breakdown" style="flex-wrap:wrap;${hasTax ? "" : "display:none;"}">
-        <span>Item <b class="money-sm" id="my-sub">${fmt(bd.sub)}</b></span>
-        <span>Pajak &amp; service <b class="money-sm" id="my-tax" style="color:var(--accent);">${fmt(bd.tax)}</b></span>
-      </div>
+      ${personalBreakdownHtml(data, bd, "my-breakdown")}
       ${iAmPayer
         ? `<div class="chip chip-grey" style="justify-content:center;padding:10px;">${ic("wallet")} Kamu yang nalangin</div>`
         : data.settled
@@ -720,8 +816,14 @@ function renderPickRows(data, me, useServer) {
   if (totalLabel) totalLabel.textContent = useServer ? "Total kamu" : "Perkiraan total kamu";
   const mbEl = $("#my-breakdown");
   if (mbEl) {
+    const hasShare = bd.grossSub > 0 || bd.sub > 0 || bd.orderDiscount > 0;
+    mbEl.style.display = taxServiceTotal(data) > 0 || bd.tax > 0 || (billOrderDiscount(data) > 0 && hasShare) ? "" : "none";
+    const grossEl = $("#my-gross-sub", mbEl);
+    const orderDiscountEl = $("#my-order-discount", mbEl);
     const subEl = $("#my-sub", mbEl);
     const taxEl = $("#my-tax", mbEl);
+    if (grossEl) grossEl.textContent = fmt(bd.grossSub);
+    if (orderDiscountEl) orderDiscountEl.textContent = `−${fmt(bd.orderDiscount)}`;
     if (subEl) subEl.textContent = fmt(bd.sub);
     if (taxEl) taxEl.textContent = fmt(bd.tax);
   }
@@ -927,9 +1029,12 @@ function mergeLiveSelectors(selList, myId, myName, myQty) {
 // - slot item: per-slot price (price // slot_count) * my qty, then — only
 //   once every slot is taken — the leftover (eff - per_slot*slot_count)
 //   hands out +1 per SLOT UNIT in order (a person holding qty>1 slots can
-//   get multiple), same as calc.py's nested slot loop. Uncovered items never
-//   get a remainder — that money sits in uncovered_idr, not in the tax base.
-// - tax proportional to total subtotal across ALL people, rounded down —
+//   get multiple), same as calc.py's nested slot loop. Uncovered slot money
+//   stays out of the people tax base, but remains in the order-discount base.
+// - order discount: estimate the person's proportional share against the
+//   full item subtotal, including uncovered slots. The server remains the
+//   authority for the exact floor/remainder allocation.
+// - tax proportional to net subtotal across ALL people, rounded down —
 //   exact for everyone except the bill owner, who additionally absorbs
 //   calc.py's leftover tax rounding rupiah (see note below).
 //
@@ -1002,10 +1107,20 @@ function computeMyBreakdown(data, selQty) {
     else if (totalQty === 0 && iAmOwner) sub += lineTotal;
     totalSelAll += lineTotal;
   });
+  const grossSub = sub;
+  const orderDiscountTotal = billOrderDiscount(data);
+  const billSubtotal = moneyField(data.bill.subtotal_idr);
+  const orderDiscount = billSubtotal > 0
+    ? Math.min(grossSub, Math.floor(grossSub * orderDiscountTotal / billSubtotal)) : 0;
+  const netSub = Math.max(0, grossSub - orderDiscount);
+  const discountOnPeople = billSubtotal > 0
+    ? Math.min(totalSelAll, Math.floor(totalSelAll * orderDiscountTotal / billSubtotal)) : 0;
+  const netPeopleBase = Math.max(0, totalSelAll - discountOnPeople);
   let taxService = (data.bill.tax_idr || 0) + (data.bill.service_idr || 0);
   if (data.bill.tax_included) taxService = (data.bill.service_idr || 0);
   let tax = 0;
-  if (totalSelAll > 0) tax = Math.floor(sub * taxService / totalSelAll);
+  if (netPeopleBase > 0) tax = Math.floor(netSub * taxService / netPeopleBase);
+  else if (iAmOwner) tax = taxService;
   // NOT mirrored: in proportional tax mode calc.py additionally hands the
   // OWNER any leftover rupiah from truncating everyone's tax share (`diff`
   // in calc.py's proportional branch) — computing that exactly here would
@@ -1013,7 +1128,7 @@ function computeMyBreakdown(data, selQty) {
   // whole split client-side, which is what this function deliberately avoids.
   // Only the owner's own dock can be off by that rounding rupiah until the
   // server responds; every other participant's tax share above is exact.
-  return { sub, tax, total: sub + tax };
+  return { grossSub, orderDiscount, sub: netSub, tax, total: netSub + tax };
 }
 
 function taxServiceTotal(data) {
@@ -1152,7 +1267,9 @@ function openPaySheet(data, me, alreadyPaid) {
             <span class="pay-item-x" aria-hidden="true">${ic("x")}</span>
           </div>`;
         }).join("")}
-        <div class="break-row" style="margin-top:8px;">
+        ${billOrderDiscount(data) > 0
+          ? `<div style="margin-top:8px;display:grid;gap:2px;">${personBreakdownRowsHtml(data, bd)}</div>`
+          : `<div class="break-row" style="margin-top:8px;">
           <span class="muted">Subtotal Item</span>
           <span class="money">${fmt(bd.sub)}</span>
         </div>
@@ -1164,7 +1281,7 @@ function openPaySheet(data, me, alreadyPaid) {
                number that belongs in a personal confirmation. -->
           <span class="muted">Pajak &amp; service</span>
           <span class="money">${fmt(bd.tax)}</span>
-        </div>` : ""}
+        </div>` : ""}`}
       </div>`
       : `<div class="card card-flat" style="text-align:center;color:var(--text-3);font-size:14px;">Belum ada item dipilih</div>`;
     $("#pay-total", s.sheet).innerHTML = `
@@ -1424,6 +1541,7 @@ function renderCreatorView(data) {
         ${photoAddBtnHtml(data)}
       </div>
     </div>
+    ${billCostSummaryHtml(data)}
     ${warnHtml}
     ${payerConfirmHtml}
     <div class="card">
@@ -1435,14 +1553,7 @@ function renderCreatorView(data) {
           // same v60 rule as the guest view: a manually settled bill counts
           // everyone as done, or the rows contradict the header chip
           const paid = p.paid === "paid" || !!data.settled_manual;
-          const sub = (p.subtotal_idr || hasPickedAny(data, p.identity_id))
-            ? (p.subtotal_idr
-              // nowrap per segment: a 390px row wraps this line mid-amount
-              // ("Rp" orphaned at the end, visually colliding with the
-              // person-total column) — keep each segment an unbreakable unit
-              ? `<span style="white-space:nowrap">${fmt(p.subtotal_idr)} item</span> · <span style="white-space:nowrap">${fmt(p.tax_idr)} pajak</span>`
-              : `<span style="white-space:nowrap">item gratis</span> · <span style="white-space:nowrap">${fmt(p.tax_idr)} pajak</span>`)
-            : "belum pilih item";
+          const sub = creatorPersonSubHtml(data, p);
           // the payer never "bayar" themselves — they fronted the money
           const statusHtml = isPayer
             ? `<span class="chip chip-grey">${ic("wallet")} Nalangin</span>`
@@ -1918,7 +2029,6 @@ function renderCreatorPick(data) {
   });
   state.selQty = mySel;
   const bd = myBreakdown(data, me, mySel);
-  const hasTax = taxServiceTotal(data) > 0;
 
   const main = `
     <div class="card">
@@ -1943,10 +2053,7 @@ function renderCreatorPick(data) {
         <span class="label">Total kamu</span>
         <span class="money" id="my-total">${fmt(bd.total)}</span>
       </div>
-      <div class="dock-split" id="my-breakdown" style="flex-wrap:wrap;${hasTax ? "" : "display:none;"}">
-        <span>Item <b class="money-sm" id="my-sub">${fmt(bd.sub)}</b></span>
-        <span>Pajak &amp; service <b class="money-sm" id="my-tax" style="color:var(--accent);">${fmt(bd.tax)}</b></span>
-      </div>
+      ${personalBreakdownHtml(data, bd, "my-breakdown")}
       <button class="btn-primary" id="done-btn">Selesai</button>
     </div></div>`;
 
@@ -1975,7 +2082,7 @@ function renderCreatorPick(data) {
 }
 
 // ---------- Creator edit bill ----------
-let editState = { items: [], subtotal: 0, tax: 0, service: 0, total: 0, title: "", transacted_at: "", merchant: "", tax_included: false };
+let editState = { items: [], subtotal: 0, order_discount: 0, tax: 0, service: 0, total: 0, title: "", transacted_at: "", merchant: "", tax_included: false };
 
 // Full-screen editors are pseudo-layers: they hijack the whole app shell but
 // have NO route of their own, so a raw system Back popped the real previous
@@ -2020,6 +2127,7 @@ function renderEditBill(data) {
   editState = {
     items: data.items.map(it => ({ id: it.id, name: it.name, price: it.price_idr, discount: it.discount_idr || 0, quantity: Math.max(1, Math.min(99, Number(it.quantity) || 1)), mode: it.mode || "free", slot_count: it.slot_count || null })),
     subtotal: data.bill.subtotal_idr || 0,
+    order_discount: data.bill.order_discount_idr || 0,
     tax: data.bill.tax_idr || 0,
     service: data.bill.service_idr || 0,
     total: data.bill.total_idr || 0,
@@ -2031,6 +2139,7 @@ function renderEditBill(data) {
   editState._hadPayments = data.people.some(p => p.paid === "paid" && p.total_idr > 0);
   editState._originalTotals = {
     subtotal: editState.subtotal,
+    order_discount: editState.order_discount,
     tax: editState.tax,
     service: editState.service,
   };
@@ -2068,6 +2177,11 @@ function renderEditBill(data) {
         <div><label for="tax-input">PPN</label><input type="text" inputmode="numeric" class="input-money" id="tax-input" value="${rupiahFmt(editState.tax)}"></div>
         <div><label for="service-input">Service</label><input type="text" inputmode="numeric" class="input-money" id="service-input" value="${rupiahFmt(editState.service)}"></div>
       </div>
+      <div class="field" style="margin-top:10px;">
+        <label for="order-discount-input">Diskon pesanan / voucher (Rp)</label>
+        <input type="text" inputmode="numeric" class="input-money" id="order-discount-input" value="${rupiahFmt(editState.order_discount)}" aria-describedby="order-discount-helper">
+        <p class="muted" id="order-discount-helper" style="margin-top:5px;">Berlaku untuk seluruh pesanan, bukan satu item — tidak mengubah diskon item di atas.</p>
+      </div>
       <label class="toggle-row" style="margin-top:10px;">
         <span style="flex:1;">
           <span class="label-strong">Harga item sudah termasuk pajak</span>
@@ -2104,6 +2218,7 @@ function renderEditBill(data) {
   renderEditItems();
   updateEditTotal();
   bindRupiahInput($("#subtotal-input"), () => updateEditTotal());
+  bindRupiahInput($("#order-discount-input"), (v) => { editState.order_discount = v; updateEditTotal(); });
   bindRupiahInput($("#tax-input"), () => updateEditTotal());
   bindRupiahInput($("#service-input"), () => updateEditTotal());
   const taxIncToggle = $("#tax-included-toggle");
@@ -2257,6 +2372,7 @@ function updateEditLineTotal(idx) {
 
 function updateEditTotal() {
   let subtotal = rupiahParse($("#subtotal-input").value);
+  const orderDiscount = rupiahParse($("#order-discount-input").value);
   let tax = rupiahParse($("#tax-input").value);
   let service = rupiahParse($("#service-input").value);
   const sumItems = editState.items.reduce((s, i) => s + Math.max(0, (i.price || 0) - (i.discount || 0)) * (i.quantity || 1), 0);
@@ -2267,17 +2383,22 @@ function updateEditTotal() {
     const svi = $("#service-input"); if (svi) svi.value = "";
     tax = 0; service = 0;
   }
-  const total = subtotal + tax + service;
-  editState.subtotal = subtotal; editState.tax = tax; editState.service = service;
+  const total = subtotal + tax + service - orderDiscount;
+  editState.subtotal = subtotal; editState.order_discount = orderDiscount;
+  editState.tax = tax; editState.service = service;
   const td = $("#total-display");
   if (td) td.textContent = fmt(total);
   const dt = $("#dock-total-display");
   if (dt) dt.textContent = fmt(total);
   const badge = $("#tax-included-badge");
   if (badge) badge.classList.toggle("hidden", !editState.tax_included);
+  const orderDiscountTooHigh = orderDiscount > subtotal;
   const warn = $("#sum-warn");
   if (warn) {
-    if (sumItems !== subtotal) {
+    if (orderDiscountTooHigh) {
+      warn.classList.remove("hidden");
+      warn.textContent = `Diskon pesanan (${fmt(orderDiscount)}) tidak boleh lebih besar dari subtotal (${fmt(subtotal)}).`;
+    } else if (sumItems !== subtotal) {
       warn.classList.remove("hidden");
       if (editState.tax_included) {
         warn.textContent = `Total item (${fmt(sumItems)}) beda dari subtotal (${fmt(subtotal)}). Total item ini yang dipakai — cek harga & diskon tiap item.`;
@@ -2303,11 +2424,18 @@ async function saveEditBill(billId) {
   // price 0 is legal (free item the backend accepts with minv=0) — only
   // blank rows are dropped (bug: saving an edit silently deleted free items)
   if (!items.length) { toast("Minimal 1 item"); return; }
+  if (editState.order_discount > editState.subtotal) {
+    const input = $("#order-discount-input");
+    if (input) { input.style.borderColor = "var(--red)"; input.focus(); }
+    toast(`Diskon pesanan tidak boleh lebih besar dari subtotal (${fmt(editState.subtotal)})`);
+    return;
+  }
   await withBusy(btn, "Nyimpen...", async () => {
     try {
       const originalTotals = editState._originalTotals;
       const originalItems = editState._originalItems;
       const totalsChanged = editState.subtotal !== originalTotals.subtotal
+        || editState.order_discount !== originalTotals.order_discount
         || editState.tax !== originalTotals.tax
         || editState.service !== originalTotals.service;
       const originalById = new Map(originalItems.filter(i => i.id != null).map(i => [i.id, i]));
@@ -2333,9 +2461,10 @@ async function saveEditBill(billId) {
         merchant: editState.merchant || null,
         transacted_at: editState.transacted_at || null,
         subtotal: editState.subtotal,
+        order_discount: editState.order_discount,
         tax: editState.tax,
         service: editState.service,
-        total: editState.subtotal + editState.tax + editState.service,
+        total: editState.subtotal + editState.tax + editState.service - editState.order_discount,
         tax_included: editState.tax_included ? 1 : 0,
         items: items.map(i => ({
           id: i.id,

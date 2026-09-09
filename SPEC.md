@@ -472,6 +472,14 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Scroll hide berbasis `translateY(100%)` dihapus supaya navigasi utama tidak hilang tanpa aksi user. Contextual dock, editor/create/OCR, bill detail, onboarding/guest, desktop, safe-area, dan keyboard offset tetap mengikuti aturan masing-masing.
 - Regression browser mencakup geometry fixed pada scroll turun/naik, transisi Home/Settings/Rekap, route yang wajib menyembunyikan nav, responsive matrix, dan zero console error.
 
+### 2026-09-09 (v79), diskon checkout terpisah untuk split bill
+
+- Bill menyimpan `order_discount_idr` terpisah dari diskon per item. Rumus total menjadi `subtotal item + pajak + service - diskon pesanan`, dengan validasi 400 sebelum data ditulis kalau diskon melebihi subtotal atau total tidak cocok.
+- Diskon voucher tingkat pesanan dialokasikan proporsional setelah pembagian item, termasuk item quantity, item yang belum dipilih, dan slot yang masih uncovered. Breakdown server mengembalikan subtotal item, bagian diskon pesanan, pajak/service, serta total akhir dengan invariant tetap terjaga.
+- OCR membedakan promo item dari voucher checkout. Diskon persentase atau field order-level yang tidak jelas tidak dipindahkan menjadi diskon item.
+- Form verifikasi dan edit bill menerima field diskon pesanan terpisah. Tampilan bill menunjukkan subtotal item, diskon voucher, fee, dan total final dari server, termasuk kasus GoFood subtotal Rp81.000, diskon Rp45.000, service Rp12.500, total Rp48.500.
+- Regression mencakup create/update HTTP, migrasi database, alokasi free/slot/uncovered, OCR, old payload tanpa field baru, full pytest, frontend logic, serta browser E2E.
+
 ### 2026-09-08 (v78), fallback OCR gratis multi-model
 
 - OpenRouter OCR sekarang punya urutan model vision gratis, dimulai dari `google/gemma-4-26b-a4b-it:free`, lalu lanjut ke kandidat gratis lain bila provider mengembalikan rate limit, model unavailable, timeout, output tidak valid, atau format JSON terstruktur ditolak.

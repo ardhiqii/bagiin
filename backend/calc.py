@@ -12,6 +12,68 @@ Rounding leftovers go to the one who fronted the money (`fallback_id`).
 from decimal import Decimal
 
 
+_UNCOVERED_KEY = object()
+
+
+def _allocate_proportionally(
+    buckets: list[tuple[object, int]],
+    amount: int,
+    preferred_key=None,
+) -> dict[object, int]:
+    """Allocate an integer amount across positive buckets without losing cents.
+
+    Every bucket is capped at its base.  This cap is defensive for direct
+    callers; HTTP validation rejects an order discount larger than the bill's
+    effective subtotal before a bill can be persisted.  Floor allocation is
+    followed by deterministic one-rupiah remainder distribution, preferring
+    the bill owner when that bucket has a positive base.
+    """
+    positive: list[tuple[object, int]] = []
+    for key, base in buckets:
+        try:
+            base = int(base)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if base > 0:
+            positive.append((key, base))
+    allocations = {key: 0 for key, _ in positive}
+    base_total = sum(base for _, base in positive)
+    if not positive or base_total <= 0:
+        return allocations
+    try:
+        requested = max(0, int(amount or 0))
+    except (TypeError, ValueError, OverflowError):
+        requested = 0
+    target = min(requested, base_total)
+    if target <= 0:
+        return allocations
+
+    for key, base in positive:
+        allocations[key] = base * target // base_total
+    remainder = target - sum(allocations.values())
+
+    order = [key for key, _ in positive]
+    if preferred_key in allocations:
+        order.remove(preferred_key)
+        order.insert(0, preferred_key)
+    base_by_key = dict(positive)
+    while remainder > 0:
+        progressed = False
+        for key in order:
+            if allocations[key] >= base_by_key[key]:
+                continue
+            allocations[key] += 1
+            remainder -= 1
+            progressed = True
+            if remainder == 0:
+                break
+        if not progressed:
+            # The loop should be unreachable because target <= base_total, but
+            # do not spin forever if a future caller supplies duplicate keys.
+            break
+    return allocations
+
+
 def compute(bill: dict, items: list[dict], selections: list[dict],
             participants: list[str], fallback_id: str) -> dict:
     """Compute per-identity totals.
@@ -28,7 +90,8 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
       confirmed as the payer, and billed a ghost once the creator left (v58).
     Returns:
       {
-        "people": [{identity_id, name, subtotal_idr, tax_idr, total_idr}],
+        "people": [{identity_id, item_subtotal_idr, order_discount_idr,
+          subtotal_idr, tax_idr, total_idr}],
         "by_identity": {identity_id: {...}},
         "unassigned_items": [free item dicts with no selection],
         "uncovered_slots": [{item_id, name, per_slot, empty, amount_idr}],
@@ -112,16 +175,58 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
             ident = selectors[i % len(selectors)][0]
             subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + 1
 
+    # Checkout-wide discount is allocated only after every item has been
+    # assigned.  The uncovered slot bucket stays separate: its discount share
+    # reduces the warning amount instead of silently charging a person.
+    gross_subtotal_by_ident = subtotal_by_ident
+    gross_uncovered_idr = uncovered_idr
+    try:
+        order_discount = max(0, int(bill.get("order_discount_idr", 0) or 0))
+    except (TypeError, ValueError, OverflowError):
+        order_discount = 0
+    discount_buckets: list[tuple[object, int]] = list(gross_subtotal_by_ident.items())
+    if gross_uncovered_idr > 0:
+        discount_buckets.append((_UNCOVERED_KEY, gross_uncovered_idr))
+    discount_allocations = _allocate_proportionally(
+        discount_buckets,
+        order_discount,
+        preferred_key=fallback_id,
+    )
+    allocated_order_discount = sum(discount_allocations.values())
+    order_discount_by_ident = {
+        ident: discount_allocations.get(ident, 0)
+        for ident in gross_subtotal_by_ident
+    }
+    uncovered_discount = discount_allocations.get(_UNCOVERED_KEY, 0)
+    net_subtotal_by_ident = {
+        ident: gross - order_discount_by_ident.get(ident, 0)
+        for ident, gross in gross_subtotal_by_ident.items()
+    }
+    net_uncovered_idr = gross_uncovered_idr - uncovered_discount
+
+    if uncovered_discount and uncovered_slots:
+        # Keep each actionable warning consistent with the aggregate uncovered
+        # amount.  The per-slot rate remains the original item rate because the
+        # order discount is not an item discount.
+        slot_buckets: list[tuple[object, int]] = [
+            (index, slot["amount_idr"])
+            for index, slot in enumerate(uncovered_slots)
+        ]
+        slot_discounts = _allocate_proportionally(slot_buckets, uncovered_discount)
+        for index, slot in enumerate(uncovered_slots):
+            slot["amount_idr"] -= slot_discounts.get(index, 0)
+        uncovered_slots = [slot for slot in uncovered_slots if slot["amount_idr"] > 0]
+
     # Tax/service split. tax_included means item prices already include PPN —
     # only that portion is dropped; a separate service charge is still split.
-    tax_service = bill["tax_idr"] + bill["service_idr"]
+    tax_service = int(bill.get("tax_idr", 0) or 0) + int(bill.get("service_idr", 0) or 0)
     if bill.get("tax_included"):
-        tax_service = bill["service_idr"]
+        tax_service = int(bill.get("service_idr", 0) or 0)
     mode = bill.get("tax_mode", "proportional")
-    total_subtotal = sum(subtotal_by_ident.values()) or 0
+    total_subtotal = sum(net_subtotal_by_ident.values()) or 0
 
     tax_by_ident: dict[str, int] = {}
-    if not subtotal_by_ident or total_subtotal <= 0:
+    if not net_subtotal_by_ident or total_subtotal <= 0:
         # nobody has a positive share yet (fresh bill, or items whose effective
         # price is 0 — e.g. discount == price): the tax still has to land
         # somewhere or it vanishes from the split (total_ok False). Default it
@@ -131,7 +236,7 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
         # and equal-mode tax disappeared entirely)
         tax_by_ident[fallback_id] = tax_service
     elif mode == "equal":
-        payers = [k for k, v in subtotal_by_ident.items() if v > 0]
+        payers = [k for k, v in net_subtotal_by_ident.items() if v > 0]
         if payers:
             per = tax_service // len(payers)
             rem = tax_service - per * len(payers)
@@ -140,23 +245,27 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     elif mode == "creator":
         tax_by_ident[fallback_id] = tax_service
     else:  # proportional
-        for ident, sub in subtotal_by_ident.items():
+        for ident, sub in net_subtotal_by_ident.items():
             if total_subtotal > 0:
                 share = int(Decimal(sub) * Decimal(tax_service) / Decimal(total_subtotal))
                 tax_by_ident[ident] = share
         paid = sum(tax_by_ident.values())
         diff = tax_service - paid
-        if diff != 0 and subtotal_by_ident:
+        if diff != 0 and net_subtotal_by_ident:
             tax_by_ident[fallback_id] = tax_by_ident.get(fallback_id, 0) + diff
 
     # totals
     people = []
-    all_identities = set(subtotal_by_ident) | set(tax_by_ident)
+    all_identities = set(net_subtotal_by_ident) | set(tax_by_ident)
     for ident in all_identities:
-        sub = subtotal_by_ident.get(ident, 0)
+        item_subtotal = gross_subtotal_by_ident.get(ident, 0)
+        order_discount_share = order_discount_by_ident.get(ident, 0)
+        sub = net_subtotal_by_ident.get(ident, 0)
         tax = tax_by_ident.get(ident, 0)
         people.append({
             "identity_id": ident,
+            "item_subtotal_idr": item_subtotal,
+            "order_discount_idr": order_discount_share,
             "subtotal_idr": sub,
             "tax_idr": tax,
             "total_idr": sub + tax,
@@ -185,15 +294,20 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
         )
 
     assigned = sum(p["total_idr"] for p in people)
-    total_ok = (assigned + uncovered_idr) == bill["total_idr"]
+    # Invalid direct inputs must not produce negative person shares or crash.
+    # They are rejected at the HTTP boundary; exposing total_ok=False here
+    # makes the lost/unallocated discount visible to internal callers too.
+    discount_allocation_ok = allocated_order_discount == order_discount
+    total_idr = int(bill.get("total_idr", 0) or 0)
+    total_ok = discount_allocation_ok and (assigned + net_uncovered_idr) == total_idr
 
     return {
         "people": people,
         "by_identity": by_identity,
         "unassigned_items": unassigned,
         "uncovered_slots": uncovered_slots,
-        "uncovered_idr": uncovered_idr,
+        "uncovered_idr": net_uncovered_idr,
         "warnings": warnings,
         "total_ok": total_ok,
-        "remaining_to_creator": bill["total_idr"] - assigned - uncovered_idr,
+        "remaining_to_creator": total_idr - assigned - net_uncovered_idr,
     }
