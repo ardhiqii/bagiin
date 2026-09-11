@@ -483,6 +483,21 @@ const sheetStack = [];       // live sheet handles, LIFO
 let consumeNextSelfPop = false; // one self-initiated history.back() in flight
 let pendingSelfPops = 0;        // unconsumed sentinels owed after UI closes
 let drainingPops = false;
+let sheetTitleSerial = 0;
+
+function nameSheetDialog(overlay, sheet, opts) {
+  const title = $(".sheet-title", sheet);
+  if (title && title.textContent.trim()) {
+    const titleId = `bagiin-sheet-title-${++sheetTitleSerial}`;
+    title.id = titleId;
+    overlay.setAttribute("aria-labelledby", titleId);
+    return;
+  }
+  const fallback = typeof opts.ariaLabel === "string" && opts.ariaLabel.trim()
+    ? opts.ariaLabel.trim()
+    : "Dialog";
+  overlay.setAttribute("aria-label", fallback);
+}
 
 function drainSelfPops() {
   // Closing sheets from UI owes one back() per opened-but-unconsumed
@@ -501,6 +516,7 @@ function openSheet(html, opts = {}) {
   const overlay = el(`<div class="sheet-overlay" role="dialog" aria-modal="true">
     <div class="sheet" role="document">${html}</div></div>`);
   const sheet = $(".sheet", overlay);
+  nameSheetDialog(overlay, sheet, opts);
   const prevFocus = document.activeElement;
   document.body.appendChild(overlay);
   sheetDepth++;
@@ -677,7 +693,10 @@ function keyboardGapOffset() {
  *  sat underneath it and could not be tapped. */
 function syncDockSpace() {
   const app = $("#app");
-  if (!app) return;
+  if (!app) {
+    document.documentElement.style.scrollPaddingBottom = "";
+    return;
+  }
   // Re-evaluate visibility before measuring. A contextual dock can appear
   // after an async bill response, and the nav must never stack above it.
   syncAppNav();
@@ -692,6 +711,7 @@ function syncDockSpace() {
   if (!surface) {
     app.style.paddingBottom = "";
     app.style.scrollPaddingBottom = "";
+    document.documentElement.style.scrollPaddingBottom = "";
     if (dock) dock.style.bottom = "";
     if (appNav) appNav.style.bottom = "";
     const t = $("#toast");
@@ -710,6 +730,7 @@ function syncDockSpace() {
   // Keep keyboard/focus scrolling from parking a focused control underneath
   // the fixed mobile dock. Padding alone only protects normal document flow.
   app.style.scrollPaddingBottom = reserve;
+  document.documentElement.style.scrollPaddingBottom = reserve;
   const t = $("#toast");
   if (t) t.style.bottom = `calc(env(safe-area-inset-bottom) + ${surface.offsetHeight + 16}px)`;
 }
@@ -816,8 +837,21 @@ function addOnboardingSteps() {
 // ---------- router ----------
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, "");
-  const parts = h.split("/").filter(Boolean);
+  // Keep empty segments so trailing and double slashes remain unknown routes.
+  const parts = h ? h.split("/") : [];
   return { parts };
+}
+
+function isKnownHashRoute(parts) {
+  if (!parts.length) return true;
+  if (parts.length === 1) {
+    return parts[0] === "history" || parts[0] === "recap" ||
+      parts[0] === "settings" || parts[0] === "create";
+  }
+  return parts.length === 2 && (
+    (parts[0] === "create" && parts[1] === "verify") ||
+    (parts[0] === "b" && !!parts[1])
+  );
 }
 
 function render() {
@@ -833,11 +867,7 @@ function render() {
   // on a route the app could not render (bug: dead deep link showed a plausible
   // but unrelated screen). Replace, rather than push, so the dead route does
   // not remain in the browser's back stack.
-  const knownRoute = !parts.length || parts[0] === "history" ||
-    (parts[0] === "recap" && parts.length === 1) ||
-    parts[0] === "settings" ||
-    (parts[0] === "create" && (!parts[1] || parts[1] === "verify")) ||
-    (parts[0] === "b" && !!parts[1] && parts.length === 2);
+  const knownRoute = isKnownHashRoute(parts);
   if (!knownRoute) {
     history.replaceState(null, "", "#/");
     return render();

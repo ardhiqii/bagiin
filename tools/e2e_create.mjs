@@ -4,8 +4,10 @@
  * implementation bundled with Node, so the project needs no npm dependency.
  *
  * Defaults deliberately point at a disposable local server. The harness creates
- * one throwaway identity, drives the real editor in Chrome over CDP, and never
- * submits a bill. It is intentionally a hard failure when no matrix case runs.
+ * one throwaway identity, drives the real editor in Chrome over CDP, and submits
+ * throwaway bills whose fixtures are deleted during cleanup. It does not attempt
+ * identity deletion because this API has no identity-delete endpoint. It is
+ * intentionally a hard failure when no matrix case runs.
  *
  *   node tools/e2e_create.mjs [BASE_URL] [CDP_URL]
  *   BAGIIN_BASE_URL=http://127.0.0.1:8099 BAGIIN_CDP_URL=http://127.0.0.1:9222 node tools/e2e_create.mjs
@@ -29,8 +31,8 @@ const validateDebuggerWebSocketUrl = (rawUrl, label) => {
   if (!["ws:", "wss:"].includes(parsed.protocol) || parsed.username || parsed.password) {
     throw new Error(`${label} advertised an invalid WebSocket debugger URL`);
   }
-  if (!isLocalHost(parsed.hostname) && process.env.BAGIIN_E2E_ALLOW_NONLOCAL_CDP !== "1") {
-    throw new Error(`${label} advertised a non-local WebSocket; set BAGIIN_E2E_ALLOW_NONLOCAL_CDP=1 only for an explicit non-local run`);
+  if (!isLocalHost(parsed.hostname)) {
+    throw new Error(`${label} advertised a non-local WebSocket debugger URL; only localhost, 127.0.0.1, or ::1 are allowed`);
   }
   return parsed.href;
 };
@@ -240,8 +242,8 @@ try {
   if (!["http:", "https:"].includes(parsedBaseUrl.protocol) || parsedBaseUrl.username || parsedBaseUrl.password) {
     throw new Error("BASE_URL must be an HTTP(S) URL without embedded credentials");
   }
-  if (!isLocalHost(parsedBaseUrl.hostname) && process.env.BAGIIN_E2E_ALLOW_NONLOCAL !== "1") {
-    throw new Error("BASE_URL must target localhost; set BAGIIN_E2E_ALLOW_NONLOCAL=1 only for an explicit non-local run");
+  if (!isLocalHost(parsedBaseUrl.hostname)) {
+    throw new Error("BASE_URL must target localhost, 127.0.0.1, or ::1; non-local targets are refused");
   }
   BASE_URL = parsedBaseUrl.href.replace(/\/$/, "");
 } catch (error) {
@@ -255,8 +257,8 @@ try {
   if (!["http:", "https:"].includes(parsedCdpUrl.protocol) || parsedCdpUrl.username || parsedCdpUrl.password) {
     throw new Error("CDP_URL must be an HTTP(S) URL without embedded credentials");
   }
-  if (!isLocalHost(parsedCdpUrl.hostname) && process.env.BAGIIN_E2E_ALLOW_NONLOCAL_CDP !== "1") {
-    throw new Error("CDP_URL must target localhost; set BAGIIN_E2E_ALLOW_NONLOCAL_CDP=1 only for an explicit non-local run");
+  if (!isLocalHost(parsedCdpUrl.hostname)) {
+    throw new Error("CDP_URL must target localhost, 127.0.0.1, or ::1; non-local targets are refused");
   }
   CDP_URL = parsedCdpUrl.href.replace(/\/$/, "");
 } catch (error) {
@@ -266,6 +268,12 @@ try {
 const WIDTHS = [320, 360, 375, 390, 412, 430, 480, 600, 768, 820, 1024, 1040, 1280, 1440];
 const HEIGHT = 900;
 const failures = [];
+const createdBillIds = new Set();
+const cleanupFailures = [];
+const billIdFromHash = hash => String(hash || "").startsWith("#/b/") ? String(hash).slice(4) : "";
+const trackBillId = billId => {
+  if (typeof billId === "string" && billId) createdBillIds.add(billId);
+};
 let executed = 0;
 
 const check = (name, ok, detail = "") => {
@@ -395,6 +403,15 @@ const createAndManual = async () => {
   })()`);
   if (!clicked) throw new Error("manual create control was not rendered");
   await sleep(250);
+  const participantPicker = await evaluate(`(() => {
+    const section = document.querySelector(".verify-people-card");
+    if (section) section.open = true;
+    const button = section?.querySelector("#person-name-add");
+    return { section: Boolean(section), open: Boolean(section?.open), control: Boolean(button) };
+  })()`);
+  if (!participantPicker.section || !participantPicker.open || !participantPicker.control) {
+    throw new Error("manual participant picker was not rendered");
+  }
 };
 
 const readCase = async (width, color) => evaluate(`(() => {
@@ -404,6 +421,11 @@ const readCase = async (width, color) => evaluate(`(() => {
   const side = document.querySelector(".shell-side");
   const quantity = document.querySelector('[data-role="quantity"]');
   const cta = document.querySelector("#create-bill-btn");
+  const participantPicker = document.querySelector("details.verify-people-card");
+  const participantAdd = participantPicker?.querySelector("#person-name-add");
+  const explicitParticipantName = participantAdd?.getAttribute("aria-label")?.trim()
+    || participantAdd?.getAttribute("title")?.trim() || "";
+  const participantAccessibleName = explicitParticipantName || participantAdd?.textContent?.trim() || "";
   const firstFocusable = document.querySelector("#title-input, [data-role=name], #subtotal-input");
   const firstItem = document.querySelector(".vf-item");
   const firstSection = document.querySelector("#items-card");
@@ -428,6 +450,12 @@ const readCase = async (width, color) => evaluate(`(() => {
   return {
     route: location.hash,
     controls: { title: Boolean(document.querySelector("#title-input")), item: Boolean(document.querySelector('[data-role="name"]')), quantity: Boolean(quantity), subtotal: Boolean(document.querySelector("#subtotal-input")), cta: Boolean(cta) },
+    participantAdd: {
+      rendered: Boolean(participantAdd),
+      pickerOpen: Boolean(participantPicker?.open),
+      accessibleName: participantAccessibleName,
+      explicitName: explicitParticipantName,
+    },
     repaired: {
       nameLabel: Boolean(nameLabel && nameLabel.textContent.trim() === "Nama item" && name.id && nameLabel.htmlFor === name.id),
       dateHelper: Boolean(dateHelper && dateHelper.textContent.includes("Opsional, pilih tanggal transaksi.")),
@@ -493,6 +521,12 @@ const readCase = async (width, color) => evaluate(`(() => {
         const prefix = `${color} ${width}px`;
         const allControls = Object.values(initial.controls).every(Boolean);
         check(`${prefix}: create controls render`, allControls, JSON.stringify(initial.controls));
+        check(`${prefix}: participant add control has accessible name`,
+          initial.participantAdd?.pickerOpen === true
+            && initial.participantAdd.rendered === true
+            && initial.participantAdd.accessibleName.trim().length > 0
+            && initial.participantAdd.explicitName.trim().length > 0,
+          JSON.stringify(initial.participantAdd));
         check(`${prefix}: focused control is active and dock-clear`, initial.focus?.active === true && initial.focus.clear === true, JSON.stringify(initial.focus));
         check(`${prefix}: controls meet tap target`, initial.controlHeights.every(control => control.height >= 44), JSON.stringify(initial.controlHeights));
         check(`${prefix}: no horizontal overflow`, initial.dimensions.scrollWidth <= initial.dimensions.viewport, `${initial.dimensions.scrollWidth}px vs ${initial.dimensions.viewport}px ${JSON.stringify(initial.dimensions.overflowers)}`);
@@ -689,18 +723,22 @@ const readCase = async (width, color) => evaluate(`(() => {
               window.__e2eCreatePayload = { path, method, payload };
               return originalApiJson(path, method, payload);
             };
-            try { await createBillFinal(); }
+            try {
+              const result = await createBillFinal();
+              const hash = location.hash;
+              return { result, hash, payload: window.__e2eCreatePayload };
+            }
             finally { apiJson = originalApiJson; }
-            return window.__e2eCreatePayload;
           })()`);
           const createPayload = createCapture?.payload;
+          trackBillId(billIdFromHash(createCapture?.hash));
           check(`${prefix}: create payload uses canonical edited price, quantity, subtotal, and total`,
-            createCapture?.path === "/api/bills"
-              && createCapture?.method === "POST"
-              && createPayload?.items?.[0]?.price === 12000
-              && createPayload?.items?.[0]?.quantity === 2
-              && createPayload?.subtotal === 24000
-              && createPayload?.total === 24000,
+            createPayload?.path === "/api/bills"
+              && createPayload?.method === "POST"
+              && createPayload?.payload?.items?.[0]?.price === 12000
+              && createPayload?.payload?.items?.[0]?.quantity === 2
+              && createPayload?.payload?.subtotal === 24000
+              && createPayload?.payload?.total === 24000,
             JSON.stringify(createCapture));
 
           const manual = await evaluate(`(() => {
@@ -760,6 +798,7 @@ const readCase = async (width, color) => evaluate(`(() => {
             return location.hash;
           })()`);
           const manualId = String(manualHash || "").startsWith("#/b/") ? String(manualHash).slice(4) : "";
+          trackBillId(manualId);
           const manualStored = manualId ? await api("GET", `/api/bills/${manualId}`, undefined, identity) : null;
           check(`${prefix}: manual bill submits and persists canonical edited quantity`,
             Boolean(manualId)
@@ -778,6 +817,7 @@ const readCase = async (width, color) => evaluate(`(() => {
             total: 10000,
             tax_included: false,
           }, identity);
+          trackBillId(saved?.id);
           await navigate(`${BASE_URL}/?e2e=${Date.now()}#/b/${saved.id}`);
           await sleep(400);
           const editButton = await evaluate(`Boolean(document.querySelector("#edit-bill-btn"))`);
@@ -848,6 +888,25 @@ const readCase = async (width, color) => evaluate(`(() => {
     }
   }
 } finally {
+  if (identity) {
+    for (const billId of createdBillIds) {
+      try {
+        await api("DELETE", `/api/bills/${billId}`, undefined, identity);
+        try {
+          await api("GET", `/api/bills/${billId}`, undefined, identity);
+        } catch (error) {
+          if (!/\b404\b/.test(String(error.message || ""))) throw error;
+          continue;
+        }
+        throw new Error(`GET /api/bills/${billId} remained readable after DELETE`);
+      } catch (error) {
+        cleanupFailures.push(`DELETE /api/bills/${billId}: ${error.message}`);
+      }
+    }
+  }
+  if (cleanupFailures.length) {
+    check("created bill cleanup", false, cleanupFailures.join(" | "));
+  }
   if (tab?.id) await fetchWithTimeout(`${CDP_URL}/json/close/${encodeURIComponent(tab.id)}`).catch(() => {});
   if (ws) ws.close();
 }

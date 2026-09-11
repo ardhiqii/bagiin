@@ -511,6 +511,14 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Untuk receipt Zenbu dengan subtotal Rp299.000, service Rp23.920, PB1 Rp32.292, dan total struk Rp355.212, cashback Rp50.000 menghasilkan total bersama Rp305.212 tanpa mengubah fakta subtotal, service, atau pajak pada struk.
 - Regression v84 mencakup migrasi, create/update persistence, validasi invalid tanpa persist, compatibility payload lama, pembulatan proporsional, order discount plus cashback, uncovered slot, tax-included/service, frontend state/payload, dan rendering server breakdown.
 
+### 2026-09-12 (v85), audit responsive UI/UX dan integritas komponen frontend
+
+- Audit real-browser mencakup lebar `320, 360, 375, 390, 412, 430, 480, 600, 719, 720, 721, 768, 820, 1024, 1039, 1040, 1041, 1280, 1440` serta tinggi pendek dan normal. Pemeriksaan membedakan content di bawah fold dari kontrol actionable yang benar-benar tertutup fixed dock.
+- Action row creator bill dipindahkan sebelum content yang dapat bertambah tinggi, sehingga tombol `Metode Bayar` dan tambah foto tetap dapat dipakai pada viewport pendek `320x568`. Focus field editor juga memakai reserve dock yang diukur dan disinkronkan ke root scroll container.
+- Filter home sekarang disabled selama daftar bill masih dimuat, route hash menolak suffix invalid dan mengkanonisasi URL ke `#/`, serta class `settings-page` dipasang saat route Akun aktif supaya rule responsive settings benar-benar berlaku.
+- Dialog sheet selalu mempunyai accessible name, kontrol tambah peserta mempunyai nama eksplisit, toggle undangan mengubah `aria-checked` satu kali walaupun yang diklik ikon atau baris deskripsi, dan heading Rekap lebih stabil saat wrap di layar sempit.
+- Warning creator yang panjang menjaga frasa konsekuensi pembayaran tetap utuh saat line-break. Regression frontend dan browser durable ditambahkan melalui `tools/e2e_frontend_logic.mjs`, `tools/e2e_create.mjs`, dan `tools/e2e_uiux_responsive.mjs`; full pytest serta flow browser utama tetap hijau.
+
 ### 2026-09-09 (v82), audit integrasi halaman dan komponen
 
 - Field koleksi untuk peserta, pilihan item, dan item legacy yang malformed sekarang ditolak sebagai HTTP 400, bukan error 500 atau TypeError yang lolos ke pengguna. Target pembayaran yang belum menjadi member bill juga tidak dapat diubah statusnya.
