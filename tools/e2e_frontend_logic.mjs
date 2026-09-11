@@ -165,8 +165,8 @@ assert.match(screens, /id="create-btn"/);
 
 // The optimistic split remains available for the picker, but its number must
 // be visibly labeled as pending until the authoritative server payload lands.
-assert.match(bill, /totalLabel\.textContent = useServer \? "Total kamu" : "Perkiraan total kamu"/);
-assert.match(bill, /useServer \? `Total kamu \$\{fmt\(bd\.total\)\}` : `Perkiraan total kamu/);
+assert.match(bill, /totalLabel\.textContent = cashbackPending[\s\S]*?"Perkiraan sebelum cashback"[\s\S]*?useServer \? "Total kamu" : "Perkiraan total kamu"/);
+assert.match(bill, /cashbackPending[\s\S]*?`Perkiraan sebelum cashback \$\{fmt\(bd\.total\)\}`/);
 
 // A final allocation can remain open and unpaid. The creator no longer has a
 // Close Bill control, but pending allocation warnings, legacy reopen handling,
@@ -251,5 +251,236 @@ assert.match(create, /input\.multiple = true/);
 assert.match(create, /const uploadedPhotoPaths = \[\]/);
 assert.match(create, /releaseAbandonedPhotos\(uploadedPhotoPaths\.filter/);
 assert.match(create, /releaseReturnedPhotos\(returnedPhotoPaths\(e\)\)/);
+
+// Shared payment cashback is a separate user-entered adjustment. Keep its
+// copy, payload key, and validation contract executable so it cannot drift
+// back into the receipt/order-discount field.
+assert.match(create, /label for="cashback-input">Cashback yang dibagi \(Rp\)<\/label>/);
+assert.match(create, /Cashback ini tidak tercetak di struk\. Isi hanya kalau yang bayar mau membaginya; kalau cashback milik yang bayar saja, isi 0\./);
+assert.match(bill, /label for="cashback-input">Cashback yang dibagi \(Rp\)<\/label>/);
+assert.match(bill, /Cashback ini tidak tercetak di struk\. Isi hanya kalau yang bayar mau membaginya; kalau cashback milik yang bayar saja, isi 0\./);
+assert.match(create, /order_discount: totals\.orderDiscount,\n\s*cashback: totals\.cashback,/);
+assert.match(bill, /order_discount: totals\.orderDiscount,\n\s*cashback: totals\.cashback,/);
+assert.match(create, /function renderVerify\(ocr, manual = false, preserveCashback = false\)/);
+assert.match(create, /cashback: preserveCashback \? \(ocr\.cashback \?\? ocr\.cashback_idr \?\? 0\) : 0,/);
+assert.match(create, /renderVerify\(next, verifyState\.manual, true\)/);
+
+const verifyCalcSource = create.slice(
+  create.indexOf("function recalculateVerifyDraft"),
+  create.indexOf("async function createBillFinal"),
+);
+const editCalcSource = bill.slice(
+  bill.indexOf("function updateEditTotal"),
+  bill.indexOf("async function saveEditBill"),
+);
+for (const [name, source] of [["verify", verifyCalcSource], ["edit", editCalcSource]]) {
+  assert.match(source, /preCashbackTotal[\s\S]*subtotal \+ tax \+ service - orderDiscount/,
+    `${name} total must subtract cashback after fees`);
+  assert.match(source, /preCashbackTotal - cashback/,
+    `${name} total must use the post-cashback equation`);
+  assert.match(source, /cashbackTooHigh/,
+    `${name} editor must cap cashback at the pre-cashback total`);
+}
+
+const verifyCashbackSource = create.slice(
+  create.indexOf("function verifyCashbackDraft"),
+  create.indexOf("function renderVerify"),
+);
+const editCashbackSource = bill.slice(
+  bill.indexOf("function editCashbackDraft"),
+  bill.indexOf("function renderEditBill"),
+);
+const cashbackHarness = vm.runInNewContext(`
+  ${verifyCashbackSource}
+  ${editCashbackSource}
+  ({ verifyCashbackDraft, editCashbackDraft });
+`);
+for (const draft of [cashbackHarness.verifyCashbackDraft, cashbackHarness.editCashbackDraft]) {
+  assert.equal(draft(null).value, 0);
+  assert.equal(draft(50_000).value, 50_000);
+  assert.equal(draft(50_000).invalid, false);
+  assert.equal(draft(-1).invalid, true);
+  assert.equal(draft(1.5).invalid, true);
+  assert.equal(draft("50.000").invalid, true);
+  assert.equal(draft(10 ** 12 + 1).invalid, true);
+}
+
+// The displayed breakdown must use the server row, while old/missing fields
+// stay on the zero-cashback visual path.
+const breakdownSource = bill.slice(
+  bill.indexOf("function moneyField"),
+  bill.indexOf("function myBreakdown"),
+);
+const breakdownRenderSource = bill.slice(
+  bill.indexOf("function billCostSummaryHtml"),
+  bill.indexOf("function personalBreakdownHtml"),
+);
+const serverBreakdownHarness = vm.runInNewContext(`
+  ${breakdownSource}
+  const fmt = value => String(value);
+  ${breakdownRenderSource}
+  ({ serverPersonBreakdown, billCostSummaryHtml, personBreakdownRowsHtml });
+`);
+const legacyBreakdown = serverBreakdownHarness.serverPersonBreakdown({
+  subtotal_idr: 100_000, tax_idr: 10_000, total_idr: 110_000,
+});
+assert.equal(legacyBreakdown.cashback, 0);
+assert.equal(serverBreakdownHarness.billCostSummaryHtml({ bill: {
+  subtotal_idr: 100_000, tax_idr: 10_000, service_idr: 0, total_idr: 110_000,
+} }), "");
+const sharedBreakdown = serverBreakdownHarness.serverPersonBreakdown({
+  item_subtotal_idr: 100_000, subtotal_idr: 90_000, order_discount_idr: 10_000,
+  cashback_idr: 20_000, tax_idr: 9_000, total_idr: 79_000,
+});
+assert.equal(sharedBreakdown.cashback, 20_000);
+assert.match(serverBreakdownHarness.personBreakdownRowsHtml({}, sharedBreakdown), /Cashback dibagi/);
+assert.match(serverBreakdownHarness.billCostSummaryHtml({ bill: {
+  subtotal_idr: 100_000, tax_idr: 9_000, service_idr: 0,
+  order_discount_idr: 0, cashback_idr: 20_000, total_idr: 89_000,
+} }), /Cashback dibagi/);
+assert.doesNotMatch(
+  serverBreakdownHarness.personBreakdownRowsHtml({}, legacyBreakdown),
+  /Cashback dibagi/,
+);
+
+const paySheetSource = bill.slice(
+  bill.indexOf("function openPaySheet"),
+  bill.indexOf("// ---------- Where the money goes"),
+);
+assert.match(paySheetSource, /billOrderDiscount\(data\) > 0 \|\| billCashback\(data\) > 0[\s\S]*personBreakdownRowsHtml/,
+  "cashback-only pay sheets must render the server breakdown");
+assert.match(bill, /function personBreakdownRowsHtml\(data, bd, withIds = false, forceCashback = false\)/,
+  "picker breakdown must support pending cashback structure");
+const pendingRows = serverBreakdownHarness.personBreakdownRowsHtml(
+  { bill: { cashback_idr: 40_000 } },
+  { grossSub: 100_000, orderDiscount: 0, sub: 100_000, cashback: 0, tax: 15_000, total: 115_000 },
+  true,
+  true,
+);
+assert.match(pendingRows, /id="my-cashback"/);
+assert.match(pendingRows, /id="my-final-total"/);
+
+const orderedSummary = serverBreakdownHarness.billCostSummaryHtml({ bill: {
+  subtotal_idr: 100_000, tax_idr: 9_000, service_idr: 3_000,
+  order_discount_idr: 10_000, cashback_idr: 20_000, total_idr: 82_000,
+} });
+const summaryOrder = ["Subtotal item", "Diskon pesanan", "PPN", "Service", "Cashback dibagi", "Total final"]
+  .map(label => orderedSummary.indexOf(label));
+assert.ok(summaryOrder.every(index => index >= 0), "all summary rows must render");
+assert.deepEqual(summaryOrder, [...summaryOrder].sort((a, b) => a - b),
+  "summary rows must put fees before cashback and final total last");
+
+const orderedPerson = serverBreakdownHarness.personBreakdownRowsHtml({}, sharedBreakdown);
+const personOrder = ["Item sebelum diskon", "Diskon pesanan", "Item sebelum cashback", "PPN &amp; service", "Cashback dibagi", "Total akhir"]
+  .map(label => orderedPerson.indexOf(label));
+assert.deepEqual(personOrder, [...personOrder].sort((a, b) => a - b),
+  "personal rows must put fees before cashback and final total last");
+
+// Creator rows must not infer a voucher from the presence of the newer
+// item-subtotal field. A cashback-only server row has no promo segment, while
+// a genuine voucher-plus-cashback row keeps the voucher segment.
+const creatorBreakdownSource = bill.slice(
+  bill.indexOf("function moneyField"),
+  bill.indexOf("// Merge a mutating endpoint"),
+);
+const creatorBreakdownHarness = vm.runInNewContext(`
+  const fmt = value => String(value);
+  function hasPickedAny() { return false; }
+  ${creatorBreakdownSource}
+  ({ creatorPersonSubHtml, serverPersonBreakdown });
+`);
+const cashbackOnlyPerson = {
+  identity_id: "creator-test",
+  item_subtotal_idr: 100_000,
+  subtotal_idr: 100_000,
+  order_discount_idr: 0,
+  cashback_idr: 40_000,
+  tax_idr: 15_000,
+  total_idr: 75_000,
+};
+const cashbackOnlyHtml = creatorBreakdownHarness.creatorPersonSubHtml(
+  { bill: { order_discount_idr: 0, cashback_idr: 40_000 } },
+  cashbackOnlyPerson,
+);
+assert.doesNotMatch(cashbackOnlyHtml, /promo|Diskon pesanan/i,
+  "cashback-only creator rows must not show a voucher segment");
+assert.match(cashbackOnlyHtml, /100000 item/);
+assert.match(cashbackOnlyHtml, /100000 sebelum cashback/);
+assert.match(cashbackOnlyHtml, /40000 cashback/);
+assert.match(cashbackOnlyHtml, /15000 pajak &amp; service/);
+assert.ok(cashbackOnlyHtml.indexOf("15000 pajak &amp; service") < cashbackOnlyHtml.indexOf("40000 cashback"),
+  "creator rows must put fees before cashback");
+assert.equal(creatorBreakdownHarness.serverPersonBreakdown(cashbackOnlyPerson).total, 75_000);
+
+const voucherCashbackHtml = creatorBreakdownHarness.creatorPersonSubHtml(
+  { bill: { order_discount_idr: 10_000, cashback_idr: 40_000 } },
+  { ...cashbackOnlyPerson, subtotal_idr: 90_000, order_discount_idr: 10_000, total_idr: 55_000 },
+);
+assert.match(voucherCashbackHtml, /100000 item/);
+assert.match(voucherCashbackHtml, /10000 promo/);
+assert.match(voucherCashbackHtml, /90000 sebelum cashback/);
+assert.match(voucherCashbackHtml, /40000 cashback/);
+
+// Execute the picker renderer against a tiny DOM double: while the selection
+// POST is pending, preserve the pre-cashback estimate but never invent a zero
+// cashback or a final total. Once the server row is available, both fields
+// must switch to the exact server values.
+const renderPickSource = bill.slice(
+  bill.indexOf("function renderPickRows"),
+  bill.indexOf("async function updateGuestSelection"),
+);
+assert.match(renderPickSource, /billCashback\(data\) > 0 && !\$\("#my-cashback", mbEl\)/,
+  "guest picker must materialize cashback nodes when the initial row has no share");
+assert.match(renderPickSource, /mbEl\.innerHTML = personBreakdownRowsHtml\(data, bd, true, true\)/,
+  "guest picker must use the pending cashback breakdown structure");
+const pickerBreakdownSource = bill.slice(
+  bill.indexOf("function myPersonRow"),
+  bill.indexOf("function billCostSummaryHtml"),
+);
+const renderNodes = {};
+const makeRenderNode = () => ({
+  textContent: "",
+  style: {},
+  attrs: {},
+  setAttribute(name, value) { this.attrs[name] = value; },
+});
+for (const selector of ["#my-total", ".dock-total .label", "#my-breakdown", "#my-gross-sub", "#my-order-discount", "#my-sub", "#my-cashback", "#my-tax", "#my-final-total"]) {
+  renderNodes[selector] = makeRenderNode();
+}
+const renderPickHarness = vm.runInNewContext(`
+  const state = { currentBillId: "cashback-bill", selQty: new Map() };
+  const fmt = value => "Rp " + value;
+  function $(selector) { return renderNodes[selector] || null; }
+  function $$(selector) { return []; }
+  function computeMyBreakdown() {
+    return { grossSub: 100000, orderDiscount: 0, sub: 100000, tax: 15000, total: 115000 };
+  }
+  function taxServiceTotal() { return 15000; }
+  ${pickerBreakdownSource}
+  ${renderPickSource}
+  ({ renderPickRows });
+`, { renderNodes });
+const pendingData = {
+  bill: { id: "cashback-bill", cashback_idr: 40_000, order_discount_idr: 0, tax_idr: 15_000, service_idr: 0 },
+  items: [], sel_by_item: {}, people: [],
+};
+renderPickHarness.renderPickRows(pendingData, { id: "me" }, false);
+assert.equal(renderNodes["#my-total"].textContent, "Rp 115000");
+assert.equal(renderNodes[".dock-total .label"].textContent, "Perkiraan sebelum cashback");
+assert.equal(renderNodes["#my-total"].attrs["aria-label"], "Perkiraan sebelum cashback Rp 115000");
+assert.equal(renderNodes["#my-cashback"].textContent, "menunggu server");
+assert.equal(renderNodes["#my-final-total"].textContent, "menunggu server");
+assert.doesNotMatch(renderNodes["#my-cashback"].textContent, /−Rp 0/);
+assert.doesNotMatch(renderNodes["#my-final-total"].textContent, /Rp 115000/);
+
+const exactData = {
+  bill: { id: "cashback-bill", cashback_idr: 40_000, order_discount_idr: 0, tax_idr: 15_000, service_idr: 0 },
+  items: [], sel_by_item: {},
+  people: [{ identity_id: "me", subtotal_idr: 100_000, cashback_idr: 40_000, tax_idr: 15_000, total_idr: 75_000 }],
+};
+renderPickHarness.renderPickRows(exactData, { id: "me" }, true);
+assert.equal(renderNodes[".dock-total .label"].textContent, "Total kamu");
+assert.equal(renderNodes["#my-cashback"].textContent, "−Rp 40000");
+assert.equal(renderNodes["#my-final-total"].textContent, "Rp 75000");
 
 console.log("frontend logic regression assertions: PASS");

@@ -15,18 +15,29 @@ from decimal import Decimal
 _UNCOVERED_KEY = object()
 
 
+def _allocation_sort_key(key: object) -> tuple[int, str]:
+    """Return a comparable, deterministic key for allocation buckets."""
+    if key is _UNCOVERED_KEY:
+        return (1, "")
+    return (0, str(key))
+
+
 def _allocate_proportionally(
     buckets: list[tuple[object, int]],
     amount: int,
     preferred_key=None,
+    *,
+    canonical_order: bool = False,
 ) -> dict[object, int]:
     """Allocate an integer amount across positive buckets without losing cents.
 
     Every bucket is capped at its base.  This cap is defensive for direct
     callers; HTTP validation rejects an order discount larger than the bill's
     effective subtotal before a bill can be persisted.  Floor allocation is
-    followed by deterministic one-rupiah remainder distribution, preferring
-    the bill owner when that bucket has a positive base.
+    followed by one-rupiah remainder distribution, preferring the bill owner
+    when that bucket has a positive base.  Identity-bucket callers opt into
+    canonical ordering; the default preserves the helper's historical input
+    order for item/slot buckets.
     """
     positive: list[tuple[object, int]] = []
     for key, base in buckets:
@@ -52,7 +63,11 @@ def _allocate_proportionally(
         allocations[key] = base * target // base_total
     remainder = target - sum(allocations.values())
 
-    order = [key for key, _ in positive]
+    order = (
+        sorted((key for key, _ in positive), key=_allocation_sort_key)
+        if canonical_order else
+        [key for key, _ in positive]
+    )
     if preferred_key in allocations:
         order.remove(preferred_key)
         order.insert(0, preferred_key)
@@ -78,7 +93,8 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
             participants: list[str], fallback_id: str) -> dict:
     """Compute per-identity totals.
 
-    bill: dict with subtotal_idr, tax_idr, service_idr, total_idr, tax_mode
+    bill: dict with subtotal_idr, tax_idr, service_idr, order_discount_idr,
+      cashback_idr, total_idr, tax_mode
     items: list of item dicts (id, name, price_idr, mode, slot_count,
       quantity). quantity is the purchased unit count and defaults to 1.
     selections: list of {item_id, identity_id, qty}
@@ -91,7 +107,7 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     Returns:
       {
         "people": [{identity_id, item_subtotal_idr, order_discount_idr,
-          subtotal_idr, tax_idr, total_idr}],
+          subtotal_idr, tax_idr, cashback_idr, total_idr}],
         "by_identity": {identity_id: {...}},
         "unassigned_items": [free item dicts with no selection],
         "uncovered_slots": [{item_id, name, per_slot, empty, amount_idr}],
@@ -191,6 +207,7 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
         discount_buckets,
         order_discount,
         preferred_key=fallback_id,
+        canonical_order=True,
     )
     allocated_order_discount = sum(discount_allocations.values())
     order_discount_by_ident = {
@@ -254,23 +271,73 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
         if diff != 0 and net_subtotal_by_ident:
             tax_by_ident[fallback_id] = tax_by_ident.get(fallback_id, 0) + diff
 
+    # Payment-method cashback is a second, shared adjustment. It is allocated
+    # only after the existing order-discount and tax/service pipelines have
+    # produced each person's liability. Keep uncovered slots as their own
+    # bucket so the rebate reduces the warning rather than silently charging
+    # (or crediting) an identity.
+    try:
+        cashback = max(0, int(bill.get("cashback_idr", bill.get("cashback", 0)) or 0))
+    except (TypeError, ValueError, OverflowError):
+        cashback = 0
+    all_identities = list(net_subtotal_by_ident)
+    for ident in tax_by_ident:
+        if ident not in net_subtotal_by_ident:
+            all_identities.append(ident)
+    pre_cashback_by_ident = {
+        ident: max(
+            0,
+            net_subtotal_by_ident.get(ident, 0) + tax_by_ident.get(ident, 0),
+        )
+        for ident in all_identities
+    }
+    cashback_buckets: list[tuple[object, int]] = list(pre_cashback_by_ident.items())
+    if net_uncovered_idr > 0:
+        cashback_buckets.append((_UNCOVERED_KEY, net_uncovered_idr))
+    cashback_allocations = _allocate_proportionally(
+        cashback_buckets,
+        cashback,
+        preferred_key=fallback_id,
+        canonical_order=True,
+    )
+    allocated_cashback = sum(cashback_allocations.values())
+    cashback_by_ident = {
+        ident: cashback_allocations.get(ident, 0)
+        for ident in pre_cashback_by_ident
+    }
+    uncovered_cashback = cashback_allocations.get(_UNCOVERED_KEY, 0)
+
+    if uncovered_cashback and uncovered_slots:
+        # Keep each actionable warning consistent with the aggregate uncovered
+        # amount after both checkout-wide adjustments.
+        slot_buckets = [
+            (index, slot["amount_idr"])
+            for index, slot in enumerate(uncovered_slots)
+        ]
+        slot_cashbacks = _allocate_proportionally(slot_buckets, uncovered_cashback)
+        for index, slot in enumerate(uncovered_slots):
+            slot["amount_idr"] -= slot_cashbacks.get(index, 0)
+        uncovered_slots = [slot for slot in uncovered_slots if slot["amount_idr"] > 0]
+    net_uncovered_idr -= uncovered_cashback
+
     # totals
     people = []
-    all_identities = set(net_subtotal_by_ident) | set(tax_by_ident)
     for ident in all_identities:
         item_subtotal = gross_subtotal_by_ident.get(ident, 0)
         order_discount_share = order_discount_by_ident.get(ident, 0)
         sub = net_subtotal_by_ident.get(ident, 0)
         tax = tax_by_ident.get(ident, 0)
+        cashback_share = cashback_by_ident.get(ident, 0)
         people.append({
             "identity_id": ident,
             "item_subtotal_idr": item_subtotal,
             "order_discount_idr": order_discount_share,
             "subtotal_idr": sub,
             "tax_idr": tax,
-            "total_idr": sub + tax,
+            "cashback_idr": cashback_share,
+            "total_idr": sub + tax - cashback_share,
         })
-    people.sort(key=lambda p: -p["total_idr"])
+    people.sort(key=lambda p: (-p["total_idr"], _allocation_sort_key(p["identity_id"])))
 
     by_identity = {p["identity_id"]: p for p in people}
 
@@ -298,8 +365,13 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     # They are rejected at the HTTP boundary; exposing total_ok=False here
     # makes the lost/unallocated discount visible to internal callers too.
     discount_allocation_ok = allocated_order_discount == order_discount
+    cashback_allocation_ok = allocated_cashback == cashback
     total_idr = int(bill.get("total_idr", 0) or 0)
-    total_ok = discount_allocation_ok and (assigned + net_uncovered_idr) == total_idr
+    total_ok = (
+        discount_allocation_ok
+        and cashback_allocation_ok
+        and (assigned + net_uncovered_idr) == total_idr
+    )
 
     return {
         "people": people,

@@ -214,6 +214,9 @@ function moneyField(value) {
 function billOrderDiscount(data) {
   return moneyField(data && data.bill && data.bill.order_discount_idr);
 }
+function billCashback(data) {
+  return moneyField(data && data.bill && data.bill.cashback_idr);
+}
 function serverPersonBreakdown(row) {
   const netSub = moneyField(row && row.subtotal_idr);
   // `subtotal_idr` was already the post-item-discount amount in old payloads;
@@ -222,10 +225,13 @@ function serverPersonBreakdown(row) {
     ? moneyField(row.item_subtotal_idr) : netSub;
   const orderDiscount = row && row.order_discount_idr != null
     ? moneyField(row.order_discount_idr) : 0;
+  const cashback = row && row.cashback_idr != null
+    ? moneyField(row.cashback_idr) : 0;
   return {
     grossSub,
     orderDiscount,
     sub: netSub,
+    cashback,
     tax: moneyField(row && row.tax_idr),
     total: moneyField(row && row.total_idr),
   };
@@ -239,16 +245,17 @@ function myBreakdown(data, me, selQty) {
   // (bug: a late guest saw a non-zero total that the server never assigned).
   // Estimates are allowed only in renderPickRows(false), while a pending tap
   // is being saved; every settled/displayed breakdown must come from `people`.
-  return { grossSub: 0, orderDiscount: 0, sub: 0, tax: 0, total: 0 };
+  return { grossSub: 0, orderDiscount: 0, sub: 0, cashback: 0, tax: 0, total: 0 };
 }
 
 function billCostSummaryHtml(data) {
   const bill = data && data.bill ? data.bill : {};
   const orderDiscount = billOrderDiscount(data);
+  const cashback = billCashback(data);
   // Keep zero/missing order-discount payloads byte-for-byte in the old visual
   // path. The extra reconciliation card is only useful when a checkout promo
-  // actually exists.
-  if (!(orderDiscount > 0)) return "";
+  // or shared payment cashback actually exists.
+  if (!(orderDiscount > 0 || cashback > 0)) return "";
   const subtotal = moneyField(bill.subtotal_idr);
   const tax = moneyField(bill.tax_idr);
   const service = moneyField(bill.service_idr);
@@ -260,23 +267,26 @@ function billCostSummaryHtml(data) {
     <div class="card card-flat bill-cost-summary">
       <div class="card-title"><span>Rincian total</span><span class="muted">dari server</span></div>
       <div class="break-row"><span>Subtotal item</span><span class="money">${fmt(subtotal)}</span></div>
-      <div class="break-row"><span>Diskon pesanan</span><span class="money" style="color:var(--green);">−${fmt(orderDiscount)}</span></div>
+      ${orderDiscount > 0 ? `<div class="break-row"><span>Diskon pesanan</span><span class="money" style="color:var(--green);">−${fmt(orderDiscount)}</span></div>` : ""}
       ${feeRows}
+      ${cashback > 0 ? `<div class="break-row"><span>Cashback dibagi</span><span class="money" style="color:var(--green);">−${fmt(cashback)}</span></div>` : ""}
       <div class="break-row" style="margin-top:4px;padding-top:9px;border-top:1px solid var(--border);font-weight:700;">
         <span>Total final</span><span class="money">${fmt(moneyField(bill.total_idr))}</span>
       </div>
-      <p class="muted" style="margin-top:8px;">Voucher berlaku ke seluruh pesanan dan dibagi proporsional ke bagian item masing-masing. Angka per orang mengikuti hitungan server.</p>
+      <p class="muted" style="margin-top:8px;">${orderDiscount > 0 ? "Voucher berlaku ke seluruh pesanan dan dibagi proporsional ke bagian item masing-masing. " : ""}${cashback > 0 ? "Cashback dibagi sesuai bagian masing-masing. " : ""}Angka per orang mengikuti hitungan server.</p>
     </div>`;
 }
 
-function personBreakdownRowsHtml(data, bd, withIds = false) {
+function personBreakdownRowsHtml(data, bd, withIds = false, forceCashback = false) {
   const showOrder = billOrderDiscount(data) > 0 || bd.orderDiscount > 0;
+  const showCashback = forceCashback || bd.cashback > 0;
   const idFor = key => withIds ? ` id="${key}"` : "";
-  if (!showOrder) {
+  if (!showCashback && !showOrder) {
     return `<span>Item <b class="money-sm"${idFor("my-sub")}>${fmt(bd.sub)}</b></span>
       <span>Pajak &amp; service <b class="money-sm"${idFor("my-tax")} style="color:var(--accent);">${fmt(bd.tax)}</b></span>`;
   }
-  return `<span style="display:flex;justify-content:space-between;gap:8px;">
+  if (!showCashback) {
+    return `<span style="display:flex;justify-content:space-between;gap:8px;">
       <span>Item sebelum diskon</span><b class="money-sm"${idFor("my-gross-sub")}>${fmt(bd.grossSub)}</b>
     </span>
     <span style="display:flex;justify-content:space-between;gap:8px;">
@@ -288,16 +298,39 @@ function personBreakdownRowsHtml(data, bd, withIds = false) {
     <span style="display:flex;justify-content:space-between;gap:8px;">
       <span>PPN &amp; service</span><b class="money-sm"${idFor("my-tax")} style="color:var(--accent);">${fmt(bd.tax)}</b>
     </span>`;
+  }
+  const netLabel = "Item sebelum cashback";
+  const grossRow = showOrder ? `<span style="display:flex;justify-content:space-between;gap:8px;">
+      <span>Item sebelum diskon</span><b class="money-sm"${idFor("my-gross-sub")}>${fmt(bd.grossSub)}</b>
+    </span>
+    <span style="display:flex;justify-content:space-between;gap:8px;">
+      <span>Diskon pesanan</span><b class="money-sm"${idFor("my-order-discount")} style="color:var(--green);">−${fmt(bd.orderDiscount)}</b>
+    </span>` : "";
+  const finalRow = `<span style="display:flex;justify-content:space-between;gap:8px;margin-top:3px;padding-top:7px;border-top:1px solid var(--border);font-weight:700;">
+      <span>Total akhir</span><b class="money-sm"${idFor("my-final-total")}>${fmt(bd.total)}</b>
+    </span>`;
+  return `${grossRow}
+    <span style="display:flex;justify-content:space-between;gap:8px;">
+      <span>${netLabel}</span><b class="money-sm"${idFor("my-sub")}>${fmt(bd.sub)}</b>
+    </span>
+    <span style="display:flex;justify-content:space-between;gap:8px;">
+      <span>PPN &amp; service</span><b class="money-sm"${idFor("my-tax")} style="color:var(--accent);">${fmt(bd.tax)}</b>
+    </span>
+    <span style="display:flex;justify-content:space-between;gap:8px;">
+      <span>Cashback dibagi</span><b class="money-sm"${idFor("my-cashback")} style="color:var(--green);">−${fmt(bd.cashback)}</b>
+    </span>
+    ${finalRow}`;
 }
 
 function personalBreakdownHtml(data, bd, id = "", extraStyle = "") {
   const orderTotal = billOrderDiscount(data);
   const hasOrderRows = orderTotal > 0 || bd.orderDiscount > 0;
+  const hasCashbackRows = bd.cashback > 0;
   const hasShare = bd.grossSub > 0 || bd.sub > 0 || bd.orderDiscount > 0;
   const hasFee = taxServiceTotal(data) > 0 || bd.tax > 0;
-  const visible = hasFee || (hasOrderRows && hasShare);
+  const visible = hasFee || (hasOrderRows && hasShare) || hasCashbackRows;
   if (!id && !visible) return "";
-  const rowsStyle = hasOrderRows ? "flex-direction:column;align-items:stretch;gap:4px;" : "";
+  const rowsStyle = hasOrderRows || hasCashbackRows ? "flex-direction:column;align-items:stretch;gap:4px;" : "";
   return `<div class="dock-split"${id ? ` id="${id}"` : ""} style="flex-wrap:wrap;${visible ? "" : "display:none;"}${rowsStyle}${extraStyle}">
     ${personBreakdownRowsHtml(data, bd, !!id)}
   </div>`;
@@ -308,6 +341,14 @@ function creatorPersonSubHtml(data, person) {
   const hasPicked = hasPickedAny(data, person.identity_id);
   const hasOrderBreakdown = billOrderDiscount(data) > 0
     || person.item_subtotal_idr != null || person.order_discount_idr != null;
+  const hasOrderDiscount = billOrderDiscount(data) > 0 || bd.orderDiscount > 0;
+  if (bd.cashback > 0) {
+    const grossLabel = bd.grossSub > 0 ? fmt(bd.grossSub) : "item gratis";
+    const promoSegment = hasOrderDiscount
+      ? ` · <span style="white-space:nowrap;color:var(--green);">−${fmt(bd.orderDiscount)} promo</span>`
+      : "";
+    return `<span style="white-space:nowrap">${grossLabel} item</span>${promoSegment} · <span style="white-space:nowrap">${fmt(bd.sub)} sebelum cashback</span> · <span style="white-space:nowrap">${fmt(bd.tax)} pajak &amp; service</span> · <span style="white-space:nowrap;color:var(--green);">−${fmt(bd.cashback)} cashback</span>`;
+  }
   if (hasOrderBreakdown && (bd.grossSub > 0 || bd.sub > 0 || bd.orderDiscount > 0 || hasPicked)) {
     const grossLabel = bd.grossSub > 0 ? fmt(bd.grossSub) : "item gratis";
     return `<span style="white-space:nowrap">${grossLabel} item</span> · <span style="white-space:nowrap;color:var(--green);">−${fmt(bd.orderDiscount)} promo</span> · <span style="white-space:nowrap">${fmt(bd.sub)} setelah promo</span> · <span style="white-space:nowrap">${fmt(bd.tax)} pajak &amp; service</span>`;
@@ -807,25 +848,59 @@ function renderPickRows(data, me, useServer) {
   // personal total into that bill's dock (bug: right number, wrong screen).
   if (!data.bill || state.currentBillId !== data.bill.id) return;
   const bd = useServer ? myBreakdown(data, me) : computeMyBreakdown(data, state.selQty);
+  const cashbackPending = !useServer && billCashback(data) > 0;
   const mtEl = $("#my-total");
   if (mtEl) {
     mtEl.textContent = fmt(bd.total);
-    mtEl.setAttribute("aria-label", useServer ? `Total kamu ${fmt(bd.total)}` : `Perkiraan total kamu ${fmt(bd.total)}`);
+    mtEl.setAttribute("aria-label", cashbackPending
+      ? `Perkiraan sebelum cashback ${fmt(bd.total)}`
+      : useServer ? `Total kamu ${fmt(bd.total)}` : `Perkiraan total kamu ${fmt(bd.total)}`);
   }
   const totalLabel = $(".dock-total .label");
-  if (totalLabel) totalLabel.textContent = useServer ? "Total kamu" : "Perkiraan total kamu";
+  if (totalLabel) totalLabel.textContent = cashbackPending
+    ? "Perkiraan sebelum cashback"
+    : useServer ? "Total kamu" : "Perkiraan total kamu";
   const mbEl = $("#my-breakdown");
   if (mbEl) {
-    const hasShare = bd.grossSub > 0 || bd.sub > 0 || bd.orderDiscount > 0;
-    mbEl.style.display = taxServiceTotal(data) > 0 || bd.tax > 0 || (billOrderDiscount(data) > 0 && hasShare) ? "" : "none";
+    const hasShare = bd.grossSub > 0 || bd.sub > 0 || bd.orderDiscount > 0 || bd.cashback > 0;
+    mbEl.style.display = taxServiceTotal(data) > 0 || bd.tax > 0
+      || ((billOrderDiscount(data) > 0 || billCashback(data) > 0) && hasShare) ? "" : "none";
+    // A guest can start with a server row that has no share yet, so the
+    // initial compact breakdown has no cashback/total nodes. Build the full
+    // structure synchronously before the optimistic values are painted; the
+    // pending branch below then replaces the temporary numbers without ever
+    // exposing a fabricated zero cashback or final total.
+    if (billCashback(data) > 0 && !$("#my-cashback", mbEl)) {
+      mbEl.innerHTML = personBreakdownRowsHtml(data, bd, true, true);
+    }
     const grossEl = $("#my-gross-sub", mbEl);
     const orderDiscountEl = $("#my-order-discount", mbEl);
     const subEl = $("#my-sub", mbEl);
+    const cashbackEl = $("#my-cashback", mbEl);
     const taxEl = $("#my-tax", mbEl);
+    const finalEl = $("#my-final-total", mbEl);
     if (grossEl) grossEl.textContent = fmt(bd.grossSub);
     if (orderDiscountEl) orderDiscountEl.textContent = `−${fmt(bd.orderDiscount)}`;
     if (subEl) subEl.textContent = fmt(bd.sub);
+    if (cashbackEl) {
+      if (cashbackPending) {
+        cashbackEl.textContent = "menunggu server";
+        cashbackEl.setAttribute("aria-label", "Cashback menunggu server");
+      } else if (useServer) {
+        cashbackEl.textContent = `−${fmt(bd.cashback)}`;
+        cashbackEl.setAttribute("aria-label", `Cashback −${fmt(bd.cashback)}`);
+      }
+    }
     if (taxEl) taxEl.textContent = fmt(bd.tax);
+    if (finalEl) {
+      if (cashbackPending) {
+        finalEl.textContent = "menunggu server";
+        finalEl.setAttribute("aria-label", "Total akhir menunggu server");
+      } else if (useServer) {
+        finalEl.textContent = fmt(bd.total);
+        finalEl.setAttribute("aria-label", `Total akhir ${fmt(bd.total)}`);
+      }
+    }
   }
   $$("#pick-items .item-row").forEach(row => {
     const id = parseInt(row.dataset.item, 10);
@@ -998,9 +1073,9 @@ function perServingEst(it, othersQty, myQty) {
 // Merge the live (post-tap) qty for ME into a server-snapshot selector list,
 // keeping everyone else's order as returned. If I'm already in `selList`
 // (an earlier pick, now just changing qty) I keep that slot; a brand-new
-// pick is appended at the end, since calc.py orders selectors by each
-// identity's first-ever appearance in the raw selection rows and mine would
-// be the newest. selQty===0 drops me out entirely (a release).
+// pick is appended at the end because this lightweight estimate cannot
+// reconstruct calc.py's canonical stable-identity order from the payload.
+// selQty===0 drops me out entirely (a release).
 function mergeLiveSelectors(selList, myId, myName, myQty) {
   const isMe = s => (s.id ? s.id === myId : (!s.id && normName(s.name) === normName(myName)));
   const out = [];
@@ -1017,15 +1092,15 @@ function mergeLiveSelectors(selList, myId, myName, myQty) {
   return out;
 }
 
-// LOCAL ESTIMATE ONLY — see myBreakdown(). Mirrors backend calc.py exactly
-// (not just its shape): both item modes' rounding remainder are distributed
-// the same way calc.py distributes them, instead of being floor()ed away, so
-// this number no longer ticks by a rupiah the moment the real response lands.
+// LOCAL ESTIMATE ONLY — see myBreakdown(). Approximates backend calc.py (not
+// just its shape): both item modes' rounding remainder is distributed instead
+// of being floor()ed away, but the server remains authoritative for the
+// canonical stable-identity order and exact final amount.
 // - free item: price // (others + me) per serving, then the leftover
-//   (eff - share*totalQty) round-robins across SELECTOR ENTRIES in order,
-//   one rupiah each, same as calc.py's `for i in range(rem): selectors[i %
-//   len(selectors)]` — a person with qty>1 only gets at most +1 from this,
-//   not +1 per unit.
+//   (eff - share*totalQty) round-robins across the available live selector
+//   order, one rupiah each. The backend uses canonical stable identity order;
+//   a person with qty>1 only gets at most +1 from this estimate, not +1 per
+//   unit.
 // - slot item: per-slot price (price // slot_count) * my qty, then — only
 //   once every slot is taken — the leftover (eff - per_slot*slot_count)
 //   hands out +1 per SLOT UNIT in order (a person holding qty>1 slots can
@@ -1038,19 +1113,12 @@ function mergeLiveSelectors(selList, myId, myName, myQty) {
 //   exact for everyone except the bill owner, who additionally absorbs
 //   calc.py's leftover tax rounding rupiah (see note below).
 //
-// ORDERING ASSUMPTION: calc.py decides who gets the remainder by walking
-// identities in the order they first appear anywhere in the raw selection
-// rows, then that identity's items in the order they were first picked. The
-// API payload only gives per-item order (`sel_by_item[id]`, i.e. the order
-// selection rows for THIS item were inserted) — it doesn't expose the
-// cross-item global order calc.py actually uses. The two agree whenever
-// nobody's first-ever pick in the bill was on a DIFFERENT item than the one
-// being estimated (true for the common case: a single contested item, or
-// everyone picking items in the same order they joined). They can disagree
-// only when two people's relative order differs between "first item each of
-// them ever picked" and "order of rows on this specific item" — genuinely
-// rare, and not detectable from this payload without a backend change, which
-// is out of scope here (bill.js/index.html only).
+// ORDERING LIMITATION: calc.py now assigns identity-bucket remainders in
+// canonical stable-identity order. The API payload only gives per-item order
+// (`sel_by_item[id]`, i.e. the order selection rows for THIS item were
+// inserted), so this estimate cannot reconstruct that canonical order across
+// items. It follows the available live selector order and may differ from the
+// server by a remainder rupiah; the server remains authoritative.
 function computeMyBreakdown(data, selQty) {
   let sub = 0;
   let totalSelAll = 0;
@@ -1267,7 +1335,7 @@ function openPaySheet(data, me, alreadyPaid) {
             <span class="pay-item-x" aria-hidden="true">${ic("x")}</span>
           </div>`;
         }).join("")}
-        ${billOrderDiscount(data) > 0
+        ${billOrderDiscount(data) > 0 || billCashback(data) > 0
           ? `<div style="margin-top:8px;display:grid;gap:2px;">${personBreakdownRowsHtml(data, bd)}</div>`
           : `<div class="break-row" style="margin-top:8px;">
           <span class="muted">Subtotal Item</span>
@@ -2082,7 +2150,7 @@ function renderCreatorPick(data) {
 }
 
 // ---------- Creator edit bill ----------
-let editState = { items: [], subtotal: 0, order_discount: 0, tax: 0, service: 0, total: 0, title: "", transacted_at: "", merchant: "", tax_included: false, taxSaved: 0, calculationInvalid: false };
+let editState = { items: [], subtotal: 0, order_discount: 0, cashback: 0, tax: 0, service: 0, total: 0, title: "", transacted_at: "", merchant: "", tax_included: false, taxSaved: 0, calculationInvalid: false };
 
 // Full-screen editors are pseudo-layers: they hijack the whole app shell but
 // have NO route of their own, so a raw system Back popped the real previous
@@ -2161,6 +2229,19 @@ function editMoneyText(value) {
   return value == null ? "—" : fmt(value);
 }
 
+// bindRupiahInput keeps normal edits numeric, but saved drafts can still be
+// restored from an older adapter or a malformed response. Do not coerce a
+// negative, fractional, non-numeric, or oversized cashback to zero and then
+// submit it as if the user entered a valid rebate.
+function editCashbackDraft(value) {
+  if (value == null || value === "") return { value: 0, invalid: false };
+  const invalid = typeof value !== "number"
+    || !Number.isSafeInteger(value)
+    || value < 0
+    || value > 10 ** 12;
+  return { value: invalid ? 0 : value, invalid };
+}
+
 function renderEditBill(data) {
   const app = $("#app");
   editState = {
@@ -2173,6 +2254,7 @@ function renderEditBill(data) {
     }),
     subtotal: Math.max(0, Number(data.bill.subtotal_idr) || 0),
     order_discount: Math.max(0, Number(data.bill.order_discount_idr) || 0),
+    cashback: data.bill.cashback_idr ?? 0,
     tax: Math.max(0, Number(data.bill.tax_idr) || 0),
     service: Math.max(0, Number(data.bill.service_idr) || 0),
     total: Number(data.bill.total_idr) || 0,
@@ -2187,6 +2269,7 @@ function renderEditBill(data) {
   editState._originalTotals = {
     subtotal: editState.subtotal,
     order_discount: editState.order_discount,
+    cashback: editState.cashback,
     tax: editState.tax,
     service: editState.service,
   };
@@ -2229,6 +2312,12 @@ function renderEditBill(data) {
         <input type="text" inputmode="numeric" class="input-money" id="order-discount-input" value="${rupiahFmt(editState.order_discount)}" aria-describedby="order-discount-helper">
         <p class="muted" id="order-discount-helper" style="margin-top:5px;">Berlaku untuk seluruh pesanan, bukan satu item — tidak mengubah diskon item di atas.</p>
       </div>
+      <div class="field" style="margin-top:10px;">
+        <label for="cashback-input">Cashback yang dibagi (Rp)</label>
+        <input type="text" inputmode="numeric" class="input-money" id="cashback-input" value="${rupiahFmt(editState.cashback)}" aria-describedby="cashback-helper cashback-warn">
+        <p class="muted" id="cashback-helper" style="margin-top:5px;">Cashback ini tidak tercetak di struk. Isi hanya kalau yang bayar mau membaginya; kalau cashback milik yang bayar saja, isi 0.</p>
+        <p id="cashback-warn" class="error-text hidden" style="margin-top:5px;"></p>
+      </div>
       <label class="toggle-row" style="margin-top:10px;">
         <span style="flex:1;">
           <span class="label-strong">Harga item sudah termasuk pajak</span>
@@ -2269,6 +2358,7 @@ function renderEditBill(data) {
   // read-only and the canonical value always comes from the item draft.
   bindRupiahInput($("#subtotal-input"), () => updateEditTotal());
   bindRupiahInput($("#order-discount-input"), (v) => { editState.order_discount = v; updateEditTotal(); });
+  bindRupiahInput($("#cashback-input"), (v) => { editState.cashback = v; updateEditTotal(); });
   bindRupiahInput($("#tax-input"), (v) => {
     editState.taxSaved = v;
     editState.tax = v;
@@ -2458,6 +2548,8 @@ function updateEditTotal() {
   const itemTotals = editItemTotals(namedItems);
   const subtotal = itemTotals.invalidQuantityIndex >= 0 ? null : itemTotals.subtotal;
   const orderDiscount = Math.max(0, Number(editState.order_discount) || 0);
+  const cashbackDraft = editCashbackDraft(editState.cashback);
+  const cashback = cashbackDraft.value;
   let tax = Math.max(0, Number(editState.tax) || 0);
   const service = Math.max(0, Number(editState.service) || 0);
   if (editState.tax_included) {
@@ -2471,14 +2563,21 @@ function updateEditTotal() {
   }
   if (subtotalInput) subtotalInput.value = subtotal == null ? "" : rupiahFmt(subtotal);
   const orderDiscountTooHigh = subtotal != null && orderDiscount > subtotal;
+  const preCashbackTotal = subtotal == null ? null : subtotal + tax + service - orderDiscount;
+  const cashbackTooHigh = !cashbackDraft.invalid && preCashbackTotal != null
+    && cashback > preCashbackTotal;
+  const cashbackMakesTotalNegative = !cashbackDraft.invalid && preCashbackTotal != null
+    && preCashbackTotal - cashback < 0;
   const invalidDiscountIndex = itemTotals.invalidDiscountIndex;
   const invalidQuantityIndex = itemTotals.invalidQuantityIndex;
   const calculationInvalid = invalidQuantityIndex >= 0
-    || invalidDiscountIndex >= 0 || orderDiscountTooHigh;
-  const total = calculationInvalid || subtotal == null
-    ? null : subtotal + tax + service - orderDiscount;
+    || invalidDiscountIndex >= 0 || orderDiscountTooHigh || cashbackDraft.invalid
+    || cashbackTooHigh || cashbackMakesTotalNegative;
+  const total = calculationInvalid || preCashbackTotal == null
+    ? null : preCashbackTotal - cashback;
   editState.subtotal = subtotal;
   editState.order_discount = orderDiscount;
+  editState.cashback = cashback;
   editState.tax = tax;
   editState.service = service;
   editState.total = total;
@@ -2515,7 +2614,21 @@ function updateEditTotal() {
     } else if (orderDiscountTooHigh) {
       warn.classList.remove("hidden");
       warn.textContent = `Diskon pesanan (${fmt(orderDiscount)}) tidak boleh lebih besar dari subtotal (${fmt(subtotal)}).`;
+    } else if (cashbackDraft.invalid) {
+      warn.classList.remove("hidden");
+      warn.textContent = "Cashback harus berupa angka Rupiah bulat 0 atau lebih.";
+    } else if (cashbackTooHigh || cashbackMakesTotalNegative) {
+      warn.classList.remove("hidden");
+      warn.textContent = `Cashback (${fmt(cashback)}) tidak boleh lebih besar dari total sebelum cashback (${fmt(preCashbackTotal)}).`;
     } else warn.classList.add("hidden");
+  }
+  const cashbackWarn = $("#cashback-warn");
+  if (cashbackWarn) {
+    const invalid = cashbackDraft.invalid || cashbackTooHigh || cashbackMakesTotalNegative;
+    cashbackWarn.classList.toggle("hidden", !invalid);
+    cashbackWarn.textContent = cashbackDraft.invalid
+      ? "Cashback harus berupa angka Rupiah bulat 0 atau lebih."
+      : (invalid ? `Cashback tidak boleh lebih besar dari total sebelum cashback (${fmt(preCashbackTotal)}).` : "");
   }
   const save = $("#save-bill-btn");
   if (save) save.disabled = calculationInvalid || !namedItems.length;
@@ -2527,8 +2640,10 @@ function updateEditTotal() {
       : (!namedItems.length ? "Isi minimal 1 item bernama." : "Subtotal dan total dihitung dari item di atas.");
   }
   return {
-    subtotal, orderDiscount, tax, service, total, calculationInvalid,
-    invalidQuantityIndex, invalidDiscountIndex, orderDiscountTooHigh, namedItems,
+    subtotal, orderDiscount, cashback, tax, service, total, preCashbackTotal, calculationInvalid,
+    invalidQuantityIndex, invalidDiscountIndex, orderDiscountTooHigh,
+    cashbackInvalid: cashbackDraft.invalid,
+    cashbackTooHigh, cashbackMakesTotalNegative, namedItems,
   };
 }
 
@@ -2560,6 +2675,18 @@ async function saveEditBill(billId) {
     toast(`Diskon pesanan tidak boleh lebih besar dari subtotal (${fmt(totals.subtotal)})`);
     return;
   }
+  if (totals.cashbackInvalid) {
+    const input = $("#cashback-input");
+    if (input) { input.style.borderColor = "var(--red)"; input.focus(); }
+    toast("Cashback harus berupa angka Rupiah bulat 0 atau lebih");
+    return;
+  }
+  if (totals.cashbackTooHigh || totals.cashbackMakesTotalNegative) {
+    const input = $("#cashback-input");
+    if (input) { input.style.borderColor = "var(--red)"; input.focus(); }
+    toast(`Cashback tidak boleh lebih besar dari total sebelum cashback (${fmt(totals.preCashbackTotal)})`);
+    return;
+  }
   if (totals.subtotal == null || totals.total == null) {
     toast("Perbaiki nilai item dulu");
     return;
@@ -2570,6 +2697,7 @@ async function saveEditBill(billId) {
       const originalItems = editState._originalItems;
       const totalsChanged = editState.subtotal !== originalTotals.subtotal
         || editState.order_discount !== originalTotals.order_discount
+        || editState.cashback !== originalTotals.cashback
         || editState.tax !== originalTotals.tax
         || editState.service !== originalTotals.service;
       const originalById = new Map(originalItems.filter(i => i.id != null).map(i => [i.id, i]));
@@ -2596,6 +2724,7 @@ async function saveEditBill(billId) {
         transacted_at: editState.transacted_at || null,
         subtotal: totals.subtotal,
         order_discount: totals.orderDiscount,
+        cashback: totals.cashback,
         tax: totals.tax,
         service: totals.service,
         total: totals.total,
