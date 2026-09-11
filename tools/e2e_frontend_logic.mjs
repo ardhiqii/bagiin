@@ -16,7 +16,17 @@ assert.match(screens, /const generation = \+\+billListGeneration/);
 assert.match(screens, /const isCurrent = \(\) => generation === billListGeneration/);
 assert.doesNotMatch(screens, /histBills|bagiin:derived-invalidated/);
 assert.match(screens, /if \(!isCurrent\(\)\) return;\n\s*if \(!Array\.isArray\(bills\)/);
-assert.match(screens, /if \(!isCurrent\(\)\) return;\n\s*box\.innerHTML = identityErrorHtml\(e\)/);
+const loadBillListSource = screens.slice(
+  screens.indexOf("async function loadBillList"),
+  screens.indexOf("// ---------- Settings / Akun ----------"),
+);
+const loadBillListCatchStart = loadBillListSource.indexOf("  } catch (e) {");
+const loadBillListCatchEnd = loadBillListSource.indexOf("\n  }\n}", loadBillListCatchStart);
+const loadBillListCatch = loadBillListSource.slice(loadBillListCatchStart, loadBillListCatchEnd);
+assert.match(
+  loadBillListCatch,
+  /if \(!isCurrent\(\)\) return;\n\s*(?:const ctlBtn = \$\("#list-ctl-btn"\);\n\s*if \(ctlBtn\) \{\n\s*ctlBtn\.disabled = true;\n\s*ctlBtn\.setAttribute\("aria-busy", "false"\);\n\s*\}\n\s*)?box\.innerHTML = identityErrorHtml\(e\)/,
+);
 
 assert.match(screens, /let settingsRenderGeneration\s*=\s*0/);
 assert.match(screens, /const renderGeneration = \+\+settingsRenderGeneration/);
@@ -73,6 +83,109 @@ assert.doesNotMatch(app, /has-app-nav|bagiin:derived-invalidated/);
 const appNavSetter = app.slice(app.indexOf("function setAppNavRoute"), app.indexOf("// v68b: real brand logos"));
 assert.doesNotMatch(appNavSetter, /syncAppNav\(\)/);
 assert.match(appNavSetter, /syncDockSpace\(\)/);
+
+// Hash routing accepts the exact public route set only. Execute the production
+// parser and predicate so suffixes cannot silently render a private screen.
+const routerSource = app.slice(
+  app.indexOf("function parseHash"),
+  app.indexOf("function render()", app.indexOf("function parseHash")),
+);
+const routerHarness = vm.runInNewContext(`
+  const location = { hash: "" };
+  ${routerSource}
+  ({ location, parseHash, isKnownHashRoute });
+`);
+const routeCases = [
+  ["", true],
+  ["#/", true],
+  ["#/history", true],
+  ["#/recap", true],
+  ["#/settings", true],
+  ["#/create", true],
+  ["#/create/verify", true],
+  ["#/b/bill-123", true],
+  ["#/settings/", false],
+  ["#//settings", false],
+  ["#/create//verify", false],
+  ["#/b/bill-123/", false],
+  ["#/history/extra", false],
+  ["#/recap/extra", false],
+  ["#/settings/extra", false],
+  ["#/create/extra", false],
+  ["#/create/verify/extra", false],
+  ["#/b/bill-123/extra", false],
+  ["#/b", false],
+];
+for (const [hash, valid] of routeCases) {
+  routerHarness.location.hash = hash;
+  const { parts } = routerHarness.parseHash();
+  assert.equal(
+    routerHarness.isKnownHashRoute(parts),
+    valid,
+    `${hash || "(empty hash)"} route acceptance`,
+  );
+}
+const routerRenderSource = app.slice(
+  app.indexOf("function render()"),
+  app.indexOf("// ---------- navigation leave-guard"),
+);
+assert.match(
+  routerRenderSource,
+  /if \(!knownRoute\) \{[\s\S]*history\.replaceState\(null, "", "#\/"\);[\s\S]*return render\(\);/,
+  "invalid hash routes must canonicalize to #/",
+);
+
+// Focus scrolling uses the document scroll container on mobile. Keep the
+// measured reserve mirrored there, and clear it on routes/surfaces that do not
+// have a fixed dock so desktop and app-nav layouts do not inherit mobile space.
+const dockSpaceSource = app.slice(app.indexOf("function syncDockSpace"), app.indexOf("const dockObserver"));
+assert.match(dockSpaceSource, /document\.documentElement\.style\.scrollPaddingBottom = reserve/);
+assert.match(dockSpaceSource, /document\.documentElement\.style\.scrollPaddingBottom = ""/);
+assert.match(dockSpaceSource, /if \(!app\) \{[\s\S]*document\.documentElement\.style\.scrollPaddingBottom = ""/);
+
+// Every generated dialog must expose an accessible name. Prefer a generated,
+// DOM-safe title id; sheets without a title get an explicit fallback label.
+assert.match(app, /function nameSheetDialog\(overlay, sheet, opts\)/);
+assert.match(app, /const titleId = `bagiin-sheet-title-\$\{\+\+sheetTitleSerial\}`/);
+assert.match(app, /overlay\.setAttribute\("aria-labelledby", titleId\)/);
+assert.match(app, /overlay\.setAttribute\("aria-label", fallback\)/);
+assert.match(app, /nameSheetDialog\(overlay, sheet, opts\);/);
+const sheetA11ySource = app.slice(
+  app.indexOf("let sheetTitleSerial"),
+  app.indexOf("function drainSelfPops"),
+);
+const sheetA11yHarness = vm.runInNewContext(`
+  let sheetTitleSerial = 0;
+  const $ = (selector, root) => root.querySelector(selector);
+  ${sheetA11ySource.replace("let sheetTitleSerial = 0;", "")}
+  ({ nameSheetDialog });
+`);
+function fakeSheet(titleText) {
+  const title = titleText == null ? null : { textContent: titleText, id: "" };
+  const attrs = {};
+  return {
+    title,
+    sheet: { querySelector(selector) { assert.equal(selector, ".sheet-title"); return title; } },
+    overlay: {
+      setAttribute(name, value) { attrs[name] = value; },
+      attrs,
+    },
+  };
+}
+const titledSheet = fakeSheet("Nama lokal");
+sheetA11yHarness.nameSheetDialog(titledSheet.overlay, titledSheet.sheet, {});
+assert.equal(titledSheet.title.id, "bagiin-sheet-title-1");
+assert.equal(titledSheet.overlay.attrs["aria-labelledby"], "bagiin-sheet-title-1");
+const secondTitledSheet = fakeSheet("Metode bayar");
+sheetA11yHarness.nameSheetDialog(secondTitledSheet.overlay, secondTitledSheet.sheet, {});
+assert.equal(secondTitledSheet.title.id, "bagiin-sheet-title-2");
+assert.equal(secondTitledSheet.overlay.attrs["aria-labelledby"], "bagiin-sheet-title-2");
+const fallbackSheet = fakeSheet(null);
+sheetA11yHarness.nameSheetDialog(fallbackSheet.overlay, fallbackSheet.sheet, {});
+assert.equal(fallbackSheet.overlay.attrs["aria-label"], "Dialog");
+const customFallbackSheet = fakeSheet("");
+sheetA11yHarness.nameSheetDialog(customFallbackSheet.overlay, customFallbackSheet.sheet, { ariaLabel: "Foto struk" });
+assert.equal(customFallbackSheet.overlay.attrs["aria-label"], "Foto struk");
 
 // Payment brand values are persisted as entered, so both the initial HTML
 // renderer and the async chip upgrade must resolve manifest keys by casing,

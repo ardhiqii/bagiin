@@ -1160,7 +1160,7 @@ function renderVerify(ocr, manual = false, preserveCashback = false) {
       <div id="people-pick" style="display:flex;flex-direction:column;gap:6px;"></div>
       <div style="display:flex;gap:8px;margin-top:10px;">
         <input id="person-name-input" placeholder="Nama lainnya (opsional)" maxlength="30" autocomplete="off" style="flex:1;">
-        <button class="btn-outline btn-sm" id="person-name-add" style="flex-shrink:0;">${ic("plus")} Tambah</button>
+        <button class="btn-outline btn-sm" id="person-name-add" aria-label="Tambah nama peserta" style="flex-shrink:0;">${ic("plus")} Tambah</button>
       </div>
       <div id="people-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
     </details>`;

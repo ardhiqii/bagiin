@@ -1531,7 +1531,13 @@ function renderCreatorView(data) {
       .join(" · ")
       .replace(/(\d),(\d{3})/g, "$1.$2")
       .replace(/->/g, "→");
-    if (dedup) warnRows.push({ icon: "receipt", text: esc(dedup) });
+    if (dedup) {
+      // Keep the payment consequence together when the warning wraps. Without
+      // the non-breaking spaces, a narrow desktop card left the orange alert
+      // ending one line with "ke" and orphaned "pembayar dahulu" below it.
+      const safeDedup = esc(dedup).replaceAll("ke pembayar dahulu", "ke\u00a0pembayar\u00a0dahulu");
+      warnRows.push({ icon: "receipt", text: safeDedup });
+    }
   }
   if (pendingPickerNames.length) {
     warnRows.push({ icon: "pencil", text: `Belum pilih item: ${pendingPickerNames.map(m => esc(m)).join(", ")}` });
@@ -1593,6 +1599,12 @@ function renderCreatorView(data) {
         </div>
       </div>` : ""}
       ${data.bill.tax_included ? `<div class="muted" style="margin-top:4px;color:var(--green);">${ic("check")} Harga item sudah termasuk pajak — tidak ada PPN tambahan</div>` : ""}
+      <!-- Keep utility actions above the fixed mobile dock even when the
+           collect/status copy grows taller than a short viewport. -->
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn-outline btn-sm" id="pay-methods-btn">${ic("wallet")} Metode Bayar</button>
+        ${photoAddBtnHtml(data)}
+      </div>
       ${closedNotSettled ? `<p class="muted" style="margin-top:8px;color:var(--red);">${ic("alert")} Bill sudah ditutup, tetapi ${totalUnpaid > 0 ? `masih ada ${fmt(totalUnpaid)} yang belum dibayar` : `masih ada ${fmt(data.uncovered_idr)} bagian yang tidak terambil`}. Buka lagi kalau ingin memperbaikinya.</p>` : ""}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;">
         <span class="muted">Yang nalangin: <strong style="color:var(--text);">${esc(payerName)}</strong>${payerRow && payerRow.total_idr > 0 ? ` · bagian dia ${fmt(payerRow.total_idr)}` : ""}</span>
@@ -1604,10 +1616,6 @@ function renderCreatorView(data) {
            no hierarchy, with the most consequential one on top. Utilities go
            side by side; the one that changes money stands alone below. -->
       ${photoThumbsHtml(data)}
-      <div class="btn-row" style="margin-top:10px;">
-        <button class="btn-outline btn-sm" id="pay-methods-btn">${ic("wallet")} Metode Bayar</button>
-        ${photoAddBtnHtml(data)}
-      </div>
     </div>
     ${billCostSummaryHtml(data)}
     ${warnHtml}

@@ -275,8 +275,10 @@ function recapCounterpartiesHtml(data) {
   return `
     <section class="recap-section" aria-labelledby="recap-people-title">
       <div class="recap-section-heading">
-        <h2 id="recap-people-title">Rincian per orang</h2>
-        <p class="muted">Setiap kartu memakai nama bersama dari bill. Nama lokal hanya terlihat di device ini.</p>
+        <div>
+          <h2 id="recap-people-title">Rincian per orang</h2>
+          <p class="muted">Setiap kartu memakai nama bersama dari bill. Nama lokal hanya terlihat di device ini.</p>
+        </div>
       </div>
       ${people.length
         ? `<div class="recap-person-grid">${people.map(person => recapCounterpartyHtml(person, data)).join("")}</div>`

@@ -151,7 +151,8 @@ function renderHome() {
              below. Desktop hides this and shows .list-controls-inline instead
              (CSS media query, not JS branching on width, so a resize can
              never leave the screen showing both or neither — K2). -->
-        <button type="button" class="link-btn list-ctl-btn" id="list-ctl-btn" aria-haspopup="dialog">
+        <button type="button" class="link-btn list-ctl-btn" id="list-ctl-btn" aria-haspopup="dialog"
+                disabled aria-busy="true">
           ⇅ Atur<span id="list-ctl-count"></span>
         </button>
       </div>
@@ -587,6 +588,8 @@ function renderListControlsInline() {
 // the sheet updates as you tap; Terapkan just closes, Reset clears everything
 // back to default and closes too.
 function openListControlsSheet() {
+  const trigger = $("#list-ctl-btn");
+  if (trigger && (trigger.disabled || trigger.getAttribute("aria-busy") === "true")) return;
   const s = openSheet(`
     <div class="sheet-handle"></div>
     <div class="sheet-title">Filter &amp; Urutkan</div>
@@ -625,6 +628,11 @@ async function loadBillList(useCache) {
   if (!box) return;
   const identityId = identityKey(state.identity);
   if (!identityId) return;
+  const loadingCtl = $("#list-ctl-btn");
+  if (loadingCtl) {
+    loadingCtl.disabled = true;
+    loadingCtl.setAttribute("aria-busy", "true");
+  }
   const generation = ++billListGeneration;
   const cacheGeneration = derivedDataCache.generation;
   const cacheEntry = derivedDataCache.billList;
@@ -674,7 +682,11 @@ async function loadBillList(useCache) {
       if (!isCurrent()) return;
       // nothing to filter yet — hide the controls rather than show a live
       // "Atur" button and an inline row over an empty card
-      if (ctlBtn) ctlBtn.classList.add("hidden");
+      if (ctlBtn) {
+        ctlBtn.classList.add("hidden");
+        ctlBtn.disabled = true;
+        ctlBtn.setAttribute("aria-busy", "false");
+      }
       if (inlineBox) inlineBox.innerHTML = "";
       updateListSummary(0, 0);
       box.innerHTML = `<div class="empty-state">${ic("empty")}
@@ -702,6 +714,10 @@ async function loadBillList(useCache) {
     renderListControlsInline();
     if (!isCurrent()) return;
     syncControlsDom();
+    if (ctlBtn) {
+      ctlBtn.disabled = false;
+      ctlBtn.setAttribute("aria-busy", "false");
+    }
 
     const filtered = bills.filter(passHistoryFilter);
     if (!isCurrent()) return;
@@ -743,6 +759,11 @@ async function loadBillList(useCache) {
     });
   } catch (e) {
     if (!isCurrent()) return;
+    const ctlBtn = $("#list-ctl-btn");
+    if (ctlBtn) {
+      ctlBtn.disabled = true;
+      ctlBtn.setAttribute("aria-busy", "false");
+    }
     box.innerHTML = identityErrorHtml(e);
     bindIdentityError(box);
     if (!e || e.status !== 404) toast(e.message);
@@ -832,10 +853,11 @@ function renderSettings() {
       <div class="card-title"><span>Undangan</span></div>
       <div class="toggle-row" style="padding:10px 0;">
         <div>
-          <span class="label-strong">Langsung masuk bill</span>
-          <span class="muted" style="font-size:12.5px;display:block;margin-top:2px;">Kalau ada yang undang kamu ke bill, kamu langsung ikut — tidak perlu klik apa-apa, kayak grup WA.</span>
+          <span class="label-strong" id="auto-accept-label">Langsung masuk bill</span>
+          <span class="muted" id="auto-accept-desc" style="font-size:12.5px;display:block;margin-top:2px;">Kalau ada yang undang kamu ke bill, kamu langsung ikut — tidak perlu klik apa-apa, kayak grup WA.</span>
         </div>
-        <button class="switch" id="auto-accept-switch" role="switch" aria-checked="true" aria-label="Langsung masuk bill pas diundang" disabled></button>
+        <button class="switch" id="auto-accept-switch" role="switch" aria-checked="true"
+                aria-labelledby="auto-accept-label" aria-describedby="auto-accept-desc" disabled></button>
       </div>
       <p class="muted" style="font-size:12.5px;">Nonaktifkan kalau kamu ingin melihat dulu siapa yang mengundang sebelum ikut. Undangan akan muncul di beranda untuk diterima atau ditolak.</p>
     </div>
@@ -960,6 +982,14 @@ function renderSettings() {
         const on = info.auto_accept !== false;
         sw.setAttribute("aria-checked", String(on));
         sw.disabled = false;  // only clickable once /me resolved (no state flash)
+        const toggleRow = sw.closest(".toggle-row");
+        if (toggleRow) toggleRow.addEventListener("click", (event) => {
+          // The button's own native click already runs the handler below. The
+          // surrounding descriptive row is also actionable, but must not
+          // toggle twice when the button is the original target.
+          if (sw.disabled || (event.target && sw.contains(event.target))) return;
+          sw.click();
+        });
         sw.addEventListener("click", async () => {
           const next = sw.getAttribute("aria-checked") !== "true";
           sw.setAttribute("aria-checked", String(next));
