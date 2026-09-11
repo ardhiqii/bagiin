@@ -293,7 +293,7 @@ async function uploadAndAttach(files, ocrReason, session = createFlowSession, pr
     renderVerify({ ...blankBillForVerify(), ...(preserved || {}), photos: uploadedPhotoPaths.slice(),
       photo_path: uploadedPhotoPaths[0] || null, ocrError: ocrReason || null,
       ocrRetryFiles: ocrReason ? photoFiles.slice() : [],
-      ocrRetryFile: ocrReason ? photoFiles[0] : null }, true);
+      ocrRetryFile: ocrReason ? photoFiles[0] : null }, true, !!preserved);
   } catch (e) {
     // A batch fallback is sequential because /api/photos is intentionally a
     // one-file endpoint. Release both completed uploads and any path exposed
@@ -314,7 +314,7 @@ function blankBillForVerify() {
   // one empty row, not zero: a manual bill always needs at least one item, and
   // an empty card under a paragraph explaining "Bebas vs Slot" is an
   // explanation with nothing to point at
-  return { items: [{ name: "", price: 0, quantity: 1, mode: "free" }], subtotal: 0, order_discount: 0, tax: 0,
+  return { items: [{ name: "", price: 0, quantity: 1, mode: "free" }], subtotal: 0, order_discount: 0, cashback: 0, tax: 0,
            service: 0, total: 0, photo_path: null, merchant: "", date: "", photos: [],
            ocrRetryFiles: [], ocrRetryFile: null };
 }
@@ -364,7 +364,7 @@ async function verifyAttachPhotoNow(file) {
       }
       const next = { ...verifyState, photos: [...(verifyState.photos || []), paths[0]] };
       next.photo_path = next.photos[0] || null;
-      renderVerify(next, verifyState.manual);
+      renderVerify(next, verifyState.manual, true);
     } catch (e) {
       // Some upload adapters expose the server path even when reporting an
       // error. Never leave that path orphaned; releaseReturnedPhotos keeps
@@ -453,7 +453,7 @@ async function uploadAndOcr(files, session = createFlowSession, preserved = null
       ? { ...normalizedResult, ...preserved, photos: normalizedResult.photos,
           photo_path: normalizedResult.photo_path, ocrError: null,
           ocrRetryFiles: [], ocrRetryFile: null }
-      : normalizedResult);
+      : normalizedResult, false, !!preserved);
   } catch (e) {
     // OCR failures can still carry the upload path; the manual fallback below
     // performs a fresh upload, so the failed request's path must be released.
@@ -582,7 +582,7 @@ function expandPhoto(img) {
 }
 
 let verifyState = {
-  items: [], subtotal: 0, order_discount: 0, tax: 0, service: 0, total: 0, photo_path: null, photos: [],
+  items: [], subtotal: 0, order_discount: 0, cashback: 0, tax: 0, service: 0, total: 0, photo_path: null, photos: [],
   calculationInvalid: false, ocrSubtotal: 0,
   title: "", merchant: "", transacted_at: "", manual: false, paid_by_name: null,
   tax_included: false, taxSaved: 0,
@@ -604,7 +604,7 @@ let verifyEntryPending = true;
 // under-counted what "typed content" meant).
 function verifyHasTypedContent() {
   return !!(String(verifyState.title || "").trim() ||
-    verifyState.order_discount || verifyState.tax || verifyState.service ||
+    verifyState.order_discount || verifyState.cashback || verifyState.tax || verifyState.service ||
     verifyState.transacted_at ||
     (verifyState.photos || []).length ||
     (!verifyState.paidByMyself && String(verifyState.paid_by_name || "").trim()) ||
@@ -918,7 +918,20 @@ function verifyMoneyText(value) {
   return value == null ? "—" : fmt(value);
 }
 
-function renderVerify(ocr, manual = false) {
+// The input helper normally keeps this as a non-negative integer. Keep the
+// validation explicit anyway: a stale draft or an adapter can still hand the
+// editor a malformed value, and silently coercing it to zero would make the
+// number shown in the form disagree with the payload we intend to send.
+function verifyCashbackDraft(value) {
+  if (value == null || value === "") return { value: 0, invalid: false };
+  const invalid = typeof value !== "number"
+    || !Number.isSafeInteger(value)
+    || value < 0
+    || value > 10 ** 12;
+  return { value: invalid ? 0 : value, invalid };
+}
+
+function renderVerify(ocr, manual = false, preserveCashback = false) {
   ocr = ocr || {};
   verifyEntryPending = true;
   // v61: photos is an array now; legacy single photo_path folds in so OCR
@@ -943,6 +956,14 @@ function renderVerify(ocr, manual = false) {
         }),
         subtotal: Math.max(0, Number(ocr.subtotal) || 0),
         order_discount: Math.max(0, Number(ocr.order_discount) || 0),
+        // cashback is a payment-method rebate, not receipt data. OCR must
+        // never invent it, but retry/photo re-renders may carry an explicit
+        // draft value from the editor (bug: a retry silently reset the shared
+        // cashback field to zero).
+        // Never trust a field returned by OCR for a payment-method rebate. The
+        // only path allowed to carry cashback into this editor is an explicit
+        // draft re-render/retry, which opts into preservation above.
+        cashback: preserveCashback ? (ocr.cashback ?? ocr.cashback_idr ?? 0) : 0,
         tax: Math.max(0, Number(ocr.tax) || 0),
         service: Math.max(0, Number(ocr.service) || 0),
         total: Number(ocr.total) || 0,
@@ -1080,7 +1101,13 @@ function renderVerify(ocr, manual = false) {
         <p class="muted" id="order-discount-helper" style="margin-top:5px;">Berlaku untuk seluruh pesanan, bukan satu item.</p>
         <p id="order-discount-warn" class="error-text hidden" style="margin-top:5px;"></p>
       </div>
-      <details class="progressive-section" ${verifyState.order_discount || verifyState.tax || verifyState.service || verifyState.tax_included ? "open" : ""}>
+      <div class="field" style="margin-top:10px;">
+        <label for="cashback-input">Cashback yang dibagi (Rp)</label>
+        <input class="input-money" type="text" inputmode="numeric" id="cashback-input" placeholder="0" maxlength="16" value="${rupiahFmt(verifyState.cashback)}" aria-describedby="cashback-helper cashback-warn">
+        <p class="muted" id="cashback-helper" style="margin-top:5px;">Cashback ini tidak tercetak di struk. Isi hanya kalau yang bayar mau membaginya; kalau cashback milik yang bayar saja, isi 0.</p>
+        <p id="cashback-warn" class="error-text hidden" style="margin-top:5px;"></p>
+      </div>
+      <details class="progressive-section" ${verifyState.order_discount || verifyState.cashback || verifyState.tax || verifyState.service || verifyState.tax_included ? "open" : ""}>
         <summary class="label-strong">PPN &amp; service <span class="muted">(opsional)</span></summary>
         <div class="vf-grid">
           <div>
@@ -1203,7 +1230,7 @@ function renderVerify(ocr, manual = false) {
     // release it on the server instead of just forgetting the path client-side
     releaseAbandonedPhoto(removed);
     verifyState.photo_path = verifyState.photos[0] || null;
-    renderVerify({ ...verifyState, photos: verifyState.photos, paid_by_name: verifyState.paid_by_name }, verifyState.manual);
+    renderVerify({ ...verifyState, photos: verifyState.photos, paid_by_name: verifyState.paid_by_name }, verifyState.manual, true);
   }));
   const addPhotoBtn = $("#verify-add-photo");
   const pastePhotoBtn = $("#verify-paste-photo");
@@ -1216,6 +1243,7 @@ function renderVerify(ocr, manual = false) {
     const preserved = { title: verifyState.title, merchant: verifyState.merchant,
       transacted_at: verifyState.transacted_at, items: verifyState.items.map(i => ({ ...i })),
       subtotal: verifyState.subtotal, order_discount: verifyState.order_discount,
+      cashback: verifyState.cashback,
       tax: verifyState.tax, service: verifyState.service,
       total: verifyState.total, subtotalTouched: verifyState.subtotalTouched,
       tax_included: verifyState.tax_included, taxSaved: verifyState.taxSaved,
@@ -1395,6 +1423,7 @@ function renderVerify(ocr, manual = false) {
   // subtotal is read-only and every recalculation derives it from item rows.
   bindRupiahInput($("#subtotal-input"), () => updateVerifyTotal());
   bindRupiahInput($("#order-discount-input"), (v) => { verifyState.order_discount = v; updateVerifyTotal(); });
+  bindRupiahInput($("#cashback-input"), (v) => { verifyState.cashback = v; updateVerifyTotal(); });
   bindRupiahInput($("#tax-input"), (v) => {
     verifyState.taxSaved = v;
     verifyState.tax = v;
@@ -1654,20 +1683,24 @@ function recalculateVerifyDraft() {
   const svi = $("#service-input");
   const money = value => Math.max(0, Number(value) || 0);
   const orderDiscount = money(verifyState.order_discount);
+  const cashbackDraft = verifyCashbackDraft(verifyState.cashback);
+  const cashback = cashbackDraft.value;
   let tax = money(verifyState.tax);
   const service = money(verifyState.service);
   const subtotal = invalidQuantityIndex >= 0 ? null : itemTotals.subtotal;
   const orderDiscountTooHigh = subtotal != null && orderDiscount > subtotal;
-  const calculationInvalid = invalidQuantityIndex >= 0
+  const baseCalculationInvalid = invalidQuantityIndex >= 0
     || invalidDiscountIndex >= 0 || orderDiscountTooHigh;
 
   // All item mutations re-enter derived mode. Keep the old flag only for
   // compatibility with drafts restored from an older build; it must never
   // control the canonical value sent to the API.
   verifyState.subtotalTouched = false;
-  verifyState.calculationInvalid = calculationInvalid;
   verifyState.subtotal = subtotal;
   verifyState.order_discount = orderDiscount;
+  // Keep an invalid raw value visible to the validator until the user fixes
+  // it. Valid and missing values use the canonical numeric state.
+  verifyState.cashback = cashbackDraft.invalid ? verifyState.cashback : cashback;
   verifyState.service = service;
 
   if (si) {
@@ -1685,8 +1718,17 @@ function recalculateVerifyDraft() {
     ti.disabled = false;
   }
   verifyState.tax = tax;
-  const total = calculationInvalid || subtotal == null
-    ? null : subtotal + tax + service - orderDiscount;
+  const preCashbackTotal = subtotal == null ? null : subtotal + tax + service - orderDiscount;
+  const cashbackTooHigh = !cashbackDraft.invalid && !orderDiscountTooHigh
+    && preCashbackTotal != null && cashback > preCashbackTotal;
+  const cashbackMakesTotalNegative = !cashbackDraft.invalid && !orderDiscountTooHigh
+    && preCashbackTotal != null && preCashbackTotal - cashback < 0;
+  const cashbackInvalid = cashbackDraft.invalid;
+  const calculationInvalid = baseCalculationInvalid || cashbackInvalid
+    || cashbackTooHigh || cashbackMakesTotalNegative;
+  verifyState.calculationInvalid = calculationInvalid;
+  const total = calculationInvalid || subtotal == null || preCashbackTotal == null
+    ? null : preCashbackTotal - cashback;
   verifyState.total = total;
 
   verifyState.items.forEach((_, idx) => updateVerifyLineTotal(idx));
@@ -1704,6 +1746,16 @@ function recalculateVerifyDraft() {
       ? `Diskon pesanan (${fmt(orderDiscount)}) tidak boleh lebih besar dari subtotal (${fmt(subtotal)}).`
       : "";
   }
+  const cashbackWarn = $("#cashback-warn");
+  if (cashbackWarn) {
+    const cashbackError = cashbackInvalid || cashbackTooHigh || cashbackMakesTotalNegative;
+    cashbackWarn.classList.toggle("hidden", !cashbackError);
+    cashbackWarn.textContent = cashbackInvalid
+      ? "Cashback harus berupa angka Rupiah bulat 0 atau lebih."
+      : (cashbackError
+        ? `Cashback tidak boleh lebih besar dari total sebelum cashback (${fmt(preCashbackTotal)}).`
+        : "");
+  }
   const warn = $("#sum-warn");
   if (warn) {
     warn.style.color = "";
@@ -1716,6 +1768,12 @@ function recalculateVerifyDraft() {
     } else if (orderDiscountTooHigh) {
       warn.classList.remove("hidden");
       warn.textContent = `Diskon pesanan (${fmt(orderDiscount)}) lebih besar dari Subtotal (${fmt(subtotal)}). Kecilkan voucher dulu.`;
+    } else if (cashbackInvalid) {
+      warn.classList.remove("hidden");
+      warn.textContent = "Cashback harus berupa angka Rupiah bulat 0 atau lebih. Perbaiki cashback dulu.";
+    } else if (cashbackTooHigh || cashbackMakesTotalNegative) {
+      warn.classList.remove("hidden");
+      warn.textContent = `Cashback (${fmt(cashback)}) lebih besar dari total sebelum cashback (${fmt(preCashbackTotal)}). Kecilkan cashback dulu.`;
     } else if (ocrEmpty) {
       warn.classList.remove("hidden");
       warn.style.color = "var(--accent)";
@@ -1742,18 +1800,30 @@ function recalculateVerifyDraft() {
     if (!hasValidQuantities) missing.push(`jumlah item baris ${invalidQuantityIndex + 1}`);
     if (!hasValidDiscounts) missing.push(`potongan baris ${invalidDiscountIndex + 1}`);
     if (orderDiscountTooHigh) missing.push("diskon pesanan");
+    if (cashbackInvalid || cashbackTooHigh || cashbackMakesTotalNegative) missing.push("cashback");
     if (!hasTotal) missing.push("total");
     if (!payerChosen) missing.push("pembayar");
     cta.disabled = calculationInvalid || !allItemsNamed || !hasTotal || !payerChosen;
-    cta.textContent = orderDiscountTooHigh ? "Diskon pesanan kebesaran" : "Buat Tagihan";
+    cta.textContent = orderDiscountTooHigh
+      ? "Diskon pesanan kebesaran"
+      : (cashbackInvalid
+        ? "Cashback tidak valid"
+        : (cashbackTooHigh || cashbackMakesTotalNegative ? "Cashback kebesaran" : "Buat Tagihan"));
     const helper = $("#create-bill-helper");
-    if (helper) helper.textContent = orderDiscountTooHigh
-      ? "Diskon pesanan harus lebih kecil atau sama dengan subtotal."
-      : (missing.length ? `Lengkapi ${missing.join(", ")} untuk lanjut.` : "Siap membuat tagihan.");
+    if (helper) {
+      helper.textContent = orderDiscountTooHigh
+        ? "Diskon pesanan harus lebih kecil atau sama dengan subtotal."
+        : (cashbackInvalid
+          ? "Cashback harus berupa angka Rupiah bulat 0 atau lebih."
+          : (cashbackTooHigh || cashbackMakesTotalNegative
+            ? "Cashback harus lebih kecil atau sama dengan total sebelum cashback."
+            : (missing.length ? `Lengkapi ${missing.join(", ")} untuk lanjut.` : "Siap membuat tagihan.")));
+    }
   }
   return {
-    subtotal, orderDiscount, tax, service, total, calculationInvalid,
-    invalidQuantityIndex, invalidDiscountIndex, orderDiscountTooHigh,
+    subtotal, orderDiscount, cashback, tax, service, total, preCashbackTotal, calculationInvalid,
+    invalidQuantityIndex, invalidDiscountIndex, orderDiscountTooHigh, cashbackInvalid,
+    cashbackTooHigh, cashbackMakesTotalNegative,
   };
 }
 
@@ -1792,14 +1862,26 @@ async function createBillFinal() {
     toast(badMsg);
     return;
   }
-  if (totals.subtotal == null || totals.total == null) {
-    toast("Perbaiki jumlah item dulu");
-    return;
-  }
   if (totals.orderDiscount > totals.subtotal) {
     const input = $("#order-discount-input");
     if (input) { input.style.borderColor = "var(--red)"; input.focus(); keepVerifyFocusAboveDock(input, true); }
     toast(`Diskon pesanan tidak boleh lebih besar dari subtotal (${fmt(totals.subtotal)})`);
+    return;
+  }
+  if (totals.cashbackInvalid) {
+    const input = $("#cashback-input");
+    if (input) { input.style.borderColor = "var(--red)"; input.focus(); keepVerifyFocusAboveDock(input, true); }
+    toast("Cashback harus berupa angka Rupiah bulat 0 atau lebih");
+    return;
+  }
+  if (totals.cashbackTooHigh || totals.cashbackMakesTotalNegative) {
+    const input = $("#cashback-input");
+    if (input) { input.style.borderColor = "var(--red)"; input.focus(); keepVerifyFocusAboveDock(input, true); }
+    toast(`Cashback tidak boleh lebih besar dari total sebelum cashback (${fmt(totals.preCashbackTotal)})`);
+    return;
+  }
+  if (totals.subtotal == null || totals.total == null) {
+    toast("Perbaiki jumlah item dulu");
     return;
   }
   // paid-by-someone needs a name — sending null while the flag says "not me"
@@ -1823,6 +1905,7 @@ async function createBillFinal() {
         tax_mode: "proportional",
         subtotal: totals.subtotal,
         order_discount: totals.orderDiscount,
+        cashback: totals.cashback,
         tax: totals.tax,
         service: totals.service,
         total: totals.total,

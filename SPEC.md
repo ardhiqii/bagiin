@@ -502,6 +502,15 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Fixture diskon checkout memakai subtotal item efektif yang benar, terpisah dari diskon pesanan. Harness brand fallback mengeksekusi helper escaping production dan menguji input brand tidak dikenal yang berbahaya.
 - Regression mencakup FK failure lalu write berikutnya, konfigurasi upload relatif, validasi fixture diskon, dan escaping brand melalui kode production.
 
+### 2026-09-11 (v84), cashback pembayaran yang dibagi bersama
+
+- Bill menyimpan `cashback_idr` terpisah dari `order_discount_idr`. Cashback dari metode pembayaran bukan fakta yang dibaca dari struk, dan hanya dibagi kalau creator memasukkannya secara eksplisit. Kalau cashback hanya milik pembayar, nilainya tetap 0.
+- Rumus bill menjadi `subtotal item + pajak + service - diskon pesanan - cashback`. Cashback dibatasi oleh total sebelum cashback, divalidasi sebelum write, dan payload lama tanpa field cashback tetap berarti 0.
+- Cashback dialokasikan setelah diskon pesanan serta pajak/service, proporsional terhadap kewajiban tiap orang dan nominal slot yang belum terisi. Sisa pembulatan rupiah mengikuti fallback owner, seluruh komponen harus tetap reconcile, dan tidak ada nominal negatif.
+- Form verifikasi OCR/manual, editor bill tersimpan, ringkasan total, dan breakdown per orang menampilkan `Cashback yang dibagi` secara terpisah. OCR tidak menebak cashback, dan breakdown final memakai nominal per orang dari server.
+- Untuk receipt Zenbu dengan subtotal Rp299.000, service Rp23.920, PB1 Rp32.292, dan total struk Rp355.212, cashback Rp50.000 menghasilkan total bersama Rp305.212 tanpa mengubah fakta subtotal, service, atau pajak pada struk.
+- Regression v84 mencakup migrasi, create/update persistence, validasi invalid tanpa persist, compatibility payload lama, pembulatan proporsional, order discount plus cashback, uncovered slot, tax-included/service, frontend state/payload, dan rendering server breakdown.
+
 ### 2026-09-09 (v82), audit integrasi halaman dan komponen
 
 - Field koleksi untuk peserta, pilihan item, dan item legacy yang malformed sekarang ditolak sebagai HTTP 400, bukan error 500 atau TypeError yang lolos ke pengguna. Target pembayaran yang belum menjadi member bill juga tidak dapat diubah statusnya.

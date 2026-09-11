@@ -281,7 +281,7 @@ def _item_quantity(value, field: str) -> int:
 
 def _validate_bill_totals(*, subtotal: int, tax: int, service: int,
                           order_discount: int, total: int,
-                          tax_included: bool) -> None:
+                          tax_included: bool, cashback: int = 0) -> None:
     """Validate the bill-level money equation before touching SQLite.
 
     ``subtotal`` is already the canonical sum of normalized item lines.  The
@@ -292,13 +292,23 @@ def _validate_bill_totals(*, subtotal: int, tax: int, service: int,
         raise HTTPException(400, "Kalau harga item sudah termasuk pajak, kolom Pajak harus 0")
     if order_discount > subtotal:
         raise HTTPException(400, "Diskon pesanan tidak boleh lebih besar dari subtotal")
-    expected_total = subtotal + tax + service - order_discount
+    post_order_total = subtotal + tax + service - order_discount
+    if cashback > post_order_total:
+        raise HTTPException(400, "Cashback tidak boleh lebih besar dari total setelah diskon pesanan")
+    expected_total = post_order_total - cashback
     if expected_total < 0:
+        if cashback:
+            raise HTTPException(400, "Total tidak boleh negatif setelah cashback")
         raise HTTPException(400, "Total tidak boleh negatif setelah diskon pesanan")
     if total != expected_total:
+        equation = (
+            "subtotal + pajak + service - diskon pesanan - cashback"
+            if cashback else
+            "subtotal + pajak + service - diskon pesanan"
+        )
         raise HTTPException(
             400,
-            "Total tidak sesuai dengan subtotal + pajak + service - diskon pesanan",
+            f"Total tidak sesuai dengan {equation}",
         )
 
 
@@ -472,6 +482,7 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
         result["people"].append({
             "identity_id": jid, "item_subtotal_idr": 0,
             "order_discount_idr": 0, "subtotal_idr": 0, "tax_idr": 0,
+            "cashback_idr": 0,
             "total_idr": 0,
         })
     # the creator is part of the bill while they're still in it: visible in the
@@ -482,6 +493,7 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
         result["people"].append({
             "identity_id": creator_id, "item_subtotal_idr": 0,
             "order_discount_idr": 0, "subtotal_idr": 0, "tax_idr": 0,
+            "cashback_idr": 0,
             "total_idr": 0,
         })
     result["people"].sort(key=lambda p: -p["total_idr"])
@@ -1393,11 +1405,13 @@ def _list_pick_state(
     for jid in joined_ids - known_ids:
         people.append({"identity_id": jid, "item_subtotal_idr": 0,
                        "order_discount_idr": 0, "subtotal_idr": 0,
+                       "tax_idr": 0, "cashback_idr": 0,
                        "total_idr": 0})
     creator_id = bill["creator_identity_id"]
     if not bill.get("creator_left") and creator_id not in {p["identity_id"] for p in people}:
         people.append({"identity_id": creator_id, "item_subtotal_idr": 0,
                        "order_discount_idr": 0, "subtotal_idr": 0,
+                       "tax_idr": 0, "cashback_idr": 0,
                        "total_idr": 0})
     claimed = {p["identity_id"]: p["name"] for p in bill_data["participants"]
                if p.get("identity_id")}
@@ -1539,6 +1553,10 @@ async def create_bill(request: Request):
         data.get("order_discount"), "Diskon pesanan", 0,
         minv=0, maxv=_MAX_IDR,
     )
+    cashback = _to_int(
+        data.get("cashback"), "Cashback", 0,
+        minv=0, maxv=_MAX_IDR,
+    )
     total = _to_int(data.get("total"), "Total", 0, minv=0, maxv=_MAX_IDR)
     tax_included = 1 if _parse_bool(data.get("tax_included"), "tax_included", default=False) else 0
     # reject impossible combos instead of persisting a bill whose split can
@@ -1546,7 +1564,7 @@ async def create_bill(request: Request):
     # and an arbitrary total != subtotal+tax+service broke every invariant)
     _validate_bill_totals(
         subtotal=effective_subtotal, tax=tax, service=service,
-        order_discount=order_discount, total=total,
+        order_discount=order_discount, cashback=cashback, total=total,
         tax_included=bool(tax_included),
     )
     # a non-string here reached sqlite3 and raised InterfaceError -> 500, and
@@ -1592,6 +1610,7 @@ async def create_bill(request: Request):
         tax=tax,
         service=service,
         order_discount=order_discount,
+        cashback=cashback,
         total=total,
         items=normalized_items,
         participants=participants,
@@ -1692,12 +1711,16 @@ async def update_bill(bill_id: str, request: Request):
         data.get("order_discount"), "Diskon pesanan", 0,
         minv=0, maxv=_MAX_IDR,
     )
+    cashback_v = _to_int(
+        data.get("cashback"), "Cashback", 0,
+        minv=0, maxv=_MAX_IDR,
+    )
     total_v = _to_int(data.get("total"), "Total", 0, minv=0, maxv=_MAX_IDR)
     # same impossible-combo guards as create
     tax_included_v = _parse_bool(data.get("tax_included"), "tax_included", default=False)
     _validate_bill_totals(
         subtotal=effective_subtotal, tax=tax_v, service=service_v,
-        order_discount=order_discount_v, total=total_v,
+        order_discount=order_discount_v, cashback=cashback_v, total=total_v,
         tax_included=tax_included_v,
     )
     db.update_bill(
@@ -1712,6 +1735,7 @@ async def update_bill(bill_id: str, request: Request):
         tax=tax_v,
         service=service_v,
         order_discount=order_discount_v,
+        cashback=cashback_v,
         total=total_v,
         tax_included=1 if tax_included_v else 0,
     )
