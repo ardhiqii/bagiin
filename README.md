@@ -29,17 +29,17 @@ gateway, just a link.
   brand-colored chips, shown in the pay sheet with one-tap copy
 - 🧮 **Fair split math** — shared items divided evenly, proportional tax, rupiah
   rounding invariants covered by tests
-- 📱 **Mobile-first**, dark/light mode, no build step (vanilla JS)
+- 📱 **Mobile-first**, dark/light mode, React + TypeScript build with legacy static rollback
 
 ## Tech stack
 
 | Layer | Choice |
 |---|---|
 | Backend | FastAPI + SQLite (stdlib `sqlite3`) |
-| Frontend | Vanilla JS SPA (no framework, no build step) |
+| Frontend | TypeScript + React 18 + Vite, project-owned shadcn-style primitives |
 | OCR | Google Gemini (`gemini-3.5-flash`, free tier) |
 | Deploy | nginx + Let's Encrypt, Cloudflare DNS, systemd |
-| Tests | Python stdlib scripts (`test_calc_regression.py`, `test_features.py`) |
+| Tests | Python pytest + Node frontend logic/browser E2E |
 
 ## Project structure
 
@@ -53,33 +53,53 @@ bagiin/
 │   ├── test_calc_regression.py
 │   └── test_features.py
 ├── frontend/
-│   ├── index.html   # shell + inline CSS
-│   └── static/v10/  # app.js (router/state), screens.js, bill.js
+│   ├── src/          # React + TypeScript routes, API adapters, primitives
+│   ├── package.json  # Vite build and frontend checks
+│   └── static/       # legacy frontend kept for fallback and rollback
 └── SPEC.md          # product spec & changelog
 ```
 
 ## Local development
 
 ```bash
-cd backend
+cd frontend
+npm ci --no-audit --no-fund
+npm run typecheck
+npm run build
+
+cd ../backend
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt   # fastapi, uvicorn, slowapi, google-genai (or as installed)
-export GEMINI_API_KEY=...          # required for OCR; other features work without it
+export GEMINI_API_KEY=...         # required for OCR; other features work without it
 uvicorn main:app --reload --port 8082
 ```
 
 Open http://localhost:8082
 
-> Static frontend is served from `frontend/static/`; `index.html` references
-> `static/vNN/` versioned folders (bump the folder when changing frontend code —
-> Cloudflare caches by path).
+> FastAPI serves the Vite output from `frontend/dist/` at `/` and `/assets/`.
+> `frontend/dist/` is generated and ignored, so rebuild before restarting the
+> service. The legacy `frontend/static/` tree remains available as a fallback
+> and rollback path.
 
 ## Tests
 
 ```bash
 cd backend
-venv/bin/python test_calc_regression.py   # split math invariants
-BAGIIN_DB=/tmp/bagiin_test.db venv/bin/python test_features.py  # edit diff, accounts, codes
+venv/bin/python -B -m pytest -q
+
+cd ../frontend
+npm run typecheck
+npm run build
+npm run test:logic
+
+cd ..
+node tools/e2e_create.mjs <base-url> <cdp-url>
+node tools/e2e_smoke.mjs <base-url> <cdp-url>
+node tools/e2e_settled.mjs <base-url> <cdp-url>
+node tools/e2e_recap.mjs <base-url> <cdp-url>
+node tools/e2e_guest_route_guard.mjs <base-url> <cdp-url>
+node tools/e2e_rounding.mjs <base-url> <cdp-url>
+node tools/e2e_uiux_responsive.mjs <base-url> <cdp-url>
 ```
 
 ## License
