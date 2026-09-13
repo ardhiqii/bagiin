@@ -2430,14 +2430,16 @@ def serve_photo(filename: str):
 # ---------- static frontend ----------
 #
 # Cache strategy (industry-standard content hashing):
-#   * index.html & manifest.json are rendered dynamically with asset URLs
-#     like /static/app.js?v=<sha256[:12]>. The HTML itself is served
-#     no-cache + ETag so browsers/CF revalidate it every load.
-#   * Every other file under /static/ is served immutable, max-age=1y.
-#     Content changes -> new hash -> new URL -> cache never goes stale.
-#   * No more manual version bumps (v57 etc.) - the hash IS the version.
+#   * A Vite build serves dist/index.html and hashed files under /assets.
+#     The document is served no-cache + ETag so browsers/CF revalidate it.
+#   * Until a build exists, / falls back to the legacy template, whose
+#     /static/@HASH URLs are rendered dynamically for the same guarantees.
+#   * Every hashed file under /static or /assets is immutable, max-age=1y.
+#     Content changes -> a new hash -> cache never goes stale.
 
 STATIC_DIR = FRONTEND_DIR / "static"
+DIST_DIR = FRONTEND_DIR / "dist"
+DIST_ASSETS_DIR = DIST_DIR / "assets"
 _HASH_RE = re.compile(rb"@HASH:([a-zA-Z0-9._-]+)@")
 
 
@@ -2459,12 +2461,13 @@ def _render_template(path: Path) -> bytes:
 def _no_cache_response(content: bytes, media_type: str, request: Request) -> Response:
     """Serve rendered HTML/manifest with revalidation semantics (ETag/304)."""
     etag = '"' + hashlib.sha256(content).hexdigest() + '"'
-    if request.headers.get("if-none-match") == etag:
-        return Response(status_code=304)
-    return Response(content, media_type=media_type, headers={
+    headers = {
         "Cache-Control": "no-cache, must-revalidate",
         "ETag": etag,
-    })
+    }
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content, media_type=media_type, headers=headers)
 
 
 @app.api_route("/static/manifest.json", methods=["GET", "HEAD"])
@@ -2477,10 +2480,25 @@ def manifest(request: Request):
 
 @app.api_route("/", methods=["GET", "HEAD"])
 def index(request: Request):
+    # Strategy B: Vite owns the document and emits hashed /assets files. Keep
+    # the legacy template as a local/development fallback until a build exists
+    # (the service must build frontend/dist before a production restart).
+    index_path = DIST_DIR / "index.html"
+    content = (
+        index_path.read_bytes()
+        if index_path.is_file()
+        else _render_template(FRONTEND_DIR / "index.html")
+    )
     return _no_cache_response(
-        _render_template(FRONTEND_DIR / "index.html"),
+        content,
         "text/html; charset=utf-8", request,
     )
 
 
 app.mount("/static", ImmutableStaticFiles(directory=str(STATIC_DIR)), name="static")
+if DIST_ASSETS_DIR.is_dir():
+    app.mount(
+        "/assets",
+        ImmutableStaticFiles(directory=str(DIST_ASSETS_DIR)),
+        name="assets",
+    )
