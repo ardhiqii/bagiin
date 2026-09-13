@@ -281,9 +281,15 @@ creator_identity_id. Rate limit per IP (lihat Section 9).
 
 - Backend: FastAPI + SQLite (pattern stockbit-backend: venv + systemd).
   Path: /opt/projects/bagiin/backend
-- Frontend: server-rendered HTML + htmx (~16KB gz, verified htmx.org) atau vanilla JS.
-  JANGAN React (~45-50KB gz, parse bottleneck di Android mid-range, verified).
-  Budget: total JS < 50KB gz (hard cap 100KB). System font stack (no webfont).
+- Frontend: TypeScript + React 18 + Vite, dengan primitives project-owned bergaya
+  shadcn/ui. Source utama ada di `frontend/src`; `frontend/dist` adalah output build
+  yang di-serve FastAPI di `/` dan `/assets/`. `frontend/static/` legacy tetap
+  dipertahankan sebagai fallback lokal dan jalur rollback.
+  Build wajib dijalankan sebelum restart service: `npm ci --no-audit --no-fund`,
+  `npm run typecheck`, lalu `npm run build`.
+  Budget dipisah agar terukur: source-owned app bundle < 50KB gzip, vendor React/icon
+  dilaporkan terpisah. Pengukuran 2026-09-13: app-owned 43.36KB gzip, seluruh asset
+  termasuk vendor 103.11KB gzip.
   Path: /opt/projects/bagiin/frontend
 - Nginx reverse proxy + HTTPS (Let's Encrypt), subdomain: bagiin.ardhiqi.com.
   Infra note (cek 2026-08-09): VPS IP 209.17.118.186, zone ardhiqi.com di Cloudflare,
@@ -518,6 +524,27 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Filter home sekarang disabled selama daftar bill masih dimuat, route hash menolak suffix invalid dan mengkanonisasi URL ke `#/`, serta class `settings-page` dipasang saat route Akun aktif supaya rule responsive settings benar-benar berlaku.
 - Dialog sheet selalu mempunyai accessible name, kontrol tambah peserta mempunyai nama eksplisit, toggle undangan mengubah `aria-checked` satu kali walaupun yang diklik ikon atau baris deskripsi, dan heading Rekap lebih stabil saat wrap di layar sempit.
 - Warning creator yang panjang menjaga frasa konsekuensi pembayaran tetap utuh saat line-break. Regression frontend dan browser durable ditambahkan melalui `tools/e2e_frontend_logic.mjs`, `tools/e2e_create.mjs`, dan `tools/e2e_uiux_responsive.mjs`; full pytest serta flow browser utama tetap hijau.
+
+### 2026-09-13 (v86), migrasi fondasi frontend TypeScript dan React
+
+- Frontend dimigrasikan secara incremental ke TypeScript + React 18 + Vite. Primitive
+  UI dimiliki project dan mengikuti pola shadcn/ui tanpa mengganti API, URL share,
+  schema, atau aturan pembagian uang.
+- Route home/onboarding, bill guest dan creator, create/manual/OCR verify, settings,
+  recap, payment, identity, route guard, leave guard, responsive dock/rail, dan
+  compatibility selector legacy dipertahankan di bawah `frontend/src`.
+- FastAPI menyajikan `frontend/dist` pada `/` dan `/assets/` dengan root/manifest
+  no-cache + ETag serta hashed asset immutable. `frontend/static/` tetap tersedia
+  sebagai fallback rollback; production harus build sebelum restart service.
+- Regression final dijalankan terhadap database dan upload directory isolated:
+  `npm ci`, typecheck, build, frontend logic, full pytest `398 passed, 1 skipped`,
+  browser create `28 matrix cases, 0 failed`, smoke, settled, recap, guest route
+  guard, rounding, dan UI/UX responsive `10 navigations, 22 matrix cases` tanpa
+  console/page error. Mutation `calc.py` menghasilkan `344/376 killed`, `32 survived`,
+  score `91.49%`.
+- Pengukuran gzip memisahkan budget source-owned app `43.36KB` dari vendor React/icon;
+  seluruh asset terkirim berukuran `103.11KB`. Belum ada deployment atau perubahan
+  data production pada migrasi ini.
 
 ### 2026-09-09 (v82), audit integrasi halaman dan komponen
 
