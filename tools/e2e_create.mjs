@@ -570,9 +570,14 @@ const readCase = async (width, color) => evaluate(`(() => {
         check(`${prefix}: item controls follow natural vertical order`, naturalOrder, JSON.stringify({ order, desktop: initial.desktop }));
         if (initial.dimensions.viewport >= 1040) {
           const desktopRects = initial.desktop?.rects || [];
+          const totalHeader = initial.desktop?.headers?.[4]?.rect;
           const desktopColumns = desktopRects.length === 8 && desktopRects.slice(0, 6).every(Boolean)
             && desktopRects.slice(0, 6).every((rect, index, all) => index === 0 || rect.left >= all[index - 1].left - 1)
-            && desktopRects[6].top > desktopRects[0].top && desktopRects[6].left <= desktopRects[3].right + 1
+            && desktopRects[6].top > desktopRects[0].top
+            && totalHeader
+            && desktopRects[6].left >= totalHeader.left - 1
+            && desktopRects[6].right <= totalHeader.right + 1
+            && desktopRects[6].top >= totalHeader.bottom - 1
             && desktopRects[7].top > desktopRects[6].top;
           check(`${prefix}: desktop columns and secondary rows map`, initial.desktop?.display === "grid" && desktopColumns, JSON.stringify(initial.desktop));
         }

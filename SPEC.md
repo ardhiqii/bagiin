@@ -554,6 +554,14 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
   seluruh asset terkirim berukuran `103.11KB`. Belum ada deployment atau perubahan
   data production pada migrasi ini.
 
+### 2026-09-14 (v88), polish responsive UI/UX React dan integrasi komponen
+
+- Layout React sekarang memakai breakpoint yang eksplisit: form dan grid menumpuk di layar sempit, rail desktop baru aktif saat ruang cukup, dan daftar bill/rekap dapat menyusut tanpa horizontal overflow.
+- Fixed mobile navigation dan contextual action dock menghormati safe area serta reserve ruang berdasarkan tinggi surface yang benar-benar dirender. Field yang sedang fokus tidak tertutup dock, termasuk saat keyboard virtual mengubah viewport.
+- Create/manual verify, bill detail, home, settings, dan recap memakai primitive UI project-owned yang sama, dengan kontrol minimum 44px, wrap untuk label panjang, dan state loading/error/empty yang tetap terbaca di mobile maupun desktop.
+- Kontrak API, schema, kalkulasi uang, status final/payment, guest flow, identity recovery, dan `frontend/static/` fallback tidak berubah. Tailwind tidak ditambahkan sebagai dependency karena CSS design tokens yang sudah ada cukup untuk batch ini.
+- Browser regression baru mencakup shell, dock/nav clearance, overflow, breakpoint `320` sampai `1440px`, light/dark state, storage isolation, dan zero page/console error. Full pytest serta flow create, smoke, settled, recap, guest guard, legacy recovery, creator, payment, deletion, dan rounding tetap diverifikasi sebelum merge.
+
 ### 2026-09-14 (v87), recovery identity legacy tanpa trust-on-first-use
 
 - Identity lama dengan `secret IS NULL` tidak lagi dianggap terautentikasi hanya karena public `identity_id`. Semua operasi identity-scoped yang mengubah data sekarang memerlukan secret sesi yang benar.

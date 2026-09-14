@@ -46,13 +46,13 @@ export function MobileNav({ active, contextualDock = false, currentUserActionCou
       media.removeEventListener?.("change", sync);
     };
   }, [active, contextualDock]);
-  return <nav id="app-nav" aria-label="Navigasi utama" hidden={!eligible} aria-hidden={!eligible} style={{ minHeight: 78 }}>
+  return <nav id="app-nav" aria-label="Navigasi utama" hidden={!eligible} aria-hidden={!eligible}>
     {navItems.map(({ key, label, href, icon: Icon }) => {
       const activeLink = active === key && eligible;
       const ariaLabel = key === "recap" && badgeCount > 0
         ? `Rekap, ${badgeCount} tindakan yang perlu kamu lakukan`
         : label;
-      return <a key={key} data-app-nav={key} href={key === "bill" ? "#/" : href} aria-label={ariaLabel} aria-current={activeLink ? "page" : undefined} className={`app-nav-link ${activeLink ? "is-active" : ""}`} style={{ minHeight: 56 }}>
+      return <a key={key} data-app-nav={key} href={key === "bill" ? "#/" : href} aria-label={ariaLabel} aria-current={activeLink ? "page" : undefined} className={`app-nav-link ${activeLink ? "is-active" : ""}`}>
         <Icon weight={activeLink ? "fill" : "regular"} /><span>{label}</span>{key === "recap" && eligible && badgeCount > 0 && <span className="app-nav-badge" aria-hidden="true">{badgeCount}</span>}
       </a>;
     })}
@@ -141,7 +141,9 @@ export function useDockSpace(): void {
     }
     const keyboardGap = keyboardGapOffset();
     surface.style.bottom = keyboardGap ? `${keyboardGap}px` : "";
-    const reserve = `calc(env(safe-area-inset-bottom) + ${surface.offsetHeight + 24}px)`;
+    const configuredClearance = Number.parseFloat(getComputedStyle(content).getPropertyValue("--surface-clearance"));
+    const clearance = Number.isFinite(configuredClearance) ? configuredClearance : 24;
+    const reserve = `calc(env(safe-area-inset-bottom) + ${surface.offsetHeight + clearance}px)`;
     content.style.paddingBottom = reserve;
     content.style.scrollPaddingBottom = reserve;
     root.style.scrollPaddingBottom = reserve;

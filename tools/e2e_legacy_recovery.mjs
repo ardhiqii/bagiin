@@ -242,9 +242,12 @@ try {
     mobile: true,
   });
 
-  // The injected record intentionally contains only the public legacy id/name;
-  // in particular, the browser has no secret and no recovery code in storage.
+  // Start from a clean origin. The test tab can be reused after another suite;
+  // otherwise a stale identity briefly paints HomeRoute and its expected legacy
+  // 404 becomes a misleading browser console error.
+  const bootstrapReset = await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.clear(); sessionStorage.clear(); } catch {}" });
   await navigate("#/");
+  await send("Page.removeScriptToEvaluateOnNewDocument", { identifier: bootstrapReset.identifier });
   await evaluate(`(() => {
     localStorage.clear();
     sessionStorage.clear();
