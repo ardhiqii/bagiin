@@ -221,7 +221,9 @@ try {
     mobile: true,
   });
 
+  const bootstrapReset = await send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.clear(); sessionStorage.clear(); } catch {}" });
   await navigate(`${ORIGIN}/?payment_accounts_e2e=${Date.now()}`);
+  await send("Page.removeScriptToEvaluateOnNewDocument", { identifier: bootstrapReset.identifier });
   // Only the API response is injected. In particular, the harness does not
   // synthesize or print a secret, and no account data is put in the URL.
   await evaluate(`(() => {

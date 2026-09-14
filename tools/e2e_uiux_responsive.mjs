@@ -302,6 +302,7 @@ const HOME_MATRIX = [
 const failures = [];
 const pageErrors = [];
 let executed = 0;
+let bootstrapStorageResetId = "";
 
 function scrub(value) {
   return String(value || "")
@@ -560,6 +561,10 @@ async function route(tab, baseUrl, identity, hash, width, height, readySelector)
     const nonce = `${Date.now()}-${executed}`;
     await tab.navigate(`${baseUrl}/?e2e=${nonce}-origin#/`);
     await tab.waitFor(() => document.readyState === "complete", 12000);
+    if (bootstrapStorageResetId) {
+      await tab.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: bootstrapStorageResetId });
+      bootstrapStorageResetId = "";
+    }
     const identityJson = JSON.stringify(JSON.stringify(identity));
     await tab.evaluate(`localStorage.setItem("bagiin_identity", ${identityJson}); sessionStorage.clear();`);
     await tab.navigate(`${baseUrl}/?e2e=${nonce}${hash}`);
@@ -665,6 +670,10 @@ async function main() {
     const ws = new WebSocketImpl(wsUrl);
     tab = new CdpTab(ws, pageErrors);
     await tab.connect();
+    const bootstrapReset = await tab.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: "try { localStorage.clear(); sessionStorage.clear(); } catch {}",
+    });
+    bootstrapStorageResetId = bootstrapReset.identifier || "";
 
     // Home filter loading gate: hold only the authenticated bill-list request,
     // prove the control stays disabled, then release and use the real sheet.
@@ -823,7 +832,9 @@ async function main() {
     // short-phone action-row/dock intersection invariant.
     await route(tab, baseUrl, creator, `#/b/${encodeURIComponent(billId)}`, 320, 568, "#share-btn");
     await auditRoute(tab, "creator bill 320x568");
-    const actionGeometry = await tab.page(() => {
+    await tab.page(() => window.scrollTo(0, 0));
+    await sleep(150);
+    const readActionGeometry = () => tab.page(() => {
       const row = document.querySelector("#pay-methods-btn")?.closest(".btn-row");
       const dock = document.querySelector(".dock, .sticky-bar");
       const rr = row?.getBoundingClientRect();
@@ -832,7 +843,21 @@ async function main() {
       const intersects = Boolean(fixedDock && rr && dr && rr.right > dr.left && rr.left < dr.right && rr.bottom > dr.top && rr.top < dr.bottom);
       return { row: rr ? { top: rr.top, bottom: rr.bottom } : null, dock: dr ? { top: dr.top, bottom: dr.bottom } : null, fixedDock, intersects };
     });
+    const actionGeometry = await readActionGeometry();
     check("creator action row does not intersect the 320x568 dock", Boolean(actionGeometry.row) && !actionGeometry.intersects, JSON.stringify(actionGeometry));
+    const requiredMobileActionGeometry = [];
+    for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 667 }, { width: 430, height: 844 }]) {
+      await tab.viewport(viewport.width, viewport.height);
+      await tab.page(() => window.scrollTo(0, 0));
+      await sleep(150);
+      requiredMobileActionGeometry.push({ ...viewport, geometry: await readActionGeometry() });
+    }
+    const actionGeometryProblems = requiredMobileActionGeometry.filter(({ geometry }) => {
+      const row = geometry.row;
+      const dock = geometry.dock;
+      return !row || !geometry.fixedDock || geometry.intersects || row.bottom > (dock?.top ?? Number.POSITIVE_INFINITY);
+    });
+    check("creator action row clears the fixed dock at required mobile sizes", actionGeometryProblems.length === 0, JSON.stringify(actionGeometryProblems));
     await openSheet(tab, "#share-btn", "creator share");
     await openSheet(tab, "#pay-methods-btn", "creator payment methods");
     // The 720px breakpoint changes sheet presentation only. The contextual
