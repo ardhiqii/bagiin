@@ -7,7 +7,7 @@ import { inputMoney, rupiahFmt, rupiahParse, shortDate } from "../lib/money";
 import { createRequestGate } from "../lib/async-state";
 import { createSelectionSaveQueue, serializeSelections } from "../lib/selection-queue";
 
-import type { BillItem, BillResponse, Identity, Person, Selector, UpdateBillRequest } from "../lib/types";
+import type { BillItem, BillResponse, Contact, Identity, PayerRequest, Person, Selector, UpdateBillRequest } from "../lib/types";
 import { AccountRows, AppFrame, ErrorState, ShareDialogContent, Topbar } from "../components/AppShell";
 import { Alert, Badge, Button, Card, Dialog, Input, Label, Spinner } from "../components/ui/primitives";
 
@@ -498,6 +498,388 @@ function EditBillView({ data, identity, onCancel, onSaved }: { data: BillRespons
   return <AppFrame contextualDock><Topbar title="Edit Bill" backId="back-btn" back={onCancel} /><main className="shell shell-with-rail"><form id="edit-bill-form" className="shell-main stack" onSubmit={submit} noValidate><Card className="verify-detail-card"><div className="form-grid"><div className="field full"><Label htmlFor="title-input">Judul bill</Label><Input id="title-input" value={draft.title} onChange={event => updateDraft(current => ({ ...current, title: event.currentTarget.value }))} placeholder="Contoh: Makan sushi" /></div><div className="field"><Label htmlFor="merchant-input">Tempat, opsional</Label><Input id="merchant-input" value={draft.merchant} onChange={event => updateDraft(current => ({ ...current, merchant: event.currentTarget.value }))} placeholder="Nama tempat" /></div><div className="field"><Label htmlFor="date-input">Tanggal transaksi</Label><Input id="date-input" type="date" value={draft.transacted_at} onChange={event => updateDraft(current => ({ ...current, transacted_at: event.currentTarget.value }))} /></div></div></Card><Card id="items-card"><div className="card-title"><span>Item bill</span><Button id="add-item-btn" type="button" size="sm" variant="outline" onClick={addItem}>Tambah item</Button></div><div className="vf-head" aria-hidden="true"><span>Nama item</span><span>Harga satuan</span><span>Jumlah dibeli</span><span>Potongan</span><span>Total</span></div><div id="items-list" className="stack-sm">{draft.items.map(item => <EditItemRow key={item.key} item={item} canDelete={draft.items.length > 1} onChange={patch => updateItem(item.key, patch)} onDelete={() => updateDraft(current => ({ ...current, items: current.items.filter(candidate => candidate.key !== item.key) }))} />)}</div><div className="info-box">Total baris dihitung dari harga, potongan, dan jumlah item.</div></Card><Card><div className="card-title"><span>Biaya tambahan</span><span className="muted">Opsional</span></div><div className="form-grid"><div className="field"><Label htmlFor="subtotal-input">Subtotal</Label><Input id="subtotal-input" inputMode="numeric" value={totals.subtotal == null ? "" : inputMoney(totals.subtotal)} readOnly aria-readonly="true" /><p className="field-hint">Dihitung otomatis dari item di atas.</p></div><div className="field"><Label htmlFor="tax-input">Pajak</Label><Input id="tax-input" inputMode="numeric" value={draft.tax_included ? "" : editMoneyInput(draft.tax)} disabled={draft.tax_included} onChange={event => updateDraft(current => ({ ...current, tax: editMoney(event.currentTarget.value) }))} placeholder="0" /></div><div className="field"><Label htmlFor="service-input">Service</Label><Input id="service-input" inputMode="numeric" value={editMoneyInput(draft.service)} onChange={event => updateDraft(current => ({ ...current, service: editMoney(event.currentTarget.value) }))} placeholder="0" /></div><div className="field"><Label htmlFor="order-discount-input">Diskon pesanan</Label><Input id="order-discount-input" inputMode="numeric" value={editMoneyInput(draft.order_discount)} onChange={event => updateDraft(current => ({ ...current, order_discount: editMoney(event.currentTarget.value) }))} placeholder="0" /></div><div className="field"><Label htmlFor="cashback-input">Cashback</Label><Input id="cashback-input" inputMode="numeric" value={editMoneyInput(draft.cashback)} onChange={event => updateDraft(current => ({ ...current, cashback: editMoney(event.currentTarget.value) }))} placeholder="0" /></div></div><label className="check-label"><input id="tax-included-toggle" type="checkbox" checked={draft.tax_included} onChange={event => updateDraft(current => ({ ...current, tax_included: event.currentTarget.checked }))} /> Pajak sudah termasuk dalam harga item</label></Card>{draft.participants.length > 0 && <Card><div className="card-title">Yang ikut</div><div className="row wrap">{draft.participants.map((name, index) => <Badge key={`${name}-${index}`} tone="neutral">{name}</Badge>)}</div><p className="field-hint" style={{ marginTop: 10 }}>Peserta dan klaim yang sudah ada tetap dipertahankan saat disimpan.</p></Card>}{warning && <p id="sum-warn" className="error-text" role="alert">{warning}</p>}{error && <p className="error-text" role="alert">{error}</p>}</form><aside className="shell-side"><div className="dock"><div className="dock-panel"><div className="dock-total"><span className="muted">Total bill</span><strong id="total-display" className="money">{totals.total == null ? "—" : rupiahFmt(totals.total)}</strong></div><p className="field-hint" style={{ margin: "8px 0 12px" }}>Subtotal dan total dihitung dari item di atas.</p><Button id="save-bill-btn" form="edit-bill-form" type="submit" className="btn-block" disabled={!canSave}>{busy ? <><Spinner /> Menyimpan...</> : "Simpan Perubahan"}</Button><Button type="button" variant="outline" className="btn-block" style={{ marginTop: 8 }} onClick={onCancel}>Batal</Button></div></div></aside></main></AppFrame>;
 }
 
+type CreatorPhoto = {
+  id?: number;
+  path: string;
+};
+
+type CreatorRosterEntry = {
+  id: string;
+  name: string;
+};
+
+type CreatorManagerDialog = "payer" | "invite" | "remove" | "slot" | "reopen" | "delete" | "photo-delete" | "photo-view" | null;
+
+function creatorRoster(data: BillResponse): CreatorRosterEntry[] {
+  const seen = new Set<string>();
+  const roster: CreatorRosterEntry[] = [];
+  const add = (id: string | null | undefined, name: string | null | undefined) => {
+    const cleanId = id?.trim();
+    const cleanName = name?.trim();
+    if (!cleanId || !cleanName || seen.has(cleanId)) return;
+    seen.add(cleanId);
+    roster.push({ id: cleanId, name: cleanName });
+  };
+  if (!data.bill.creator_left) add(data.bill.creator_identity_id, data.creator_name);
+  data.people.forEach(item => add(item.identity_id, item.name));
+  (data.participants || []).forEach(item => add(item.identity_id, item.name));
+  return roster;
+}
+
+function creatorPhotos(data: BillResponse): CreatorPhoto[] {
+  const photos = (data.photos || [])
+    .filter(photo => photo && typeof photo.path === "string" && photo.path.trim())
+    .map(photo => ({ id: photo.id, path: photo.path }));
+  if (photos.length) return photos;
+  const legacyPath = (data.bill as BillResponse["bill"] & { photo_path?: string | null }).photo_path
+    || (data as BillResponse & { photo_path?: string | null }).photo_path;
+  return legacyPath?.trim() ? [{ path: legacyPath }] : [];
+}
+
+function creatorPhotoUrl(path: string): string {
+  const filename = path.split("/").pop() || "";
+  return filename ? `/uploads/${encodeURIComponent(filename)}` : "";
+}
+
+function CreatorManagerControls({ data, identity, onData }: { data: BillResponse; identity: Identity; onData: (data: BillResponse) => void }) {
+  const [dialog, setDialog] = useState<CreatorManagerDialog>(null);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [payerDraft, setPayerDraft] = useState("");
+  const [removeTarget, setRemoveTarget] = useState<CreatorRosterEntry | null>(null);
+  const [slotItemId, setSlotItemId] = useState<number | null>(null);
+  const [slotCount, setSlotCount] = useState(1);
+  const [releaseTarget, setReleaseTarget] = useState<{ itemId: number; identityId: string; name: string } | null>(null);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contactSearch, setContactSearch] = useState("");
+  const [contactLoading, setContactLoading] = useState(false);
+  const [contactError, setContactError] = useState("");
+  const [inviteStatus, setInviteStatus] = useState<Record<string, "joined" | "pending"> >({});
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [photoDeleteTarget, setPhotoDeleteTarget] = useState<CreatorPhoto | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const contactSequence = useRef(0);
+
+  const openBill = data.can_manage && data.bill.status === "open" && !isSettled(data);
+  const closedBill = data.can_manage && data.bill.status === "closed";
+  const roster = useMemo(() => creatorRoster(data), [data]);
+  const photos = useMemo(() => creatorPhotos(data), [data]);
+  const slotItem = slotItemId == null ? undefined : data.items.find(item => item.id === slotItemId);
+  const slotSelections = slotItem ? selectorsFor(data, slotItem.id) : [];
+  const slotsTaken = slotSelections.reduce((sum, selection) => sum + quantity(selection.qty), 0);
+  const pendingPayer = Boolean(
+    openBill
+      && data.paid_by_id
+      && data.paid_by_id !== data.bill.creator_identity_id
+      && !Boolean(data.paid_by_confirmed ?? data.bill.paid_by_confirmed),
+  );
+  const payerName = data.paid_by_name || data.creator_name;
+  const viewerPhoto = viewerIndex == null ? undefined : photos[viewerIndex];
+  const onBill = useMemo(() => new Set(roster.map(item => item.id)), [roster]);
+  const pendingInviteIds = useMemo(() => new Set((data.pending_invites || []).map(item => item.identity_id).filter((id): id is string => Boolean(id))), [data.pending_invites]);
+
+  useEffect(() => {
+    if (dialog !== "invite") return undefined;
+    const sequence = ++contactSequence.current;
+    const timer = window.setTimeout(() => {
+      setContactLoading(true);
+      setContactError("");
+      void apiClient.identities.contacts(identity.id, contactSearch.trim())
+        .then(result => {
+          if (sequence === contactSequence.current) setContacts(result);
+        })
+        .catch(err => {
+          if (sequence === contactSequence.current) setContactError(err instanceof Error ? err.message : "Kontak belum dapat dimuat");
+        })
+        .finally(() => {
+          if (sequence === contactSequence.current) setContactLoading(false);
+        });
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [contactSearch, dialog, identity.id]);
+
+  const closeDialog = () => {
+    if (busy) return;
+    setDialog(null);
+    setError("");
+  };
+
+  const openPayerDialog = () => {
+    setError("");
+    setPayerDraft(data.paid_by_id ? "" : data.paid_by_name || "");
+    setDialog("payer");
+  };
+
+  const savePayer = async (payload: PayerRequest, name: string) => {
+    if (!openBill || busy) return;
+    setBusy("payer");
+    setError("");
+    try {
+      const fresh = await apiClient.bills.setPayer(data.bill.id, payload);
+      onData(fresh);
+      setDialog(null);
+      setNotice(`${name} ditandai sebagai yang nalangin ✓`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Pembayar belum dapat diubah");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const confirmPayer = async () => {
+    if (!data.paid_by_id) return;
+    await savePayer({ identity_id: data.paid_by_id }, payerName);
+  };
+
+  const invite = async (contact: Contact) => {
+    const currentStatus = inviteStatus[contact.id] || (pendingInviteIds.has(contact.id) ? "pending" : undefined);
+    if (!openBill || busy || onBill.has(contact.id) || currentStatus) return;
+    setBusy(`invite-${contact.id}`);
+    setContactError("");
+    try {
+      const result = await apiClient.bills.invite(data.bill.id, { identity_id: contact.id });
+      setInviteStatus(current => ({ ...current, [contact.id]: result.status }));
+      try {
+        onData(await apiClient.bills.get(data.bill.id));
+      } catch {
+        // The invite response is authoritative even if the follow-up refresh is unavailable.
+      }
+      setNotice(result.status === "joined" ? `${contact.name} langsung masuk bill ✓` : `Undangan ke ${contact.name} dikirim`);
+    } catch (err) {
+      setContactError(err instanceof Error ? err.message : "Undangan belum dapat dikirim");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const removePerson = async () => {
+    if (!openBill || !removeTarget || busy) return;
+    setBusy("remove");
+    setError("");
+    try {
+      const fresh = await apiClient.bills.removePerson(data.bill.id, removeTarget.id);
+      onData(fresh);
+      setDialog(null);
+      setRemoveTarget(null);
+      setNotice(`${removeTarget.name} dihapus dari bill`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Peserta belum dapat dihapus");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const openSlotDialog = (item: BillItem) => {
+    setSlotItemId(item.id);
+    setSlotCount(Math.max(1, item.slot_count || 1));
+    setError("");
+    setDialog("slot");
+  };
+
+  const saveSlots = async () => {
+    if (!openBill || !slotItem || busy) return;
+    const count = Math.max(slotsTaken, Math.min(99, Math.trunc(slotCount)));
+    if (count < 1 || count < slotsTaken || count > 99) {
+      setError(`Jumlah bagian minimal ${slotsTaken} dan maksimal 99.`);
+      return;
+    }
+    setBusy("slots");
+    setError("");
+    try {
+      const fresh = await apiClient.bills.setSlots(data.bill.id, slotItem.id, { slot_count: count });
+      onData(fresh);
+      setDialog(null);
+      setNotice("Jumlah bagian diupdate ✓");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Jumlah bagian belum dapat diubah");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const releaseSlot = async () => {
+    if (!openBill || !releaseTarget || busy) return;
+    setBusy("release");
+    setError("");
+    try {
+      const fresh = await apiClient.bills.releaseSelection(data.bill.id, releaseTarget.itemId, releaseTarget.identityId);
+      onData(fresh);
+      setReleaseTarget(null);
+      setNotice(`Bagian ${releaseTarget.name} dilepas ✓`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Bagian belum dapat dilepas");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const uploadPhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || !openBill || busy) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Foto maksimal 5MB");
+      return;
+    }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Format foto tidak didukung, pilih JPEG/PNG/WEBP");
+      return;
+    }
+    setBusy("photo-upload");
+    setError("");
+    try {
+      onData(await apiClient.bills.addPhoto(data.bill.id, file));
+      setNotice("Struk ditambahkan ✓");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Foto belum dapat ditambahkan");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const deletePhoto = async () => {
+    if (!openBill || !photoDeleteTarget?.id || busy) return;
+    setBusy("photo-delete");
+    setError("");
+    try {
+      onData(await apiClient.bills.deletePhoto(data.bill.id, photoDeleteTarget.id));
+      setPhotoDeleteTarget(null);
+      setDialog(null);
+      setNotice("Foto dihapus ✓");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Foto belum dapat dihapus");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const reopen = async () => {
+    if (!closedBill || busy) return;
+    setBusy("reopen");
+    setError("");
+    try {
+      onData(await apiClient.bills.reopen(data.bill.id));
+      setDialog(null);
+      setNotice("Bill dibuka lagi ✓");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Bill belum dapat dibuka lagi");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const deleteBill = async () => {
+    if (!data.can_manage || busy) return;
+    setBusy("delete");
+    setError("");
+    try {
+      await apiClient.bills.remove(data.bill.id);
+      setDialog(null);
+      navigate({ kind: "home" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Bill belum dapat dihapus");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const inviteableContacts = contacts.filter(contact => contact.id !== identity.id && !onBill.has(contact.id));
+  const removeablePeople = roster.filter(personItem => personItem.id !== identity.id);
+  const selectedPhoto = photoDeleteTarget;
+
+  if (!data.can_manage) return null;
+  return <>
+    <Card id="creator-controls">
+      <div className="card-title"><span>Kelola bill</span><span className="caption">Aksi manager</span></div>
+      {notice && <Alert tone="success" role="status">{notice}</Alert>}
+      {error && !dialog && <Alert tone="danger">{error}</Alert>}
+      {closedBill && <Alert tone="info">Bill sudah ditutup. Buka lagi untuk mengubah pembagian.</Alert>}
+      {!closedBill && !openBill && <Alert tone="success">Bill ini sudah lunas. Pembagian tidak dapat diubah lagi.</Alert>}
+      <div className="btn-row row wrap">
+        {closedBill && <Button id="reopen-bill-btn" type="button" variant="outline" disabled={Boolean(busy)} onClick={() => { setError(""); setDialog("reopen"); }}>Buka Bill Lagi</Button>}
+        {openBill && <>
+          <Button id="set-payer-btn" type="button" variant="outline" disabled={Boolean(busy)} onClick={openPayerDialog}>Ubah pembayar</Button>
+          <Button id="invite-person-btn" type="button" variant="outline" disabled={Boolean(busy)} onClick={() => { setError(""); setContactError(""); setContactSearch(""); setDialog("invite"); }}>Undang Orang</Button>
+        </>}
+      </div>
+      {pendingPayer && <Alert tone="info"><div className="stack-sm"><span><strong>{payerName}</strong> sudah bergabung dan ditandai sebagai yang nalangin. Konfirmasi supaya statusnya tidak lagi sementara.</span><Button id="confirm-payer-btn" type="button" size="sm" disabled={Boolean(busy)} onClick={() => void confirmPayer()}>{busy === "payer" ? <><Spinner /> Menyimpan...</> : <><Check /> Konfirmasi pembayar</>}</Button></div></Alert>}
+      {openBill && <>
+        <div className="stack-sm" style={{ marginTop: 14 }}>
+          <strong>Peserta</strong>
+          {removeablePeople.length ? removeablePeople.map(personItem => <div className="account-row" key={personItem.id}>
+            <div className="avatar" aria-hidden="true">{personItem.name.slice(0, 1).toUpperCase()}</div>
+            <div className="grow"><strong>{personItem.name}</strong><div className="caption">Bisa dihapus dari bill</div></div>
+            <Button type="button" variant="ghost" size="sm" className="remove-person" data-remove-person={personItem.id} aria-label={`Hapus ${personItem.name} dari bill`} disabled={Boolean(busy)} onClick={() => { setRemoveTarget(personItem); setError(""); setDialog("remove"); }}>Hapus</Button>
+          </div>) : <p className="muted">Belum ada peserta lain.</p>}
+        </div>
+        <div className="stack-sm" style={{ marginTop: 14 }}>
+          <strong>Bagian per porsi</strong>
+          {data.items.filter(item => item.mode === "slot" && Number.isSafeInteger(item.slot_count) && (item.slot_count || 0) > 0).length ? data.items.filter(item => item.mode === "slot" && Number.isSafeInteger(item.slot_count) && (item.slot_count || 0) > 0).map(item => <div className="account-row" key={item.id}>
+            <div className="grow"><strong>{item.name}</strong><div className="caption">{selectorsFor(data, item.id).reduce((sum, selection) => sum + quantity(selection.qty), 0)}/{item.slot_count} bagian terambil</div></div>
+            <Button type="button" variant="outline" size="sm" className="slot-mgr" data-item={item.id} aria-label={`Atur bagian ${item.name}`} disabled={Boolean(busy)} onClick={() => openSlotDialog(item)}>Atur bagian</Button>
+          </div>) : <p className="muted">Belum ada item bagi per porsi.</p>}
+        </div>
+      </>}
+      {(photos.length > 0 || openBill) && <div className="stack-sm" style={{ marginTop: 14 }}>
+        <div className="row-between"><strong>Foto struk</strong>{openBill && <><input ref={photoInputRef} id="creator-photo-input" className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Pilih foto struk" onChange={event => void uploadPhoto(event)} /><Button id="add-photo-btn" type="button" variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => photoInputRef.current?.click()}>{busy === "photo-upload" ? <><Spinner /> Upload...</> : photos.length ? "Tambah foto" : "Tambah foto struk"}</Button></>}</div>
+        {photos.length > 0 && <div className="row wrap" aria-label="Foto struk bill">{photos.map((photo, index) => <div key={`${photo.path}-${index}`} style={{ position: "relative", width: 112 }}><button type="button" style={{ display: "block", width: "100%", padding: 0, border: 0, background: "transparent", cursor: "pointer" }} aria-label={`Lihat foto struk ${index + 1}`} onClick={() => { setViewerIndex(index); setDialog("photo-view"); }}><img src={creatorPhotoUrl(photo.path)} alt={`Struk ${index + 1}`} loading="lazy" style={{ width: "112px", height: "90px", objectFit: "cover", borderRadius: 8, display: "block" }} /></button>{openBill && photo.id != null && <Button type="button" variant="danger" size="icon" className="bill-photo-del" data-photo-id={photo.id} aria-label={`Hapus foto struk ${index + 1}`} style={{ position: "absolute", right: 4, top: 4, minWidth: 32, width: 32, minHeight: 32, height: 32 }} disabled={Boolean(busy)} onClick={() => { setPhotoDeleteTarget(photo); setError(""); setDialog("photo-delete"); }}><X /></Button>}</div>)}</div>}
+      </div>}
+      <Button id="delete-bill-btn" type="button" variant="danger" className="btn-block" style={{ marginTop: 16 }} disabled={Boolean(busy)} onClick={() => { setError(""); setDialog("delete"); }}>Hapus Bill Permanen</Button>
+    </Card>
+
+    <Dialog open={dialog === "reopen"} title="Buka bill lagi?" description="Bill balik ke status aktif. Semua orang bisa memilih item, mengubah pembagian, dan memperbarui status bayar lagi." onClose={closeDialog}>
+      {error && <p className="error-text" role="alert">{error}</p>}
+      <div className="row wrap sheet-actions"><Button type="button" variant="outline" disabled={Boolean(busy)} onClick={closeDialog}>Batal</Button><Button id="confirm-reopen" type="button" disabled={Boolean(busy)} onClick={() => void reopen()}>{busy === "reopen" ? <><Spinner /> Bentar...</> : "Buka Lagi"}</Button></div>
+    </Dialog>
+
+    <Dialog open={dialog === "payer"} title="Siapa yang nalangin?" description="Orang yang dipilih dianggap sudah mengeluarkan uang lebih dahulu. Nama saja tetap menunggu konfirmasi identitas." onClose={closeDialog}>
+      {error && <p className="error-text" role="alert">{error}</p>}
+      <div role="radiogroup" aria-label="Pilih orang yang nalangin" className="stack-sm">{roster.map(personItem => <Button key={personItem.id} type="button" variant="outline" role="radio" aria-checked={data.paid_by_id === personItem.id} disabled={Boolean(busy)} data-payer-id={personItem.id} onClick={() => void savePayer({ identity_id: personItem.id }, personItem.name)} style={{ justifyContent: "flex-start", textAlign: "left" }}>{data.paid_by_id === personItem.id && <Check />}<strong>{personItem.name}</strong>{personItem.id === data.bill.creator_identity_id && <span className="muted">(pembuat)</span>}</Button>)}</div>
+      <div className="separator" role="separator" />
+      <div className="field"><Label htmlFor="payer-name-input">Atau ketik nama</Label><Input id="payer-name-input" value={payerDraft} onChange={event => setPayerDraft(event.currentTarget.value)} placeholder="Nama yang nalangin" maxLength={60} autoComplete="off" /></div>
+      <div className="row wrap sheet-actions"><Button id="payer-name-save" type="button" disabled={Boolean(busy) || !payerDraft.trim()} onClick={() => void savePayer({ name: payerDraft.trim() }, payerDraft.trim())}>{busy === "payer" ? <><Spinner /> Menyimpan...</> : "Pakai Nama Ini"}</Button><Button type="button" variant="outline" disabled={Boolean(busy)} onClick={closeDialog}>Batal</Button></div>
+    </Dialog>
+
+    <Dialog open={dialog === "invite"} title="Undang Orang" description="Pilih kontak yang sudah pernah berbagi bill dengan kamu. Auto-accept langsung masuk; yang lain menerima undangan di beranda." onClose={closeDialog}>
+      {contactError && <p className="error-text" role="alert">{contactError}</p>}
+      <div className="field"><Label htmlFor="invite-search">Cari kontak</Label><Input id="invite-search" value={contactSearch} onChange={event => setContactSearch(event.currentTarget.value)} placeholder="Cari nama..." maxLength={60} autoComplete="off" /></div>
+      <div className="stack-sm" style={{ marginTop: 12 }} aria-live="polite">{contactLoading ? <><Spinner /> Memuat kontak...</> : inviteableContacts.length ? inviteableContacts.map(contact => { const status = inviteStatus[contact.id] || (pendingInviteIds.has(contact.id) ? "pending" : undefined); const sending = busy === `invite-${contact.id}`; return <div className="account-row" key={contact.id}><div className="avatar" aria-hidden="true">{contact.name.slice(0, 1).toUpperCase()}</div><div className="grow"><strong>{contact.name}</strong><div className="caption">{status === "joined" ? "Sudah masuk bill" : status === "pending" ? "Menunggu jawaban" : "Kontak terbukti"}</div></div><Button type="button" size="sm" variant={status ? "outline" : "primary"} data-invite-id={contact.id} disabled={Boolean(busy) || Boolean(status)} onClick={() => void invite(contact)}>{sending ? <><Spinner /> Mengundang...</> : status === "joined" ? "Sudah masuk" : status === "pending" ? "Menunggu" : "Undang"}</Button></div>; }) : <p className="muted">{contactSearch.trim() ? "Kontak tidak ditemukan." : "Belum ada kontak yang bisa diundang. Bagikan link dulu."}</p>}</div>
+      <div className="row wrap sheet-actions"><Button type="button" variant="outline" disabled={Boolean(busy)} onClick={closeDialog}>Selesai</Button></div>
+    </Dialog>
+
+    <Dialog open={dialog === "remove" && Boolean(removeTarget)} title={`Hapus ${removeTarget?.name || "peserta"}?`} description="Item yang dia pilih, status bayar, dan catatannya di bill ini ikut terhapus." onClose={closeDialog}>
+      {error && <p className="error-text" role="alert">{error}</p>}
+      <div className="row wrap sheet-actions"><Button type="button" variant="outline" disabled={Boolean(busy)} onClick={closeDialog}>Batal</Button><Button id="confirm-remove-person" type="button" variant="danger" disabled={Boolean(busy)} onClick={() => void removePerson()}>{busy === "remove" ? <><Spinner /> Menghapus...</> : "Hapus"}</Button></div>
+    </Dialog>
+
+    <Dialog open={dialog === "slot" && Boolean(slotItem)} title={`Atur bagian: ${slotItem?.name || "item"}`} description={slotItem ? `${slotsTaken}/${slotItem.slot_count} bagian terambil. Minimal jumlah bagian mengikuti yang sudah dipilih.` : undefined} onClose={closeDialog}>
+      {error && <p className="error-text" role="alert">{error}</p>}
+      {slotItem && <><div className="row" style={{ justifyContent: "center", gap: 14 }}><Button type="button" variant="outline" size="icon" aria-label="Kurangi bagian" disabled={Boolean(busy) || slotCount <= slotsTaken} onClick={() => setSlotCount(value => Math.max(slotsTaken, value - 1))}>−</Button><strong style={{ fontSize: 36, minWidth: 60, textAlign: "center" }}>{slotCount}</strong><Button type="button" variant="outline" size="icon" aria-label="Tambah bagian" disabled={Boolean(busy) || slotCount >= 99} onClick={() => setSlotCount(value => Math.min(99, value + 1))}>+</Button></div><p className="muted">Harga per bagian dihitung ulang oleh server setelah disimpan.</p><Button id="mgr-save" type="button" disabled={Boolean(busy)} onClick={() => void saveSlots()}>{busy === "slots" ? <><Spinner /> Menyimpan...</> : "Simpan"}</Button>{slotSelections.length > 0 && <div className="stack-sm"><strong>Pemegang bagian</strong>{slotSelections.map(selection => selection.id ? <div className="account-row" key={selection.id}><div className="grow">{selection.name} <span className="muted">×{quantity(selection.qty)}</span></div><Button type="button" variant="outline" size="sm" className="mgr-free" aria-label={`Lepas bagian ${selection.name}`} disabled={Boolean(busy)} onClick={() => setReleaseTarget({ itemId: slotItem.id, identityId: selection.id as string, name: selection.name })}>Lepas</Button></div> : <div className="account-row" key={selection.name}><div className="grow">{selection.name} <span className="muted">×{quantity(selection.qty)}</span></div></div>)}</div>}</>}
+      <Button type="button" variant="outline" disabled={Boolean(busy)} onClick={closeDialog}>Tutup</Button>
+    </Dialog>
+
+    <Dialog open={Boolean(releaseTarget)} title={`Lepas bagian ${releaseTarget?.name || "ini"}?`} description="Bagian ini kembali kosong dan bisa diambil orang lain." onClose={() => { if (!busy) setReleaseTarget(null); }}>
+      {error && <p className="error-text" role="alert">{error}</p>}
+      <div className="row wrap sheet-actions"><Button type="button" variant="outline" disabled={Boolean(busy)} onClick={() => setReleaseTarget(null)}>Batal</Button><Button id="confirm-release-slot" type="button" variant="danger" disabled={Boolean(busy)} onClick={() => void releaseSlot()}>{busy === "release" ? <><Spinner /> Melepas...</> : "Lepas"}</Button></div>
+    </Dialog>
+
+    <Dialog open={dialog === "photo-delete" && Boolean(selectedPhoto)} title="Hapus foto ini?" description="Foto akan dihapus dari bill. Item dan pembagiannya tidak berubah." onClose={closeDialog}>
+      {error && <p className="error-text" role="alert">{error}</p>}
+      <div className="row wrap sheet-actions"><Button type="button" variant="outline" disabled={Boolean(busy)} onClick={closeDialog}>Batal</Button><Button id="confirm-delete-photo" type="button" variant="danger" disabled={Boolean(busy)} onClick={() => void deletePhoto()}>{busy === "photo-delete" ? <><Spinner /> Menghapus...</> : "Hapus"}</Button></div>
+    </Dialog>
+
+    <Dialog open={dialog === "photo-view" && Boolean(viewerPhoto)} title={`Struk ${viewerPhoto ? `${(viewerIndex || 0) + 1}/${photos.length}` : ""}`} onClose={closeDialog}>
+      {viewerPhoto && <><img src={creatorPhotoUrl(viewerPhoto.path)} alt="Foto struk asli bill ini" style={{ width: "100%", borderRadius: 8 }} /><div className="row wrap sheet-actions"><Button type="button" variant="outline" disabled={photos.length < 2} onClick={() => setViewerIndex(index => index == null ? 0 : (index - 1 + photos.length) % photos.length)}>Sebelumnya</Button><Button type="button" variant="outline" disabled={photos.length < 2} onClick={() => setViewerIndex(index => index == null ? 0 : (index + 1) % photos.length)}>Berikutnya</Button><Button type="button" onClick={closeDialog}>Tutup</Button></div></>}
+    </Dialog>
+
+    <Dialog open={dialog === "delete"} title="Hapus bill ini?" description={`${data.bill.title} — semua item, pembagian, dan catatan bayar akan terhapus permanen. Tidak bisa dibatalkan.`} onClose={closeDialog}>
+      {error && <p className="error-text" role="alert">{error}</p>}
+      <div className="row wrap sheet-actions"><Button type="button" variant="outline" disabled={Boolean(busy)} onClick={closeDialog}>Batal</Button><Button id="confirm-delete-bill" type="button" variant="danger" disabled={Boolean(busy)} onClick={() => void deleteBill()}>{busy === "delete" ? <><Spinner /> Menghapus...</> : "Hapus Selamanya"}</Button></div>
+    </Dialog>
+  </>;
+}
+
 function CreatorView({ data: initialData, identity }: { data: BillResponse; identity: Identity }) {
   const [data, setData] = useState(initialData);
   const [shareOpen, setShareOpen] = useState(false);
@@ -512,7 +894,8 @@ function CreatorView({ data: initialData, identity }: { data: BillResponse; iden
   const saveEditedData = useCallback((fresh: BillResponse) => { setData(fresh); setEditing(false); }, []);
   if (editing) return <EditBillView data={data} identity={identity} onCancel={() => setEditing(false)} onSaved={saveEditedData} />;
   if (pickerOpen) return <CreatorPicker data={data} identity={identity} onDone={fresh => { setData(fresh); setPickerOpen(false); }} />;
-  return <AppFrame contextualDock><Topbar title={data.bill.title} back={() => navigate({ kind: "home" })} actions={<><Button id="share-btn" type="button" variant="ghost" size="icon" aria-label="Bagikan bill" onClick={() => setShareOpen(true)}><ShareNetwork /></Button>{data.can_manage && data.bill.status === "open" && !isSettled(data) && <Button id="edit-bill-btn" type="button" variant="outline" size="sm" aria-label="Edit bill" onClick={() => setEditing(true)}><PencilSimple /> Edit Bill</Button>}</>} /><div className="shell shell-with-rail"><div className="shell-main stack"><Card className="bill-header"><div className="bill-total-line"><div><p className="eyebrow">Total bill</p><strong className="hero-total money">{rupiahFmt(data.bill.total_idr)}</strong></div><Badge className="chip" tone={state.tone}>{state.label}</Badge></div><p className="muted">Dibuat oleh {data.creator_name}{data.paid_by_name ? `, nalangin ${data.paid_by_name}` : ""}</p></Card><Card><div className="btn-row row wrap"><Button id="pay-methods-btn" type="button" variant="outline" onClick={() => setPaymentOpen(true)}><Wallet /> Metode pembayaran</Button>{data.can_manage && data.bill.status === "open" && !isSettled(data) && <Button id="pick-mine-btn" type="button" variant="primary" onClick={() => setPickerOpen(true)}><Check /> Pilih bagian kamu</Button>}</div></Card>{(namedPending.length > 0 || data.uncovered_idr > 0 || unclaimed.length > 0) && <Card className="card-danger"><div className="card-title"><span><WarningCircle /> Perlu dibereskan</span></div>{namedPending.length > 0 && <div className="stack-sm"><strong>Belum pilih item</strong><p className="muted">{namedPending.join(", ")}</p></div>}{data.uncovered_idr > 0 && <p className="error-text" style={{ marginTop: 10 }}>Bagian kosong belum terambil: {rupiahFmt(data.uncovered_idr)}</p>}{unclaimed.length > 0 && <ul className="warning-list">{unclaimed.map(item => <li key={item.id}>{item.name} otomatis dibebankan ke {data.paid_by_name || data.creator_name}</li>)}</ul>}</Card>}<Card><div className="card-title">Item bill</div><div id="pick-items" className="bill-item-list">{data.items.map(item => <ItemRow key={item.id} item={item} data={data} identity={identity} qty={selectedBy(identity, selectorsFor(data, item.id))?.qty || 0} readOnly />)}</div></Card><Card><div className="card-title"><span>Status pembayaran</span><span className="caption">{data.people.length} orang</span></div><div className="account-list">{data.people.map(item => <div className="account-row" key={item.identity_id}><div className="avatar">{item.name.slice(0, 1).toUpperCase()}</div><div className="grow"><strong>{item.name}</strong><div className="caption money">{rupiahFmt(item.total_idr)}</div></div>{item.identity_id === data.paid_by_id ? <Badge tone="neutral">Nalangin</Badge> : manualSettlement ? <Badge tone={item.paid === "paid" ? "success" : "neutral"}>{item.paid === "paid" ? <><Check /> Lunas</> : "Belum bayar"}</Badge> : <Button type="button" size="sm" variant={item.paid === "paid" ? "success" : "outline"} className="toggle-paid" onClick={() => void markPaid(item.identity_id, item.paid !== "paid")}>{item.paid === "paid" ? <><Check /> Lunas</> : "Tandai lunas"}</Button>}</div>)}</div></Card><Button variant="outline" onClick={() => navigate({ kind: "create" })}><PencilSimple /> Buat bill baru</Button></div><aside className="shell-side"><div className="dock"><div className="dock-panel"><div className="dock-total"><span className="muted">Total bill</span><strong className="money">{rupiahFmt(data.bill.total_idr)}</strong></div><div className="dock-breakdown"><span>Status bill</span><Badge tone={state.tone}>{state.label}</Badge></div>{data.uncovered_idr > 0 && <p className="error-text">{rupiahFmt(data.uncovered_idr)} belum terbagi</p>}</div></div></aside></div><Dialog open={shareOpen} title="Bagikan bill" onClose={() => setShareOpen(false)}><ShareDialogContent billId={data.bill.id} title={data.bill.title} onClose={() => setShareOpen(false)} /></Dialog><Dialog open={paymentOpen} title={`Metode pembayaran untuk ${paymentName(data)}`} description="Gunakan rekening ini untuk membayar bagian bill kamu." onClose={() => setPaymentOpen(false)}><AccountRows accounts={data.paid_by_accounts || data.creator_accounts} name={paymentName(data)} /><div className="sheet-actions"><Button type="button" variant="outline" onClick={() => setPaymentOpen(false)}>Tutup</Button></div></Dialog></AppFrame>;
+  if (!data.can_manage) return <GuestPicker data={data} identity={identity} />;
+  return <AppFrame contextualDock><Topbar title={data.bill.title} back={() => navigate({ kind: "home" })} actions={<><Button id="share-btn" type="button" variant="ghost" size="icon" aria-label="Bagikan bill" onClick={() => setShareOpen(true)}><ShareNetwork /></Button>{data.can_manage && data.bill.status === "open" && !isSettled(data) && <Button id="edit-bill-btn" type="button" variant="outline" size="sm" aria-label="Edit bill" onClick={() => setEditing(true)}><PencilSimple /> Edit Bill</Button>}</>} /><div className="shell shell-with-rail"><div className="shell-main stack"><CreatorManagerControls data={data} identity={identity} onData={setData} /><Card className="bill-header"><div className="bill-total-line"><div><p className="eyebrow">Total bill</p><strong className="hero-total money">{rupiahFmt(data.bill.total_idr)}</strong></div><Badge className="chip" tone={state.tone}>{state.label}</Badge></div><p className="muted">Dibuat oleh {data.creator_name}{data.paid_by_name ? `, nalangin ${data.paid_by_name}` : ""}</p></Card><Card><div className="btn-row row wrap"><Button id="pay-methods-btn" type="button" variant="outline" onClick={() => setPaymentOpen(true)}><Wallet /> Metode pembayaran</Button>{data.can_manage && data.bill.status === "open" && !isSettled(data) && <Button id="pick-mine-btn" type="button" variant="primary" onClick={() => setPickerOpen(true)}><Check /> Pilih bagian kamu</Button>}</div></Card>{(namedPending.length > 0 || data.uncovered_idr > 0 || unclaimed.length > 0) && <Card className="card-danger"><div className="card-title"><span><WarningCircle /> Perlu dibereskan</span></div>{namedPending.length > 0 && <div className="stack-sm"><strong>Belum pilih item</strong><p className="muted">{namedPending.join(", ")}</p></div>}{data.uncovered_idr > 0 && <p className="error-text" style={{ marginTop: 10 }}>Bagian kosong belum terambil: {rupiahFmt(data.uncovered_idr)}</p>}{unclaimed.length > 0 && <ul className="warning-list">{unclaimed.map(item => <li key={item.id}>{item.name} otomatis dibebankan ke {data.paid_by_name || data.creator_name}</li>)}</ul>}</Card>}<Card><div className="card-title">Item bill</div><div id="pick-items" className="bill-item-list">{data.items.map(item => <ItemRow key={item.id} item={item} data={data} identity={identity} qty={selectedBy(identity, selectorsFor(data, item.id))?.qty || 0} readOnly />)}</div></Card><Card><div className="card-title"><span>Status pembayaran</span><span className="caption">{data.people.length} orang</span></div><div className="account-list">{data.people.map(item => <div className="account-row" key={item.identity_id}><div className="avatar">{item.name.slice(0, 1).toUpperCase()}</div><div className="grow"><strong>{item.name}</strong><div className="caption money">{rupiahFmt(item.total_idr)}</div></div>{item.identity_id === data.paid_by_id ? <Badge tone="neutral">Nalangin</Badge> : manualSettlement || data.bill.status !== "open" || isSettled(data) ? <Badge tone={item.paid === "paid" ? "success" : "neutral"}>{item.paid === "paid" ? <><Check /> Lunas</> : "Belum bayar"}</Badge> : <Button type="button" size="sm" variant={item.paid === "paid" ? "success" : "outline"} className="toggle-paid" onClick={() => void markPaid(item.identity_id, item.paid !== "paid")}>{item.paid === "paid" ? <><Check /> Lunas</> : "Tandai lunas"}</Button>}</div>)}</div></Card><Button variant="outline" onClick={() => navigate({ kind: "create" })}><PencilSimple /> Buat bill baru</Button></div><aside className="shell-side"><div className="dock"><div className="dock-panel"><div className="dock-total"><span className="muted">Total bill</span><strong className="money">{rupiahFmt(data.bill.total_idr)}</strong></div><div className="dock-breakdown"><span>Status bill</span><Badge tone={state.tone}>{state.label}</Badge></div>{data.uncovered_idr > 0 && <p className="error-text">{rupiahFmt(data.uncovered_idr)} belum terbagi</p>}</div></div></aside></div><Dialog open={shareOpen} title="Bagikan bill" onClose={() => setShareOpen(false)}><ShareDialogContent billId={data.bill.id} title={data.bill.title} onClose={() => setShareOpen(false)} /></Dialog><Dialog open={paymentOpen} title={`Metode pembayaran untuk ${paymentName(data)}`} description="Gunakan rekening ini untuk membayar bagian bill kamu." onClose={() => setPaymentOpen(false)}><AccountRows accounts={data.paid_by_accounts || data.creator_accounts} name={paymentName(data)} /><div className="sheet-actions"><Button type="button" variant="outline" onClick={() => setPaymentOpen(false)}>Tutup</Button></div></Dialog></AppFrame>;
 }
 
 export function BillRoute({ billId, identity, onIdentity }: { billId: string; identity: Identity | null; onIdentity: (identity: Identity) => void }) {

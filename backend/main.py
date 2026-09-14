@@ -67,8 +67,9 @@ def _identity_from_request(request: Request):
     the creator's id to rename them, attach their own bank account to the
     creator's profile, mint a recovery code and own the account for good.)
 
-    Identities created before v51 have no secret; they keep working until the
-    client calls /bind, which mints one (trust on first use).
+    Identities created before v51 have no secret; their old public id is not
+    enough to authenticate. They must be restored or explicitly bound with
+    the recovery code first.
     """
     ident_id = request.headers.get("X-Identity-Id", "")
     if not ident_id:
@@ -77,6 +78,8 @@ def _identity_from_request(request: Request):
     if not ident:
         raise HTTPException(404, "Identitas tidak ditemukan")
     stored = ident.get("secret")
+    if not stored:
+        raise HTTPException(403, "Sesi lama perlu dipulihkan dengan code pemulihan")
     if stored:
         given = request.headers.get("X-Identity-Secret", "")
         if not given or not secrets.compare_digest(str(stored), given):
@@ -251,6 +254,18 @@ def _to_str(value, field: str, *, maxlen: int | None = None) -> str:
     if maxlen is not None and len(v) > maxlen:
         raise HTTPException(400, f"{field} maksimal {maxlen} karakter")
     return v
+
+
+def _required_recovery_code(value) -> str:
+    """Require a text recovery proof before looking up or binding an identity."""
+    if not isinstance(value, str):
+        raise HTTPException(400, "Code harus teks")
+    code = value.strip()
+    if not code:
+        raise HTTPException(400, "Code wajib diisi")
+    if len(code) > 100:
+        raise HTTPException(400, "Code maksimal 100 karakter")
+    return code
 
 
 _MAX_IDR = 10**12  # a trillion rupiah -- comfortably above any real bill,
@@ -1228,31 +1243,34 @@ async def create_identity(request: Request):
 @limiter.limit("10/minute")
 async def restore_identity(request: Request):
     data = await _read_json(request)
-    # unauthenticated endpoint (no identity/secret needed to restore) -- a
-    # non-string code (list/dict) reached `.strip()` -> AttributeError -> 500,
-    # reachable by anyone (bug: v66 audit, A12)
-    code = _to_str(data.get("code"), "Code", maxlen=100)
+    # Unauthenticated endpoint (no identity/secret needed to restore), but the
+    # recovery code is the proof that authorizes returning the identity secret.
+    code = _required_recovery_code(data.get("code"))
     ident = db.restore_identity(code)
     if not ident:
         raise HTTPException(404, "Code tidak dikenal")
+    if not ident.get("secret"):
+        # A concurrent restore may win the atomic first bind; re-read so both
+        # legitimate holders receive the same bound secret.
+        db.bind_secret(ident["id"], code)
+        ident = db.get_identity(ident["id"])
+        if not ident or not ident.get("secret"):
+            raise HTTPException(409, "Identitas belum bisa dipulihkan, coba lagi")
     return ident
 
 
 @app.post("/api/identities/{identity_id}/bind")
 @limiter.limit("20/minute")
-def bind_identity_secret(identity_id: str, request: Request):
-    """Mint the auth secret for an identity created before v51.
-
-    Trust on first use: the browser that still holds only the old id calls
-    this once and stores what it gets back. Identities that already have a
-    secret return 403 — the secret is never re-issued.
-    """
+async def bind_identity_secret(identity_id: str, request: Request):
+    """Bind a legacy identity only when its recovery code proves ownership."""
+    data = await _read_json(request)
+    code = _required_recovery_code(data.get("code"))
     ident = db.get_identity(identity_id)
     if not ident:
         raise HTTPException(404, "Identitas tidak ditemukan")
-    secret = db.bind_secret(identity_id)
+    secret = db.bind_secret(identity_id, code)
     if not secret:
-        raise HTTPException(403, "Identitas ini sudah memiliki sesi")
+        raise HTTPException(403, "Code tidak cocok atau identitas ini sudah memiliki sesi")
     return {"id": identity_id, "name": ident["name"], "secret": secret}
 
 

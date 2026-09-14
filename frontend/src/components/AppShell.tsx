@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, Copy, Plus, Receipt, ShareNetwork, SignOut, UserCircle, UsersThree, Wallet } from "@phosphor-icons/react";
+import { ArrowLeft, Check, Copy, PencilSimple, Plus, Receipt, ShareNetwork, SignOut, Trash, UserCircle, UsersThree, Wallet } from "@phosphor-icons/react";
 import { apiClient } from "../lib/api";
 import { getStoredName, setStoredIdentity, setStoredName } from "../lib/identity-storage";
 
-import type { Identity } from "../lib/types";
+import type { Identity, PaymentAccount } from "../lib/types";
 import { Button, Card, Input, Label, Spinner } from "./ui/primitives";
 
 
@@ -220,9 +220,9 @@ export function ContextualDock({ children }: { children: React.ReactNode }) {
   return <div className="dock" data-contextual-dock><div className="dock-panel">{children}</div></div>;
 }
 
-export function Onboarding({ onIdentity }: { onIdentity: (identity: Identity) => void }) {
-  const [name, setName] = useState(getStoredName());
-  const [recovery, setRecovery] = useState(false);
+export function Onboarding({ onIdentity, legacyIdentity = null }: { onIdentity: (identity: Identity) => void; legacyIdentity?: Identity | null }) {
+  const [name, setName] = useState(() => legacyIdentity?.name || getStoredName());
+  const [recovery, setRecovery] = useState(() => Boolean(legacyIdentity));
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -252,13 +252,14 @@ export function Onboarding({ onIdentity }: { onIdentity: (identity: Identity) =>
     <h1>Bagi bill dengan teman tanpa rumit.</h1>
     <p className="lede">Foto struk, bagikan tautan, lalu semua orang memilih itemnya sendiri. Pajak ikut terbagi otomatis.</p>
     <Card>
+      {legacyIdentity && <div className="info-box" role="status">Identitas lama ditemukan di perangkat ini. Pulihkan dengan kode agar sesi dan bill kamu tetap aman.</div>}
       <form id="onboard-form" onSubmit={submit} noValidate className="stack-sm">
         <div className="field"><Label htmlFor="name-input">Siapa nama kamu?</Label><Input id="name-input" name="name" value={name} onChange={event => setName(event.target.value)} placeholder="Biar teman kamu tahu ini kamu" maxLength={60} autoComplete="name" autoFocus /></div>
         {error && <p className="error-text" role="alert">{error}</p>}
         <Button id="onboard-btn" type="submit" disabled={busy}>{busy ? <><Spinner /> Bentar...</> : "Mulai"}</Button>
       </form>
       <p className="muted onboarding-note">Tanpa akun. Nama kamu disimpan di perangkat ini.</p>
-      <Button id="restore-link" type="button" variant="ghost" className="recovery-toggle" aria-expanded={recovery} aria-controls="restore-box" onClick={() => setRecovery(value => !value)}>Punya kode pemulihan?</Button>
+      <Button id="restore-link" type="button" variant="ghost" className="recovery-toggle" aria-expanded={recovery} aria-controls="restore-box" onClick={() => setRecovery(value => !value)}>{legacyIdentity ? "Pulihkan identitas lama" : "Punya kode pemulihan?"}</Button>
       {recovery && <form id="restore-box" onSubmit={restore} className="recovery-box stack-sm" noValidate><div className="field"><Label htmlFor="restore-code">Kode pemulihan</Label><Input id="restore-code" value={code} onChange={event => setCode(event.target.value)} placeholder="XXXX-XXXX-XXXX" autoComplete="one-time-code" /></div><Button id="restore-btn" type="submit" variant="outline" disabled={busy}>{busy ? <Spinner /> : "Pulihkan akun"}</Button></form>}
     </Card>
   </div></div></AppFrame>;
@@ -266,9 +267,17 @@ export function Onboarding({ onIdentity }: { onIdentity: (identity: Identity) =>
 
 export { EmptyState, ErrorState, LoadingState } from "./feedback";
 
-export function AccountRows({ accounts, name }: { accounts?: Array<{ id: number; brand: string; account_no: string; holder_name?: string | null }>; name: string }) {
+type AccountRowsProps = {
+  accounts?: PaymentAccount[];
+  name: string;
+  onEdit?: (account: PaymentAccount) => void;
+  onDelete?: (account: PaymentAccount) => void;
+  actionDisabled?: boolean;
+};
+
+export function AccountRows({ accounts, name, onEdit, onDelete, actionDisabled = false }: AccountRowsProps) {
   if (!accounts?.length) return <p className="muted">Belum ada metode pembayaran yang disimpan oleh {name}.</p>;
-  return <div className="account-list">{accounts.map(account => <div className="payment-account" key={account.id}><div className="account-icon"><Wallet /></div><div className="payment-account-copy"><strong>{account.brand}</strong><div className="account-number">{account.account_no}</div>{account.holder_name && <div className="caption">a.n. {account.holder_name}</div>}</div><Button variant="ghost" size="icon" aria-label={`Salin nomor ${account.brand}`} onClick={() => { void navigator.clipboard?.writeText(account.account_no); }}><Copy /></Button></div>)}</div>;
+  return <div className="account-list">{accounts.map(account => <div className="payment-account" key={account.id} data-account-id={account.id} style={{ minWidth: 0 }}><div className="account-icon"><Wallet /></div><div className="payment-account-copy"><strong>{account.brand}</strong><div className="account-number">{account.account_no}</div>{account.holder_name && <div className="caption">a.n. {account.holder_name}</div>}</div><div className="payment-account-actions"><Button variant="ghost" size="icon" aria-label={`Salin nomor ${account.brand}`} onClick={() => { void navigator.clipboard?.writeText(account.account_no); }}><Copy /></Button>{onEdit && <Button variant="ghost" size="icon" aria-label={`Edit ${account.brand} ${account.account_no}`} data-account-edit={account.id} disabled={actionDisabled} onClick={() => onEdit(account)}><PencilSimple /></Button>}{onDelete && <Button variant="ghost" size="icon" aria-label={`Hapus ${account.brand} ${account.account_no}`} data-account-delete={account.id} disabled={actionDisabled} onClick={() => onDelete(account)}><Trash /></Button>}</div></div>)}</div>;
 }
 
 export function ShareDialogContent({ billId, title, onClose }: { billId: string; title: string; onClose: () => void }) {

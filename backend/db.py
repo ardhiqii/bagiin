@@ -402,25 +402,27 @@ def get_identity(ident_id: str):
     return dict(row) if row else None
 
 
-def bind_secret(ident_id: str) -> str | None:
-    """Give a pre-v51 identity a secret, once, and hand it back.
+def bind_secret(ident_id: str, code: str) -> str | None:
+    """Bind one secret when the identity's recovery proof matches.
 
-    Trust-on-first-use migration: identities created before the secret column
-    existed have none, and their owner's browser only holds the id. The first
-    caller presenting such an id gets a secret minted and bound; every later
-    request must present it. Returns None if the identity already has one.
+    The conditional UPDATE is the race-safe first bind for pre-v51 identities:
+    only one transaction can change a NULL secret whose recovery hash matches.
     """
+    code_hash = hash_code(code)
     conn = get_db()
     try:
+        secret = new_id()
         cur = conn.execute(
-            "UPDATE identity SET secret = ? WHERE id = ? AND secret IS NULL",
-            (new_id(), ident_id),
+            """UPDATE identity SET secret = ?
+               WHERE id = ? AND secret IS NULL AND identity_code_hash = ?""",
+            (secret, ident_id, code_hash),
         )
-        conn.commit()
         if cur.rowcount == 0:
+            conn.rollback()
             return None
         row = conn.execute(
             "SELECT secret FROM identity WHERE id = ?", (ident_id,)).fetchone()
+        conn.commit()
         return row["secret"] if row else None
     finally:
         conn.close()

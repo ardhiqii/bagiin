@@ -81,6 +81,23 @@ Open http://localhost:8082
 > service. The legacy `frontend/static/` tree remains available as a fallback
 > and rollback path.
 
+### Identity recovery
+
+Identity IDs are public references, not credentials. New and recovered sessions
+use both `X-Identity-Id` and `X-Identity-Secret`. Legacy identities from before
+secret binding must be restored with their recovery code, or explicitly bound
+with `POST /api/identities/{id}/bind` and `{ "code": "..." }`; an id-only request
+never mints a secret. Public bill links remain readable without a session, while
+identity-scoped writes require an authenticated secret.
+
+### Bundle accounting
+
+The formal `<50 KB gzip` budget applies to source-owned application assets.
+Vendor React and icon runtime are reported separately, and the full delivered
+asset size is reported alongside them. The current build measurement is 44.03
+KB gzip (43.00 KiB) for app-owned assets, 59.75 KB gzip (58.35 KiB) for vendor
+and icon runtime, and 103.78 KB gzip (101.35 KiB) for all generated assets.
+
 ## Tests
 
 ```bash

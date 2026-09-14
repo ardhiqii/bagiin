@@ -148,6 +148,7 @@ identity
   id TEXT PK            -- random UUID (device)
   name TEXT
   role TEXT             -- 'creator' | 'guest'  (bisa dua-duanya)
+  secret TEXT NULL      -- secret sesi perangkat; wajib untuk mutation
   identity_code_hash TEXT NULL   -- hash kode pemulihan
   created_at
 
@@ -188,8 +189,9 @@ selections + tax_mode (selalu konsisten, gak ada drift data).
 ## 7. API (REST, JSON)
 
 ```
-POST /api/identities            -- buat identity (name) -> {id, name}
-POST /api/identities/restore    -- {code} -> identity (atau 404)
+POST /api/identities            -- buat identity (name) -> {id, name, secret}
+POST /api/identities/restore    -- {code} -> identity + secret (atau 404)
+POST /api/identities/{id}/bind  -- legacy: {code} -> bind secret (atau 403)
 GET  /api/bills/{code}          -- detail bill + items + tax info (public read)
 POST /api/bills                 -- creator: buat bill (items, tax_mode, photo)
 PATCH /api/bills/{code}         -- creator: edit items, tax_mode, close bill
@@ -200,9 +202,12 @@ GET  /api/me/bills              -- riwayat by identity (device)
 POST /api/identities/payment-profiles  -- creator: simpan rekening/e-money
 ```
 
-Auth: TIDAK ADA. Bill code = akses baca. Mutasi butuh identity id (device UUID,
-random, susah ditebak). Creator-only action divalidasi: identity id harus match
-creator_identity_id. Rate limit per IP (lihat Section 9).
+Auth: bill code = akses baca publik. Semua mutation identity-scoped wajib mengirim
+`X-Identity-Id` dan secret sesi yang benar lewat `X-Identity-Secret`; id saja bukan
+kredensial. Legacy identity dengan `secret IS NULL` harus dipulihkan lewat recovery
+code atau di-bind lewat endpoint di atas sebelum dapat melakukan mutation. Creator-only
+action tetap memvalidasi identity yang sudah terautentikasi dan rate limit berlaku
+per IP (lihat Section 9).
 
 ### Token entropy (dari riset OWASP, verified)
 - Bill code di URL: jangan 6-8 char pendek (30-40 bit, keburu brute-force).
@@ -266,13 +271,15 @@ creator_identity_id. Rate limit per IP (lihat Section 9).
 ## 9. Identitas & keamanan
 
 - localStorage (verified MDN): 5 MiB per origin, private mode bisa 0/quota error.
-  Simpan CUMA data non-kritis (nama, identity_id, preferensi). SEMUA akses
+  Simpan identity session (`identity_id` + `secret`), nama, dan preferensi hanya
+  sebagai cache perangkat. SEMUA akses
   localStorage dibungkus try/catch + fallback in-memory (app tetap jalan tanpa storage).
   Server = source of truth via share link; localStorage cuma cache.
 - Identity code: random 10-12 char (base32, tanpa O/0/I/1), tampil SEKALI,
   disimpan server sebagai hash, ada tombol "ganti kode" (invalidasi lama).
 - PENTING di UI: kode identitas = RAHASIA (jangan dishare). Kode bill = PUBLIK.
-- Tanpa akun -> konsekuensi: ganti device = identitas gak kebawa kecuali restore code.
+- Tanpa akun -> konsekuensi: ganti device = identitas gak kebawa kecuali restore code;
+  recovery code menjadi bukti untuk mengikat secret sesi pada identity legacy.
 - Rate limit + token entropy: lihat Section 7 (128-bit bill token, identity code
   dilockout setelah N gagal).
 - Receipt photo: privat, cuma bisa diakses via bill code (yang udah dishare creator).
@@ -288,8 +295,9 @@ creator_identity_id. Rate limit per IP (lihat Section 9).
   Build wajib dijalankan sebelum restart service: `npm ci --no-audit --no-fund`,
   `npm run typecheck`, lalu `npm run build`.
   Budget dipisah agar terukur: source-owned app bundle < 50KB gzip, vendor React/icon
-  dilaporkan terpisah. Pengukuran 2026-09-13: app-owned 43.36KB gzip, seluruh asset
-  termasuk vendor 103.11KB gzip.
+  dilaporkan terpisah. Pengukuran build saat ini dengan gzip level 9: app-owned
+  44.03KB (43.00KiB), vendor/icon 59.75KB (58.35KiB), dan seluruh asset 103.78KB
+  (101.35KiB). App-owned tetap lulus budget.
   Path: /opt/projects/bagiin/frontend
 - Nginx reverse proxy + HTTPS (Let's Encrypt), subdomain: bagiin.ardhiqi.com.
   Infra note (cek 2026-08-09): VPS IP 209.17.118.186, zone ardhiqi.com di Cloudflare,
@@ -545,6 +553,14 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Pengukuran gzip memisahkan budget source-owned app `43.36KB` dari vendor React/icon;
   seluruh asset terkirim berukuran `103.11KB`. Belum ada deployment atau perubahan
   data production pada migrasi ini.
+
+### 2026-09-14 (v87), recovery identity legacy tanpa trust-on-first-use
+
+- Identity lama dengan `secret IS NULL` tidak lagi dianggap terautentikasi hanya karena public `identity_id`. Semua operasi identity-scoped yang mengubah data sekarang memerlukan secret sesi yang benar.
+- `POST /api/identities/{id}/bind` menerima recovery code sebagai bukti kepemilikan. Binding secret memakai update bersyarat yang atomic, sehingga code kosong/salah, identity yang sudah terikat, dan race request tidak dapat mengeluarkan secret baru.
+- `POST /api/identities/restore` mempertahankan alur pemulihan lama, tetapi sekaligus mengikat secret untuk identity legacy yang valid. Restore yang salah tidak mengubah data.
+- Frontend legacy tidak lagi melakukan bind otomatis dengan body kosong. API client React mengetik bind sebagai request yang wajib membawa recovery code, sementara restore tetap kompatibel dengan response yang sudah memiliki secret.
+- Regression v87 mencakup id-only write, bind tanpa/salah/non-text code, valid bind dan restore, second bind, concurrent restore, existing secret, public bill read, dan secret non-disclosure. Full pytest dan frontend checks wajib dijalankan sebelum merge.
 
 ### 2026-09-09 (v82), audit integrasi halaman dan komponen
 

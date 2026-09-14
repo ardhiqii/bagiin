@@ -570,7 +570,7 @@ export const apiClient = {
   identities: {
     create: (input: CreateIdentityRequest) => api<unknown>("/api/identities", { method: "POST", json: input }).then(normalizeIdentity),
     restore: (input: RestoreIdentityRequest) => api<unknown>("/api/identities/restore", { method: "POST", json: input }).then(normalizeIdentity),
-    bind: (identityId: string) => api<unknown>(`/api/identities/${segment(identityId)}/bind`, { method: "POST", json: {} }).then(normalizeIdentity),
+    bind: (identityId: string, input: IdentityCodeRequest) => api<unknown>(`/api/identities/${segment(identityId)}/bind`, { method: "POST", json: input }).then(normalizeIdentity),
     profile: (identityId: string) => api<unknown>(`/api/identities/${segment(identityId)}/me`).then(normalizeIdentityProfile),
     rename: (identityId: string, input: IdentityNameRequest) => api<unknown>(`/api/identities/${segment(identityId)}/name`, { method: "POST", json: input }).then(normalizeMutationOk),
     setCode: (identityId: string, input: IdentityCodeRequest) => api<unknown>(`/api/identities/${segment(identityId)}/code`, { method: "POST", json: input }).then(normalizeMutationOk),
