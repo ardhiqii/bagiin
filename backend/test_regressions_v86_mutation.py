@@ -61,6 +61,37 @@ def test_zero_tax_identity_does_not_receive_shared_cashback():
     assert result["total_ok"] is True
 
 
+def test_legacy_cashback_alias_is_respected_when_canonical_field_missing():
+    bill = _bill(subtotal=5, total=4)
+    bill.pop("cashback_idr")
+    bill["cashback"] = 1
+    result = calc.compute(
+        bill,
+        items=[{"id": 1, "name": "meal", "price_idr": 5}],
+        selections=[{"item_id": 1, "identity_id": "alice"}],
+        participants=[],
+        fallback_id="owner",
+    )
+
+    assert _person(result, "alice")["cashback_idr"] == 1
+    assert _person(result, "alice")["total_idr"] == 4
+    assert result["total_ok"] is True
+
+
+def test_tax_and_service_are_both_added_when_prices_exclude_tax():
+    result = calc.compute(
+        _bill(subtotal=7, total=10, tax=2, service=1),
+        items=[{"id": 1, "name": "meal", "price_idr": 7}],
+        selections=[{"item_id": 1, "identity_id": "alice"}],
+        participants=[],
+        fallback_id="owner",
+    )
+
+    assert _person(result, "alice")["tax_idr"] == 3
+    assert _person(result, "alice")["total_idr"] == 10
+    assert result["total_ok"] is True
+
+
 def test_one_rupiah_uncovered_warning_survives_partial_cashback():
     result = calc.compute(
         _bill(subtotal=2, total=1, cashback=1),
