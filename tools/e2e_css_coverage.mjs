@@ -627,9 +627,32 @@ async function main() {
         await tab.viewport(width, height);
         /* The identity must be written BEFORE the app boots, so navigate to a
            nonce'd URL first, set storage, then navigate again with the hash.
-           Boot-then-hash would render the onboarding screen for every route. */
-        await tab.navigate(`${baseUrl}/?css=${nonce}-boot`);
-        await tab.waitFor(() => document.readyState === "complete", 12000);
+           Boot-then-hash would render the onboarding screen for every route.
+
+           The boot navigation must ALSO clear any leftover QA storage first.
+           A previous driver (tools/e2e_legacy_recovery.mjs writes a
+           `legacy-<stamp>` identity and never restores it) leaves a stale
+           `bagiin_identity` on the QA origin, which paints Home on this boot
+           navigation and fires GET /api/identities/<stale-id>/bills -> 404/403
+           recorded as a page console error. That produced a false 2-of-460
+           FAIL on a correct tree. One-shot and nonce-scoped, the same shape as
+           tools/e2e_uiux_polish_shell.mjs, so it clears exactly once on the
+           boot document and never races the identity write below. */
+        const qaOrigin = new URL(baseUrl).origin;
+        const cleanupScript = await tab.send("Page.addScriptToEvaluateOnNewDocument", {
+          source: `(() => {
+            if (location.origin !== ${JSON.stringify(qaOrigin)}) return;
+            if (new URL(location.href).searchParams.get("css") !== ${JSON.stringify(`${nonce}-boot`)}) return;
+            try { localStorage.clear(); } catch {}
+            try { sessionStorage.clear(); } catch {}
+          })();`,
+        });
+        try {
+          await tab.navigate(`${baseUrl}/?css=${nonce}-boot`);
+          await tab.waitFor(() => document.readyState === "complete", 12000);
+        } finally {
+          await tab.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: cleanupScript.identifier }).catch(() => undefined);
+        }
         await tab.page(setIdentityFn, identity);
         await tab.navigate(`${baseUrl}/?css=${nonce}${hash}`);
         const ready = await tab.waitFor(selector => Boolean(document.querySelector(selector)), route.ready, 12000);
