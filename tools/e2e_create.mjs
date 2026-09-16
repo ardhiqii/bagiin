@@ -712,10 +712,16 @@ const readCase = async (width, color) => evaluate(`(() => {
 
           await setInput('[data-role="quantity"]', "");
           const invalidQuantity = await readTotals();
+          // The placeholder is a plain hyphen since v89 (the em-dash was
+          // removed from user-facing copy). What this check actually guards is
+          // that an invalid quantity shows a PLACEHOLDER instead of a stale
+          // derived number, so assert "is a dash and not a rupiah figure"
+          // rather than pinning the exact dash character.
+          const isDashPlaceholder = value => value.includes("-") && !/\d/.test(value);
           check(`${prefix}: invalid quantity hides stale derived totals`,
-            invalidQuantity.line.includes("—")
+            isDashPlaceholder(invalidQuantity.line)
               && invalidQuantity.subtotal === ""
-              && invalidQuantity.total.includes("—")
+              && isDashPlaceholder(invalidQuantity.total)
               && invalidQuantity.ctaDisabled === true,
             JSON.stringify(invalidQuantity));
           await setInput('[data-role="quantity"]', "1");
