@@ -1979,6 +1979,13 @@ def remove_person(bill_id: str, identity_id: str, request: Request):
     _ensure_editable(bill_data)
     if identity_id == ident["id"]:
         raise HTTPException(400, "Tidak dapat menghapus diri sendiri (owner bill)")
+    # v89: removing someone who isn't on the bill used to be a silent 200 no-op,
+    # so the client couldn't tell "removed" from "never there" (double-tap on a
+    # roster row looked like it worked twice). Same membership predicate the
+    # invite endpoint uses. Ordered after the self-removal 400 so the owner
+    # still gets the more specific message.
+    if not db.identity_on_bill(bill_id, identity_id):
+        raise HTTPException(404, "Orang ini tidak ada di bill")
     # the creator used to be unremovable. Since v57 they're a regular
     # participant once a confirmed payer holds the bill, and v58 lets them
     # leave — so the manager can drop them too, same as anyone else. While no
@@ -2033,7 +2040,22 @@ def leave_bill(bill_id: str, request: Request):
 
 @app.post("/api/bills/{bill_id}/selections")
 async def set_selections(bill_id: str, request: Request):
+    """Replace the caller's picks on an open bill.
+
+    Clearing is explicit, never implied (v89): the body must name at least one
+    of the two accepted keys. `{"picks": []}` and the legacy `{"item_ids": []}`
+    clear the caller's picks and answer 200; a body with NEITHER key is a 400,
+    because it used to fall through to "no picks" and silently wipe everything
+    the person had tapped (a client typo, or version skew between the React
+    client and the preserved vanilla one, wiped picks and returned 200).
+
+    The guard keys on KEY PRESENCE, not on usefulness: `{"picks": null}` still
+    means "clear" (the value is coerced to []), exactly as before, because the
+    key is present and the caller meant to write the picks field.
+    """
     data = await _read_json(request)
+    if "picks" not in data and "item_ids" not in data:
+        raise HTTPException(400, "Daftar pilihan wajib diisi")
     bill_data = _bill_or_404(bill_id)
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")

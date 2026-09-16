@@ -25,6 +25,16 @@
   --radius-md: 16px;
   --radius-lg: 22px;
   --radius-full: 999px;
+  /* Legacy token names, aliased (not renamed) so the component rules ported
+     verbatim from the <style> block in frontend/index.html keep resolving and
+     stay byte-comparable with their origin. Only the names the recovered rules
+     actually reference are aliased (v89 CSS recovery). */
+  --r-xs: var(--radius-xs);
+  --r-sm: var(--radius-sm);
+  --r-md: var(--radius-md);
+  --r-lg: var(--radius-lg);
+  --r-full: var(--radius-full);
+  --ease: cubic-bezier(.2,.7,.3,1);
   --control-height: 46px;
   --control-height-compact: 44px;
   --nav-link-height: 48px;
@@ -360,3 +370,274 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+/* ============================================================
+   Legacy design-system recovery (v89)
+   Source of truth: the <style> block of frontend/index.html.
+   The React migration shipped a parallel replacement stylesheet and dropped
+   the component rules for class names React still renders, so Recap summary
+   cells collapsed onto one line, Home bill rows lost their status bar, chips
+   lost their pill shape and the Home filter controls rendered twice at every
+   width. These rules are ported (near verbatim) from the legacy block for the
+   63 classes React emits that had no rule here. Dead legacy-only selectors are
+   deliberately NOT copied; the few legacy selectors that cannot match React's
+   DOM are re-expressed for the markup React actually renders.
+   ============================================================ */
+
+/* ---------- chips ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; border-radius: var(--r-full);
+  padding: 4px 10px; font-size: 12px; font-weight: 600; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.chip svg { width: 13px; height: 13px; }
+.chip-green { background: var(--green-soft); color: var(--green); border-color: color-mix(in srgb, var(--green) 22%, transparent); }
+.chip-red { background: var(--red-soft); color: var(--red); border-color: color-mix(in srgb, var(--red) 22%, transparent); }
+.chip-grey { background: var(--surface-2); color: var(--text-2); border-color: var(--border); }
+.chip-accent { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
+
+/* ---------- Home bill rows ---------- */
+.history-row {
+  display: flex; align-items: center; gap: 12px; padding: 13px 10px 13px 16px; margin: 0 -10px;
+  border-radius: var(--r-sm); cursor: pointer; position: relative;
+  border-bottom: 0; transition: background .14s var(--ease);
+}
+.history-row + .history-row { border-top: 1px solid var(--border); border-radius: 0; }
+@media (hover:hover) { .history-row:hover { background: var(--surface-2); } }
+/* status colour anchor: a bar at the head of the row plus a tinted icon, so a
+   long list is scannable without reading every chip. React puts the state class
+   on the icon (status-<tone>), not the row, so :has() re-expresses legacy's
+   .history-row.is-* selectors against the markup React actually renders. */
+.history-row::before {
+  content: ""; position: absolute; left: 2px; top: 14px; bottom: 14px; width: 4px;
+  border-radius: var(--r-full); background: var(--border-strong);
+}
+/* The tone names the row actually carries are HomeRoute's
+   status-{danger,neutral,success}; the legacy is-ok/is-due/is-done/is-idle
+   names are kept for parity with the ported markup. Both are matched, and the
+   status-* half must be kept in step with the .status-mark.status-* block
+   above — keying only on ok/due/idle left every bar at --border-strong. */
+.history-row:has(.status-success)::before, .history-row:has(.status-ok)::before, .history-row.is-ok::before { background: var(--green); }
+.history-row:has(.status-danger)::before, .history-row:has(.status-due)::before, .history-row.is-due::before { background: var(--red); }
+.history-row:has(.status-neutral)::before, .history-row:has(.status-idle)::before, .history-row.is-done::before, .history-row.is-idle::before { background: var(--border-strong); }
+.history-row .item-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-row.is-ok .status-mark { background: var(--green-soft); color: var(--green); border-color: color-mix(in srgb, var(--green) 25%, transparent); }
+.history-row.is-due .status-mark { background: var(--red-soft); color: var(--red); border-color: color-mix(in srgb, var(--red) 25%, transparent); }
+.history-row.is-done .status-mark,
+.history-row.is-idle .status-mark { background: var(--surface-3); color: var(--text-3); border-color: var(--border); }
+.history-row .delete-bill svg { width: 18px; height: 18px; }
+@media (hover:hover) { .history-row .delete-bill:hover { color: var(--red); background: var(--red-soft); } }
+/* The row is [icon][title+meta][amount][delete]. Without min-width:0 the text
+   column refuses to shrink, so a long bill name wrapped onto three lines and a
+   nowrap status chip overflowed straight across the amount (bug: "Belum ada
+   yang milih" painted on top of "Rp 28.000" on a 390px phone). */
+.bill-row-main { min-width: 0; }
+.bill-row-meta { min-width: 0; }
+/* the money never shrinks or wraps; the CHIP is what gives way. With both
+   pinned at flex-shrink:0 a 7-digit total ("Rp 1.875.000") pushed the row's
+   content past its own right edge and ran under the delete button's column
+   (bug: measured 59px of overlap at 390px). */
+.bill-row-meta .chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- item rows ---------- */
+/* .bill-item is kept on the element as a compatibility hook, but .item-row
+   (legacy) is the sole layout authority: two equal-specificity rules used to
+   fight here and the grid half silently won (measured display:grid where legacy
+   wants flex, which killed the growing middle column). */
+.bill-item { min-width: 0; }
+.item-row { display: flex; align-items: center; gap: 12px; padding: 12px 2px;
+            border-bottom: 1px solid var(--border); transition: background .14s var(--ease); }
+.item-row:last-child { border-bottom: none; }
+.item-copy { flex: 1; min-width: 0; }
+.item-row.selected { background: var(--accent-soft); }
+.item-row.selected .item-check { background: var(--accent); border-color: var(--accent); }
+.item-row.selected .item-check svg { opacity: 1; transform: scale(1); }
+.item-full { opacity: .55; cursor: not-allowed; }
+/* price before the stepper, and the manager's slot button stays on the price's
+   right where the markup puts it */
+@media (max-width:430px) { .item-price, .item-row .slot-mgr { order: 2; } }
+
+/* ---------- people ---------- */
+.avatar-me { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
+
+/* ---------- action rows ---------- */
+.btn-row { display: flex; gap: 8px; }
+.btn-row > * { flex: 1; min-width: 0; }
+/* a secondary action shouldn't claim half the row and wrap the primary CTA's
+   label onto two lines */
+.btn-row > .btn-auto { flex: 0 0 auto; }
+
+/* ---------- forms ---------- */
+.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+              cursor: pointer; padding: 10px; margin: 0 -10px; min-height: 44px; border-radius: var(--r-sm); }
+@media (hover:hover) { .toggle-row:hover { background: var(--surface-2); } }
+.toggle-row .label-strong { font-weight: 600; font-size: 14.5px; color: var(--text); display: block; }
+.hidden { display: none !important; }
+.date-helper { margin: 0; color: var(--text-3); font-size: 13.5px; }
+
+/* ---------- Home filter controls: CSS-only phone/desktop swap ---------- */
+/* on a 390px phone the first bill row must be visible without scrolling past a
+   wall of controls. .list-controls-inline is a CSS-only swap (not JS branching
+   on width) so a resize can never leave both or neither visible. */
+.list-ctl-btn { display: inline-flex; align-items: center; gap: 1px; white-space: nowrap; }
+.list-controls-inline { display: none; }
+@media (min-width:1040px) {
+  /* desktop: inline controls replace the phone's single "Atur" button;
+     chips on their own row, the three selects on the next, always visible */
+  .list-controls-inline { display: block; margin: 14px 0; }
+  .list-ctl-btn { display: none; }
+}
+
+/* ---------- status marks: tone-blind without these ---------- */
+/* .avatar (0,1,0) is declared after .status-due/-ok/-idle and beat them on
+   source order, so every Home row rendered the same accent tint regardless of
+   state. (0,2,0) makes source order irrelevant, and the missing names Home
+   actually emits (status-${tone} in {danger,neutral,success}) are covered. */
+.status-mark.status-danger, .status-mark.status-due { color: var(--red); background: var(--red-soft); }
+.status-mark.status-success, .status-mark.status-ok { color: var(--green); background: var(--green-soft); }
+.status-mark.status-neutral, .status-mark.status-idle { color: var(--text-3); background: var(--surface-2); }
+
+/* ---------- Settings ---------- */
+/* Compact, clearly separated account sections keep the action reachable on
+   phones. Legacy scoped these as `#app.settings-page > .shell-solo > .card`,
+   which cannot match React's DOM (React inserts .app-content between #app and
+   .shell-solo), so they are re-expressed for the markup React renders. */
+#app.settings-page .app-content > .shell-solo > .card { margin-bottom: 6px; padding: 10px 12px; }
+#app.settings-page .app-content > .shell-solo > .card .card-title { margin-bottom: 5px; }
+#app.settings-page .app-content > .shell-solo > .card p.muted { line-height: 1.3; margin-bottom: 6px !important; }
+#app.settings-page .app-content > .shell-solo > .card .field { margin-bottom: 7px; }
+#app.settings-page .app-content > .shell-solo > .card .btn-row { margin-top: 6px !important; gap: 6px; }
+#app.settings-page .empty-state { padding: 12px 8px; }
+#app.settings-page .empty-state svg { width: 36px; height: 36px; margin-bottom: 6px; }
+#app.settings-page .app-content > .shell-solo > .topbar { margin-bottom: 8px; }
+#app.settings-page .app-content > .shell-solo > .btn-danger-ghost { margin-top: 2px; }
+
+/* ---------- Rekap Patungan ----------
+   The recap is a reading surface, not a second bill editor. Keep the final
+   ledger, provisional estimates, and workflow actions in separate regions so
+   a waiting task can never look like money that is already owed. */
+.recap-summary { padding: 20px; }
+.recap-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; }
+.recap-heading > div { min-width: 0; }
+.recap-heading h1, .recap-heading h2 { margin: 0; }
+.recap-heading .muted { margin-top: 5px; max-width: 52ch; }
+.recap-heading > .chip { flex-shrink: 0; margin-top: 3px; }
+.recap-money-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; margin-top: 18px; }
+.recap-money-cell { min-width: 0; padding: 13px 14px; border-radius: var(--r-sm); background: var(--surface-2);
+                    border: 1px solid var(--border); }
+.recap-money-label { display: block; color: var(--text-2); font-size: 12px; font-weight: 700; }
+.recap-money-value { display: block; margin-top: 4px; font-size: clamp(18px,5.2vw,25px); font-weight: 800;
+                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recap-money-note { display: block; margin-top: 4px; color: var(--text-3); font-size: 12px; line-height: 1.35; }
+.recap-money-pay { border-color: color-mix(in srgb,var(--red) 24%,var(--border)); }
+.recap-money-receive { border-color: color-mix(in srgb,var(--green) 24%,var(--border)); }
+.recap-net-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px;
+                  padding-top: 14px; border-top: 1px solid var(--border); min-width: 0; }
+.recap-net-line > span { display: flex; flex-direction: column; min-width: 0; }
+.recap-net-line b { font-size: 14px; }
+.recap-net-line small { color: var(--text-3); font-size: 12px; margin-top: 2px; }
+.recap-net-line .money { flex-shrink: 0; font-size: 21px; font-weight: 800; white-space: nowrap; }
+.recap-net-receive .money { color: var(--green); }
+.recap-net-pay .money { color: var(--red); }
+.recap-net-zero .money { color: var(--text-2); }
+.recap-summary-note { margin-top: 14px; line-height: 1.4; }
+.recap-account-empty { display: flex; align-items: flex-start; gap: 9px; margin: 16px 0 0; }
+.recap-account-empty svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--accent); }
+
+.recap-section { margin-top: 24px; min-width: 0; }
+.recap-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; margin-bottom: 11px; }
+.recap-section-heading > div { min-width: 0; }
+.recap-section-heading h2 { margin: 0; }
+.recap-section-heading .muted { margin-top: 4px; line-height: 1.4; }
+.recap-section-heading > .chip { flex-shrink: 0; }
+.recap-person-grid { grid-template-columns: minmax(0,1fr); gap: 10px; }
+.recap-person-card { min-width: 0; padding: 16px; background: var(--surface); border: 1px solid var(--border);
+                     border-radius: var(--r-md); box-shadow: var(--shadow-1); }
+.recap-person-head { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.recap-person-copy { flex: 1; min-width: 0; padding-top: 1px; }
+.recap-person-name { font-size: 16px; font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
+.recap-person-canonical { color: var(--text-3); font-size: 12px; line-height: 1.35; margin-top: 3px; overflow-wrap: anywhere; }
+.recap-person-amount { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; min-width: 0; text-align: right; }
+.recap-person-amount .recap-money-label { font-size: 11px; }
+.recap-person-amount .money { font-size: 17px; font-weight: 800; white-space: nowrap; }
+.recap-person-direction { margin: 12px 0 0; padding: 9px 11px; border-radius: var(--r-sm); font-size: 13.5px; font-weight: 650;
+                          line-height: 1.35; overflow-wrap: anywhere; }
+.recap-person-direction.is-receive { background: var(--green-soft); color: var(--green); }
+.recap-person-direction.is-pay { background: var(--red-soft); color: var(--red); }
+.recap-person-direction.is-unknown { background: var(--surface-2); color: var(--text-2); }
+.recap-person-pending { margin: 12px 0 0; }
+.recap-person-pending-count { overflow-wrap: anywhere; }
+.recap-person-pending-breakdown { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; min-width: 0; }
+.recap-person-pending-breakdown .chip { white-space: normal; line-height: 1.3; }
+.recap-alias-btn { width: auto; justify-content: flex-start; padding-left: 0; padding-right: 6px; margin-top: 5px; color: var(--accent); }
+.recap-bill-list { margin-top: 12px; border-top: 1px solid var(--border); }
+.recap-bill-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 9px; min-width: 0;
+                  padding: 11px 0; border-top: 0; border-bottom: 1px solid var(--border); }
+.recap-bill-row:last-child { border-bottom: none; padding-bottom: 0; }
+.recap-bill-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.recap-bill-copy strong { font-size: 13.5px; line-height: 1.3; overflow-wrap: anywhere; }
+.recap-bill-copy .muted { font-size: 11.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.recap-bill-link { width: auto; flex-shrink: 0; white-space: nowrap; text-decoration: none; }
+.recap-empty { text-align: center; padding: 28px 16px; }
+.recap-empty > svg { display: block; width: 40px; height: 40px; margin: 0 auto 9px; color: var(--border-strong); }
+.recap-empty p { margin: 0; }
+.recap-empty p + p { margin-top: 4px; }
+
+.recap-provisional { margin-top: 24px; padding: 18px 16px; background: var(--surface-2); border-color: var(--border); }
+.recap-provisional .recap-section-heading { margin-bottom: 0; }
+.recap-provisional .recap-section-heading .muted { max-width: 58ch; }
+.recap-estimate-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin-top: 14px; }
+.recap-estimate-grid > div { min-width: 0; padding: 11px 12px; border-radius: var(--r-sm); background: var(--surface); border: 1px solid var(--border); }
+.recap-estimate-grid span { display: block; color: var(--text-2); font-size: 11.5px; line-height: 1.35; }
+.recap-estimate-grid strong { display: block; margin-top: 4px; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recap-provisional-list { margin-top: 14px; border-top: 1px solid var(--border); }
+.recap-provisional-row { display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: auto auto; gap: 4px 10px; min-width: 0;
+                         padding: 13px 0; border-top: 0; border-bottom: 1px solid var(--border); }
+.recap-provisional-row:last-child { border-bottom: none; padding-bottom: 0; }
+.recap-provisional-copy { grid-column: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.recap-provisional-copy > strong { font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
+.recap-provisional-copy > .muted { font-size: 11.5px; }
+.recap-reason-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; min-width: 0; }
+.recap-reason-list .chip { white-space: normal; line-height: 1.25; }
+.recap-provisional-amounts { grid-column: 1; display: flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0; color: var(--text-2); font-size: 12px; line-height: 1.4; }
+.recap-provisional-amounts span { overflow-wrap: anywhere; }
+.recap-provisional-row > .recap-bill-link { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.recap-empty-inline { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 13px 0 2px; color: var(--text-2); font-size: 13px; line-height: 1.4; }
+.recap-empty-inline svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--green); margin-top: 1px; }
+
+.recap-actions-grid { display: grid; grid-template-columns: minmax(0,1fr); gap: 12px; margin-top: 24px; }
+.recap-action-card { min-width: 0; margin: 0; padding: 16px; }
+.recap-action-card .recap-section-heading { margin-bottom: 0; }
+.recap-action-card .recap-section-heading .chip { min-width: 28px; justify-content: center; }
+.recap-action-list { margin-top: 8px; border-top: 1px solid var(--border); }
+.recap-action-row { display: grid; grid-template-columns: 38px minmax(0,1fr); gap: 9px 10px; min-width: 0;
+                    padding: 12px 0; border-top: 0; border-bottom: 1px solid var(--border); }
+.recap-action-row:last-child { border-bottom: none; padding-bottom: 0; }
+.recap-action-icon { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+                     border-radius: var(--r-sm); background: var(--accent-soft); color: var(--accent); }
+.recap-action-icon svg { width: 19px; height: 19px; }
+.recap-action-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.recap-action-copy > strong { font-size: 14px; line-height: 1.3; }
+.recap-action-title { font-weight: 650; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+.recap-action-copy .muted { font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.recap-action-target { color: var(--text-2); font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+.recap-action-aside { grid-column: 2; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; min-width: 0; }
+.recap-action-amount { font-size: 14px; font-weight: 800; white-space: nowrap; }
+.recap-action-aside .chip { flex-shrink: 0; }
+.recap-action-link { margin-left: auto; }
+
+@media (max-width:359px) {
+  .recap-summary { padding: 16px 14px; }
+  .recap-money-grid, .recap-estimate-grid { grid-template-columns: minmax(0,1fr); }
+  .recap-person-card, .recap-provisional, .recap-action-card { padding-left: 14px; padding-right: 14px; }
+  .recap-heading .chip { white-space: normal; text-align: right; }
+}
+@media (min-width:1040px) {
+  .recap-person-grid, .recap-actions-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .recap-summary { padding: 22px; }
+}
+
+/* ---------- loading / fallback containers ---------- */
+/* Legacy had no rule for these two either, but they are bare containers with no
+   primitive class, so leaving them unstyled meant a naked <p>-like stack. */
+.loading-state, .route-fallback { display: block; min-width: 0; }
