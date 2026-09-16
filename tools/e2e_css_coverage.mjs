@@ -44,7 +44,12 @@ const ROUTES = [
    assertions (reached the ready selector + class coverage + overflow + console
    errors). A run that walks the matrix but asserts almost nothing is the
    vacuous-pass failure mode this gate exists to prevent, so it reports FAIL. */
-const MIN_CHECKS = ROUTES.length * WIDTHS.length * 4;
+/* Floor = 10 routes x 7 widths x 5. The per-cell checks are route-dependent
+   (the recap/bill/settings groups only run on their own routes), so this is a
+   conservative sanity floor whose job is to catch a run that walks the matrix
+   but asserts almost nothing — not to pin the exact count. It was *4 before
+   the status-bar colour assertion was added. */
+const MIN_CHECKS = ROUTES.length * WIDTHS.length * 5;
 
 const rawBaseUrl = process.argv[2] || process.env.BASE_URL || "http://127.0.0.1:8099";
 const rawCdpUrl = process.argv[3] || process.env.CDP_URL || "http://127.0.0.1:9222";
@@ -373,7 +378,16 @@ const auditFn = () => {
     danger: toRgb(tokenOf("--red-soft")),
     success: toRgb(tokenOf("--green-soft")),
     neutral: toRgb(tokenOf("--surface-2")),
+    borderStrong: toRgb(tokenOf("--border-strong")),
   };
+  /* The status bar colour per row, keyed by the tone class the row carries.
+     Read from the row's own ::before so a selector that keys on the wrong
+     name shows up as the --border-strong fallback instead of a real tint. */
+  const barByTone = {};
+  for (const tone of ["danger", "neutral", "success", "due", "ok", "idle"]) {
+    const row = document.querySelector(`.history-row:has(.status-${tone})`);
+    barByTone[tone] = row ? getComputedStyle(row, "::before").backgroundColor : null;
+  }
   const homeFilter = (() => {
     const inline = document.querySelector(".list-controls-inline");
     const button = document.querySelector("#list-ctl-btn");
@@ -427,6 +441,7 @@ const auditFn = () => {
     },
     tones,
     toneTokens,
+    barByTone,
     homeFilter,
     overflow: {
       html: document.documentElement.scrollWidth,
@@ -757,6 +772,21 @@ async function main() {
           } else {
             checkStyle(`${where} .history-row`, s.historyRow, v => v.paddingLeft >= 14, "keeps a 16px left inset");
             checkStyle(`${where} .history-row::before`, s.historyRowBefore, v => v.display === "block", "renders the status bar");
+            /* The bar must actually carry its tone. Asserting only that it
+               renders let a tone-name mismatch through: the bar keyed on
+               ok/due/idle while HomeRoute emits danger/neutral/success, so
+               every row's bar measured --border-strong in every state. Assert
+               the COLOUR, read against the border-strong fallback. */
+            if (s.historyRowBefore && s.historyRowBefore.backgroundColor) {
+              const barColors = new Set(
+                Object.entries(result.barByTone || {})
+                  .filter(([, value]) => value)
+                  .map(([, value]) => value),
+              );
+              check(`${where} .history-row::before is tinted per status tone`,
+                barColors.size > 0 && ![...barColors].every(color => color === result.toneTokens.borderStrong),
+                JSON.stringify({ barByTone: result.barByTone, borderStrong: result.toneTokens.borderStrong }));
+            }
             checkStyle(`${where} .chip`, s.chip, v => v.borderRadius >= 99 && v.paddingLeft >= 9.99, "is a pill with 10px padding");
             const tone = result.tones;
             const expected = result.toneTokens;
