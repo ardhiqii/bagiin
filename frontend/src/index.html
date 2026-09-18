@@ -20,9 +20,133 @@
     <link rel="apple-touch-icon" href="/static/icon-180.png" />
     <link rel="manifest" href="/static/manifest.json" />
     <title>Bagiin. Bagi bill bareng tanpa rumit</title>
+    <!--
+      Pre-JS shell. The app is a React SPA, so the document itself has always
+      been an empty <div id="root">: on a phone the user stared at a blank
+      screen for the whole bundle download + parse (measured ~825-1129 ms on a
+      4x-throttled 4G profile). The legacy vanilla build inlined its tokens and
+      painted an app-shaped frame immediately, which is why it FELT lighter
+      despite transferring more bytes.
+
+      This block restores that. It is intentionally tiny (~2 KB, inline so it
+      needs no round trip) and it must stay in sync with the app's own markup:
+      the same tokens, the same warm background, and a skeleton in the shape of
+      the home screen. React replaces it on mount, so nothing here is reachable
+      once the app is up. Keep it in the document, not in a component - its
+      whole value is arriving with the first byte of HTML.
+
+      Rules: no external requests, no fonts, no JS. Colors must match
+      src/styles/globals.css `:root` exactly or the swap will flash.
+    -->
+    <style>
+      :root {
+        --bg: #faf8f5; --surface: #ffffff; --surface-2: #f4f1ec; --surface-3: #ebe6de;
+        --border: #e7e1d8; --text: #1b1917; --text-2: #5c544b; --text-3: #756b60;
+        --accent: #be4507; --accent-soft: #fff3e9; --accent-line: #f6c9a4;
+        --r-sm: 10px; --r-md: 16px; --r-full: 999px;
+        --font: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #151311; --surface: #1f1c19; --surface-2: #2a2622; --surface-3: #332e28;
+          --border: #332e28; --text: #f7f3ee; --text-2: #c0b7ac; --text-3: #a49a8a;
+          --accent: #f97316; --accent-soft: #2e1a0b; --accent-line: #54300f;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        background: var(--bg); color: var(--text);
+        font-family: var(--font); -webkit-font-smoothing: antialiased;
+        min-height: 100dvh;
+      }
+      /* Mirrors #app in globals.css so the swap to real content does not shift. */
+      .boot { max-width: 640px; margin: 0 auto; padding: 12px 16px 32px; }
+      .boot-top {
+        display: flex; align-items: center; justify-content: space-between;
+        min-height: 56px; margin: 0 -16px 16px; padding: 8px 16px;
+      }
+      .boot-brand { font-size: 19px; font-weight: 800; letter-spacing: -.03em; }
+      .boot-brand i { color: #f97316; font-style: normal; }
+      .boot-pill {
+        width: 44px; height: 44px; border-radius: var(--r-sm);
+        background: var(--surface); border: 1px solid var(--border);
+      }
+      .boot-card {
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--r-md); padding: 16px; margin-bottom: 12px;
+      }
+      .sk {
+        background: linear-gradient(100deg, var(--surface-2) 30%, var(--surface-3) 50%, var(--surface-2) 70%);
+        background-size: 200% 100%; border-radius: 8px;
+        animation: boot-shimmer 1.4s ease-in-out infinite;
+      }
+      @keyframes boot-shimmer { to { background-position: -200% 0; } }
+      .sk-title { height: 22px; width: 46%; margin-bottom: 14px; }
+      .sk-hero { height: 38px; width: 62%; margin-bottom: 10px; }
+      .sk-line { height: 12px; margin-bottom: 9px; }
+      .sk-row { display: flex; align-items: center; gap: 12px; min-height: 63px; }
+      .sk-dot { width: 38px; height: 38px; border-radius: 12px; flex: 0 0 38px; }
+      .sk-copy { flex: 1; display: grid; gap: 8px; }
+      .sk-copy .sk-line { margin: 0; }
+      .boot-nav {
+        position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 4px;
+        padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 10px);
+        background: var(--surface); border-top: 1px solid var(--border);
+      }
+      .boot-nav span {
+        flex: 1; height: 40px; border-radius: var(--r-sm);
+        background: var(--surface-2); opacity: .5;
+      }
+      /* One honest status line instead of an unlabelled grey page. */
+      .boot-status {
+        margin: 2px 0 12px; font-size: 12px; font-weight: 600;
+        letter-spacing: .02em; color: var(--text-3);
+      }
+      @media (min-width: 1040px) { .boot-nav { display: none; } }
+      @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Replaced by React on mount. role/aria so it is announced, not silent. -->
+    <div id="root">
+      <div class="boot" role="status" aria-live="polite" aria-label="Memuat Bagiin">
+        <div class="boot-top">
+          <span class="boot-brand">Bagiin<i>.</i></span>
+          <span class="boot-pill"></span>
+        </div>
+        <p class="boot-status">Memuat…</p>
+        <div class="boot-card">
+          <div class="sk sk-title"></div>
+          <div class="sk sk-hero"></div>
+          <div class="sk sk-line" style="width: 38%"></div>
+        </div>
+        <div class="boot-card">
+          <div class="sk-row">
+            <div class="sk sk-dot"></div>
+            <div class="sk-copy">
+              <div class="sk sk-line" style="width: 58%"></div>
+              <div class="sk sk-line" style="width: 36%"></div>
+            </div>
+          </div>
+          <div class="sk-row">
+            <div class="sk sk-dot"></div>
+            <div class="sk-copy">
+              <div class="sk sk-line" style="width: 64%"></div>
+              <div class="sk sk-line" style="width: 30%"></div>
+            </div>
+          </div>
+          <div class="sk-row">
+            <div class="sk sk-dot"></div>
+            <div class="sk-copy">
+              <div class="sk sk-line" style="width: 50%"></div>
+              <div class="sk sk-line" style="width: 34%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <nav class="boot-nav" aria-hidden="true"><span></span><span></span><span></span></nav>
+    </div>
     <script type="module" src="/main.tsx"></script>
   </body>
 </html>
