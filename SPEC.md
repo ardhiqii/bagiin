@@ -554,6 +554,17 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
   seluruh asset terkirim berukuran `103.11KB`. Belum ada deployment atau perubahan
   data production pada migrasi ini.
 
+### 2026-09-18 (v90), kontras token dark mode dan label kontrol yang membungkus
+
+- React port menjatuhkan token `--on-accent` / `--on-green` / `--on-red` dari design system legacy dan menggantinya dengan `#fff` yang di-hardcode. Token itu ada justru karena aksen dark mode sengaja terang: `.btn-primary` di dark mode jadi putih di atas `--accent #F97316` = 2.80:1, gagal WCAG AA (minimal 4.5:1). Nilai legacy `--on-accent:#231202` mengembalikan 6.46:1. Bug ini hanya muncul di dark mode, dan gate lama berjalan light-only sehingga tidak pernah melihatnya.
+- Token `--on-accent` / `--on-green` / `--on-red` dipulihkan per tema (`#ffffff` di light, `#231202` di dark) dan `.btn-primary`, `.btn-danger`, `.btn-success`, `.brand-mark`, `.onboarding-mark`, `.is-selected .item-check`, serta `.app-nav-badge` sekarang memakai token itu, bukan `#fff` literal. Light mode tidak berubah nilainya (semua sudah 5.19:1 ke atas).
+- `.choice-grid` dan `.btn-row` tidak pernah punya fallback mobile. Pada 320px dua kartu `#/create` hanya selebar 139px sehingga label "Foto struk" dan "Isi manual" membungkus dua baris, dan dua tombol di baris aksi bill membungkus sampai tiga baris di dalam kontrol 46px. Keduanya sekarang menumpuk satu kolom di bawah 560px; label kembali satu baris dan target 44px tetap utuh.
+- `--text-3` dark mode dinaikkan `#928878` menjadi `#a49a8a` karena 4.30:1 di atas `--surface-2` masih di bawah AA (nilai baru: 4.84:1 pada surface terburuk).
+- Dua regresi pada gate ikut diperbaiki: assertion `.btn-row` yang memaku `display:flex` kini menerima `flex` atau `grid` (menumpuk di HP memang benar), dan pemeriksaan kontras hanya berlaku untuk kontrol yang benar-benar merender teks di atas fill-nya sendiri sehingga track `.switch` tidak lagi dihitung.
+- Gate `tools/e2e_css_coverage.mjs` diperluas: route `#/create` ditambahkan (layar yang dilaporkan user justru tidak pernah masuk matriks), matriks kini berjalan di dua color scheme pada lebar 320-412px, dan ada dua assertion baru per sel: teks pada kontrol ber-fill solid harus lolos WCAG AA, dan label kontrol tidak boleh membungkus. Lantai check dinaikkan mengikuti sel dark tambahan.
+- Bukti non-vakum: gate versi baru menghasilkan FAIL 54 dari 1011 check (exit 1) pada tree sebelum perbaikan dan PASS 1011 check (exit 0) pada tree sesudahnya. Jumlah check naik dari 467 menjadi 1011 karena route create dan sumbu dark mode.
+- Bukti lain: `pytest` 422 passed 1 skipped, typecheck bersih, `test:logic` 9/9, dan pengukuran langsung `getComputedStyle` pada setiap tombol ber-fill di light dan dark mode menunjukkan 0 pelanggaran kontras (sebelumnya `.btn-primary` 2.80:1, `.btn-danger` 2.77:1, `.btn-success` 1.74:1 di dark).
+
 ### 2026-09-16 (v89), pemulihan design system React, kontrak pilihan, dan gate CSS
 
 - Migrasi React sebelumnya mengirim `frontend/src/styles/globals.css` sebagai pengganti sebagian, bukan salinan, dari design system yang tinggal di blok `<style>` `frontend/index.html`. Akibatnya 63 nama class yang benar-benar di-render `frontend/src/**` tidak punya rule CSS sama sekali sementara rule-nya masih ada di `index.html`. Batch ini memulihkan seluruh set itu ke `globals.css` dengan blok alias token legacy (`--r-xs/sm/md/lg/full`, `--ease`) supaya rule yang disalin tetap identik dengan sumbernya, dan tidak ada `var()` yang menggantung.

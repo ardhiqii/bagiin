@@ -31,6 +31,7 @@ const ROUTES = [
   { label: "onboarding", identity: null, hash: "#/", ready: "#onboard-form" },
   { label: "home", identity: "creator", hash: "#/", ready: "#create-btn" },
   { label: "home-empty", identity: "empty", hash: "#/", ready: "#create-btn" },
+  { label: "create", identity: "creator", hash: "#/create", ready: "#ocr-btn" },
   { label: "create/verify", identity: "creator", hash: "#/create/verify", ready: "#create-bill-btn" },
   { label: "bill-creator", identity: "creator", bill: "dueBill", ready: "#share-btn" },
   { label: "bill-creator-slot", identity: "creator", bill: "slotBill", ready: "#share-btn" },
@@ -44,12 +45,15 @@ const ROUTES = [
    assertions (reached the ready selector + class coverage + overflow + console
    errors). A run that walks the matrix but asserts almost nothing is the
    vacuous-pass failure mode this gate exists to prevent, so it reports FAIL. */
-/* Floor = 10 routes x 7 widths x 5. The per-cell checks are route-dependent
-   (the recap/bill/settings groups only run on their own routes), so this is a
-   conservative sanity floor whose job is to catch a run that walks the matrix
-   but asserts almost nothing — not to pin the exact count. It was *4 before
-   the status-bar colour assertion was added. */
-const MIN_CHECKS = ROUTES.length * WIDTHS.length * 5;
+/* Floor = routes x widths x 5 mandatory assertions, plus the extra dark-mode
+   cells (phone widths carry both schemes). The per-cell checks are
+   route-dependent (the recap/bill/settings groups only run on their own
+   routes), so this is a conservative sanity floor whose job is to catch a run
+   that walks the matrix but asserts almost nothing — not to pin the exact
+   count. It was *4 before the status-bar colour assertion was added, and the
+   dark-mode axis plus the contrast/wrap assertions raised it again. */
+const SCHEME_CELLS = WIDTHS.reduce((total, width) => total + (width <= 412 ? 2 : 1), 0);
+const MIN_CHECKS = ROUTES.length * SCHEME_CELLS * 6;
 
 const rawBaseUrl = process.argv[2] || process.env.BASE_URL || "http://127.0.0.1:8099";
 const rawCdpUrl = process.argv[3] || process.env.CDP_URL || "http://127.0.0.1:9222";
@@ -242,6 +246,14 @@ class CdpTab {
     });
   }
 
+  /* Emulate a colour scheme. The dark tokens are a separate set of values, so a
+     light-only run cannot see a dark-mode contrast regression. */
+  async colorScheme(scheme) {
+    await this.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-color-scheme", value: scheme }],
+    });
+  }
+
   async navigate(url) {
     await this.send("Page.navigate", { url });
     await sleep(250);
@@ -413,6 +425,81 @@ const auditFn = () => {
       && (item.rect.left < -1 || item.rect.right > innerWidth + 1))
     .slice(0, 4)
     .map(item => ({ tag: item.element.tagName, id: item.element.id, className: String(item.element.className).slice(0, 70), right: Math.round(item.rect.right) }));
+
+  /* ---- contrast of text on its OWN opaque fill (WCAG AA) ---- */
+  /* Reading the fill off the element itself, not by walking ancestors: a button
+     paints its own background, and the ancestor walk reports the page colour
+     instead, which produced four phantom failures during the v90 investigation. */
+  const parseRgb = value => {
+    const match = String(value).match(/rgba?\(([^)]+)\)/);
+    if (!match) return null;
+    const parts = match[1].split(",").map(part => parseFloat(part.trim()));
+    return { r: parts[0], g: parts[1], b: parts[2], a: parts.length > 3 ? parts[3] : 1 };
+  };
+  const relLum = c => {
+    const channel = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
+  };
+  const contrastRatio = (a, b) => {
+    const l1 = relLum(a), l2 = relLum(b);
+    return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+  };
+  /* How many rendered lines does this element's own text occupy? Range rects
+     beat height/line-height maths, which break when min-height dominates the
+     box (a 46px control with 16px text looked like "3 lines"). */
+  const lineCount = root => {
+    let lines = 0;
+    const walk = node => {
+      for (const child of node.childNodes) {
+        if (child.nodeType === 3 && child.textContent.trim()) {
+          const range = document.createRange();
+          range.selectNodeContents(child);
+          lines += range.getClientRects().length;
+        } else if (child.nodeType === 1) walk(child);
+      }
+    };
+    walk(root);
+    return lines;
+  };
+  const solidControls = [];
+  const wrappedLabels = [];
+  for (const element of document.querySelectorAll("button, .btn, [role=button]")) {
+    if (!visible(element) || element.closest(".visually-hidden")) continue;
+    const computed = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) continue;
+    /* Contrast only applies to a control that actually paints TEXT on its own
+       fill. A toggle switch (.switch) has a solid track but no text child, so
+       measuring its track against its own colour is meaningless - that produced
+       11 phantom failures. Require a real text child. */
+    const hasOwnText = Array.from(element.childNodes)
+      .some(node => node.nodeType === 3 && node.textContent.trim());
+    if (!hasOwnText) continue;
+    const own = parseRgb(computed.backgroundColor);
+    if (!own || own.a < 0.9) continue;          // outline/ghost: no own fill
+    const fg = parseRgb(computed.color);
+    if (!fg) continue;
+    const lines = lineCount(element);
+    if (lines > 1) {
+      wrappedLabels.push({
+        label: element.textContent.trim().slice(0, 28),
+        id: element.id || null,
+        width: Math.round(rect.width),
+        lines,
+      });
+    }
+    const px = parseFloat(computed.fontSize);
+    const bold = parseInt(computed.fontWeight, 10) >= 700;
+    const need = (px >= 24 || (px >= 18.66 && bold)) ? 3.0 : 4.5;
+    solidControls.push({
+      label: (element.textContent || "").trim().slice(0, 28) || element.id || element.tagName,
+      id: element.id || null,
+      ratio: +contrastRatio(fg, own).toFixed(2),
+      need,
+      pass: contrastRatio(fg, own) >= need,
+    });
+  }
+
   return {
     known: Array.from(known),
     rendered: Array.from(classCounts.keys()),
@@ -443,6 +530,8 @@ const auditFn = () => {
     toneTokens,
     barByTone,
     homeFilter,
+    solidControls,
+    wrappedLabels,
     overflow: {
       html: document.documentElement.scrollWidth,
       body: document.body.scrollWidth,
@@ -626,12 +715,17 @@ async function main() {
 
     for (const route of ROUTES) {
       for (const width of WIDTHS) {
+       /* Dark mode is a separate token set, so a light-only matrix cannot see a
+          dark contrast regression (this is how white-on-orange shipped at
+          2.8:1). Walk dark on the phone widths where the controls are tightest;
+          the full width ladder stays light to keep the run bounded. */
+       for (const scheme of (width <= 412 ? ["light", "dark"] : ["light"])) {
         const identity = route.identity ? fixtures[route.identity] : null;
         const hash = route.bill
           ? `#/b/${encodeURIComponent(fixtures[route.bill])}`
           : route.hash;
         const height = width < 768 ? (width === 320 ? 568 : 667) : 900;
-        const nonce = `${Date.now()}-${width}-${route.label.replace(/\W/g, "")}`;
+        const nonce = `${Date.now()}-${scheme}-${width}-${route.label.replace(/\W/g, "")}`;
         const errorsBefore = tab.errors.length;
         /* Any route whose label starts with "home" or "recap" is a surface with
            the checks below; keep the label match in one place so a new fixture
@@ -639,6 +733,7 @@ async function main() {
         const isHome = route.label.startsWith("home");
         const isRecap = route.label.startsWith("recap");
 
+        await tab.colorScheme(scheme);
         await tab.viewport(width, height);
         /* The identity must be written BEFORE the app boots, so navigate to a
            nonce'd URL first, set storage, then navigate again with the hash.
@@ -695,6 +790,20 @@ async function main() {
           `html=${result.overflow.html} body=${result.overflow.body} offenders=${JSON.stringify(result.overflow.offending)}`);
         const newErrors = tab.errors.slice(errorsBefore).filter(text => !isIgnoredError(text));
         check(`${where} no console error or page exception`, newErrors.length === 0, newErrors.slice(0, 2).join(" | "));
+
+        /* (b2) Text on a solid control fill must clear WCAG AA. This is the
+           class of bug the coverage walk cannot see: `.btn-primary` had a rule
+           and resolved fine, but the dark-mode token made white-on-orange
+           2.8:1, so the UI looked styled while being unreadable. */
+        const contrastFails = result.solidControls.filter(control => !control.pass);
+        check(`${where} solid-fill control text clears WCAG AA`, contrastFails.length === 0,
+          contrastFails.map(control => `${control.id || control.label}=${control.ratio}:1<${control.need}`).join(", "));
+
+        /* (b3) A control label must fit on one line. Two buttons sharing a
+           ~320px row wrapped "Metode pembayaran" onto two lines and
+           "Pilih bagian kamu" onto three inside a 46px control. */
+        check(`${where} no control label wraps`, result.wrappedLabels.length === 0,
+          result.wrappedLabels.map(item => `"${item.label}" ${item.lines}ln @${item.width}px`).join(", "));
 
         /* (c) Home filter surfaces: exactly one, on the right side of 1040px */
         if (isHome) {
@@ -814,7 +923,13 @@ async function main() {
         }
         if (route.label.startsWith("bill-creator")) {
           if (s.btnRow) {
-            checkStyle(`${where} .btn-row`, s.btnRow, v => v.display === "flex", "is a flex row");
+            /* The row is flex on desktop and stacks to a single-column grid on
+               phones (v90: two buttons sharing a ~320px row wrapped "Metode
+               pembayaran" onto 2 lines and "Pilih bagian kamu" onto 3). Both
+               shapes are correct; a third value is not. */
+            checkStyle(`${where} .btn-row`, s.btnRow,
+              v => v.display === "flex" || v.display === "grid",
+              "is a flex row or a stacked phone grid");
           }
           if (route.bill === "slotBill" && s.slotMgr) {
             /* Legacy's `.item-price, .item-row .slot-mgr { order:2 }` is scoped
@@ -833,6 +948,7 @@ async function main() {
             checkStyle(`${where} .toggle-row`, s.toggleRow, v => v.minHeight >= 44, "keeps a 44px minimum height");
           }
         }
+       }
       }
     }
 
