@@ -22,10 +22,16 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
+          // Only react is pinned into its own chunk. Phosphor icons are NOT:
+          // forcing them into a single `icons` chunk made Vite modulepreload the
+          // whole icon set on first paint, so a guest opening a shared bill link
+          // downloaded every icon the app owns even though BillRoute needs a
+          // handful. Letting Rollup place them per-route keeps the entry graph
+          // smaller (measured -3.8 KB home, -6.6 KB bill) and still dedupes
+          // shared icons into a common chunk automatically.
           react: ["react", "react-dom"],
-          icons: ["@phosphor-icons/react"]
-        }
-      }
-    }
-  }
+        },
+      },
+    },
+  },
 });
