@@ -238,6 +238,26 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .account-row { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-top: 1px solid var(--border); }
 .account-row:first-child { border-top: 0; }
 .account-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; color: var(--accent); background: var(--accent-soft); }
+/* Brand logos: one uniform pill box so every logo matches. Ported verbatim from
+   the legacy `.brand-logo` / `.brand-chip` pair in frontend/index.html (v68b).
+   The chip is also the fallback for a brand with no logo and for an image that
+   fails to load, so the two must stay the same size or rows shift. */
+.brand-logo { width: 48px; height: 28px; flex: 0 0 48px; background: #fff; border: 1px solid var(--border);
+              border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;
+              padding: 4px 6px; box-sizing: border-box; }
+.brand-logo img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; }
+.brand-chip { width: 48px; height: 28px; flex: 0 0 48px; box-sizing: border-box;
+              display: inline-flex; align-items: center; justify-content: center; border-radius: 8px;
+              font-weight: 700; font-size: 11px; padding: 4px 6px; letter-spacing: .01em;
+              flex-shrink: 0; border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long unknown brand ("Bank Nusantara Fantasi") is unreadable in a 48px pill:
+   the flex child refused to shrink and the label was clipped mid-word ("santara").
+   Let the tile grow for text-only chips and wrap to two lines. Logos keep the
+   fixed 48px box so every real brand stays the same size. */
+.brand-chip { min-width: 48px; width: auto; max-width: 108px; height: auto; min-height: 28px;
+              flex: 0 0 auto; white-space: normal; overflow-wrap: anywhere; line-height: 1.15;
+              text-align: center; }
 .account-number { font-variant-numeric: tabular-nums; font-weight: 700; letter-spacing: .02em; }
 
 .sheet-overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; padding: 14px; background: rgba(26,21,16,.48); }
