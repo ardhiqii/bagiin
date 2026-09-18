@@ -554,6 +554,14 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
   seluruh asset terkirim berukuran `103.11KB`. Belum ada deployment atau perubahan
   data production pada migrasi ini.
 
+### 2026-09-18 (v93), shell pra-JS supaya HP tidak menatap layar kosong
+
+- React port mengirim `<div id="root"></div>` tanpa CSS inline, tanpa token, dan tanpa skeleton. Akibatnya, pada profil HP 4G dengan CPU di-throttle 4x, dokumen menampilkan layar kosong selama 825-1129 ms sambil menunggu graph masuk (64 KB decoded entry + 138 KB decoded chunk react) selesai diunduh, di-parse, dan dijalankan.
+- Build vanilla yang digantikan berperilaku sebaliknya. Dokumennya 57.770 byte dan meng-inline seluruh design token, sistem skeleton `.sk`/`.sk-row`, serta markup nyata (`<main id="app">`, `<nav id="app-nav">`, `<div id="toast">`), sehingga HP langsung melukis kerangka berbentuk aplikasi begitu HTML tiba. Secara byte, port React justru lebih kecil (80 KB gzip graph masuk vs 141 KB gzip vanilla). Itu sebabnya pengukuran byte saja menyimpulkan "lebih ringan" sementara HP mengatakan "berat": regresinya bukan berat, tapi jendela kosong.
+- `src/index.html` sekarang mengirim shell pra-JS inline sekitar 6 KB: latar dan token yang sama dengan `globals.css`, wordmark Bagiin, status jujur "Memuat...", dan kartu skeleton berbentuk layar beranda. Inline memang disengaja supaya tidak menambah round trip, dan warnanya disalin dari `:root` di `globals.css` agar serah terima ke React tidak berkedip.
+- `createRoot().render()` mengosongkan kontainer, jadi shell hilang sendiri saat mount, tanpa kode pembersihan dan tanpa markup sisa. Hasil ukur dingin, CPU 4x, 4G, 390px DPR 3, tema terang dan gelap: `first-contentful-paint` turun 1932 ms menjadi 456 ms, skeleton terlihat sejak 414 ms (gelap 409 ms), konten React muncul 716 ms (gelap 704 ms), dan cumulative layout shift tetap 0,009. Frame pertama yang dilukis sudah bertema di kedua mode, jadi tidak ada kedip putih di mode gelap.
+- Bukti: 8 assertion lulus di tiap tema, `pytest` 422 passed 1 skipped, typecheck bersih, `test:logic` 9/9, battery browser 14/14 (termasuk suite shell-states yang kini melihat skeleton).
+
 ### 2026-09-18 (v92), caching dan berat first paint di HP
 
 - Keluhan "berasa lebih berat dari versi vanilla" bukan soal ukuran bundle: React justru lebih kecil (80 KB gzip pada graph masuk, sedangkan vanilla 141 KB gzip). Penyebabnya nginx. `location /` menambahkan `Cache-Control: no-store, max-age=0`, dan karena `location /` juga mencocokkan `/assets/*`, header itu menimpa `public, max-age=31536000, immutable` dari backend untuk setiap bundle ber-hash. Terukur: Cloudflare menjawab `BYPASS` (bukan `HIT`), dan satu kunjungan ulang di HP mengunduh ulang seluruh graph masuk. Sebagai pembanding, vanilla disajikan lewat `/static/` dengan `max-age=86400` dan `cf-cache-status: HIT`.
