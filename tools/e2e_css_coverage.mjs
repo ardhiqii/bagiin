@@ -145,7 +145,7 @@ const ALLOWLIST_NAMES = new Set(ALLOWLIST.map(([name]) => name));
  * reported separately (rendered-coverage line) so a reviewer can see the gap.
  */
 const EXPECTED_RECOVERY = [
-  "avatar-me", "btn-row", "chip", "delete-bill", "hidden", "history-row",
+  "avatar-me", "brand-chip", "brand-logo", "btn-row", "chip", "delete-bill", "hidden", "history-row",
   "is-pay", "is-receive", "is-unknown", "item-full", "item-row",
   "recap-account-empty", "recap-action-amount", "recap-action-aside",
   "recap-action-card", "recap-action-copy", "recap-action-icon",
@@ -463,6 +463,32 @@ const auditFn = () => {
   };
   const solidControls = [];
   const wrappedLabels = [];
+
+  /* Payment-brand tiles. `rows` counts ACCOUNT ROWS independently of whether a
+     logo element exists, so a row still using the old generic wallet glyph is
+     counted and fails the check below (counting only .brand-logo/.brand-chip
+     made the assertion vacuous: on the broken tree there were zero tiles, so the
+     assertion never ran and the gate stayed green). */
+  const brandLogos = { rows: 0, chips: 0, images: 0, empty: 0 };
+  for (const row of document.querySelectorAll(".payment-account")) {
+    if (!visible(row)) continue;
+    brandLogos.rows += 1;
+    const logo = row.querySelector(".brand-logo");
+    const chip = row.querySelector(".brand-chip");
+    if (logo) {
+      const img = logo.querySelector("img");
+      if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) brandLogos.images += 1;
+      else brandLogos.empty += 1;
+      continue;
+    }
+    if (chip) {
+      if ((chip.textContent || "").trim()) brandLogos.chips += 1;
+      else brandLogos.empty += 1;
+      continue;
+    }
+    // account row with no brand tile at all (the pre-fix wallet glyph)
+    brandLogos.empty += 1;
+  }
   for (const element of document.querySelectorAll("button, .btn, [role=button]")) {
     if (!visible(element) || element.closest(".visually-hidden")) continue;
     const computed = getComputedStyle(element);
@@ -532,6 +558,7 @@ const auditFn = () => {
     homeFilter,
     solidControls,
     wrappedLabels,
+    brandLogos,
     overflow: {
       html: document.documentElement.scrollWidth,
       body: document.body.scrollWidth,
@@ -577,6 +604,18 @@ async function seed(baseUrl) {
   const other = await api(baseUrl, "POST", "/api/identities", { name: `CSS Other ${stamp}`, creator: false });
   const empty = await api(baseUrl, "POST", "/api/identities", { name: `CSS Empty ${stamp}`, creator: true });
   const bills = [];
+
+  /* Give the creator and the guest real payment methods with known brands, so
+     the payer-account rows actually render brand tiles under test. Without this
+     the brand-logo assertion below never fires and the empty-pill regression
+     would stay invisible. GoPay is one of the 34 brands with a logo file; the
+     odd name exercises the chip fallback path. */
+  await api(baseUrl, "POST", `/api/identities/${encodeURIComponent(creator.id)}/accounts`,
+    { brand: "GoPay", account_no: "08990821878" }, creator);
+  await api(baseUrl, "POST", `/api/identities/${encodeURIComponent(creator.id)}/accounts`,
+    { brand: "Bank Nusantara Fantasi", account_no: "1234567890" }, creator);
+  await api(baseUrl, "POST", `/api/identities/${encodeURIComponent(guest.id)}/accounts`,
+    { brand: "Mandiri", account_no: "104276913799" }, guest);
 
   const createBill = async (title, items, extra = {}, owner = creator) => {
     const subtotal = items.reduce((sum, item) => sum + item.price * (item.quantity || 1), 0);
@@ -804,6 +843,25 @@ async function main() {
            "Pilih bagian kamu" onto three inside a 46px control. */
         check(`${where} no control label wraps`, result.wrappedLabels.length === 0,
           result.wrappedLabels.map(item => `"${item.label}" ${item.lines}ln @${item.width}px`).join(", "));
+
+        /* (b4) Payment-brand logos must actually render, not just have a rule.
+           Every method used to show the same generic wallet glyph, and a logo
+           that 404s would leave an empty pill next to someone's account number.
+
+           The check counts ACCOUNT ROWS, not logo elements, so a row carrying
+           the old wallet glyph is counted as empty and fails. Gating this on
+           "a logo element exists" was a vacuous pass: the broken tree renders no
+           logo at all, so the assertion never ran and the gate stayed green. */
+        if (result.brandLogos.rows > 0) {
+          check(`${where} every payment-brand row renders a logo or a labelled chip`,
+            result.brandLogos.empty === 0,
+            `${result.brandLogos.empty} row(s) without a brand tile of ${result.brandLogos.rows}`);
+          /* And the logos must be real images, not just a chip standing in for
+             everything: the fixture brands all have logo files. */
+          check(`${where} known brands render decoded logo images`,
+            result.brandLogos.images >= 1,
+            `images=${result.brandLogos.images} chips=${result.brandLogos.chips} rows=${result.brandLogos.rows}`);
+        }
 
         /* (c) Home filter surfaces: exactly one, on the right side of 1040px */
         if (isHome) {

@@ -4,6 +4,8 @@ import { apiClient } from "../lib/api";
 import { getStoredName, setStoredIdentity, setStoredName } from "../lib/identity-storage";
 
 import type { Identity, PaymentAccount } from "../lib/types";
+import { brandLabel } from "../lib/brand-logos";
+import { BrandLogo } from "./BrandLogo";
 import { Button, Card, Input, Label, Spinner } from "./ui/primitives";
 
 
@@ -279,7 +281,7 @@ type AccountRowsProps = {
 
 export function AccountRows({ accounts, name, onEdit, onDelete, actionDisabled = false }: AccountRowsProps) {
   if (!accounts?.length) return <p className="muted">Belum ada metode pembayaran yang disimpan oleh {name}.</p>;
-  return <div className="account-list">{accounts.map(account => <div className="payment-account" key={account.id} data-account-id={account.id} style={{ minWidth: 0 }}><div className="account-icon"><Wallet /></div><div className="payment-account-copy"><strong>{account.brand}</strong><div className="account-number">{account.account_no}</div>{account.holder_name && <div className="caption">a.n. {account.holder_name}</div>}</div><div className="payment-account-actions"><Button variant="ghost" size="icon" aria-label={`Salin nomor ${account.brand}`} onClick={() => { void navigator.clipboard?.writeText(account.account_no); }}><Copy /></Button>{onEdit && <Button variant="ghost" size="icon" aria-label={`Edit ${account.brand} ${account.account_no}`} data-account-edit={account.id} disabled={actionDisabled} onClick={() => onEdit(account)}><PencilSimple /></Button>}{onDelete && <Button variant="ghost" size="icon" aria-label={`Hapus ${account.brand} ${account.account_no}`} data-account-delete={account.id} disabled={actionDisabled} onClick={() => onDelete(account)}><Trash /></Button>}</div></div>)}</div>;
+  return <div className="account-list">{accounts.map(account => <div className="payment-account" key={account.id} data-account-id={account.id} style={{ minWidth: 0 }}><BrandLogo code={account.brand} /><div className="payment-account-copy"><strong>{brandLabel(account.brand)}</strong><div className="account-number">{account.account_no}</div>{account.holder_name && <div className="caption">a.n. {account.holder_name}</div>}</div><div className="payment-account-actions"><Button variant="ghost" size="icon" aria-label={`Salin nomor ${account.brand}`} onClick={() => { void navigator.clipboard?.writeText(account.account_no); }}><Copy /></Button>{onEdit && <Button variant="ghost" size="icon" aria-label={`Edit ${account.brand} ${account.account_no}`} data-account-edit={account.id} disabled={actionDisabled} onClick={() => onEdit(account)}><PencilSimple /></Button>}{onDelete && <Button variant="ghost" size="icon" aria-label={`Hapus ${account.brand} ${account.account_no}`} data-account-delete={account.id} disabled={actionDisabled} onClick={() => onDelete(account)}><Trash /></Button>}</div></div>)}</div>;
 }
 
 export function ShareDialogContent({ billId, title, onClose }: { billId: string; title: string; onClose: () => void }) {
