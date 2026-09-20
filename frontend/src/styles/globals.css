@@ -108,9 +108,28 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .topbar { width: min(100%, 1120px); min-height: 70px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .topbar-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; text-align: center; }
 .topbar-actions { display: flex; align-items: center; gap: 4px; }
-.brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 20px; letter-spacing: -.04em; }
-.brand-mark { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; box-shadow: var(--shadow-1); }
-.brand-mark .ico { width: 18px; height: 18px; }
+/* Brand lockup — geometry ported from the legacy design system
+   (frontend/index.html:166-168). Three details the React port had drifted on:
+   (a) `.brand` had `gap: 8px`, which put 8px between the mark AND between the
+   wordmark and the dot — legacy has NO flex gap and gets its separation from
+   `.brand-mark`'s own `margin-right`, so the dot HUGS "Bagiin" (bug: the
+   screenshot's odd "Bagiin ." spacing); (b) `align-items: center` instead of
+   baseline; (c) `.brand-mark` painted an `--accent` tile with a shadow and
+   centred a small stock glyph in it, which rendered as an orange ring around a
+   tiny icon. The real mark is a full-bleed logo whose OWN gradient rect is the
+   tile, so the box must stay transparent and the svg must fill it. */
+.brand { display: inline-flex; align-items: baseline; font-weight: 800; font-size: 19px; letter-spacing: -.03em; }
+.brand-mark { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; margin-right: 8px; align-self: center; }
+.brand-mark > svg { width: 100%; height: 100%; display: block; border-radius: inherit; }
+/* Legacy coloured the dot with `--brand` (#F97316 light), which measures only
+   2.64:1 on --bg #FAF8F5 — below even the 3:1 large-text floor, on 19px bold
+   text where 4.5:1 is the requirement. That is an inherited legacy defect
+   (legacy documents `--brand` as "for graphics only"), but this repo has since
+   moved to an AA standard (v90 fixed the dark-mode accent contrast and the
+   CSS-coverage gate asserts AA), so the dot uses the AA-safe accent instead:
+   4.90:1 light / 6.61:1 dark. --brand is deliberately NOT declared here — the
+   dot was its only consumer, and an unused token is the dead CSS this batch
+   exists to remove. */
 .brand-dot { color: var(--accent); }
 
 .stack { display: grid; gap: 16px; }
@@ -151,7 +170,16 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .btn-icon { width: var(--control-height-compact); min-width: var(--control-height-compact); height: var(--control-height-compact); min-height: var(--control-height-compact); padding: 0; border-radius: var(--radius-full); }
 .btn-block { width: 100%; }
 .btn-danger-link { width: 100%; color: var(--red); background: transparent; border: 0; min-height: 44px; font-weight: 700; }
-.ico { width: 20px; height: 20px; flex: 0 0 auto; }
+/* Icon baseline. Legacy sized EVERY icon with one rule — `svg.ico { width:18px;
+   height:18px; flex-shrink:0; vertical-align:-3px }` (frontend/index.html:240),
+   fed by `<svg class="ico">` from the `ic(name, cls)` helper in
+   frontend/static/app.js. React renders Phosphor icons as `<svg width="1em">`
+   and never passes a className, so `.ico` could never match and each icon
+   silently inherited its PARENT'S font-size instead (measured 15-16px in
+   buttons and card titles). Re-expressed against the markup React actually
+   renders. `.chip`/`.chip-btn` (13px) and `.item-check` (15px) are sized
+   explicitly by their own later rules and still win at equal specificity. */
+.btn svg, .card-title svg, .avatar svg { width: 18px; height: 18px; flex: 0 0 auto; vertical-align: -3px; }
 
 .input { width: 100%; min-height: var(--control-height); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); padding: 0 13px; }
 .input::placeholder { color: var(--text-3); opacity: .85; }
@@ -182,7 +210,15 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .alert-danger { color: var(--red); background: var(--red-soft); }
 .error-text { margin: 0; color: var(--red); font-size: 13px; }
 .empty-state { display: grid; justify-items: center; gap: 8px; padding: 34px 14px; color: var(--text-2); text-align: center; }
-.empty-state .ico { width: 28px; height: 28px; color: var(--text-3); }
+/* The mark svg is a DIRECT child here (measured), and legacy's single
+   `svg.ico` baseline gave it 18px. The Phosphor port rendered it at 1em = the
+   parent's font-size instead. */
+.empty-state > svg { width: 28px; height: 28px; color: var(--text-3); }
+/* CRITICAL: `.empty-state` also nests BUTTON icons in the same container (the
+   "Coba lagi" / "Ke beranda" pair in ErrorState). A descendant selector
+   (`.empty-state svg`) would blow those up to 28px inside a 44px button, so the
+   size above is deliberately a direct-child selector — the button icons keep
+   their own 18px baseline. `.recap-empty > svg` already follows the same rule. */
 .skeleton { border-radius: 8px; background: linear-gradient(90deg, var(--surface-2), color-mix(in srgb, var(--surface-2) 62%, var(--surface)), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s ease infinite; }
 .skeleton-row { display: flex; gap: 11px; align-items: center; min-height: 63px; }
 .skeleton-copy { display: grid; gap: 8px; flex: 1; }
@@ -211,7 +247,7 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .bill-row-date { margin-left: auto; white-space: nowrap; }
 .bill-row-amount { margin-left: auto; font-weight: 800; }
 .status-mark { width: 38px; height: 38px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 12px; }
-.status-mark .ico { width: 19px; height: 19px; }
+.status-mark > svg { width: 19px; height: 19px; }
 .status-idle { color: var(--text-3); background: var(--surface-2); }
 .status-due { color: var(--red); background: var(--red-soft); }
 .status-ok { color: var(--green); background: var(--green-soft); }
@@ -224,7 +260,7 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 
 .onboarding { min-height: calc(100dvh - 24px); display: grid; align-content: center; max-width: 440px; margin: 0 auto; padding: 30px 0 48px; }
 .onboarding-mark { width: 58px; height: 58px; display: grid; place-items: center; border-radius: 18px; color: var(--on-accent); background: var(--accent); box-shadow: var(--shadow-2); }
-.onboarding-mark .ico { width: 32px; height: 32px; }
+.onboarding-mark > svg { width: 32px; height: 32px; }
 .onboarding h1 { margin-top: 22px; max-width: 390px; }
 .onboarding .lede { margin: 12px 0 24px; max-width: 39ch; color: var(--text-2); }
 .onboarding-note { margin: 13px 0 0; text-align: center; }
@@ -391,7 +427,11 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   #app-nav { position: fixed; right: 0; bottom: 0; left: 0; z-index: 20; display: grid; grid-template-columns: repeat(3, 1fr); min-height: calc(var(--nav-link-height) + 28px + env(safe-area-inset-bottom)); padding: 10px 8px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 95%, transparent); box-shadow: var(--shadow-3); backdrop-filter: blur(14px); }
   #app-nav[hidden] { display: none; }
   .app-nav-link { min-height: calc(var(--nav-link-height) + 8px); display: grid; justify-items: center; align-content: center; gap: 3px; border-radius: 12px; color: var(--text-3); text-decoration: none; font-size: 11px; font-weight: 700; }
-  .app-nav-link .ico { width: 21px; height: 21px; }
+  /* Legacy `.app-nav-link .ico { width:22px;height:22px }` (index.html:131). The
+     `.ico` class never reaches React's svg, so the icon fell through to `1em` of
+     this link's font-size (11px) and rendered at half its intended size — the
+     defect in the user's screenshot. Measured before: 11x11px. */
+  .app-nav-link > svg { width: 22px; height: 22px; flex: 0 0 auto; }
   .app-nav-link.is-active { color: var(--accent); background: var(--accent-soft); }
   .app-nav-badge { min-width: 16px; height: 16px; margin-left: -4px; padding: 0 4px; border-radius: 99px; color: var(--on-red); background: var(--red); font-size: 10px; line-height: 16px; }
   .app-content.nav-space { padding-bottom: calc(env(safe-area-inset-bottom) + var(--nav-link-height) + 36px); }
