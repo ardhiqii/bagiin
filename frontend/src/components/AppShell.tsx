@@ -6,11 +6,32 @@ import { getStoredName, setStoredIdentity, setStoredName } from "../lib/identity
 import type { Identity, PaymentAccount } from "../lib/types";
 import { brandLabel } from "../lib/brand-logos";
 import { BrandLogo } from "./BrandLogo";
+import { BrandMark } from "./BrandMark";
 import { Button, Card, Input, Label, Spinner } from "./ui/primitives";
 
 
+/** The topbar lockup, restored to the legacy design system.
+ *
+ *  Geometry lives in frontend/src/styles/globals.css (owned by the CSS lane,
+ *  landed and verified):
+ *    .brand      : 19px, align-items baseline, NO flex gap
+ *    .brand-mark : 26x26 TRANSPARENT box, radius 8px, margin-right 8px,
+ *                  align-self center, no background of its own
+ *    mark svg    : fills that box; the orange tile IS the mark's own rx=115
+ *                  gradient rect, not a CSS background
+ *    .brand-dot  : hugs the wordmark (the 8px separation is the mark's
+ *                  margin-right, not a gap on .brand)
+ *  The port had drifted on all four: `gap: 8px` on .brand (which pushed the dot
+ *  8px off "Bagiin"), align-items center, and an --accent tile + shadow on
+ *  .brand-mark behind a small centred stock glyph — the "orange ring around a
+ *  tiny icon" the user reported.
+ *
+ *  This component deliberately carries NO inline geometry: an inline style would
+ *  outrank the stylesheet and quietly freeze the lockup. Measured on the built
+ *  app after removing them, the geometry is unchanged (19px baseline brand,
+ *  26x26/8px transparent mark, 8px mark→wordmark, 0px wordmark→dot). */
 export function Brand() {
-  return <span className="brand"><span className="brand-mark"><Receipt weight="bold" /></span>Bagiin<span className="brand-dot">.</span></span>;
+  return <span className="brand"><span className="brand-mark"><BrandMark size={26} /></span>Bagiin<span className="brand-dot">.</span></span>;
 }
 
 export function Topbar({ title, back, backId, actions }: { title?: string; back?: () => void; backId?: string; actions?: React.ReactNode }) {

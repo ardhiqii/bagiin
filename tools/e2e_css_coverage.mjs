@@ -36,6 +36,13 @@ const ROUTES = [
   { label: "bill-creator", identity: "creator", bill: "dueBill", ready: "#share-btn" },
   { label: "bill-creator-slot", identity: "creator", bill: "slotBill", ready: "#share-btn" },
   { label: "bill-guest", identity: "guest", bill: "slotBill", ready: "#pay-btn" },
+  /* An unknown bill renders ErrorState, which is the only place a visible
+     .empty-state carries BUTTON icons (`Coba lagi` / `Ke beranda`). Without this
+     route the `empty-state button icon is not enlarged by the container rule`
+     assertion ran 0 times across the whole matrix - the guard for the
+     descendant-selector regression was never exercised. The id is deliberately
+     well-formed but absent, so the fetch 404s and the error state is real. */
+  { label: "bill-missing", identity: "creator", hash: "#/b/doesnotexist0000000000", ready: ".empty-state" },
   { label: "recap", identity: "creator", hash: "#/recap", ready: "#recap-title" },
   { label: "recap-empty", identity: "empty", hash: "#/recap", ready: "#recap-title" },
   { label: "settings", identity: "creator", hash: "#/settings", ready: "#auto-accept-switch" },
@@ -51,9 +58,11 @@ const ROUTES = [
    routes), so this is a conservative sanity floor whose job is to catch a run
    that walks the matrix but asserts almost nothing — not to pin the exact
    count. It was *4 before the status-bar colour assertion was added, and the
-   dark-mode axis plus the contrast/wrap assertions raised it again. */
+   dark-mode axis plus the contrast/wrap assertions raised it again; the icon
+   sizing and brand-mark-logo assertions raised it to *7 (up to 5 new checks per
+   cell depending on which containers render on that route). */
 const SCHEME_CELLS = WIDTHS.reduce((total, width) => total + (width <= 412 ? 2 : 1), 0);
-const MIN_CHECKS = ROUTES.length * SCHEME_CELLS * 6;
+const MIN_CHECKS = ROUTES.length * SCHEME_CELLS * 7;
 
 const rawBaseUrl = process.argv[2] || process.env.BASE_URL || "http://127.0.0.1:8099";
 const rawCdpUrl = process.argv[3] || process.env.CDP_URL || "http://127.0.0.1:9222";
@@ -96,6 +105,12 @@ const IGNORED_ERROR_PATTERNS = [
   /net::ERR_ABORTED/i,
   /Failed to load resource: net::ERR_ABORTED/i,
   /WebSocket is closed before the connection is established/i,
+  /* The bill-missing route asks for a bill id that deliberately does not exist,
+     because ErrorState is the only place a visible .empty-state carries button
+     icons and that is what the empty-state button-icon guard needs to exercise.
+     The resulting 404 is the FIXTURE, not an app error. Scoped to that exact
+     absent id so a real 404 anywhere else still fails this check. */
+  /Failed to load resource.*\/api\/bills\/doesnotexist0000000000/i,
 ];
 const isIgnoredError = text => IGNORED_ERROR_PATTERNS.some(pattern => pattern.test(String(text || "")));
 
@@ -559,6 +574,67 @@ const auditFn = () => {
     solidControls,
     wrappedLabels,
     brandLogos,
+    /* ICON SIZING. Phosphor renders `width="1em"`, so an icon whose container
+       rule never matches silently inherits the PARENT'S font-size instead of the
+       intended pixel size: the nav icons rendered 11px against an intended 22px
+       and .empty-state rendered 16px against 28px, and nothing here noticed
+       because no check ever looked at an icon's real box. Assert the MEASURED
+       size on the containers whose size is specified in globals.css. A rule that
+       exists but matches nothing is exactly the failure mode, so measuring is
+       the only non-vacuous form of this check. */
+    iconSizes: (() => {
+      /* Only measure where the container is actually VISIBLE. `#app-nav` is a
+         mobile-only surface that is `display:none` (with the `hidden` attribute)
+         on onboarding and at >=768px, so a 0px box there is correct, not a bug.
+         Treating hidden as "too small" produced 81 phantom failures across the
+         matrix during the non-vacuity proof. */
+      const visible = element => {
+        if (!element) return false;
+        const style = getComputedStyle(element);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+        if (element.closest("[hidden]")) return false;
+        return element.getBoundingClientRect().width >= 1;
+      };
+      const measure = (selector) => {
+        const host = document.querySelector(selector);
+        if (!visible(host)) return null;
+        const svg = host.querySelector(":scope > svg");
+        if (!visible(svg)) return null;
+        const rect = svg.getBoundingClientRect();
+        return { w: Math.round(rect.width), h: Math.round(rect.height) };
+      };
+      return {
+        nav: measure("#app-nav .app-nav-link"),
+        brandMark: measure(".brand-mark"),
+        emptyState: measure(".empty-state"),
+        statusMark: measure(".status-mark"),
+        // button icons must NOT be enlarged by an empty-state rule; measure the
+        // one inside a visible empty-state even though it is not a direct child
+        emptyStateButton: (() => {
+          const state = document.querySelector(".empty-state");
+          if (!visible(state)) return null;
+          const btn = state.querySelector(".btn svg");
+          if (!visible(btn)) return null;
+          const rect = btn.getBoundingClientRect();
+          return { w: Math.round(rect.width), h: Math.round(rect.height) };
+        })(),
+      };
+    })(),
+    /* The brand mark must be the real logo, not a stock glyph. The shipped
+       favicon's tile is a 512-box rect with rx=115 filled by a gradient; that
+       combination is the structural signature of the artwork. */
+    brandMark: (() => {
+      const mark = document.querySelector(".brand-mark svg");
+      if (!mark) return null;
+      const tile = Array.from(mark.querySelectorAll("rect[rx]"))
+        .find(rect => !rect.closest("defs"));
+      return {
+        isLogo: Boolean(tile) && tile.getAttribute("rx") === "115"
+          && Boolean(mark.querySelector("linearGradient")),
+        rx: tile ? tile.getAttribute("rx") : null,
+        rects: mark.querySelectorAll("rect").length,
+      };
+    })(),
     overflow: {
       html: document.documentElement.scrollWidth,
       body: document.body.scrollWidth,
@@ -837,6 +913,52 @@ async function main() {
         const contrastFails = result.solidControls.filter(control => !control.pass);
         check(`${where} solid-fill control text clears WCAG AA`, contrastFails.length === 0,
           contrastFails.map(control => `${control.id || control.label}=${control.ratio}:1<${control.need}`).join(", "));
+
+        /* Icon sizing. Phosphor icons are `width="1em"`, so an icon whose
+           container rule never matches renders at the parent's font-size. Assert
+           the MEASURED box, with a tolerance of 1px for subpixel rounding. A
+           check that only looked for the CSS rule would pass on the broken tree,
+           which is how nav icons shipped at 11px. */
+        const icons = result.iconSizes || {};
+        const near = (value, expected) => value !== null && value !== undefined
+          && Math.abs(value - expected) <= 1;
+        if (icons.nav) {
+          check(`${where} nav icon renders at its intended size`, near(icons.nav.w, 22),
+            `got ${icons.nav.w}px, want 22px`);
+        }
+        if (icons.brandMark) {
+          check(`${where} brand-mark icon fills its box`, icons.brandMark.w >= 24,
+            `got ${icons.brandMark.w}px, want >=24px`);
+        }
+        if (icons.emptyState) {
+          check(`${where} empty-state icon renders at its intended size`, near(icons.emptyState.w, 28),
+            `got ${icons.emptyState.w}px, want 28px`);
+        }
+        if (icons.statusMark) {
+          check(`${where} status-mark icon renders at its intended size`, near(icons.statusMark.w, 19),
+            `got ${icons.statusMark.w}px, want 19px`);
+        }
+        /* Regression guard for the direct-child selector: a DESCENDANT rule on
+           .empty-state would blow these button icons up to 28px inside a 44px
+           button. They must stay small. This fires on the bill-missing route,
+           which is the only place a visible empty-state carries button icons. */
+        if (icons.emptyStateButton) {
+          check(`${where} empty-state button icon is not enlarged by the container rule`,
+            icons.emptyStateButton.w <= 20,
+            `got ${icons.emptyStateButton.w}px, want <=20px`);
+        }
+        /* The route exists specifically to exercise that guard, so require it to
+           have actually rendered a button icon rather than silently skipping. */
+        if (route.label === "bill-missing") {
+          check(`${where} error state renders an action button to guard`,
+            Boolean(icons.emptyStateButton), "no button icon found in the empty state");
+        }
+        /* The mark must be the real logo (rx=115 tile + gradient), not a stock
+           Phosphor glyph. */
+        if (result.brandMark) {
+          check(`${where} brand mark renders the real logo, not a stock glyph`, result.brandMark.isLogo,
+            `rx=${result.brandMark.rx} rects=${result.brandMark.rects}`);
+        }
 
         /* (b3) A control label must fit on one line. Two buttons sharing a
            ~320px row wrapped "Metode pembayaran" onto two lines and
