@@ -109,6 +109,57 @@ function messageFromBody(body: unknown, status: number): string {
       : `Terjadi kendala (${status})`);
 }
 
+/**
+ * OCR-only copy for the two ways a PUBLIC EDGE deadline reaches the client.
+ *
+ * `/api/ocr` answers every read failure with a 4xx carrying a safe Indonesian
+ * sentence, deliberately, so Cloudflare does not swap the body for an HTML
+ * error page (`backend/main.py`, `ocr_upload`). That leaves 502/503/504 as the
+ * only statuses this screen can get from something other than the app: a proxy
+ * that could not reach the origin, or an edge that gave up on a stalled read.
+ * Their bodies are HTML or empty, so the generic `Terjadi kendala (504)` was
+ * literally all the user got while the fallback quietly dropped them into the
+ * manual editor — the copy blamed nothing and suggested nothing.
+ *
+ * Kept OUT of `messageFromBody`: this is the OCR screen's vocabulary, not a
+ * global HTTP rule. Every other endpoint keeps the generic message, and an OCR
+ * 4xx (the provider's own 422 sentence included) passes through verbatim —
+ * that detail is more specific than anything written here.
+ */
+export const OCR_UNAVAILABLE_MESSAGE = "Layanan baca struk otomatis sedang tidak bisa diakses (502/503). Foto tetap tersimpan — isi item dan harganya manual dulu ya.";
+export const OCR_TIMEOUT_MESSAGE = "Baca struk otomatis kehabisan waktu (504). Foto tetap tersimpan — isi item dan harganya manual dulu ya.";
+export const OCR_EMPTY_RESPONSE_MESSAGE = "Baca struk otomatis tidak mengirim hasil apapun. Foto tetap tersimpan — isi item dan harganya manual dulu ya.";
+export const OCR_FALLBACK_MESSAGE = "Struknya belum kebaca, isi manual dulu ya.";
+
+/* The exact literals this module already throws when a response body is empty
+   or is not JSON. A proxy can answer 200 with an empty body, which never
+   touches the provider at all: `readBody` returns undefined and
+   `normalizeOcrResponse` rejects the shape. Those are edge failures too, so
+   they get the same actionable OCR copy instead of a raw technical sentence.
+   Matched by value, because these strings are produced nowhere except at that
+   response boundary — a provider's own 4xx detail can never equal one. */
+const OCR_EMPTY_BODY_SENTINELS = new Set([
+  "Respons server tidak dapat dibaca",
+  "Respons server tidak sesuai format",
+  "Respons OCR tidak sesuai format",
+]);
+
+/**
+ * Turn whatever the OCR request threw into the sentence the verify editor
+ * shows. Everything that is not an edge/proxy failure is reported as-is, so a
+ * provider 422 detail ("kuota harian habis...") is never replaced, and a
+ * genuine offline/abort message keeps its own words.
+ */
+export function ocrFailureMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 502 || error.status === 503) return OCR_UNAVAILABLE_MESSAGE;
+    if (error.status === 504) return OCR_TIMEOUT_MESSAGE;
+    if (OCR_EMPTY_BODY_SENTINELS.has(error.message)) return OCR_EMPTY_RESPONSE_MESSAGE;
+  }
+  if (error instanceof Error) return error.message.trim() ? error.message : OCR_FALLBACK_MESSAGE;
+  return OCR_FALLBACK_MESSAGE;
+}
+
 async function readBody(response: Response, status: number): Promise<unknown> {
   let text: string;
   try {
