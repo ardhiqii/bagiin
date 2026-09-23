@@ -256,6 +256,16 @@ export type PaymentAccount = {
 export type Contact = {
   id: string;
   name: string;
+  /**
+   * `MAX(b.created_at) AS last_shared` from `GET /api/identities/{id}/contacts`
+   * (`db.get_contacts`, backend/db.py:478) — when the caller last shared a bill
+   * with this person. Absent (not merely empty) when the server sends none.
+   *
+   * This is the ONE definition of the contacts row shape: the "Yang ikut"
+   * picker's caption reads it, and it survives `normalizeContact` so no caller
+   * has to re-declare the field locally and silently lose it.
+   */
+  last_shared?: string;
 };
 
 export type SelectionPick = {

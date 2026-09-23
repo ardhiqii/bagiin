@@ -78,6 +78,19 @@ test("typed endpoint normalizers reject malformed payloads and preserve response
   assert.deepEqual(normalizeMutationOk({ ok: true }), { ok: true });
   assert.throws(() => normalizeMutationOk({ ok: false }), (error: unknown) => error instanceof ApiError);
   assert.deepEqual(normalizeContacts([{ id: "contact-1", name: "Amel" }]), [{ id: "contact-1", name: "Amel" }]);
+  // `last_shared` survives the normalizer — the "Yang ikut" picker's caption is
+  // built from it (pre-fix it was dropped here, which is why the caption could
+  // never say "pernah berbagi bill").
+  assert.deepEqual(
+    normalizeContacts([
+      { id: "contact-1", name: "Amel", last_shared: "2026-09-01 10:00:00" },
+      { id: "contact-2", name: "Budi", last_shared: null },
+    ]),
+    [
+      { id: "contact-1", name: "Amel", last_shared: "2026-09-01 10:00:00" },
+      { id: "contact-2", name: "Budi" },
+    ],
+  );
   assert.throws(() => normalizeContacts([{ id: "contact-1" }]), (error: unknown) => error instanceof ApiError);
   assert.deepEqual(normalizeOcrResponse({ title: "Makan", items: [{ name: "Nasi", price: "12.500", quantity: 1 }] }), {
     title: "Makan",
@@ -231,6 +244,15 @@ test("picked contacts toggle by identity and keep their last_shared evidence", (
 test("picker caption and avatar initial match the legacy contact row", () => {
   assert.equal(pickerContactCaption({ last_shared: "2026-09-01 10:00:00" }), "pernah berbagi bill");
   assert.equal(pickerContactCaption({}), "kontak terbukti");
+  /* The caption is only reachable if the field survives the API boundary, so
+     assert it end-to-end: one RAW contacts response in, the caption out. The
+     first half fails on the tree where `normalizeContact` returned `{id,name}`. */
+  const [withHistory, withoutHistory] = normalizeContacts([
+    { id: "id-rina", name: "Rina", last_shared: "2026-09-01 10:00:00" },
+    { id: "id-budi", name: "Budi" },
+  ]);
+  assert.equal(pickerContactCaption(withHistory), "pernah berbagi bill");
+  assert.equal(pickerContactCaption(withoutHistory), "kontak terbukti");
   assert.equal(contactInitial("rina"), "R");
   assert.equal(contactInitial("  budi"), "B");
   assert.equal(contactInitial(""), "");

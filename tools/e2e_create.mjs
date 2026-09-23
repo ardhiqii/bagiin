@@ -270,6 +270,14 @@ const HEIGHT = 900;
 /* The name used for BOTH the free-typed input and the auto_accept-OFF proven
    contact, so the duplicate guard is measured on an exact match. */
 const E2E_TYPED_NAME = "Budi";
+/* A synthetic picker row WITHOUT `last_shared`, i.e. the caption's FALSE branch.
+   `db.get_contacts` always computes `MAX(b.created_at) AS last_shared`, so a
+   proven contact never comes back without one — the row is injected through a
+   fetch proxy installed for the picker assertion block only (see the stub
+   below). Without it the "kontak terbukti" branch would be untestable in the
+   browser against the real API. */
+const E2E_NULL_LAST_SHARED_ID = "__e2e-no-last-shared__";
+const E2E_NULL_LAST_SHARED_NAME = "Tanpa Riwayat";
 const failures = [];
 const createdBillIds = new Set();
 /* A bill can be created by a FIXTURE identity other than the disposable one
@@ -285,6 +293,9 @@ const cleanupFailures = [];
    the post body rides on it, so no extra CDP domains are involved. */
 const createRequests = [];
 const inviteRequests = [];
+/* Identifier of the document-start contacts stub, so it can be torn down even
+   when a case throws between installing it and removing it. */
+let contactsStubId = "";
 const billIdFromHash = hash => String(hash || "").startsWith("#/b/") ? String(hash).slice(4) : "";
 const trackBillId = (billId, owner = identity) => {
   if (typeof billId === "string" && billId) {
@@ -483,6 +494,60 @@ const navigate = async url => {
 };
 
 /**
+ * A REAL pointer event, dispatched through CDP at absolute viewport
+ * coordinates. `element.click()` must never be used to prove a tap target: it
+ * dispatches straight at the element, bypassing hit-testing and label
+ * association, so it "passes" even when nothing is actually clickable there.
+ */
+const clickPoint = async point => {
+  if (!point) throw new Error("click target has no geometry");
+  const x = Math.round(point.x);
+  const y = Math.round(point.y);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 });
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1 });
+};
+
+/**
+ * Append one synthetic contact WITHOUT `last_shared` to the contacts response,
+ * for the caption's FALSE branch only. `db.get_contacts` always ships
+ * `MAX(b.created_at) AS last_shared`, so no real proven contact exercises the
+ * "kontak terbukti" branch — without this stub that half of the caption would
+ * be untestable against the real API.
+ *
+ * Installed as a document-start script (not as a one-off `evaluate` patch:
+ * navigating wipes a patched `window.fetch`, and the app fires its contacts
+ * request during boot, before any post-load patch could land). Removed again
+ * before the picker submit so the create/invite flow below sees the genuine
+ * roster, and it never sees the synthetic id.
+ */
+const installContactsStub = async () => {
+  const source = `(() => {
+    const original = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const response = await original(input, init);
+      const url = typeof input === "string" ? input : String(input?.url || "");
+      if (!/\\/api\\/identities\\/[^/]+\\/contacts(\\?|$)/.test(url)) return response;
+      let body = null;
+      try { body = await response.clone().json(); } catch { return response; }
+      if (!Array.isArray(body) || body.some(contact => contact && contact.id === ${JSON.stringify(E2E_NULL_LAST_SHARED_ID)})) return response;
+      const rows = [...body, { id: ${JSON.stringify(E2E_NULL_LAST_SHARED_ID)}, name: ${JSON.stringify(E2E_NULL_LAST_SHARED_NAME)} }];
+      return new Response(JSON.stringify(rows), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: { "content-type": "application/json" },
+      });
+    };
+  })();`;
+  const result = await send("Page.addScriptToEvaluateOnNewDocument", { source });
+  return result?.identifier || "";
+};
+
+const removeContactsStub = async identifier => {
+  if (identifier) await send("Page.removeScriptToEvaluateOnNewDocument", { identifier }).catch(() => {});
+};
+
+/**
  * Wait for the "Yang ikut" proven-contact list to leave its loading state and
  * report what it rendered. Returns ids (to match the fixture's identities),
  * the row copy, and whether any row is still busy.
@@ -502,6 +567,12 @@ const waitForPicker = async () => {
           name: row.querySelector(".item-name")?.textContent?.trim() || "",
           caption: row.querySelector(".caption")?.textContent?.trim() || "",
           label: row.querySelector('input[type="checkbox"]')?.getAttribute("aria-label") || "",
+          /* The row must BE a label for its box (or for-linked to it): the
+             legacy row was, and a plain <div> leaves only the 19px box as the
+             hit target. */
+          rowTag: row.tagName,
+          labelWrapping: row.tagName === "LABEL" || Boolean(row.querySelector("label")),
+          labelFor: [...document.querySelectorAll("label[for]")].filter(label => label.htmlFor === row.querySelector('input[type="checkbox"]')?.id).length,
         })),
       };
     })()`);
@@ -973,6 +1044,155 @@ const readCase = async (width, color) => evaluate(`(() => {
               && pickerReady.rows.every(row => row.avatar && row.name && row.caption),
             JSON.stringify(pickerReady));
 
+          /* ---- picker row is a real label for its checkbox -----------------
+             The legacy row was `<label class="account-row">`
+             (frontend/static/create.js:1375), so tapping anywhere in the row
+             toggled the box. The port used a `<div>`: only the 19px box (361 px²
+             of a 332x66 row, ~1.6%) responded. Asserted BOTH ways, and always
+             through real CDP pointer events at absolute coordinates — an
+             `element.click()` bypasses hit-testing and would pass on a broken
+             row. The checkbox-centre assertion is kept from before (it must keep
+             passing); the NAME-TEXT one fails on a `<div>` row. */
+          const pickerRowBoxId = `people-pick-${proofContacts[0].id}`;
+          /* The picker sits far down the verify editor, so the row must be
+             scrolled into view before its coordinates mean anything: at
+             scrollY=0 the row measured y=1445 in a 900px viewport and a
+             dispatched click would land on nothing at all. Coordinates are
+             re-measured immediately before EVERY click, because focusing the
+             checkbox makes the browser scroll it into view and would otherwise
+             invalidate the previous measurement. */
+          await evaluate(`(() => {
+            const row = document.querySelector('#people-pick input[id="${pickerRowBoxId}"]')?.closest(".account-row");
+            if (row) row.scrollIntoView({ block: "center" });
+            return true;
+          })()`);
+          await sleep(200);
+          const measurePickerTarget = (part) => evaluate(`(() => {
+            const box = document.querySelector('#people-pick input[id="${pickerRowBoxId}"]');
+            const row = box?.closest(".account-row");
+            const el = ${JSON.stringify(part)} === "name" ? (row?.querySelector(".item-name") || row)
+              : ${JSON.stringify(part)} === "caption" ? row?.querySelector(".caption")
+              : ${JSON.stringify(part)} === "gutter" ? row
+              : box;
+            const r = el?.getBoundingClientRect();
+            /* The gutter sample is the row's own trailing padding — outside every
+               child, so it can only hit if the ROW itself is the target. */
+            const point = r ? {
+              x: ${JSON.stringify(part)} === "gutter" ? r.right - 3 : r.left + r.width / 2,
+              y: r.top + r.height / 2,
+            } : null;
+            let hit = null;
+            try {
+              const found = point ? document.elementFromPoint(point.x, point.y) : null;
+              hit = found ? found.tagName + "." + String(found.className || "") : null;
+            } catch { hit = null; }
+            const rowRect = row?.getBoundingClientRect();
+            const boxRect = box?.getBoundingClientRect();
+            return {
+              part: ${JSON.stringify(part)},
+              point,
+              hit,
+              inViewport: Boolean(point && point.y >= 0 && point.y <= innerHeight && point.x >= 0 && point.x <= innerWidth),
+              checked: Boolean(box?.checked),
+              rowTag: row?.tagName || "",
+              rowRect: rowRect ? { width: rowRect.width, height: rowRect.height, area: Math.round(rowRect.width * rowRect.height) } : null,
+              boxRect: boxRect ? { width: boxRect.width, height: boxRect.height, area: Math.round(boxRect.width * boxRect.height) } : null,
+              labelWrapping: Boolean(row && (row.tagName === "LABEL" || row.querySelector("label"))),
+              labelFor: [...document.querySelectorAll("label[for]")].filter(label => label.htmlFor === "${pickerRowBoxId}").length,
+            };
+          })()`);
+          /* Tap ONE part of the row and report the real transition.
+             Every step is re-derived: the row is scrolled into view, its
+             coordinates are measured, the box's pre-state is read, the click is
+             dispatched as a real CDP pointer event, and the post-state is read
+             again from the live DOM. Nothing is chained across steps, because
+             focusing the checkbox makes the browser scroll it into view and
+             would invalidate an earlier measurement. */
+          const tapPickerPart = async part => {
+            await evaluate(`(() => {
+              const row = document.querySelector('#people-pick input[id="${pickerRowBoxId}"]')?.closest(".account-row");
+              if (row) row.scrollIntoView({ block: "center" });
+              return true;
+            })()`);
+            await sleep(150);
+            const before = await measurePickerTarget(part);
+            await clickPoint(before?.point);
+            await sleep(220);
+            const after = await measurePickerTarget(part);
+            return { before, after, flipped: Boolean(before && after) && before.checked !== after.checked };
+          };
+          const initialRow = await measurePickerTarget("name");
+          check(`${prefix}: picker row is a label for its checkbox`,
+            initialRow?.rowTag === "LABEL" && initialRow.labelWrapping === true && initialRow.labelFor >= 1
+              && pickerReady.rows.every(row => row.labelWrapping && row.labelFor >= 1),
+            JSON.stringify({ initial: initialRow, rows: pickerReady.rows.map(row => ({ rowTag: row.rowTag, labelWrapping: row.labelWrapping, labelFor: row.labelFor })) }));
+          check(`${prefix}: the label row is the tap target, not the 19px box`,
+            Boolean(initialRow?.rowRect && initialRow?.boxRect)
+              && initialRow.rowRect.area > initialRow.boxRect.area * 10,
+            JSON.stringify({ row: initialRow?.rowRect, box: initialRow?.boxRect }));
+          /* The tap-target assertions. Each one asserts a real FLIP: a click
+             that lands on nothing leaves `checked` as it was, so it fails.
+             `clickPoint` dispatches raw CDP mouse events at absolute
+             coordinates — an `element.click()` bypasses hit-testing entirely and
+             would "pass" on the pre-fix `<div>` row. */
+          const gutterTap = await tapPickerPart("gutter");
+          check(`${prefix}: clicking the row's own gutter toggles its checkbox`,
+            gutterTap.flipped && gutterTap.before.inViewport === true,
+            JSON.stringify({ before: gutterTap.before.checked, after: gutterTap.after.checked, hitAtGutterPoint: gutterTap.before.hit, row: gutterTap.before.rowRect, box: gutterTap.before.boxRect }));
+          const nameTap = await tapPickerPart("name");
+          check(`${prefix}: clicking a contact's NAME toggles its checkbox`,
+            nameTap.flipped && nameTap.before.inViewport === true,
+            JSON.stringify({ before: nameTap.before.checked, after: nameTap.after.checked, hitAtNamePoint: nameTap.before.hit, rowRect: nameTap.before.rowRect }));
+          const captionTap = await tapPickerPart("caption");
+          check(`${prefix}: clicking a contact's CAPTION toggles its checkbox`,
+            captionTap.flipped && captionTap.before.inViewport === true,
+            JSON.stringify({ before: captionTap.before.checked, after: captionTap.after.checked, hitAtCaptionPoint: captionTap.before.hit }));
+          const boxTap = await tapPickerPart("box");
+          check(`${prefix}: clicking the checkbox centre still toggles it`,
+            boxTap.flipped && boxTap.before.inViewport === true,
+            JSON.stringify({ before: boxTap.before.checked, after: boxTap.after.checked, hitAtBoxPoint: boxTap.before.hit }));
+          /* Leave the row UNPICKED for the invite assertions below, which pick
+             exactly the two proof contacts themselves. */
+          const leave = await measurePickerTarget("box");
+          if (leave?.checked === true) await tapPickerPart("name");
+          const settled = await measurePickerTarget("box");
+          check(`${prefix}: the picker is left unpicked for the invite assertions`,
+            settled?.checked === false,
+            JSON.stringify({ checked: settled?.checked }));
+          await evaluate(`(() => { window.scrollTo(0, 0); return true; })()`);
+
+          /* ---- caption: "pernah berbagi bill" only with real evidence -------
+             `db.get_contacts` returns `MAX(b.created_at) AS last_shared`, so the
+             caption's TRUE branch is measurable against the real API; the FALSE
+             branch needs a row the backend cannot produce, injected by the stub.
+             Pre-fix BOTH rendered "kontak terbukti", because `normalizeContact`
+             dropped the field before the row was built. */
+          await installContactsStub().then(identifier => { contactsStubId = identifier; });
+          await navigate(`${BASE_URL}/?e2e=${Date.now()}#/create`);
+          await evaluate(`localStorage.setItem("bagiin_identity", ${identityJson})`);
+          await navigate(`${BASE_URL}/?e2e=${Date.now()}#/create`);
+          await evaluate(`document.querySelector("#manual-btn")?.click()`);
+          await sleep(300);
+          const captions = await waitForPicker();
+          const realCaptions = captions.rows
+            .filter(row => proofContacts.some(contact => contact.name === row.name))
+            .map(row => row.caption);
+          const noHistoryRow = captions.rows.find(row => row.name === E2E_NULL_LAST_SHARED_NAME);
+          check(`${prefix}: a contact with last_shared says "pernah berbagi bill"`,
+            realCaptions.length === proofContacts.length && realCaptions.every(caption => caption === "pernah berbagi bill"),
+            JSON.stringify({ captions: realCaptions, rows: captions.rows.map(row => ({ name: row.name, caption: row.caption })) }));
+          check(`${prefix}: a contact without last_shared says "kontak terbukti"`,
+            noHistoryRow?.caption === "kontak terbukti",
+            JSON.stringify({ row: noHistoryRow || null }));
+          await removeContactsStub(contactsStubId);
+          contactsStubId = "";
+          await navigate(`${BASE_URL}/?e2e=${Date.now()}#/create`);
+          await evaluate(`localStorage.setItem("bagiin_identity", ${identityJson})`);
+          await navigate(`${BASE_URL}/?e2e=${Date.now()}#/create`);
+          await evaluate(`document.querySelector("#manual-btn")?.click()`);
+          await sleep(300);
+          await waitForPicker();
+
           const pickedInvitesBefore = inviteRequests.length;
           const createsBeforePicker = createRequests.length;
           const pickerSubmit = await evaluate(`(async () => {
@@ -1320,6 +1540,7 @@ const readCase = async (width, color) => evaluate(`(() => {
   if (cleanupFailures.length) {
     check("created bill cleanup", false, cleanupFailures.join(" | "));
   }
+  if (contactsStubId) { await removeContactsStub(contactsStubId).catch(() => {}); contactsStubId = ""; }
   if (tab?.id) await fetchWithTimeout(`${CDP_URL}/json/close/${encodeURIComponent(tab.id)}`).catch(() => {});
   if (ws) ws.close();
 }

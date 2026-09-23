@@ -499,13 +499,12 @@ function VerifyEditor({ draft, identity, updateDraft, cleanup, onBack, onSubmit,
  * the create payload as the last line of defence.
  */
 function PeoplePicker({ identity, picked, onToggle }: { identity: Identity; picked: PickedContact[]; onToggle: (contact: PickedContact) => void }) {
-  /* `LastSharedContact` is the endpoint's real shape. `normalizeContact` drops
-     `last_shared` (lib/api.ts:230-236), and that is fine for the bill screen's
-     invite sheet, which only needs id+name. Here the caption depends on it, so
-     this local alias keeps the field the API actually sends without weakening
-     the shared DTO that every other caller relies on. */
-  type LastSharedContact = Contact & { last_shared?: string };
-  const [contacts, setContacts] = useState<LastSharedContact[]>([]);
+  /* `Contact` IS the endpoint's shape, `last_shared` included: `normalizeContact`
+     (lib/api.ts) now carries the field through instead of dropping it, so the
+     caption below reads the same value the API sent. Re-declaring the field
+     locally (the old `LastSharedContact` alias) is exactly how the caption
+     became unreachable dead code — the type promised a field nothing populated. */
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const generation = useRef(0);
@@ -554,13 +553,18 @@ function PeoplePicker({ identity, picked, onToggle }: { identity: Identity; pick
   const selected = new Set(picked.map(contact => contact.id));
   return <div className="stack-sm" id="people-pick" aria-label="Kontak terbukti">{contacts.map(contact => {
     const isPicked = selected.has(contact.id);
-    return <div className={`account-row${isPicked ? " selected" : ""}`} key={contact.id}>
+    /* The row is a real `<label>` for its checkbox, exactly like the legacy row
+       (frontend/static/create.js:1375). As a plain `<div>` the only hit target
+       was the 19px box — 361 px² of a 332x66 row (~1.6%) — so tapping the name
+       or the caption did nothing. The `htmlFor`/`id` pair is explicit as well
+       as implicit, and `cursor: pointer` is the legacy row's own affordance. */
+    return <label className={`account-row${isPicked ? " selected" : ""}`} key={contact.id} htmlFor={`people-pick-${contact.id}`} style={{ cursor: "pointer" }}>
       {/* A real checkbox: keyboard-toggleable, and the accessible name carries
           the person AND the state so "Rina" alone is not an ambiguous target. */}
       <input id={`people-pick-${contact.id}`} type="checkbox" checked={isPicked} aria-label={`Ikut sertakan ${contact.name}`} onChange={() => onToggle({ id: contact.id, name: contact.name, last_shared: contact.last_shared })} />
       <div className="avatar" aria-hidden="true">{contactInitial(contact.name)}</div>
       <div className="grow"><div className="item-name">{contact.name}</div><div className="caption">{pickerContactCaption(contact)}</div></div>
-    </div>;
+    </label>;
   })}</div>;
 }
 
