@@ -105,7 +105,7 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .shell-with-rail { display: block; }
 .shell-side { position: static; min-width: 0; }
 .shell-with-rail > .shell-side { margin-top: 20px; }
-.topbar { width: min(100%, 1120px); min-height: 70px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.topbar { position: relative; width: min(100%, 1120px); min-height: 70px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .topbar-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; text-align: center; }
 .topbar-actions { display: flex; align-items: center; gap: 4px; }
 /* Brand lockup — geometry ported from the legacy design system
@@ -352,7 +352,7 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .details-summary > span:first-child { display: inline-flex; align-items: center; gap: 8px; }
 .details-body { padding-top: 14px; }
 .date-input-wrap { position: relative; }
-.date-input-wrap.is-empty .vf-date-placeholder { display: block; }
+.date-input-wrap.is-empty .vf-date-placeholder { display: none; }
 .vf-date-placeholder { display: none; position: absolute; inset: 0 auto 0 13px; align-content: center; color: var(--text-3); pointer-events: none; font-size: 14px; }
 .vf-head { display: none; }
 .vf-item { display: grid; gap: 11px; padding: 13px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
@@ -395,13 +395,20 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 @media (max-width: 767px) {
   .app-content { padding-left: 14px; padding-right: 14px; }
   .topbar { min-height: 62px; }
+  .topbar-title { position: absolute; left: 50%; width: min(calc(100% - 120px), 72%); transform: translateX(-50%); z-index: 0; }
+  .topbar > .btn, .topbar-actions { position: relative; z-index: 1; }
   .shell-with-rail { display: block; }
   .shell-side { display: contents; }
   .shell-with-rail > .shell-side { margin-top: 0; }
   .nav-desktop-actions { display: none; }
   .filter-selects { grid-template-columns: 1fr; }
   .vf-input-group.form-grid { grid-template-columns: 1fr; }
-  .verify-editor-main > #items-card { order: -1; }
+  .verify-detail-card .form-grid { grid-template-columns: 1fr; }
+  .verify-photo-card .row { flex-wrap: nowrap; gap: 6px; }
+  .verify-photo-card .btn { min-width: 0; padding-inline: 10px; white-space: nowrap; }
+  .verify-editor-main > .verify-photo-card { order: -2; }
+  .verify-editor-main > .verify-detail-card { order: -1; }
+  .verify-editor-main > #items-card { order: 0; }
   .bill-detail-main > .bill-header { order: 0; }
   .bill-detail-main > .bill-items-card,
   .bill-detail-main > .bill-action-card { order: 1; }
@@ -426,7 +433,7 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   .dock-panel-create #create-bill-btn { grid-column: 2; grid-row: 1 / span 2; min-width: 132px; align-self: center; }
   #app-nav { position: fixed; right: 0; bottom: 0; left: 0; z-index: 20; display: grid; grid-template-columns: repeat(3, 1fr); min-height: calc(var(--nav-link-height) + 28px + env(safe-area-inset-bottom)); padding: 10px 8px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 95%, transparent); box-shadow: var(--shadow-3); backdrop-filter: blur(14px); }
   #app-nav[hidden] { display: none; }
-  .app-nav-link { min-height: calc(var(--nav-link-height) + 8px); display: grid; justify-items: center; align-content: center; gap: 3px; border-radius: 12px; color: var(--text-3); text-decoration: none; font-size: 11px; font-weight: 700; }
+  .app-nav-link { min-height: calc(var(--nav-link-height) + 8px); display: grid; justify-items: center; align-content: center; gap: 3px; border-radius: 12px; color: var(--text-3); text-decoration: none; font-size: 11px; font-weight: 700; text-align: center; }
   /* Legacy `.app-nav-link .ico { width:22px;height:22px }` (index.html:131). The
      `.ico` class never reaches React's svg, so the icon fell through to `1em` of
      this link's font-size (11px) and rendered at half its intended size — the

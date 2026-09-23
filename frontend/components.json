@@ -4,15 +4,17 @@
   "rsc": false,
   "tsx": true,
   "tailwind": {
-    "config": "",
+    "config": "tailwind.config.js",
     "css": "src/styles/globals.css",
     "baseColor": "stone",
     "cssVariables": true,
     "prefix": ""
   },
+  "iconLibrary": "phosphor",
   "aliases": {
     "components": "@/components",
     "ui": "@/components/ui",
+    "utils": "@/lib/cn",
     "lib": "@/lib"
   }
 }
