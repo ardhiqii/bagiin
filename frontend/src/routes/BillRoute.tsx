@@ -9,6 +9,7 @@ import { createSelectionSaveQueue, serializeSelections } from "../lib/selection-
 
 import type { BillItem, BillResponse, Contact, Identity, PayerRequest, Person, Selector, UpdateBillRequest } from "../lib/types";
 import { AccountRows, AppFrame, ErrorState, ShareDialogContent, Topbar } from "../components/AppShell";
+import { ReceiptPhotoGallery } from "../components/ReceiptPhotoGallery";
 import { Alert, Badge, Button, Card, Dialog, Input, Label, Spinner } from "../components/ui/primitives";
 
 function quantity(value: number | string | null | undefined): number { const n = Number(value); return Number.isInteger(n) && n > 0 ? n : 1; }
@@ -524,7 +525,7 @@ type CreatorRosterEntry = {
   name: string;
 };
 
-type CreatorManagerDialog = "payer" | "invite" | "remove" | "slot" | "reopen" | "delete" | "photo-delete" | "photo-view" | null;
+type CreatorManagerDialog = "payer" | "invite" | "remove" | "slot" | "reopen" | "delete" | "photo-delete" | null;
 
 function creatorRoster(data: BillResponse): CreatorRosterEntry[] {
   const seen = new Set<string>();
@@ -552,11 +553,6 @@ function creatorPhotos(data: BillResponse): CreatorPhoto[] {
   return legacyPath?.trim() ? [{ path: legacyPath }] : [];
 }
 
-function creatorPhotoUrl(path: string): string {
-  const filename = path.split("/").pop() || "";
-  return filename ? `/uploads/${encodeURIComponent(filename)}` : "";
-}
-
 function CreatorManagerControls({ data, identity, onData }: { data: BillResponse; identity: Identity; onData: (data: BillResponse) => void }) {
   const [dialog, setDialog] = useState<CreatorManagerDialog>(null);
   const [busy, setBusy] = useState("");
@@ -572,7 +568,6 @@ function CreatorManagerControls({ data, identity, onData }: { data: BillResponse
   const [contactLoading, setContactLoading] = useState(false);
   const [contactError, setContactError] = useState("");
   const [inviteStatus, setInviteStatus] = useState<Record<string, "joined" | "pending"> >({});
-  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [photoDeleteTarget, setPhotoDeleteTarget] = useState<CreatorPhoto | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const contactSequence = useRef(0);
@@ -591,7 +586,6 @@ function CreatorManagerControls({ data, identity, onData }: { data: BillResponse
       && !Boolean(data.paid_by_confirmed ?? data.bill.paid_by_confirmed),
   );
   const payerName = data.paid_by_name || data.creator_name;
-  const viewerPhoto = viewerIndex == null ? undefined : photos[viewerIndex];
   const onBill = useMemo(() => new Set(roster.map(item => item.id)), [roster]);
   const pendingInviteIds = useMemo(() => new Set((data.pending_invites || []).map(item => item.identity_id).filter((id): id is string => Boolean(id))), [data.pending_invites]);
 
@@ -839,7 +833,7 @@ function CreatorManagerControls({ data, identity, onData }: { data: BillResponse
       </>}
       {(photos.length > 0 || openBill) && <div className="stack-sm">
         <div className="row-between"><strong>Foto struk</strong>{openBill && <><input ref={photoInputRef} id="creator-photo-input" className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Pilih foto struk" onChange={event => void uploadPhoto(event)} /><Button id="add-photo-btn" type="button" variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => photoInputRef.current?.click()}>{busy === "photo-upload" ? <><Spinner /> Upload...</> : photos.length ? "Tambah foto" : "Tambah foto struk"}</Button></>}</div>
-        {photos.length > 0 && <div className="row wrap" aria-label="Foto struk bill">{photos.map((photo, index) => <div key={`${photo.path}-${index}`} style={{ position: "relative", width: 112 }}><button type="button" style={{ display: "block", width: "100%", padding: 0, border: 0, background: "transparent", cursor: "pointer" }} aria-label={`Lihat foto struk ${index + 1}`} onClick={() => { setViewerIndex(index); setDialog("photo-view"); }}><img src={creatorPhotoUrl(photo.path)} alt={`Struk ${index + 1}`} loading="lazy" style={{ width: "112px", height: "90px", objectFit: "cover", borderRadius: 8, display: "block" }} /></button>{openBill && photo.id != null && <Button type="button" variant="danger" size="icon" className="bill-photo-del" data-photo-id={photo.id} aria-label={`Hapus foto struk ${index + 1}`} style={{ position: "absolute", right: 4, top: 4, minWidth: 32, width: 32, minHeight: 32, height: 32 }} disabled={Boolean(busy)} onClick={() => { setPhotoDeleteTarget(photo); setError(""); setDialog("photo-delete"); }}><X /></Button>}</div>)}</div>}
+        {photos.length > 0 && <ReceiptPhotoGallery paths={photos.map(photo => photo.path)} onRemove={openBill ? index => { const photo = photos[index]; if (!photo) return; setPhotoDeleteTarget(photo); setError(""); setDialog("photo-delete"); } : undefined} removeDisabled={Boolean(busy)} />}
       </div>}
       <Button id="delete-bill-btn" type="button" variant="danger" className="btn-block" disabled={Boolean(busy)} onClick={() => { setError(""); setDialog("delete"); }}>Hapus Bill Permanen</Button>
     </Card>
@@ -883,10 +877,6 @@ function CreatorManagerControls({ data, identity, onData }: { data: BillResponse
     <Dialog open={dialog === "photo-delete" && Boolean(selectedPhoto)} title="Hapus foto ini?" description="Foto akan dihapus dari bill. Item dan pembagiannya tidak berubah." onClose={closeDialog}>
       {error && <p className="error-text" role="alert">{error}</p>}
       <div className="row wrap sheet-actions"><Button type="button" variant="outline" disabled={Boolean(busy)} onClick={closeDialog}>Batal</Button><Button id="confirm-delete-photo" type="button" variant="danger" disabled={Boolean(busy)} onClick={() => void deletePhoto()}>{busy === "photo-delete" ? <><Spinner /> Menghapus...</> : "Hapus"}</Button></div>
-    </Dialog>
-
-    <Dialog open={dialog === "photo-view" && Boolean(viewerPhoto)} title={`Struk ${viewerPhoto ? `${(viewerIndex || 0) + 1}/${photos.length}` : ""}`} onClose={closeDialog}>
-      {viewerPhoto && <><img src={creatorPhotoUrl(viewerPhoto.path)} alt="Foto struk asli bill ini" style={{ width: "100%", borderRadius: 8 }} /><div className="row wrap sheet-actions"><Button type="button" variant="outline" disabled={photos.length < 2} onClick={() => setViewerIndex(index => index == null ? 0 : (index - 1 + photos.length) % photos.length)}>Sebelumnya</Button><Button type="button" variant="outline" disabled={photos.length < 2} onClick={() => setViewerIndex(index => index == null ? 0 : (index + 1) % photos.length)}>Berikutnya</Button><Button type="button" onClick={closeDialog}>Tutup</Button></div></>}
     </Dialog>
 
     <Dialog open={dialog === "delete"} title="Hapus bill ini?" description={`${data.bill.title}. Semua item, pembagian, dan catatan bayar akan terhapus permanen. Tidak bisa dibatalkan.`} onClose={closeDialog}>
