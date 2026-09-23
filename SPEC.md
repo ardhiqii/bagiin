@@ -1319,3 +1319,12 @@ delete/set-payer/tandai lunas orang lain).
 - Test: `test_features.py` (update_bill diff, accounts CRUD+ownership, rename,
   code regenerate) + E2E browser (settings UI, edit flow, pay sheet, restore).
 - 2026-08-10: push ke GitHub — github.com/ardhiqii/bagiin (public, main).
+
+### 2026-09-23 (v95), perapian mobile navigation dan flow buat bill
+
+- Topbar mobile sekarang menempatkan judul secara geometris di tengah viewport, tidak ikut bergeser karena tombol kembali atau action di sisi kanan. Bottom navigation memakai kolom dengan lebar seimbang, icon dan label tetap terpusat, active state serta safe-area tetap dipertahankan.
+- Flow buat bill menempatkan penanganan foto struk sebagai keputusan pertama: pilih foto untuk OCR, kamera, tempel foto, atau lanjut isi manual. Setelah itu metadata bill tetap terlihat jelas, termasuk judul, merchant, dan tanggal transaksi, sebelum editor item.
+- Photo controls memakai primitive Button milik React/shadcn yang sudah dikustomisasi dengan token Bagiin. Jalur OCR dan jalur attach/manual tetap memakai kontrak API, validasi ukuran, dan cleanup upload yang sama.
+- Sticky total dock di HP disusun menjadi baris total, warning, lalu CTA full-width. Dock tidak lagi menaruh tombol create di tengah blok teks yang tidak berhubungan, dan ruang konten dihitung dari tinggi surface aktual agar control yang sedang dipakai tidak tertutup.
+- Tidak ada perubahan backend, schema, API payload, auth, atau aset legacy rollback. Light/dark mode dan layout desktop tetap dipertahankan.
+- Bukti verifikasi: backend `422 passed, 1 skipped`; frontend typecheck, build, dan logic `9/9` lulus; browser create `28 matrix cases, 0 failed`; responsive `22 matrix cases` pada lebar 320-1440px dan tinggi 568-900px; polish shell lulus untuk home/verify/creator/guest dalam light/dark; smoke OCR dan no-OCR attachment lulus; tidak ada console/page error.
