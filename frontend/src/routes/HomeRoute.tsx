@@ -1,13 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowsDownUp, Funnel, Gear, Plus, Receipt, Trash, UsersThree } from "@phosphor-icons/react";
-import { apiClient } from "../lib/api";
+import { apiClient, onMutation } from "../lib/api";
 import { createRequestGate } from "../lib/async-state";
+import { createIdentityCache, IDENTITY_CACHE_TTL_MS } from "../lib/list-cache";
 import { getListSort, setListSort } from "../lib/identity-storage";
 import { localYearMonth, monthLabel, rupiahFmt, shortDate } from "../lib/money";
 import { navigate } from "../lib/routes";
 import type { BillListRow, Identity } from "../lib/types";
 import { AppFrame, ErrorState, Topbar } from "../components/AppShell";
 import { Alert, Badge, Button, Card, Dialog, Select, Skeleton } from "../components/ui/primitives";
+
+/**
+ * The Home list is the app's most-repeated read: every route change back to
+ * Home remounts this screen. One identity-scoped slot with a short TTL turns
+ * that into a cache hit without ever serving one viewer's list to another.
+ *
+ * Invalidation is NOT wired from this component — the third argument hands the
+ * cache the app's mutation bus and the cache subscribes at construction. This
+ * screen unmounts the moment the user leaves Home, so an effect-scoped
+ * listener would disappear exactly when a write on another screen needs it,
+ * and the next Home paint inside the TTL would serve rows from before that
+ * write (bug: v91 — create a bill on #/create, tap Home, see the pre-create
+ * list). Module scope is required, not incidental: this runs once per page
+ * load, and no unmount can tear it down.
+ */
+const billListCache = createIdentityCache<BillListRow[]>(
+  identityId => apiClient.identities.bills(identityId),
+  IDENTITY_CACHE_TTL_MS,
+  onMutation,
+);
 
 type Filter = "all" | "due" | "ok" | "idle";
 type Sort = "date_desc" | "date_asc" | "amount_desc" | "amount_asc" | "due_first";
@@ -65,7 +86,10 @@ export function HomeRoute({ identity }: { identity: Identity }) {
     const token = requestGate.current.begin();
     setLoading(true); setError("");
     try {
-      const next = await apiClient.identities.bills(identity.id);
+      /* Cached or freshly fetched, an entry only ever belongs to the identity
+         that asked for it — the cache refuses a hit across identities, so an
+         identity swap cannot paint the previous viewer's bills. */
+      const next = await billListCache.load(identity.id);
       if (requestGate.current.isCurrent(token)) setRows(next);
     } catch (err) {
       if (requestGate.current.isCurrent(token)) setError(err instanceof Error ? err.message : "Gagal memuat bill");

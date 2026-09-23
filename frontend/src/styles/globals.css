@@ -280,10 +280,19 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .bill-row:last-child { border-bottom: 0; }
 .bill-row-main { min-width: 0; flex: 1; }
 .bill-row-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.bill-row-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ONE strong anchor per row. The title is what the eye scans for, so it holds
+   the only heavy weight; the amount has to read as the number (already tabular
+   and 16px, so semibold is plenty) rather than out-shout the title; the
+   date/share line is metadata and must not compete with either. The row used to
+   run title 700 / amount 800 / chip 600 / share 400 all at once — the AMOUNT was
+   the heaviest thing in the row, so the list read as a wall of bold with nothing
+   standing out. Amount 800 → 600 restores the intended hierarchy
+   (v91 — the plan's "keep title as the only strong anchor, make amount
+   medium/semibold, reduce metadata/share copy weight"). */
+.bill-row-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
 .bill-row-meta { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
-.bill-row-date { margin-left: auto; white-space: nowrap; }
-.bill-row-amount { margin-left: auto; font-weight: 800; }
+.bill-row-date { margin-left: auto; white-space: nowrap; font-weight: 400; }
+.bill-row-amount { margin-left: auto; font-weight: 600; }
 .status-mark { width: 38px; height: 38px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 12px; }
 .status-mark > svg { width: 19px; height: 19px; }
 .status-idle { color: var(--text-3); background: var(--surface-2); }
@@ -562,14 +571,26 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   .dock-panel-create #create-bill-btn { grid-column: 1 / -1; grid-row: auto; width: 100%; min-width: 0; align-self: stretch; }
   #app-nav { position: fixed; right: 0; bottom: 0; left: 0; z-index: 20; display: grid; grid-template-columns: repeat(3, 1fr); min-height: calc(var(--nav-link-height) + 28px + env(safe-area-inset-bottom)); padding: 10px 8px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 95%, transparent); box-shadow: var(--shadow-3); backdrop-filter: blur(14px); }
   #app-nav[hidden] { display: none; }
-  .app-nav-link { min-height: calc(var(--nav-link-height) + 8px); display: grid; justify-items: center; align-content: center; gap: 3px; border-radius: 12px; color: var(--text-3); text-decoration: none; font-size: 11px; font-weight: 700; text-align: center; }
+  .app-nav-link { position: relative; min-height: calc(var(--nav-link-height) + 8px); display: grid; justify-items: center; align-content: center; row-gap: 4px; border-radius: 12px; color: var(--text-3); text-decoration: none; font-size: 11px; font-weight: 700; text-align: center; }
   /* Legacy `.app-nav-link .ico { width:22px;height:22px }` (index.html:131). The
      `.ico` class never reaches React's svg, so the icon fell through to `1em` of
      this link's font-size (11px) and rendered at half its intended size — the
      defect in the user's screenshot. Measured before: 11x11px. */
-  .app-nav-link > svg { width: 22px; height: 22px; flex: 0 0 auto; }
+  .app-nav-link > svg { width: 22px; height: 22px; flex: 0 0 auto; display: block; }
+  /* An explicit line-height keeps the label's line box the same on every
+     renderer. Left at the font default it depends on the platform's font
+     metrics, which is what let the icon+label stack drift inside a fixed
+     min-height cell (and, with the badge in flow, overflow it outright). */
+  .app-nav-link > span { line-height: 1.25; }
   .app-nav-link.is-active { color: var(--accent); background: var(--accent-soft); }
-  .app-nav-badge { min-width: 16px; height: 16px; margin-left: -4px; padding: 0 4px; border-radius: 99px; color: var(--on-red); background: var(--red); font-size: 10px; line-height: 16px; }
+  /* The badge is an OVERLAY, not a third grid row. As an in-flow child it added
+     a 16px row plus the row-gap to the cell, grew the whole fixed bar by 3px and
+     pushed the icon flush against the top of its own cell — the "icons look
+     vertically compressed at 320-390px" report, which only reproduced once the
+     viewer had pending actions. Legacy positions it absolutely (frontend/
+     index.html `.app-nav-badge`); the React port kept `margin-left:-4px` and
+     dropped the positioning, so the badge silently became layout. */
+  .app-nav-badge { position: absolute; top: 4px; left: calc(50% + 5px); min-width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid var(--surface); border-radius: 99px; color: var(--on-red); background: var(--red); font-size: 10px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
   .app-content.nav-space { padding-bottom: calc(env(safe-area-inset-bottom) + var(--nav-link-height) + 36px); }
 }
 @media (min-width: 768px) {

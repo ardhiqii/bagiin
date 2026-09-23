@@ -10,8 +10,10 @@ import {
   normalizeMutationOk,
   normalizeOcrResponse,
   normalizePaymentAccount,
+  onMutation,
 } from "../src/lib/api.ts";
 import { createRequestGate } from "../src/lib/async-state.ts";
+import { createIdentityCache } from "../src/lib/list-cache.ts";
 import {
   applyContactToggle,
   contactInitial,
@@ -264,4 +266,144 @@ test("invite batch copy distinguishes failure from still-in-flight", () => {
   assert.equal(inviteFailureNotice([{ status: "fulfilled" }, { status: "fulfilled" }]), "");
   assert.match(inviteFailureNotice([{ status: "fulfilled" }, { status: "rejected" }]), /1 undangan gagal/);
   assert.match(inviteFailureNotice([{ status: "rejected" }, { status: "rejected" }]), /2 undangan gagal/);
+});
+
+test("bill-list cache is identity-scoped, deduped and invalidated by generation", async () => {
+  const calls: string[] = [];
+  const cache = createIdentityCache<number[]>(async identityId => {
+    calls.push(identityId);
+    return [identityId.length];
+  }, 60_000);
+
+  // Two simultaneous loads for the same identity share one request (dedupe).
+  const [a, b] = await Promise.all([cache.load("id-A"), cache.load("id-A")]);
+  assert.deepEqual(a, b);
+  assert.deepEqual(calls, ["id-A"]);
+
+  // A repeat load inside the TTL is a hit: no second request.
+  await cache.load("id-A");
+  assert.deepEqual(calls, ["id-A"]);
+
+  // A DIFFERENT identity never sees the cached list; it fetches its own.
+  await cache.load("id-B");
+  assert.deepEqual(calls, ["id-A", "id-B"]);
+
+  // A mutation drops the slot, so the next load (even the same identity, even
+  // inside the TTL) goes back to the server instead of painting a stale row.
+  cache.invalidate();
+  await cache.load("id-B");
+  assert.deepEqual(calls, ["id-A", "id-B", "id-B"]);
+
+  // The generation guard: a response already in flight when the mutation landed
+  // resolves for its own caller but must NOT repopulate the invalidated slot.
+  let release: (value: number[]) => void = () => {};
+  const slowCalls: string[] = [];
+  const slow = createIdentityCache<number[]>(identityId => {
+    slowCalls.push(identityId);
+    return new Promise<number[]>(resolve => { release = resolve; });
+  }, 60_000);
+  const pending = slow.load("id-C");
+  slow.invalidate();
+  release([999]);
+  assert.deepEqual(await pending, [999]);
+  // If the stale response had been written back, this would be a hit and
+  // `slowCalls` would still have one entry.
+  void slow.load("id-C");
+  assert.deepEqual(slowCalls, ["id-C", "id-C"]);
+
+  // Failures are never cached: a failed load must retry, not replay the error.
+  const failCalls: string[] = [];
+  const failing = createIdentityCache<number[]>(async identityId => {
+    failCalls.push(identityId);
+    throw new Error("offline");
+  });
+  await assert.rejects(() => failing.load("id-D"), /offline/);
+  await assert.rejects(() => failing.load("id-D"), /offline/);
+  assert.deepEqual(failCalls, ["id-D", "id-D"]);
+});
+
+test("a non-GET through api() invalidates the bill-list cache even with no screen mounted", async () => {
+  // The cache is handed the mutation bus at construction (3rd argument), exactly
+  // as HomeRoute does — it is NOT wired up by a screen effect. HomeRoute unmounts
+  // the moment the user leaves Home, so an effect-scoped listener disappears
+  // exactly when a write on another screen needs it, and the next Home paint
+  // inside the TTL paints rows from before that write (bug: v91 — create a bill
+  // on #/create, tap Home, see the pre-create list). This test adds NO
+  // subscription of its own: the only listener in play is the one the cache
+  // installed, so a regression to a component-scoped subscription fails here.
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  const cache = createIdentityCache<number[]>(async identityId => {
+    calls.push(identityId);
+    return [identityId.length];
+  }, 60_000, onMutation);
+
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+
+    // Prime the cache the way a Home visit does.
+    await cache.load("id-A");
+    assert.deepEqual(calls, ["id-A"]);
+
+    // A write from a screen other than Home: nothing Home-scoped is mounted, so
+    // only the cache's own construction-time subscription can invalidate it.
+    await api("/api/bills", { method: "POST", json: {} });
+
+    // The next Home paint must go to the server, not the stale slot.
+    await cache.load("id-A");
+    assert.deepEqual(calls, ["id-A", "id-A"]);
+
+    // A GET must NOT invalidate — reads are what the cache is for.
+    await api("/api/identities/id-A/bills");
+    await cache.load("id-A");
+    assert.deepEqual(calls, ["id-A", "id-A"]);
+
+    // A FAILED write must not invalidate either: nothing changed on the server.
+    globalThis.fetch = async () => new Response(JSON.stringify({ detail: "Nope" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+    await assert.rejects(() => api("/api/bills", { method: "POST", json: {} }));
+    await cache.load("id-A");
+    assert.deepEqual(calls, ["id-A", "id-A"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("every cache instance gets its own mutation subscription", async () => {
+  // Two independent caches (as two route modules would each get their own) must
+  // both be subscribed — one cache's listener must not be the only one alive.
+  const originalFetch = globalThis.fetch;
+  const firstCalls: string[] = [];
+  const secondCalls: string[] = [];
+  const first = createIdentityCache<number[]>(async identityId => {
+    firstCalls.push(identityId);
+    return [1];
+  }, 60_000, onMutation);
+  const second = createIdentityCache<number[]>(async identityId => {
+    secondCalls.push(identityId);
+    return [2];
+  }, 60_000, onMutation);
+
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    await Promise.all([first.load("id-A"), second.load("id-A")]);
+    assert.deepEqual(firstCalls, ["id-A"]);
+    assert.deepEqual(secondCalls, ["id-A"]);
+
+    await api("/api/bills", { method: "POST", json: {} });
+
+    await Promise.all([first.load("id-A"), second.load("id-A")]);
+    assert.deepEqual(firstCalls, ["id-A", "id-A"]);
+    assert.deepEqual(secondCalls, ["id-A", "id-A"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
