@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Camera, Check, ClipboardText, PencilSimple, Plus, Receipt, Trash, UploadSimple, UsersThree } from "@phosphor-icons/react";
-import { apiClient, apiJson } from "../lib/api";
+import { apiClient, apiJson, ocrFailureMessage } from "../lib/api";
 import { useHashLeaveGuard } from "../lib/leave-guard";
 import { navigate } from "../lib/routes";
 import { rupiahFmt, rupiahParse } from "../lib/money";
@@ -364,10 +364,13 @@ export function CreateRoute({ identity, initialVerify = false }: { identity: Ide
     } catch (ocrError) {
       if (runRef.current !== runId) return;
       // OCR failures still deserve a usable screen: keep the photo and let the
-      // user type the items. /api/ocr answers 422 with a safe Indonesian
-      // sentence, and ApiError carries that `detail` verbatim as its message.
-      const message = ocrError instanceof Error ? ocrError.message : "Struknya belum kebaca, isi manual dulu ya";
-      await attachThenManual(batch.files, message, runId);
+      // user type the items. /api/ocr answers 502/503/504 with a proxy's HTML or
+      // empty body — the app never produced that status, so the message has to
+      // be written here or the user only ever sees "Terjadi kendala (504)"
+      // while the manual editor silently opens. `ocrFailureMessage` adds that
+      // copy and passes every other error through untouched, so the provider's
+      // own 422 sentence ("kuota harian habis...") is still what gets shown.
+      await attachThenManual(batch.files, ocrFailureMessage(ocrError), runId);
     } finally {
       if (runRef.current === runId) setBusy(false);
     }

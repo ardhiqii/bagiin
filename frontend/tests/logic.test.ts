@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   ApiError,
   api,
+  apiClient,
   configureApi,
   identityHeaders,
   normalizeContacts,
@@ -10,6 +11,11 @@ import {
   normalizeMutationOk,
   normalizeOcrResponse,
   normalizePaymentAccount,
+  OCR_EMPTY_RESPONSE_MESSAGE,
+  OCR_FALLBACK_MESSAGE,
+  OCR_TIMEOUT_MESSAGE,
+  OCR_UNAVAILABLE_MESSAGE,
+  ocrFailureMessage,
   onMutation,
 } from "../src/lib/api.ts";
 import { createRequestGate } from "../src/lib/async-state.ts";
@@ -553,4 +559,104 @@ test("bill list inviter names the inviter, or falls back honestly", () => {
   assert.equal(billListInviter({ ...base, pending_invited_by_name: "   " }), "pengundang");
   assert.equal(billListInviter({ ...base, pending_invited_by_name: null }), "pengundang");
   assert.equal(billListInviter(base), "pengundang");
+});
+
+/* --------------------------------------------------------------------------
+   The proxy/edge OCR gap (screenshot report): the fallback into the manual
+   editor worked, but the only thing the user was told was the generic
+   "Terjadi kendala (504)". /api/ocr answers every READ failure with a 4xx, so
+   anything else that comes back is a proxy that never reached the app — its
+   body is HTML or empty and there is nothing in it to show.
+
+   These drive the real `api()` fetch wrapper (not a hand-built ApiError), so a
+   future change to the status plumbing fails here too. */
+
+/** `apiClient.photos.ocr` with fetch stubbed to answer `status` with `body`. */
+async function ocrErrorFrom(status: number, body: BodyInit | null, contentType = "text/html"): Promise<unknown> {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(body, { status, headers: { "content-type": contentType } });
+  try {
+    // The real client call, not a bare `api()`: the empty/HTML-body case only
+    // surfaces because `normalizeOcrResponse` runs after `readBody`.
+    await apiClient.photos.ocr([new File([new Uint8Array([0xff, 0xd8, 0xff])], "struk.jpg", { type: "image/jpeg" })]);
+    return null;
+  } catch (error) {
+    return error;
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+test("an OCR edge failure gets actionable Indonesian copy instead of the raw status", async () => {
+  // 504 is the reported one: Cloudflare's own HTML page, no detail to read.
+  const timeout = await ocrErrorFrom(504, "<html><body>Gateway Time-out</body></html>");
+  assert.ok(timeout instanceof ApiError);
+  assert.equal(timeout.status, 504);
+  assert.equal(timeout.message, "Terjadi kendala (504)");   // what the old screen showed
+  assert.equal(ocrFailureMessage(timeout), OCR_TIMEOUT_MESSAGE);
+  // Says the photo is still there and what to do next — not just "504".
+  assert.match(OCR_TIMEOUT_MESSAGE, /manual/);
+  assert.match(OCR_TIMEOUT_MESSAGE, /[Ff]oto/);
+
+  // 502/503 share one message: both mean "the proxy could not reach the app".
+  for (const status of [502, 503]) {
+    const error = await ocrErrorFrom(status, "<html>Bad Gateway</html>");
+    assert.ok(error instanceof ApiError);
+    assert.equal(ocrFailureMessage(error), OCR_UNAVAILABLE_MESSAGE);
+    assert.match(OCR_UNAVAILABLE_MESSAGE, /manual/);
+  }
+
+  // An empty 200 body: nothing reached the provider either, so the same class.
+  // This is the shape a proxy that answers before the origin does produces.
+  const empty = await ocrErrorFrom(200, "", "application/json");
+  assert.ok(empty instanceof ApiError);
+  assert.equal(empty.message, "Respons OCR tidak sesuai format");
+  assert.equal(ocrFailureMessage(empty), OCR_EMPTY_RESPONSE_MESSAGE);
+  assert.match(OCR_EMPTY_RESPONSE_MESSAGE, /manual/);
+});
+
+/** `api()` on a NON-OCR endpoint, stubbed to answer `status` with `body`. */
+async function nonOcrErrorFrom(status: number, body: BodyInit | null, contentType = "text/html"): Promise<unknown> {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(body, { status, headers: { "content-type": contentType } });
+  try {
+    await api("/api/identities/id-A/bills");
+    return null;
+  } catch (error) {
+    return error;
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+test("the provider's own OCR detail survives, and non-OCR errors keep the generic message", async () => {
+  // /api/ocr 422 carries the exact reason ("kuota harian habis..."). That is
+  // more specific than any copy written in the client, so it must pass through.
+  const provider = await ocrErrorFrom(422, JSON.stringify({ detail: "kuota harian habis (reset tengah malam)" }), "application/json");
+  assert.ok(provider instanceof ApiError);
+  assert.equal(provider.status, 422);
+  assert.equal(ocrFailureMessage(provider), "kuota harian habis (reset tengah malam)");
+  // A 400 from the app (HEIC, >5MB, no file) is equally specific.
+  assert.equal(
+    ocrFailureMessage(await ocrErrorFrom(400, JSON.stringify({ detail: "Format HEIC belum didukung, pilih foto JPEG/PNG" }), "application/json")),
+    "Format HEIC belum didukung, pilih foto JPEG/PNG",
+  );
+
+  // The mapping is OCR-only: the SAME 504 on another endpoint still gets the
+  // generic sentence, so bill/list/settings screens are unchanged.
+  const generic = await nonOcrErrorFrom(504, "<html>Gateway Time-out</html>");
+  assert.ok(generic instanceof ApiError);
+  assert.equal(generic.message, "Terjadi kendala (504)");
+  assert.notEqual(generic.message, OCR_TIMEOUT_MESSAGE);
+
+  // Offline and abort are not edge failures and keep their own words.
+  const offline = new ApiError("Koneksi bermasalah. Periksa koneksi internet kamu, lalu coba lagi.", 0, true);
+  assert.equal(ocrFailureMessage(offline), offline.message);
+  const aborted = new ApiError("Permintaan dibatalkan", 0, false, true);
+  assert.equal(ocrFailureMessage(aborted), "Permintaan dibatalkan");
+
+  // Anything with no message at all still lands on the fallback sentence
+  // rather than an empty alert.
+  assert.equal(ocrFailureMessage(new ApiError("   ")), OCR_FALLBACK_MESSAGE);
+  assert.equal(ocrFailureMessage(undefined), OCR_FALLBACK_MESSAGE);
 });
