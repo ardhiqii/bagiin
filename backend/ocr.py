@@ -122,6 +122,13 @@ _BUDGET_OVERHEAD_SECONDS = 5.0
 # loop enforces between attempts. The budget must therefore leave room for that
 # overshoot, not just for request setup.
 _BUDGET_OVERSHOOT_ALLOWANCE_SECONDS = 7.0
+# (review F2: the clamp must be closed under its own ceiling. The ceiling used
+# to be exactly 60 - 5 - 7 = 48, and 48 + 5 + 7 = 60 is the boundary itself -
+# zero margin - so a config that raised OCR_BUDGET_SECONDS to the clamp value
+# re-opened the very gap this budget exists to close, while the margin test only
+# ever proved the invariant for the shipped 40s. The ceiling now subtracts this
+# safety value as well.)
+_BUDGET_SAFETY_MARGIN_SECONDS = 2.0
 OCR_BUDGET_SECONDS = 40.0
 _ATTEMPT_TIMEOUT_CAP = 20.0
 _MIN_ATTEMPT_SECONDS = 3.0
@@ -129,6 +136,16 @@ _MIN_ATTEMPT_SECONDS = 3.0
 # It only bites when the models ahead actually consumed wall-clock; when they
 # fail fast (429 in ~0.2s) the later slices stay generous.
 _MIN_LATER_MODEL_SECONDS = 5.0
+# (review F4: that per-model floor grew linearly with chain length, so the worst
+# case - primary provider burned its whole window, 5 free routes queued - gave
+# the FIRST candidate only 6.67s of a 26.67s window because the 4 routes behind
+# it held back 20s between them. A vision read of a receipt routinely needs
+# longer than that, and the routes behind usually answer 429 in ~0.2s, so the
+# reservation guarded budget that was never spent. The tail reserve is now also
+# capped at this fraction of the remaining window: the head always keeps at
+# least half, everyone behind it still shares a real slice, and the schedule no
+# longer degrades just because the chain got longer.)
+_RESERVE_MAX_FRACTION = 0.5
 _OPENROUTER_MAX_ATTEMPTS = 2
 # Reserve a bounded slice for the fallback so a hanging primary cannot spend the
 # whole budget before the free chain is ever tried. The reserve only caps the
@@ -393,12 +410,19 @@ def _hard_budget_seconds(requested: float | None = None) -> float:
     chain outlives it, the client sees a proxy 504 even when a free model later
     returns a perfectly good 200 (bug v98). Every entry point derives its
     deadline from here so a config/constant mistake cannot re-open that gap.
+
+    (review F2: the ceiling itself has to keep the margin, not just the shipped
+    default. It subtracts the setup overhead, the measured overshoot allowance
+    AND a safety value, so `ceiling + overhead + overshoot < edge` holds for
+    every value this function can return - including when a config raises
+    OCR_BUDGET_SECONDS above the clamp, where the ceiling is the answer.)
     """
     ceiling = max(
         _MIN_ATTEMPT_SECONDS,
         _EDGE_PROXY_TIMEOUT_SECONDS
         - _BUDGET_OVERHEAD_SECONDS
-        - _BUDGET_OVERSHOOT_ALLOWANCE_SECONDS,
+        - _BUDGET_OVERSHOOT_ALLOWANCE_SECONDS
+        - _BUDGET_SAFETY_MARGIN_SECONDS,
     )
     wanted = OCR_BUDGET_SECONDS if requested is None else requested
     try:
@@ -420,14 +444,20 @@ def _openrouter_model_deadline(deadline: float, remaining_models: int) -> float:
     route could eat the budget of every free route behind it.
 
     So: hold back a small floor for every model still queued (the reserve only
-    bites when the models ahead actually spent wall-clock), give the current
-    candidate what is left up to the per-attempt cap, and never pass the shared
-    hard deadline. The head cannot starve the tail, and a chain of fast failures
-    still hands its best slice to whichever route finally answers.
+    bites when the models ahead actually spent wall-clock), cap that total
+    reserve so it cannot grow without bound as the chain gets longer, give the
+    current candidate what is left up to the per-attempt cap, and never pass the
+    shared hard deadline. The head cannot starve the tail, the tail cannot
+    starve the head, and a chain of fast failures still hands its best slice to
+    whichever route finally answers.
     """
     now = time.monotonic()
     remaining = max(0.0, deadline - now)
-    reserve = min(remaining, _MIN_LATER_MODEL_SECONDS * (remaining_models - 1))
+    reserve = min(
+        remaining,
+        _MIN_LATER_MODEL_SECONDS * (remaining_models - 1),
+        remaining * _RESERVE_MAX_FRACTION,
+    )
     slice_seconds = max(_MIN_ATTEMPT_SECONDS, remaining - reserve)
     return min(deadline, now + min(_ATTEMPT_TIMEOUT_CAP, slice_seconds))
 

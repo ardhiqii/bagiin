@@ -311,16 +311,86 @@ def test_hard_budget_is_below_edge_proxy_timeout_with_margin():
     assert ocr._hard_budget_seconds() == ocr.OCR_BUDGET_SECONDS
 
 
+# Scheduling assertions compare float arithmetic against exact constants;
+# allow a hair of representation error at the boundaries.
+_SCHEDULE_EPS = 1e-6
+
+
+def _budget_plus_allowances(budget: float) -> float:
+    return (
+        budget
+        + ocr._BUDGET_OVERHEAD_SECONDS
+        + ocr._BUDGET_OVERSHOOT_ALLOWANCE_SECONDS
+    )
+
+
+def _legacy_ceiling() -> float:
+    """The pre-review ceiling: allowances only, no safety value (review F2)."""
+    return (
+        ocr._EDGE_PROXY_TIMEOUT_SECONDS
+        - ocr._BUDGET_OVERHEAD_SECONDS
+        - ocr._BUDGET_OVERSHOOT_ALLOWANCE_SECONDS
+    )
+
+
 def test_hard_budget_clamps_an_overlarge_configured_value():
     assert ocr._hard_budget_seconds(10_000.0) == (
         ocr._EDGE_PROXY_TIMEOUT_SECONDS
         - ocr._BUDGET_OVERHEAD_SECONDS
         - ocr._BUDGET_OVERSHOOT_ALLOWANCE_SECONDS
+        - ocr._BUDGET_SAFETY_MARGIN_SECONDS
     )
     assert ocr._hard_budget_seconds(12.5) == 12.5
     assert ocr._hard_budget_seconds(0) == 0.0
     # Defensive: a malformed override must not blow the deadline open.
     assert ocr._hard_budget_seconds("not-a-number") == ocr.OCR_BUDGET_SECONDS
+
+
+def test_hard_budget_invariant_holds_at_the_clamp_value(monkeypatch):
+    """(review F2) the clamp must be closed under its own ceiling.
+
+    The margin invariant used to be asserted only for the shipped
+    OCR_BUDGET_SECONDS (40). But the ceiling was exactly 60 - 5 - 7 = 48, and
+    48 + 5 + 7 = 60 is the boundary itself - so ANY configured value at or above
+    the clamp re-opened the gap the whole constant exists to close, and the
+    docstring's "a config/constant mistake cannot re-open that gap" was false
+    for the one value most likely to be produced by a mistake.
+
+    This asserts the strict invariant at the clamp value itself, which is the
+    largest number _hard_budget_seconds() can ever return.
+    """
+    clamp = ocr._hard_budget_seconds(10_000.0)
+    assert clamp > ocr.OCR_BUDGET_SECONDS, (
+        "the clamp must be the worst case, not the default"
+    )
+    # The actual requirement: even the clamp leaves real margin under the edge.
+    assert _budget_plus_allowances(clamp) < ocr._EDGE_PROXY_TIMEOUT_SECONDS
+    # And it is still a genuine safety margin, not a rounding crumb.
+    assert ocr._EDGE_PROXY_TIMEOUT_SECONDS - _budget_plus_allowances(clamp) >= 1.0
+
+    # The invariant must hold for every value the function can return, not just
+    # the clamp and the default.
+    for requested in (0, 1, 12.5, ocr.OCR_BUDGET_SECONDS, clamp, 10_000.0):
+        asserted = ocr._hard_budget_seconds(requested)
+        assert asserted <= clamp
+        assert _budget_plus_allowances(asserted) < ocr._EDGE_PROXY_TIMEOUT_SECONDS
+
+
+def test_hard_budget_invariant_is_non_vacuous_against_the_old_ceiling():
+    """(review F2) proof the previous assertion above can fail.
+
+    The same strict invariant, evaluated at the OLD ceiling computation (no
+    safety value), sits exactly ON the boundary: 48 + 5 + 7 == 60. Without the
+    safety margin the assertion is a real, failing check - which is what makes
+    the fixed version meaningful rather than tautological.
+    """
+    legacy_clamp = _legacy_ceiling()
+    assert _budget_plus_allowances(legacy_clamp) == ocr._EDGE_PROXY_TIMEOUT_SECONDS
+    assert not (_budget_plus_allowances(legacy_clamp) < ocr._EDGE_PROXY_TIMEOUT_SECONDS)
+
+    # And the shipped version is strictly better, not merely different.
+    fixed_clamp = ocr._hard_budget_seconds(10_000.0)
+    assert fixed_clamp < legacy_clamp
 
 
 def test_whole_chain_deadline_uses_the_clamped_budget(monkeypatch):
@@ -379,28 +449,117 @@ def test_gemini_does_not_retry_a_retryable_status(monkeypatch):
     assert len(calls) == 1
 
 
-def test_openrouter_head_cannot_consume_the_whole_chain_budget():
+class _FrozenClock:
+    """Deterministic clock for the scheduling arithmetic tests."""
+
+    def __init__(self, now=100.0):
+        self.now = now
+
+    def monotonic(self):
+        return self.now
+
+
+def _freeze_ocr_clock(monkeypatch, now=100.0) -> _FrozenClock:
+    clock = _FrozenClock(now)
+    monkeypatch.setattr(ocr, "time", clock)
+    return clock
+
+
+def _openrouter_window() -> float:
+    """Reproduce the window ocr_receipt() hands to the OpenRouter chain.
+
+    ocr_receipt() reserves `min(_OPENROUTER_FALLBACK_MAX_SECONDS, budget *
+    _OPENROUTER_FALLBACK_RATIO)` for the fallback and gives the primary the rest;
+    a hanging primary burns its whole slice, so the free chain sees exactly that
+    reservation (26.67s of the 40s budget). Asserting against the full budget
+    would be degenerate because the per-attempt cap would mask everything.
+    """
+    budget = ocr._hard_budget_seconds()
+    return min(
+        ocr._OPENROUTER_FALLBACK_MAX_SECONDS,
+        max(0.0, budget * ocr._OPENROUTER_FALLBACK_RATIO),
+    )
+
+
+def test_openrouter_head_cannot_consume_the_whole_chain_budget(monkeypatch):
     """A hanging first model must leave a usable slice for the models behind it.
 
     (bug v98) The previous version handed the head the entire per-attempt cap, so
     one hanging free route could eat the budget the working route needed.
     """
-    deadline = time.monotonic() + ocr.OCR_BUDGET_SECONDS
+    clock = _freeze_ocr_clock(monkeypatch)
+    window = _openrouter_window()
+    deadline = clock.now + window
     slots = len(ocr.DEFAULT_OPENROUTER_OCR_MODELS)
     head = ocr._openrouter_model_deadline(deadline, slots)
-    head_slice = head - time.monotonic()
+    head_slice = head - clock.now
     left_for_tail = deadline - head
     later_models = slots - 1
 
-    assert head_slice <= ocr._ATTEMPT_TIMEOUT_CAP
-    # Every model still queued keeps at least its floor of real wall-clock.
-    assert left_for_tail >= ocr._MIN_LATER_MODEL_SECONDS * later_models
+    assert head_slice <= ocr._ATTEMPT_TIMEOUT_CAP + _SCHEDULE_EPS
+    # Every model still queued keeps its floor of real wall-clock, but the total
+    # reserve is now capped by _RESERVE_MAX_FRACTION (review F4: it used to grow
+    # linearly with chain length and starve the head). The guaranteed tail slice
+    # is therefore the smaller of the two, not the linear one alone.
+    assert left_for_tail + _SCHEDULE_EPS >= min(
+        ocr._MIN_LATER_MODEL_SECONDS * later_models,
+        window * ocr._RESERVE_MAX_FRACTION,
+    )
     # The last model gets the whole remaining window, capped by the per-attempt
     # limit, and never anything past the shared hard deadline.
     last = ocr._openrouter_model_deadline(deadline, 1)
-    last_slice = last - time.monotonic()
-    assert 0 < last_slice <= min(ocr._ATTEMPT_TIMEOUT_CAP, ocr.OCR_BUDGET_SECONDS)
+    last_slice = last - clock.now
+    assert 0 < last_slice <= min(ocr._ATTEMPT_TIMEOUT_CAP, window)
     assert last <= deadline
+
+
+def test_openrouter_head_keeps_a_real_slice_on_a_long_chain(monkeypatch):
+    """(review F4) the per-model tail floor must not scale the head down forever.
+
+    The reserve was `_MIN_LATER_MODEL_SECONDS * (queued - 1)`, linear in chain
+    length: with 5 free routes queued the FIRST candidate got only 6.67s of a
+    26.67s window while the routes behind it - which answer 429 in ~0.2s and
+    therefore spend none of that reservation - held back 20s between them. A
+    vision read of a receipt can need longer than 6.67s, so the head was cut off
+    mid-read with budget unspent.
+
+    The reserve is now also capped at `_RESERVE_MAX_FRACTION` of the remaining
+    window, so the head keeps at least `1 - fraction` of it no matter how many
+    routes are queued, and every queued route still gets a usable slice.
+    """
+    clock = _freeze_ocr_clock(monkeypatch)
+    window = _openrouter_window()
+    deadline = clock.now + window
+    routes = len(ocr.DEFAULT_OPENROUTER_OCR_MODELS)
+    head = ocr._openrouter_model_deadline(deadline, routes)
+    head_slice = head - clock.now
+    guarantee = window * (1 - ocr._RESERVE_MAX_FRACTION)
+
+    # The pre-fix reserve, kept here to prove this is not a tautology: the old
+    # formula handed the 5-route chain a head slice of only 6.67s.
+    legacy_reserve = min(
+        window, ocr._MIN_LATER_MODEL_SECONDS * (routes - 1)
+    )
+    legacy_head_slice = window - legacy_reserve
+    assert legacy_head_slice + _SCHEDULE_EPS < guarantee, (
+        "the old formula must actually violate the new guarantee"
+    )
+
+    # Before the fix this was 6.67s; the cap guarantees at least half the window.
+    assert head_slice + _SCHEDULE_EPS >= guarantee
+    # Non-vacuous: the fix strictly beats the old linear reserve.
+    assert head_slice > legacy_head_slice + ocr._MIN_ATTEMPT_SECONDS
+    # Still bounded by the per-attempt cap and never past the hard deadline.
+    assert head_slice <= ocr._ATTEMPT_TIMEOUT_CAP + _SCHEDULE_EPS
+    assert head <= deadline
+
+    # The reserve cannot grow with chain length: a much longer chain does not
+    # shrink the head below the same guarantee (it used to hit the 3s floor).
+    long_chain = ocr._openrouter_model_deadline(deadline, 40)
+    assert long_chain - clock.now + _SCHEDULE_EPS >= guarantee
+
+    # And the tail is still protected: the queued models keep real wall-clock.
+    assert deadline - head + _SCHEDULE_EPS >= window * ocr._RESERVE_MAX_FRACTION
 
 
 def test_openrouter_403_advances_to_next_model(monkeypatch):
@@ -501,6 +660,7 @@ def test_request_returns_below_the_edge_proxy_boundary(monkeypatch):
         "_MIN_LATER_MODEL_SECONDS",
         "_BUDGET_OVERHEAD_SECONDS",
         "_BUDGET_OVERSHOOT_ALLOWANCE_SECONDS",
+        "_BUDGET_SAFETY_MARGIN_SECONDS",
         "_EDGE_PROXY_TIMEOUT_SECONDS",
     ):
         monkeypatch.setattr(ocr, name, getattr(ocr, name) * scale)
