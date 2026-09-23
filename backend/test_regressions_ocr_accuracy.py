@@ -256,6 +256,55 @@ def test_openrouter_passes_selected_model_in_each_payload(monkeypatch):
     assert [_model_from_request(request) for request in requests] == ["first:free"]
 
 
+def test_ocr_receipt_keeps_time_for_a_slow_later_free_model(monkeypatch):
+    """A real later candidate must survive fast 429s from earlier models."""
+    class _Clock:
+        def __init__(self):
+            self.now = 100.0
+
+        def monotonic(self):
+            return self.now
+
+    clock = _Clock()
+    monkeypatch.setattr(ocr, "time", clock)
+    monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
+    monkeypatch.setattr(ocr, "OR_API_KEY", "fake-openrouter-key")
+    models = ("first:free", "second:free", "slow-success:free")
+    monkeypatch.setattr(ocr, "OR_MODELS", models)
+    monkeypatch.setattr(ocr, "_downscale", lambda image: image)
+    seen = []
+
+    def slow_gemini(image_bytes, mime_type, deadline):
+        clock.now = deadline
+        raise RuntimeError("simulated primary timeout")
+
+    def fake_model(image_b64, image_mime, model, deadline):
+        seen.append((model, deadline - clock.now))
+        if model != models[-1]:
+            clock.now += 0.1
+            raise ocr._OpenRouterFailure("rate_limited", status=429)
+        assert deadline - clock.now >= 30.0
+        return {
+            "merchant": "",
+            "date": "",
+            "items": [{"name": "Item", "price": 100, "discount": 0, "quantity": 1}],
+            "subtotal": 100,
+            "order_discount": 0,
+            "tax": 0,
+            "service": 0,
+            "total": 100,
+            "tax_included": False,
+        }
+
+    monkeypatch.setattr(ocr, "_gemini_ocr", slow_gemini)
+    monkeypatch.setattr(ocr, "_openrouter_model_ocr", fake_model)
+
+    result = ocr.ocr_receipt(b"image", "image/jpeg")
+
+    assert result["total"] == 100
+    assert [model for model, _ in seen] == list(models)
+
+
 def test_openrouter_status_failures_advance_in_order_to_next_model(monkeypatch):
     requests = []
     models = ("first:free", "second:free", "third:free")

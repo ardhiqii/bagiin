@@ -76,15 +76,16 @@ RETRY_CODES = (429, 500, 502, 503, 504)
 # another 3x90s + backoff -> ~465s worst case on a single request. Cloudflare cuts the
 # connection at 100s and returns its own 524 HTML, so anything past that point burns
 # CPU for nobody. Both providers now share ONE wall-clock budget for the whole call.)
-OCR_BUDGET_SECONDS = 45.0
-_ATTEMPT_TIMEOUT_CAP = 15.0
+# Keep the whole provider chain below the reverse-proxy timeout while allowing
+# a free vision model to spend ~40s on one receipt. The old 45s/15s split made
+# a real 200-response fallback look broken when its first two models returned
+# fast 429s and the third model needed the remaining time.
+OCR_BUDGET_SECONDS = 90.0
+_ATTEMPT_TIMEOUT_CAP = 55.0
 _MIN_ATTEMPT_SECONDS = 3.0
 _OPENROUTER_MAX_ATTEMPTS = 2
-# Keep a bounded slice for the fallback instead of letting a slow primary
-# consume the shared deadline. The ratio makes tiny test budgets scale down,
-# while the cap keeps production fallback latency predictable.
-_OPENROUTER_FALLBACK_RATIO = 1 / 3
-_OPENROUTER_FALLBACK_MAX_SECONDS = 15.0
+_OPENROUTER_FALLBACK_RATIO = 2 / 3
+_OPENROUTER_FALLBACK_MAX_SECONDS = 60.0
 
 SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Semua gambar dalam satu permintaan adalah halaman atau potongan dari SATU pesanan yang sama.
 Gabungkan bukti dari semua gambar dan jangan menghitung baris, diskon, pajak, atau total yang tumpang tindih dua kali. Output JSON EXACTLY:
@@ -336,11 +337,16 @@ def _active_openrouter_models() -> tuple[str, ...]:
 
 
 def _openrouter_model_deadline(deadline: float, remaining_models: int) -> float:
-    """Give every remaining model a fair slice of the shared wall-clock budget."""
+    """Give each candidate a real attempt slice within the shared deadline.
+
+    Dividing the remaining wall-clock time by every model still in the list
+    starved a later candidate even when earlier models failed immediately with
+    429. The outer deadline already bounds the whole chain, so each candidate
+    can use the normal per-attempt cap without exceeding the request budget.
+    """
     now = time.monotonic()
     remaining = max(0.0, deadline - now)
-    share = remaining / max(1, remaining_models)
-    return min(deadline, now + min(_ATTEMPT_TIMEOUT_CAP, share))
+    return min(deadline, now + min(_ATTEMPT_TIMEOUT_CAP, remaining))
 
 
 def _openrouter_ocr(
