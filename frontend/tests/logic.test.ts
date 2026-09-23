@@ -12,6 +12,18 @@ import {
   normalizePaymentAccount,
 } from "../src/lib/api.ts";
 import { createRequestGate } from "../src/lib/async-state.ts";
+import {
+  applyContactToggle,
+  contactInitial,
+  DUPLICATE_TYPED_NAME_NOTICE,
+  inviteFailureNotice,
+  normalizePersonName,
+  participantPlaceholders,
+  pickerContactCaption,
+  removeTypedName,
+  togglePickedContact,
+  typedNameRefusal,
+} from "../src/lib/types.ts";
 import { photoFilename, photoUrl } from "../src/lib/photo-path.ts";
 import { inputMoney, rupiahFmt, rupiahParse } from "../src/lib/money.ts";
 import { isKnownHashRoute, parseHash, routeHash } from "../src/lib/routes.ts";
@@ -66,6 +78,19 @@ test("typed endpoint normalizers reject malformed payloads and preserve response
   assert.deepEqual(normalizeMutationOk({ ok: true }), { ok: true });
   assert.throws(() => normalizeMutationOk({ ok: false }), (error: unknown) => error instanceof ApiError);
   assert.deepEqual(normalizeContacts([{ id: "contact-1", name: "Amel" }]), [{ id: "contact-1", name: "Amel" }]);
+  // `last_shared` survives the normalizer — the "Yang ikut" picker's caption is
+  // built from it (pre-fix it was dropped here, which is why the caption could
+  // never say "pernah berbagi bill").
+  assert.deepEqual(
+    normalizeContacts([
+      { id: "contact-1", name: "Amel", last_shared: "2026-09-01 10:00:00" },
+      { id: "contact-2", name: "Budi", last_shared: null },
+    ]),
+    [
+      { id: "contact-1", name: "Amel", last_shared: "2026-09-01 10:00:00" },
+      { id: "contact-2", name: "Budi" },
+    ],
+  );
   assert.throws(() => normalizeContacts([{ id: "contact-1" }]), (error: unknown) => error instanceof ApiError);
   assert.deepEqual(normalizeOcrResponse({ title: "Makan", items: [{ name: "Nasi", price: "12.500", quantity: 1 }] }), {
     title: "Makan",
@@ -110,4 +135,133 @@ test("photo cleanup only accepts generated upload filenames", () => {
   assert.equal(photoFilename("../../other-bill.jpg"), null);
   assert.equal(photoFilename("0123456789abcdef.svg"), null);
   assert.equal(photoUrl("/tmp/uploads/0123456789abcdef.webp"), "/uploads/0123456789abcdef.webp");
+});
+
+/* The "Yang ikut" picker's two load-bearing rules. Both are the kind that a
+   refactor can break silently, because the wrong behaviour still LOOKS fine on
+   screen: a picked contact sent as a placeholder shows up as a second row with
+   the same name, and a caption that always says "pernah berbagi bill" reads
+   plausibly while being false for a contact the server never reported sharing
+   with. */
+test("a picked proven contact never becomes a participants placeholder", () => {
+  const draft = { extra_names: [" Budi ", "", "Sari"] };
+  assert.deepEqual(participantPlaceholders(draft), ["Budi", "Sari"]);
+  // The same person typed AND picked must still only produce the typed name
+  // here; the invite carries the identity, not this array.
+  assert.deepEqual(participantPlaceholders({ extra_names: [] }), []);
+});
+
+/* --------------------------------------------------------------------------
+   The duplicate-person guards the React port dropped (legacy:
+   frontend/static/create.js:1341-1342 and :1389). These assert the REACHABLE
+   END STATE — what the create payload would carry — not just the widget, because
+   the defect they close was invisible on screen for auto-accept contacts: the
+   backend's same-name claim made the duplicate look like it had worked. */
+
+test("name normalisation treats whitespace and case variants as one person", () => {
+  assert.equal(normalizePersonName(" Budi "), "budi");
+  assert.equal(normalizePersonName("BUDI"), normalizePersonName("  budi  "));
+  assert.equal(normalizePersonName("budi"), normalizePersonName("Budi"));
+  assert.equal(normalizePersonName(null), "");
+  assert.equal(normalizePersonName(undefined), "");
+  // Two genuinely different people must not collide.
+  assert.notEqual(normalizePersonName("Budi"), normalizePersonName("Budiono"));
+});
+
+test("ticking a contact strips a same-named typed entry, case and spacing included", () => {
+  const budi = { id: "id-budi", name: "Budi" };
+  const draft = { extra_names: [" budi ", "Sari", "BUDI"], picked_contacts: [] as Array<{ id: string; name: string }> };
+  const next = applyContactToggle(draft, budi);
+  // Both spellings of the same person are gone; the unrelated name survives.
+  assert.deepEqual(next.extra_names, ["Sari"]);
+  assert.deepEqual(next.picked_contacts.map(contact => contact.id), ["id-budi"]);
+  // The end state: the payload can no longer name the picked contact.
+  assert.deepEqual(participantPlaceholders({ ...draft, ...next }), ["Sari"]);
+  // Untoggling must NOT resurrect the stripped entry (and must not strip more).
+  const off = applyContactToggle({ ...draft, ...next }, budi);
+  assert.deepEqual(off.picked_contacts, []);
+  assert.deepEqual(off.extra_names, ["Sari"]);
+});
+
+test("a typed name matching a picked contact is refused and never reaches extra_names", () => {
+  const rina = { id: "id-rina", name: "Rina" };
+  const draft = { extra_names: [] as string[], picked_contacts: [rina] };
+  assert.equal(typedNameRefusal(draft, "Rina"), DUPLICATE_TYPED_NAME_NOTICE);
+  assert.equal(typedNameRefusal(draft, " rina "), DUPLICATE_TYPED_NAME_NOTICE);
+  assert.equal(typedNameRefusal(draft, "RINA"), DUPLICATE_TYPED_NAME_NOTICE);
+  // Not a duplicate: allowed.
+  assert.equal(typedNameRefusal(draft, "Budi"), null);
+  // Empty input is simply ignored, not refused with a toast.
+  assert.equal(typedNameRefusal(draft, "   "), null);
+  // A same-named typed entry already listed is refused too — the legacy guard
+  // covered both lists, so "Tambah" twice cannot stack the name either.
+  assert.equal(typedNameRefusal({ extra_names: ["Budi"], picked_contacts: [] }, " budi "), DUPLICATE_TYPED_NAME_NOTICE);
+});
+
+test("the create payload can never carry a picked contact name, whichever order the user acts", () => {
+  const budi = { id: "id-budi", name: "Budi" };
+  // Order A: type first, then tick the contact (the reported reproduction).
+  const typedFirst = { extra_names: ["Budi"], picked_contacts: [budi] };
+  assert.deepEqual(participantPlaceholders(typedFirst), []);
+  // Order B: tick first, then type (refused at the add step).
+  const refusal = typedNameRefusal({ extra_names: [], picked_contacts: [budi] }, "Budi");
+  assert.equal(refusal, DUPLICATE_TYPED_NAME_NOTICE);
+  assert.deepEqual(participantPlaceholders({ extra_names: [], picked_contacts: [budi] }), []);
+  // Order C: a case/whitespace variant slips past a widget guard — still filtered.
+  assert.deepEqual(participantPlaceholders({ extra_names: [" BUDI "], picked_contacts: [budi] }), []);
+  // Order D: an EXISTING typed row edited in place to the picked contact's name.
+  // Neither widget guard runs on an inline edit, so this is exactly the case the
+  // payload-level filter exists for: measured pre-fix it sent
+  // participants ["Budi"], i.e. a "Budi" placeholder row NEXT TO the pending
+  // invite for Budi.
+  assert.deepEqual(participantPlaceholders({ extra_names: ["Budi"], picked_contacts: [budi] }), []);
+  // Order E: unrelated typed names are untouched by the filter.
+  assert.deepEqual(participantPlaceholders({ extra_names: ["Budi", "Sari"], picked_contacts: [budi] }), ["Sari"]);
+  // The filter must not run on an empty picked list — that would drop everyone.
+  assert.deepEqual(participantPlaceholders({ extra_names: ["Budi"], picked_contacts: [] }), ["Budi"]);
+});
+
+test("removeTypedName only removes the matching person's entries", () => {
+  assert.deepEqual(removeTypedName(["Budi", "Sari", "BUDI"], "Budi"), ["Sari"]);
+  assert.deepEqual(removeTypedName(["Sari"], "Budi"), ["Sari"]);
+  assert.deepEqual(removeTypedName([], "Budi"), []);
+});
+
+test("picked contacts toggle by identity and keep their last_shared evidence", () => {
+  const rina = { id: "id-rina", name: "Rina", last_shared: "2026-09-01 10:00:00" };
+  const budi = { id: "id-budi", name: "Budi" };
+  const one = togglePickedContact([], rina);
+  assert.deepEqual(one, [rina]);
+  const two = togglePickedContact(one, budi);
+  assert.deepEqual(two.map(contact => contact.id), ["id-rina", "id-budi"]);
+  // Toggling the same identity off removes it and leaves the other alone.
+  assert.deepEqual(togglePickedContact(two, rina).map(contact => contact.id), ["id-budi"]);
+  // No mutation of the input array: the draft is replaced, never patched.
+  assert.equal(two.length, 2);
+  assert.deepEqual(togglePickedContact([], { id: "x", name: "X" }), [{ id: "x", name: "X", last_shared: undefined }]);
+});
+
+test("picker caption and avatar initial match the legacy contact row", () => {
+  assert.equal(pickerContactCaption({ last_shared: "2026-09-01 10:00:00" }), "pernah berbagi bill");
+  assert.equal(pickerContactCaption({}), "kontak terbukti");
+  /* The caption is only reachable if the field survives the API boundary, so
+     assert it end-to-end: one RAW contacts response in, the caption out. The
+     first half fails on the tree where `normalizeContact` returned `{id,name}`. */
+  const [withHistory, withoutHistory] = normalizeContacts([
+    { id: "id-rina", name: "Rina", last_shared: "2026-09-01 10:00:00" },
+    { id: "id-budi", name: "Budi" },
+  ]);
+  assert.equal(pickerContactCaption(withHistory), "pernah berbagi bill");
+  assert.equal(pickerContactCaption(withoutHistory), "kontak terbukti");
+  assert.equal(contactInitial("rina"), "R");
+  assert.equal(contactInitial("  budi"), "B");
+  assert.equal(contactInitial(""), "");
+});
+
+test("invite batch copy distinguishes failure from still-in-flight", () => {
+  // A batch that never resolved inside the 8s bound is NOT a failure.
+  assert.match(inviteFailureNotice(null), /masih diproses/);
+  assert.equal(inviteFailureNotice([{ status: "fulfilled" }, { status: "fulfilled" }]), "");
+  assert.match(inviteFailureNotice([{ status: "fulfilled" }, { status: "rejected" }]), /1 undangan gagal/);
+  assert.match(inviteFailureNotice([{ status: "rejected" }, { status: "rejected" }]), /2 undangan gagal/);
 });

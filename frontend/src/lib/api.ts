@@ -232,7 +232,14 @@ export function normalizeContact(value: unknown): Contact {
   if (!data || !requiredText(data.id) || !requiredText(data.name)) {
     throw new ApiError("Respons kontak tidak sesuai format");
   }
-  return { id: data.id, name: data.name };
+  const contact: Contact = { id: data.id, name: data.name };
+  /* `last_shared` is carried through (not dropped) so the "Yang ikut" picker's
+     caption can tell "pernah berbagi bill" from "kontak terbukti". It is
+     optional and non-structural on purpose: a row without it is still a valid
+     contact, so the bill screen's invite sheet keeps working unchanged. */
+  const lastShared = optionalString(data, "last_shared");
+  if (lastShared !== undefined) contact.last_shared = lastShared;
+  return contact;
 }
 
 export function normalizeContacts(value: unknown): Contact[] {

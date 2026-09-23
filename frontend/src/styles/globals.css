@@ -94,7 +94,13 @@ body { margin: 0; min-width: 320px; min-height: 100dvh; background: var(--bg); c
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .58; }
-.input, .field, .form-grid > *, .vf-item, .vf-input-group, .date-input-wrap { min-width: 0; }
+/* `.account-row` joins this list for the "Yang ikut" picker: a flex row's
+   min-width defaults to `auto`, so a long contact name (a real full name from
+   another identity, not a typed label) blew the row out to 575px inside a 262px
+   card and took the whole page to 604px at a 320px viewport — the single
+   overflow the create screen's "no horizontal overflow" assertion caught.
+   `.grow` already carries `min-width: 0`; the flex CONTAINER needed it too. */
+.input, .field, .form-grid > *, .vf-item, .vf-input-group, .date-input-wrap, .account-row { min-width: 0; }
 :focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 65%, transparent); outline-offset: 3px; }
 
 .app-root { min-height: 100dvh; }
@@ -192,6 +198,38 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .field-hint { margin: 0; color: var(--text-3); font-size: 12px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .form-grid .full { grid-column: 1 / -1; }
+/* `.field` is `display: grid`, so as a grid ITEM it carries the implicit
+   `align-self: stretch`. Every cell in a `.form-grid` row was therefore
+   stretched to the tallest cell in that row, and because `.field` is itself a
+   grid its two implicit rows (label, control) split that inflated height
+   between them — so both the label box AND the input grew, not just the cell.
+
+   The date cell is the tallest cell in the create metadata row only because it
+   carries `<p class="date-helper">`, and its shorter neighbour "Tempat,
+   opsional" paid for it. Measured at 390px before this rule, `.verify-detail-card
+   .form-grid`: merchant input 66.5px tall (every other control on the screen is
+   the 46px `--control-height`) with its top 20.5px BELOW the date input's top
+   (311.7 vs 291.2), merchant label box 38.5px instead of 18px, cells 110px in a
+   row whose natural height is 69px. Same inflation in the edit-bill "Biaya
+   tambahan" grid (Pajak input 66px at 390px, 57.5px at 1040px, from the
+   Subtotal cell's `field-hint`). That is the "aneh" the user reported.
+
+   Fixed on the ITEM rather than the container: `.form-grid { align-items: start }`
+   stops the stretch too, but `.form-grid` is also worn by grids whose children are
+   NOT `.field` and ARE meant to match each other's height — `.recap-money-grid`
+   ("Perlu dibayar" / "Akan diterima") and `.recap-estimate-grid`, whose cells are
+   `.recap-money-cell` / `.stack-sm`. Measured on `#/recap` at 390px and 1040px by
+   forcing one sibling to 200px: shipped rule leaves the pair equal (200/200),
+   the blanket rule breaks it (200/113.4 money, 200/92 estimate). `.form-grid >
+   .field` reaches exactly the primitive that inflates and nothing else; the
+   settings-account grid's children ARE `.field`, so it is covered either way.
+
+   Measured after, at 320/360/375/390/412/480/600/768/820/1039/1040px, date
+   empty and filled, light and dark: merchant and date inputs both 46px with a
+   0.0px top-offset delta, both labels one line at 18px, the metadata card
+   unchanged (207px on phones, 214px at >=768px), and the recap/settings grids
+   byte-identical to before. */
+.form-grid > .field { align-self: start; }
 .check-label { min-height: var(--control-height-compact); display: inline-flex; align-items: center; gap: 9px; color: var(--text-2); font-size: 14px; font-weight: 600; }
 .check-label input { width: 19px; height: 19px; accent-color: var(--accent); }
 .switch { width: 52px; min-width: 52px; height: var(--control-height-compact); min-height: var(--control-height-compact); flex: 0 0 52px; border: 0; padding: 11px 3px; border-radius: var(--radius-full); background: var(--border-strong); transition: background .18s ease; }
@@ -273,6 +311,12 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .account-list { display: grid; gap: 8px; }
 .account-row { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-top: 1px solid var(--border); }
 .account-row:first-child { border-top: 0; }
+/* The "Yang ikut" picker puts a real checkbox in the row. `min-height` keeps the
+   whole row a comfortable tap target on a phone even though the visual box stays
+   19px, and `accent-color` is the same token `.check-label input` uses (v90)
+   instead of a hand-drawn control that drifts from the rest of the form. */
+.account-row input[type="checkbox"] { width: 19px; height: 19px; min-height: 19px; flex: 0 0 19px; accent-color: var(--accent); }
+.account-row.selected { background: var(--accent-soft); }
 .account-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; color: var(--accent); background: var(--accent-soft); }
 /* Brand logos: one uniform pill box so every logo matches. Ported verbatim from
    the legacy `.brand-logo` / `.brand-chip` pair in frontend/index.html (v68b).
@@ -810,6 +854,18 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   .recap-summary { padding: 22px; }
 }
 
+/* ---------- transient notice (the ported `toast`) ---------- */
+/* The legacy build had a real `#toast` node (frontend/index.html:665) and every
+   async action printed into it. The React port has no equivalent, so the few
+   flows that must report AFTER the screen they started on is gone (the create
+   screen's post-create invites) append this node instead. It cannot be React
+   state: the component that fires the message unmounts before the message
+   arrives, so a `setState` there paints nothing.
+   Fixed like the legacy toast, and above the sheets (`z-index: 50`) because a
+   failed invite must still be readable if a dialog is open. */
+.app-notice { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 92px); z-index: 80; transform: translateX(-50%) translateY(8px); max-width: min(90%, 420px); padding: 11px 18px; border-radius: var(--radius-full); background: var(--text); color: var(--bg); font-size: 14px; font-weight: 500; text-align: center; box-shadow: var(--shadow-2); opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease; }
+.app-notice.is-shown { opacity: 1; transform: translateX(-50%) translateY(0); }
+
 /* ---------- loading / fallback containers ---------- */
 /* Legacy had no rule for these two either, but they are bare containers with no
    primitive class, so leaving them unstyled meant a naked <p>-like stack. */
@@ -825,8 +881,10 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   .btn-row > .btn-auto { width: 100%; }
   /* Photo actions are a deliberate pair, not a generic full-width action stack. */
   #dz .btn-row,
+  .create-photo-actions,
   .verify-photo-card .btn-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #dz .btn-row > *,
+  .create-photo-actions > *,
   .verify-photo-card .btn-row > * { width: 100%; }
   .verify-editor-main { gap: 12px; }
   .verify-editor-main > .verify-detail-card,

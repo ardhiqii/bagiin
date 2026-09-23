@@ -256,6 +256,16 @@ export type PaymentAccount = {
 export type Contact = {
   id: string;
   name: string;
+  /**
+   * `MAX(b.created_at) AS last_shared` from `GET /api/identities/{id}/contacts`
+   * (`db.get_contacts`, backend/db.py:478) — when the caller last shared a bill
+   * with this person. Absent (not merely empty) when the server sends none.
+   *
+   * This is the ONE definition of the contacts row shape: the "Yang ikut"
+   * picker's caption reads it, and it survives `normalizeContact` so no caller
+   * has to re-declare the field locally and silently lose it.
+   */
+  last_shared?: string;
 };
 
 export type SelectionPick = {
@@ -410,6 +420,27 @@ export type DraftItem = {
   slot_count: number;
 };
 
+/**
+ * A proven contact PICKED on the create screen ("Yang ikut").
+ *
+ * This is deliberately NOT the same thing as `CreateBillRequest.participants`.
+ * That field is a list of free-typed NAMES that the server stores as
+ * placeholder rows with no identity behind them. A picked contact is a real
+ * identity: it cannot be sent to `POST /api/bills` (the endpoint takes names,
+ * and the person must accept/link up as a real member), so it is put on the
+ * bill AFTERWARDS with `POST /api/bills/{id}/invite`, exactly like the legacy
+ * client did (frontend/static/create.js:1936). Keeping the two in separate
+ * draft fields is what stops a proven contact from becoming a duplicate
+ * placeholder row (bug history: the legacy code had to drop same-named typed
+ * rows when a contact was picked, because both lists fed one roster).
+ */
+export type PickedContact = {
+  id: string;
+  name: string;
+  /** `last_shared` from GET /api/identities/{id}/contacts, when available. */
+  last_shared?: string;
+};
+
 export type BillDraft = {
   title: string;
   merchant: string;
@@ -423,6 +454,133 @@ export type BillDraft = {
   paid_by_myself: boolean;
   paid_by_name: string;
   extra_names: string[];
+  /** Proven contacts picked from the contact list — see `PickedContact`. */
+  picked_contacts: PickedContact[];
   photos: string[];
   photo_path?: string;
 };
+
+/* ------------------------------------------------------------------ picker
+   Pure derivations of the "Yang ikut" picker, kept next to the DTOs they
+   operate on so the create screen and the logic suite share ONE definition of
+   what each helper means. They live here rather than in the route because the
+   picker's load-bearing rules are the kind that must be testable without a
+   DOM: (a) a picked contact never becomes a `participants` placeholder, and
+   (b) the same person can never be recorded twice, and (c) the caption never
+   claims a shared bill it cannot prove. */
+
+/**
+ * The ONE "is this the same person?" normalisation.
+ *
+ * Legacy equivalent: `normName` (`frontend/static/bill.js:4`:
+ * `String(s || "").trim().toLowerCase()`), which the create screen used for the
+ * two duplicate guards the React port dropped
+ * (frontend/static/create.js:1341-1342 and :1389). Exported and singular on
+ * purpose: two inline copies of this comparison is exactly how the guards drift
+ * apart again.
+ */
+export function normalizePersonName(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+/** The legacy refusal toast (frontend/static/create.js:1342), verbatim. */
+export const DUPLICATE_TYPED_NAME_NOTICE = "Nama itu sudah kepilih";
+
+/** Legacy's caption (frontend/static/create.js:1380) for a contact row. */
+export function pickerContactCaption(contact: Pick<PickedContact, "last_shared">): string {
+  return contact.last_shared ? "pernah berbagi bill" : "kontak terbukti";
+}
+
+/** `.avatar` initial, matching the invite sheet's `name.slice(0,1)` display. */
+export function contactInitial(name: string): string {
+  return String(name || "").trim().slice(0, 1).toUpperCase();
+}
+
+/** Add/remove one contact from the picked list without mutating the draft. */
+export function togglePickedContact(picked: PickedContact[], contact: PickedContact): PickedContact[] {
+  if (picked.some(item => item.id === contact.id)) return picked.filter(item => item.id !== contact.id);
+  return [...picked, { id: contact.id, name: contact.name, last_shared: contact.last_shared }];
+}
+
+/**
+ * Rule 1 of the legacy duplicate guards: ticking a contact REMOVES any
+ * free-typed entry that names the same person.
+ *
+ * Ports `frontend/static/create.js:1389`
+ * (`verifyState.extraNames = verifyState.extraNames.filter(n => normName(n) !== normName(name))`).
+ * Without it, one person ends up on the created bill twice: once as the
+ * identity-less placeholder fed by `participants`, once as the invited member.
+ */
+export function removeTypedName(extraNames: string[], contactName: string): string[] {
+  const target = normalizePersonName(contactName);
+  return extraNames.filter(name => normalizePersonName(name) !== target);
+}
+
+/**
+ * The WHOLE reaction to a contact checkbox toggle: apply the picked-list
+ * toggle AND the same-named free-typed strip in one step.
+ *
+ * Both halves are one helper because they must not be separable — calling the
+ * toggle without the strip is the exact regression this pair exists to close.
+ */
+export function applyContactToggle(
+  draft: Pick<BillDraft, "extra_names" | "picked_contacts">,
+  contact: PickedContact,
+): Pick<BillDraft, "extra_names" | "picked_contacts"> {
+  const picked_contacts = togglePickedContact(draft.picked_contacts, contact);
+  const picked = picked_contacts.some(item => item.id === contact.id);
+  return {
+    picked_contacts,
+    extra_names: picked ? removeTypedName(draft.extra_names, contact.name) : draft.extra_names,
+  };
+}
+
+/**
+ * Rule 2 of the legacy duplicate guards: refuse a free-typed name that matches
+ * an already-picked contact.
+ *
+ * Ports the refusal branch of `frontend/static/create.js:1341-1342`, which
+ * toasted `Nama itu sudah kepilih` and returned WITHOUT pushing the name.
+ * Returns `null` when the name may be added, otherwise the notice to show.
+ */
+export function typedNameRefusal(
+  draft: Pick<BillDraft, "extra_names" | "picked_contacts">,
+  rawName: string,
+): string | null {
+  const name = normalizePersonName(rawName);
+  if (!name) return null;
+  const collides = draft.extra_names.some(existing => normalizePersonName(existing) === name)
+    || draft.picked_contacts.some(contact => normalizePersonName(contact.name) === name);
+  return collides ? DUPLICATE_TYPED_NAME_NOTICE : null;
+}
+
+/**
+ * The placeholder names that go into `CreateBillRequest.participants`.
+ *
+ * Takes the whole draft rather than `extra_names` alone so the separation is
+ * enforced in ONE place: a picked contact has an identity and MUST NOT appear
+ * here, or the bill would carry both a placeholder row and an invite for the
+ * same person.
+ *
+ * The picked-contact exclusion is not belt-and-braces invention: the legacy
+ * submit path did the same filter on the same two fields
+ * (`frontend/static/create.js:1927-1928`), which is why the legacy build could
+ * not produce the duplicate row at all. Keeping it here means the create payload
+ * cannot name a picked contact even if a widget-level guard is bypassed.
+ */
+export function participantPlaceholders(
+  draft: Pick<BillDraft, "extra_names"> & { picked_contacts?: PickedContact[] },
+): string[] {
+  const pickedNames = (draft.picked_contacts ?? []).map(contact => normalizePersonName(contact.name));
+  return draft.extra_names
+    .map(name => name.trim())
+    .filter(Boolean)
+    .filter(name => !pickedNames.includes(normalizePersonName(name)));
+}
+
+/** Legacy's bounded-invite copy, as a pure mapping of the settled results. */
+export function inviteFailureNotice(results: Array<{ status: "fulfilled" | "rejected" }> | null): string {
+  if (!results) return "Bill sudah jadi. Sebagian undangan masih diproses, cek lagi nanti.";
+  const failed = results.filter(result => result.status === "rejected").length;
+  return failed ? `Bill sudah jadi, tapi ${failed} undangan gagal. Coba undang lagi dari bill.` : "";
+}
