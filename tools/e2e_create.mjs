@@ -267,6 +267,9 @@ try {
 }
 const WIDTHS = [320, 360, 375, 390, 412, 430, 480, 600, 768, 820, 1024, 1040, 1280, 1440];
 const HEIGHT = 900;
+/* The name used for BOTH the free-typed input and the auto_accept-OFF proven
+   contact, so the duplicate guard is measured on an exact match. */
+const E2E_TYPED_NAME = "Budi";
 const failures = [];
 const createdBillIds = new Set();
 /* A bill can be created by a FIXTURE identity other than the disposable one
@@ -347,6 +350,9 @@ if (!discovery) process.exit(2);
 
 let identity;
 let proofContacts = [];
+/* The proven contact whose NAME the duplicate guard is measured against, and
+   which is deliberately auto_accept OFF (see the fixture below). */
+let duplicateGuardContact = null;
 try {
   const stamp = `${Date.now().toString(36)}-${process.pid}`;
   identity = await api("POST", "/api/identities", { name: `E2E Create ${stamp}`, creator: true });
@@ -378,6 +384,34 @@ try {
       && proven.some(contact => contact.id === contactA.id)
       && proven.some(contact => contact.id === contactB.id),
     JSON.stringify(proven.map(contact => ({ id: contact.id, last_shared: contact.last_shared }))));
+  /* Duplicate-guard fixture: a proven contact named EXACTLY like the name the
+     harness types into the free-name input AND — the load-bearing part —
+     auto_accept OFF. With auto_accept ON the backend's same-name claim heals
+     the duplicate on its own and the assertion below would pass on a broken
+     client too; OFF, the duplicate survives as a "Budi" placeholder row with
+     identity_id NULL next to the pending invite, which is precisely the state
+     the legacy guards made unreachable. The endpoint is self-scoped, so the
+     toggle must be sent with THIS contact's own headers. */
+  duplicateGuardContact = {
+    ...(await api("POST", "/api/identities", { name: E2E_TYPED_NAME, creator: false })),
+    auto_accept: false,
+  };
+  await api("POST", `/api/identities/${duplicateGuardContact.id}/auto_accept`, { auto_accept: false }, duplicateGuardContact);
+  const guardBill = await api("POST", "/api/bills", {
+    title: `Prove typed-name ${stamp}`,
+    items: [{ name: "Air", price: 5000, discount: 0, quantity: 1, mode: "free" }],
+    subtotal: 5000, tax: 0, service: 0, total: 5000, tax_included: false,
+  }, duplicateGuardContact);
+  trackBillId(guardBill.id, duplicateGuardContact);
+  await api("POST", `/api/bills/${guardBill.id}/join`, {}, identity);
+  const guardProfile = await api("GET", `/api/identities/${duplicateGuardContact.id}/me`, undefined, duplicateGuardContact);
+  check("duplicate-guard contact is proven, named, and auto_accept OFF",
+    guardProfile.auto_accept === false && guardProfile.name === E2E_TYPED_NAME,
+    JSON.stringify({ name: guardProfile.name, auto_accept: guardProfile.auto_accept }));
+  const guardProven = await api("GET", `/api/identities/${identity.id}/contacts`, undefined, identity);
+  check("duplicate-guard contact is listed as a proven contact",
+    guardProven.some(contact => contact.id === duplicateGuardContact.id),
+    JSON.stringify(guardProven.map(contact => contact.name)));
 } catch (error) {
   console.error(`ERROR: disposable Bagiin server unavailable at ${BASE_URL}: ${error.message}`);
   process.exit(1);
@@ -929,8 +963,12 @@ const readCase = async (width, color) => evaluate(`(() => {
           await evaluate(`document.querySelector("#manual-btn")?.click()`);
           await sleep(300);
           const pickerReady = await waitForPicker();
+          /* The picker lists every proven contact (the two sharing-direction
+             fixtures PLUS the auto_accept-OFF duplicate-guard contact added
+             below), so assert that the fixture roster is a SUBSET that renders
+             fully, rather than an exact count that a future fixture would break. */
           check(`${prefix}: proven contacts render as pickable rows`,
-            pickerReady.rows.length === proofContacts.length
+            pickerReady.rows.length >= proofContacts.length
               && proofContacts.every(contact => pickerReady.ids.includes(`people-pick-${contact.id}`))
               && pickerReady.rows.every(row => row.avatar && row.name && row.caption),
             JSON.stringify(pickerReady));
@@ -938,7 +976,13 @@ const readCase = async (width, color) => evaluate(`(() => {
           const pickedInvitesBefore = inviteRequests.length;
           const createsBeforePicker = createRequests.length;
           const pickerSubmit = await evaluate(`(async () => {
-            const boxes = [...document.querySelectorAll('#people-pick input[type="checkbox"]')];
+            /* Only the two sharing-direction contacts: the auto_accept-OFF
+               duplicate-guard contact is left to its own block below, so this
+               block keeps its original "one invite per picked contact"
+               semantics. */
+            const pickerIds = ${JSON.stringify(proofContacts.map(contact => contact.id))};
+            const boxes = [...document.querySelectorAll('#people-pick input[type="checkbox"]')]
+              .filter(box => pickerIds.includes(box.id.replace("people-pick-", "")));
             for (const box of boxes) box.click();
             const set = (selector, value) => {
               const input = document.querySelector(selector);
@@ -988,6 +1032,126 @@ const readCase = async (width, color) => evaluate(`(() => {
               JSON.stringify({ people: invitedNames, participants: pickerBill.participants }));
           } else {
             check(`${prefix}: picked contacts land on the bill and typed names stay placeholders`, false, "no bill id from picker submit");
+          }
+
+          /* ---- duplicate person: same name typed AND picked -----------------
+             The legacy client had TWO guards here (frontend/static/create.js:
+             1341-1342 refuses a typed name matching a picked contact; :1389
+             strips a same-named typed entry when a contact is ticked). The React
+             port dropped both, so one person could be recorded twice: an
+             identity-less placeholder row fed by `participants` AND a pending
+             invite. The assertions below are written against the REACHABLE END
+             STATE (what the create payload carries, and what the bill looks like
+             AFTER the invite settles) rather than the widget, and they use the
+             auto_accept-OFF contact so the backend's same-name claim cannot
+             quietly repair the duplicate and make a broken client look correct.
+
+             Order matters: type the free name FIRST, then tick the contact —
+             the reported reproduction order, and the one where only a
+             toggle-time strip can save it. */
+          await navigate(`${BASE_URL}/?e2e=${Date.now()}#/create`);
+          await evaluate(`localStorage.setItem("bagiin_identity", ${identityJson})`);
+          await navigate(`${BASE_URL}/?e2e=${Date.now()}#/create`);
+          await evaluate(`document.querySelector("#manual-btn")?.click()`);
+          await sleep(300);
+          await waitForPicker();
+          const duplicateBefore = await evaluate(`(() => {
+            const boxes = [...document.querySelectorAll('#people-pick input[type="checkbox"]')];
+            const box = boxes.find(b => b.id === "people-pick-${duplicateGuardContact.id}");
+            return { found: Boolean(box), count: boxes.length };
+          })()`);
+          check(`${prefix}: duplicate-guard contact renders as a pickable row`,
+            duplicateBefore.found === true,
+            JSON.stringify(duplicateBefore));
+          const dupCreatesBefore = createRequests.length;
+          const dupInvitesBefore = inviteRequests.length;
+          const duplicateGuard = await evaluate(`(async () => {
+            const set = (selector, value) => {
+              const input = document.querySelector(selector);
+              if (!input) throw new Error("missing " + selector);
+              input.value = value;
+              input.dispatchEvent(new Event("input", { bubbles: true }));
+              input.dispatchEvent(new Event("change", { bubbles: true }));
+            };
+            set('[data-role="name"]', "Duplicate item");
+            set('[data-role="price"]', "25000");
+            set("#subtotal-input", "25000");
+            await new Promise(resolve => setTimeout(resolve, 60));
+            const listed = () => [...document.querySelectorAll('.verify-people-card input[aria-label^="Nama peserta "]')]
+              .filter(input => /^Nama peserta \\d+$/.test(input.getAttribute("aria-label") || ""))
+              .map(input => input.value);
+            const notice = () => document.querySelector("#app-notice")?.textContent || "";
+            const addName = value => {
+              const input = document.querySelector("#person-name-input");
+              input.value = value;
+              document.querySelector("#person-name-add").click();
+            };
+            // STEP 1 (typed first): Budi is a free-typed placeholder.
+            addName("${E2E_TYPED_NAME}");
+            await new Promise(resolve => setTimeout(resolve, 80));
+            const listedAfterTyped = listed();
+            // STEP 2 (now tick the auto_accept-OFF proven contact of the SAME name).
+            const box = document.querySelector('#people-pick input[id="people-pick-${duplicateGuardContact.id}"]');
+            if (!box) throw new Error("duplicate-guard checkbox missing");
+            box.click();
+            await new Promise(resolve => setTimeout(resolve, 150));
+            const listedAfterTick = listed();
+            // STEP 3 (the refusal direction): typing the same person again, in a
+            // different case/whitespace spelling, must be refused and NOT listed.
+            addName("  bUdI  ");
+            await new Promise(resolve => setTimeout(resolve, 120));
+            const listedAfterSecondAdd = listed();
+            const noticeAfterSecondAdd = notice();
+            const before = location.hash;
+            await createBillFinal();
+            for (let i = 0; i < 60 && !location.hash.startsWith("#/b/"); i += 1) await new Promise(resolve => setTimeout(resolve, 100));
+            return {
+              listedAfterTyped, listedAfterTick, listedAfterSecondAdd, noticeAfterSecondAdd,
+              before, hash: location.hash, picked: Boolean(box.checked),
+            };
+          })()`).catch(error => ({ error: error.message }));
+          await sleep(900);
+          const duplicateBillId = billIdFromHash(duplicateGuard?.hash);
+          trackBillId(duplicateBillId);
+          check(`${prefix}: ticking a same-named contact strips the typed entry`,
+            JSON.stringify(duplicateGuard?.listedAfterTyped) === JSON.stringify([E2E_TYPED_NAME])
+              && JSON.stringify(duplicateGuard?.listedAfterTick) === JSON.stringify([]),
+            JSON.stringify({ afterTyped: duplicateGuard?.listedAfterTyped, afterTick: duplicateGuard?.listedAfterTick }));
+          check(`${prefix}: a typed name matching a picked contact is refused with the legacy copy`,
+            duplicateGuard?.noticeAfterSecondAdd === "Nama itu sudah kepilih"
+              && JSON.stringify(duplicateGuard?.listedAfterSecondAdd) === JSON.stringify([]),
+            JSON.stringify({ notice: duplicateGuard?.noticeAfterSecondAdd, listed: duplicateGuard?.listedAfterSecondAdd }));
+          const createWithDuplicate = createRequests.slice(dupCreatesBefore)
+            .find(requestItem => requestItem.url.endsWith("/api/bills") && requestItem.data);
+          check(`${prefix}: the reported duplicate cannot reach the create payload`,
+            Boolean(createWithDuplicate)
+              && Array.isArray(createWithDuplicate.data.participants)
+              && !createWithDuplicate.data.participants.some(name => String(name || "").trim().toLowerCase() === E2E_TYPED_NAME.toLowerCase()),
+            JSON.stringify(createWithDuplicate?.data?.participants));
+          const duplicateInvites = inviteRequests.slice(dupInvitesBefore)
+            .filter(requestItem => requestItem.url.includes(`/api/bills/${duplicateBillId}/invite`));
+          check(`${prefix}: the same-named contact is still invited exactly once`,
+            Boolean(duplicateBillId)
+              && duplicateInvites.length === 1
+              && duplicateInvites[0].data?.identity_id === duplicateGuardContact.id,
+            JSON.stringify({ billId: duplicateBillId, invites: duplicateInvites.map(requestItem => requestItem.data) }));
+          if (duplicateBillId) {
+            const duplicateBill = await api("GET", `/api/bills/${duplicateBillId}`, undefined, identity);
+            const sameNamePlaceholders = duplicateBill.participants
+              .filter(participant => String(participant.name || "").trim().toLowerCase() === E2E_TYPED_NAME.toLowerCase());
+            /* The DISCRIMINATOR. Before the fix this bill carried
+               participants [{name:"Budi", identity_id:null}] AND a pending invite
+               for Budi — the same person in the roster twice. After it, the only
+               trace of Budi is the single pending invite (correct for an
+               auto_accept-OFF contact who has not answered yet): no placeholder
+               row, and no people row either. */
+            check(`${prefix}: the bill carries no same-named placeholder next to the invite`,
+              sameNamePlaceholders.length === 0
+                && duplicateBill.people.filter(personItem => personItem.name === E2E_TYPED_NAME).length === 0
+                && (duplicateBill.pending_invites || []).filter(invite => invite.name === E2E_TYPED_NAME).length === 1,
+              JSON.stringify({ participants: duplicateBill.participants, people: duplicateBill.people.map(personItem => personItem.name), pending_invites: (duplicateBill.pending_invites || []).map(invite => invite.name) }));
+          } else {
+            check(`${prefix}: the bill carries no same-named placeholder next to the invite`, false, "no bill id from duplicate-guard submit");
           }
 
           const manual = await evaluate(`(() => {
