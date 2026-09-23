@@ -3,6 +3,7 @@ import { ArrowUpRight, CheckCircle, Clock, PencilSimple, Receipt, UsersThree, Wa
 import { api, normalizeRecap, onMutation } from "../lib/api";
 import { createRequestGate } from "../lib/async-state";
 import { getAliases, setAliases } from "../lib/identity-storage";
+import { createIdentityCache, IDENTITY_CACHE_TTL_MS } from "../lib/list-cache";
 import { rupiahFmt } from "../lib/money";
 import { navigate } from "../lib/routes";
 import type { Identity, RecapAction, RecapBill, RecapResponse } from "../lib/types";
@@ -60,18 +61,6 @@ type RecapWindow = Window & {
   renderRecap?: () => void;
   invalidateDerivedData?: () => void;
 };
-
-type RecapCacheEntry = {
-  identityId: string;
-  generation: number;
-  fetchedAt: number;
-  data?: RecapPayload;
-  promise?: Promise<RecapPayload>;
-};
-
-const RECAP_CACHE_TTL = 30_000;
-let recapCache: RecapCacheEntry | null = null;
-let recapCacheGeneration = 0;
 
 const RECAP_REASON_LABELS: Record<string, string> = {
   pending_selection: "Belum semua orang memilih item",
@@ -143,39 +132,38 @@ function normalizeRecapForRoute(value: unknown): RecapPayload {
   return normalized as unknown as RecapPayload;
 }
 
-function invalidateRecapCache(): void {
-  recapCacheGeneration += 1;
-  recapCache = null;
-}
+/**
+ * One identity-scoped recap slot, built on the SAME primitive Home uses
+ * (`createIdentityCache`) so both derived reads share one cache contract: one
+ * slot, identity scoping, TTL, in-flight dedupe, generation fencing, and
+ * retry-on-error (a failure never fills the slot, so the next mount really
+ * retries).
+ *
+ * Invalidation is GLOBAL for the cache's lifetime: `createIdentityCache`
+ * subscribes to the app's mutation bus at CONSTRUCTION time (3rd argument),
+ * not from a component effect. This screen unmounts the moment the user leaves
+ * #/recap, so an effect-scoped listener disappeared exactly when a write on
+ * BillRoute/CreateRoute/Settings needed it — Rekap then served pre-mutation
+ * data for the rest of the TTL after the next visit (bug: v97 — settle a bill
+ * on #/b/<id>, tap Rekap, see the balance from before the settle). Module scope
+ * is required, not incidental: this runs once per page load and no unmount can
+ * tear it down.
+ */
+const recapCache = createIdentityCache<RecapPayload>(
+  /* Raw `api()` rather than `apiClient.identities.recap`: that helper already
+     applies the STRICT `normalizeRecap`, which requires `counts.current_user`
+     and would therefore throw before `normalizeRecapForRoute` could apply its
+     documented fallback (counts.current_user missing ⇒ use
+     actions.current_user.length). Same request, same injected identity
+     headers — only the validation layer differs. */
+  identityId => api<unknown>(`/api/identities/${encodeURIComponent(identityId)}/recap`).then(normalizeRecapForRoute),
+  IDENTITY_CACHE_TTL_MS,
+  onMutation,
+);
 
-function fetchRecap(identityId: string): Promise<RecapPayload> {
-  const now = Date.now();
-  if (recapCache?.identityId === identityId && recapCache.data
-    && now - recapCache.fetchedAt < RECAP_CACHE_TTL) {
-    return Promise.resolve(recapCache.data);
-  }
-  if (recapCache?.identityId === identityId && recapCache.promise) return recapCache.promise;
+const invalidateRecapCache = (): void => recapCache.invalidate();
 
-  const entry: RecapCacheEntry = {
-    identityId,
-    generation: recapCacheGeneration,
-    fetchedAt: 0,
-  };
-  entry.promise = api<unknown>(`/api/identities/${encodeURIComponent(identityId)}/recap`).then(value => {
-    const data = normalizeRecapForRoute(value);
-    if (recapCache === entry && recapCacheGeneration === entry.generation) {
-      entry.data = data;
-      entry.fetchedAt = Date.now();
-      entry.promise = undefined;
-    }
-    return data;
-  }).catch(error => {
-    if (recapCache === entry) entry.promise = undefined;
-    throw error;
-  });
-  recapCache = entry;
-  return entry.promise;
-}
+const fetchRecap = (identityId: string): Promise<RecapPayload> => recapCache.load(identityId);
 
 function recapNumber(value: unknown): number {
   const number = Number(value);
@@ -455,7 +443,12 @@ export function RecapRoute({ identity }: { identity: Identity }) {
     return () => requestGate.current.invalidate();
   }, [identity.id, refreshKey]);
 
-  useEffect(() => onMutation(invalidateRecapCache), []);
+  /* No mutation listener is installed here. The cache subscribed to the app's
+     mutation bus when the module was constructed, so a write on ANY route
+     invalidates the recap even while this screen is unmounted; an effect-scoped
+     listener used to vanish with this component and left the slot stale
+     (bug: v97). `invalidateRecapCache` remains the single invalidate hook that
+     retry and the legacy `invalidateDerivedData` bridge call. */
 
   useEffect(() => {
     const globalWindow = window as RecapWindow;

@@ -95,6 +95,75 @@ const pendingBill = await call("POST", "/api/bills", {
 }, host);
 await call("POST", `/api/bills/${pendingBill.id}/join`, {}, guest);
 
+/* ---------- v97 fixtures: one identity-scoped bill universe -----------------
+   A SEPARATE host/guest pair seeds the pending-invite coverage below. It has to
+   be a separate pair, not `host`/`guest`: an invite-only bill created by `host`
+   would add a second provisional row to host's recap and move the
+   `mapped.provisionalRows === 1` assertion off its fixture, and the point of
+   these checks is the INVITEE's view (Home row + Rekap action for the person
+   who was invited), which the host's recap cannot show at all.
+
+   `inviteHost` and `inviteGuest` first share a throwaway bill so `is_contact`
+   is true both ways (POST /bills/{id}/invite refuses anyone who has never
+   shared a bill), then `inviteGuest` switches auto-accept OFF so the next
+   invites land as PENDING rows instead of joining instantly. */
+const inviteHost = await call("POST", "/api/identities", { name: `InviteHost${stamp}` });
+const inviteGuest = await call("POST", "/api/identities", { name: `InviteGuest${stamp}` });
+await call("POST", `/api/identities/${inviteGuest.id}/auto_accept`, { auto_accept: false }, inviteGuest);
+
+const contactBill = await call("POST", "/api/bills", {
+  title: `Kontak ${stamp}`,
+  items: [{ name: "Teh", price: 10000 }],
+  subtotal: 10000,
+  tax: 0,
+  service: 0,
+  total: 10000,
+  participants: [inviteGuest.name],
+}, inviteHost);
+await call("POST", `/api/bills/${contactBill.id}/join`, {}, inviteGuest);
+check("invite fixtures share a bill so both sides are proven contacts",
+  (await call("GET", `/api/identities/${inviteHost.id}/contacts`, undefined, inviteHost))
+    .some(contact => contact.id === inviteGuest.id));
+
+const inviteBillTitle = `Undangan buka ${stamp}`;
+const inviteBill = await call("POST", "/api/bills", {
+  title: inviteBillTitle,
+  items: [{ name: "Sate", price: 40000 }],
+  subtotal: 40000,
+  tax: 0,
+  service: 0,
+  total: 40000,
+  participants: [],
+}, inviteHost);
+const inviteBillTitle2 = `Undangan segar ${stamp}`;
+const inviteMutationBill = await call("POST", "/api/bills", {
+  title: inviteBillTitle2,
+  items: [{ name: "Bakso", price: 35000 }],
+  subtotal: 35000,
+  tax: 0,
+  service: 0,
+  total: 35000,
+  participants: [],
+}, inviteHost);
+check("both invites land as PENDING rather than instant joins",
+  (await call("POST", `/api/bills/${inviteBill.id}/invite`, { identity_id: inviteGuest.id }, inviteHost)).status === "pending"
+    && (await call("POST", `/api/bills/${inviteMutationBill.id}/invite`, { identity_id: inviteGuest.id }, inviteHost)).status === "pending");
+
+/* The invite ids come from the invitee's own endpoint — the accept route needs
+   `bill_invite.id`, and the list row's `pending_invite_id` is the same value. */
+const inviteRows = await call("GET", `/api/identities/${inviteGuest.id}/invites`, undefined, inviteGuest);
+const mutationInviteId = inviteRows.find(row => row.bill_id === inviteMutationBill.id)?.id;
+const listInviteRow = (await call("GET", `/api/identities/${inviteGuest.id}/bills`, undefined, inviteGuest))
+  .find(row => row.id === inviteMutationBill.id);
+check("the list row carries the same invite id as the invite endpoint",
+  Boolean(mutationInviteId) && listInviteRow?.pending_invite === true
+    && listInviteRow?.pending_invite_id === mutationInviteId,
+  JSON.stringify({ mutationInviteId, row: listInviteRow }));
+check("an invite row is never manageable and never claims money",
+  listInviteRow?.can_manage === false && listInviteRow?.pending_invited_by_name === inviteHost.name
+    && listInviteRow?.i_am_payer === false && listInviteRow?.my_paid === false,
+  JSON.stringify(listInviteRow));
+
 // ---------- Chromium CDP helpers ----------
 const tab = await (await fetch(`${CDP}/json/new?about:blank`, { method: "PUT" })).json();
 const ws = new WebSocket(tab.webSocketDebuggerUrl);
@@ -809,6 +878,206 @@ try {
     && aliasState.visible === "Teman Kantor" && aliasState.canonical.includes(guest.name), JSON.stringify(aliasState));
   await go("#/recap");
   check("local alias persists after reload", await waitFor("document.querySelector('.recap-person-name')?.textContent.trim() === 'Teman Kantor'"));
+
+  /* ---------------------------------------------------------------------- v97
+     The invitee's own view. Home and Rekap must enumerate the SAME bill for a
+     pending invite, the invite row must not wear owner/money affordances, and a
+     mutation made while Rekap is UNMOUNTED must still make the next Rekap visit
+     fresh (the cache subscribed to the app's mutation bus at construction, not
+     from a screen effect). */
+  await signIn(inviteGuest);
+  await go("#/");
+  const inviteRowsRendered = await waitFor("document.querySelectorAll('.bill-row[data-pending-invite=\"true\"]').length === 2");
+  check("the invitee's Home lists both pending invites", inviteRowsRendered,
+    await evaluate("document.querySelectorAll('.bill-row').length"));
+  const inviteRowsView = await evaluate(`(() => {
+    const rows = [...document.querySelectorAll('.bill-row')];
+    const read = (title) => {
+      const row = rows.find(item => item.querySelector('strong')?.textContent === title);
+      if (!row) return null;
+      return {
+        flagged: row.getAttribute('data-pending-invite') === 'true',
+        chip: row.querySelector('.chip')?.textContent.trim() || '',
+        note: row.querySelector('.item-share')?.textContent.trim() || '',
+        aria: row.getAttribute('aria-label') || '',
+        role: row.getAttribute('role'),
+        tabIndex: row.getAttribute('tabindex'),
+        id: row.getAttribute('data-id'),
+        hasDelete: Boolean(row.querySelector('.delete-bill')),
+        hasMoneyClaim: /nalangin|belum bayar/i.test(row.querySelector('.item-share')?.textContent || ''),
+      };
+    };
+    return { a: read(${JSON.stringify(inviteBillTitle)}), b: read(${JSON.stringify(inviteBillTitle2)}), count: rows.length };
+  })()`);
+  check("Home renders both pending invites with an honest casual-Indonesian status",
+    inviteRowsView.a?.flagged && inviteRowsView.b?.flagged
+      && inviteRowsView.a?.chip === "Menunggu jawabanmu"
+      && inviteRowsView.b?.chip === "Menunggu jawabanmu",
+    JSON.stringify(inviteRowsView));
+  check("an invite row names the inviter and says what opening it does",
+    inviteRowsView.a?.note === `Undangan dari ${inviteHost.name} · buka untuk gabung`
+      && inviteRowsView.a?.aria.includes(`undangan dari ${inviteHost.name}`),
+    JSON.stringify({ note: inviteRowsView.a?.note, aria: inviteRowsView.a?.aria }));
+  check("an invite row never shows owner-only actions or a money claim",
+    inviteRowsView.a?.hasDelete === false && inviteRowsView.b?.hasDelete === false
+      && inviteRowsView.a?.hasMoneyClaim === false && inviteRowsView.b?.hasMoneyClaim === false,
+    JSON.stringify([inviteRowsView.a, inviteRowsView.b]));
+  check("an invite row keeps the row keyboard contract and links its own bill id",
+    inviteRowsView.a?.role === "button" && inviteRowsView.a?.tabIndex === "0"
+      && inviteRowsView.a?.id === inviteBill.id && inviteRowsView.b?.id === inviteMutationBill.id,
+    JSON.stringify({ a: inviteRowsView.a, b: inviteRowsView.b }));
+
+  /* The existing filters/sorts must stay untouched by the new status: an invite
+     row stays in the neutral bucket (Semua + Belum dipilih) and out of Belum
+     lunas, rather than dropping out of every bucket. Inline controls only exist
+     at the desktop breakpoint, so this runs at 1280. */
+  await setViewport(1280);
+  await sleep(150);
+  const applyFilter = async (label) => evaluate(`(() => {
+    const chip = [...document.querySelectorAll('.list-controls-inline .filter-chip')]
+      .find(item => item.textContent.trim() === ${JSON.stringify(label)});
+    chip?.click();
+    return Boolean(chip);
+  })()`);
+  const inviteVisibleUnder = async (label) => {
+    await applyFilter(label);
+    await sleep(120);
+    return evaluate(`(() => {
+      const row = [...document.querySelectorAll('.bill-row')]
+        .find(item => item.querySelector('strong')?.textContent === ${JSON.stringify(inviteBillTitle)});
+      return Boolean(row) && row.getBoundingClientRect().height > 0;
+    })()`);
+  };
+  check("Home filters keep a pending invite in the neutral buckets only",
+    (await inviteVisibleUnder("Semua")) === true
+      && (await inviteVisibleUnder("Belum dipilih")) === true
+      && (await inviteVisibleUnder("Belum lunas")) === false,
+    "Semua/Belum dipilih should keep it, Belum lunas should hide it");
+  await applyFilter("Semua");
+  await setViewport(390);
+  await sleep(120);
+
+  /* Home row -> the same bill id Rekap's invite action points at. */
+  const homeRowHref = await evaluate(`(() => {
+    const row = [...document.querySelectorAll('.bill-row')]
+      .find(item => item.querySelector('strong')?.textContent === ${JSON.stringify(inviteBillTitle)});
+    row?.click();
+    return location.hash;
+  })()`);
+  check("tapping an invite row opens its own bill",
+    await waitFor(`location.hash === ${JSON.stringify(`#/b/${inviteBill.id}`)}`),
+    `${homeRowHref} -> ${await evaluate("location.hash")}`);
+  await evaluate("location.hash = '#/'");
+  await waitFor("location.hash === '#/' && !!document.querySelector('#create-btn')");
+
+  /* Rekap as the invitee: an accept_invite action for the same bill id, and no
+     second money calculation for the row. */
+  await evaluate("location.hash = '#/recap'");
+  check("the invitee's recap loads", await waitFor("!!document.querySelector('#recap-title')"));
+  await waitFor(`[...document.querySelectorAll('.recap-current-card .recap-action-row')]
+    .some(row => row.textContent.includes('Terima undangan'))`);
+  const recapInviteView = await evaluate(`(() => {
+    const rows = [...document.querySelectorAll('.recap-current-card .recap-action-row')];
+    const row = rows.find(item => item.querySelector('.recap-bill-link')?.getAttribute('href') === ${JSON.stringify(`#/b/${inviteMutationBill.id}`)});
+    const provisional = [...document.querySelectorAll('.recap-provisional-row')]
+      .find(item => item.querySelector('.recap-bill-link')?.getAttribute('href') === ${JSON.stringify(`#/b/${inviteMutationBill.id}`)});
+    return {
+      label: row?.querySelector('strong')?.textContent.trim() || '',
+      text: row?.textContent.trim() || '',
+      hrefs: rows.map(item => item.querySelector('.recap-bill-link')?.getAttribute('href')),
+      provisionalHrefs: [...document.querySelectorAll('.recap-provisional-row .recap-bill-link')].map(a => a.getAttribute('href')),
+      provisionalText: provisional?.textContent.trim() || '',
+      hasAccept: rows.some(item => item.textContent.includes('Terima undangan')),
+    };
+  })()`);
+  check("Rekap shows the same pending invite as an accept action on the same bill id",
+    recapInviteView.hasAccept && recapInviteView.label === "Terima undangan"
+      && recapInviteView.hrefs.includes(`#/b/${inviteMutationBill.id}`)
+      && recapInviteView.text.includes(`Undangan dari ${inviteHost.name}`),
+    JSON.stringify(recapInviteView));
+  check("the same invite bill id is also its provisional drilldown",
+    recapInviteView.provisionalHrefs.includes(`#/b/${inviteMutationBill.id}`)
+      && recapInviteView.provisionalText.includes("Masih ada langkah yang menunggu"),
+    JSON.stringify({ hrefs: recapInviteView.provisionalHrefs, text: recapInviteView.provisionalText }));
+
+  /* Unmount Rekap, mutate from Home, come back. The recap cache subscribed to
+     the app's mutation bus at CONSTRUCTION time, so the un-mounted screen must
+     still come back fresh — if the old effect-scoped listener were restored, the
+     TTL slot would replay the pre-mutation recap and the accept action would
+     still be on screen. */
+  await evaluate("location.hash = '#/'");
+  await waitFor("location.hash === '#/' && !!document.querySelector('#create-btn')");
+  const stillPendingAfterUnmount = await waitFor(`[...document.querySelectorAll('.bill-row')]
+    .some(row => row.querySelector('strong')?.textContent === ${JSON.stringify(inviteBillTitle2)}
+      && row.getAttribute('data-pending-invite') === 'true')`);
+  check("the invite is still pending before the mutation", stillPendingAfterUnmount === true,
+    await evaluate(`[...document.querySelectorAll('.bill-row')].map(row => row.querySelector('strong')?.textContent + '|' + row.getAttribute('data-pending-invite'))`));
+  /* `apiJson` is installed by App and is the app's own api() wrapper, so this is
+     a REAL mutation through the same bus every screen uses — not a raw fetch. */
+  const acceptedFromHome = await evaluate(`apiJson(${JSON.stringify(`/api/bills/${inviteMutationBill.id}/invites/${mutationInviteId}/accept`)}, "POST", {})
+    .then(() => "ok")
+    .catch(error => "error:" + error.message)`);
+  check("the invite is accepted while Rekap is unmounted", acceptedFromHome === "ok", acceptedFromHome);
+
+  await evaluate("location.hash = '#/recap'");
+  check("Rekap reloads after the off-screen mutation", await waitFor("!!document.querySelector('#recap-title')"));
+  const recapAfterMutation = await evaluate(`(() => {
+    const rows = [...document.querySelectorAll('.recap-current-card .recap-action-row')];
+    const provisional = [...document.querySelectorAll('.recap-provisional-row')]
+      .find(item => item.querySelector('.recap-bill-link')?.getAttribute('href') === ${JSON.stringify(`#/b/${inviteMutationBill.id}`)});
+    /* Scoped to the ACCEPTED bill on purpose: the invitee still has the OTHER
+       pending invite in this same fixture, so "no accept action anywhere" would
+       assert something untrue about an invite nobody touched. */
+    const acceptRow = rows.find(item => item.textContent.includes('Terima undangan')
+      && item.querySelector('.recap-bill-link')?.getAttribute('href') === ${JSON.stringify(`#/b/${inviteMutationBill.id}`)});
+    return {
+      hasAcceptForAcceptedBill: Boolean(acceptRow),
+      labelsForAcceptedBill: rows
+        .filter(item => item.querySelector('.recap-bill-link')?.getAttribute('href') === ${JSON.stringify(`#/b/${inviteMutationBill.id}`)})
+        .map(item => item.querySelector('strong')?.textContent.trim() || ''),
+      acceptHrefs: rows.filter(item => item.textContent.includes('Terima undangan'))
+        .map(item => item.querySelector('.recap-bill-link')?.getAttribute('href')),
+      provisionalText: provisional?.textContent.trim() || '',
+    };
+  })()`);
+  /* Accepting turns the invitee into a real member, so Rekap legitimately
+     replaces "Terima undangan" with a NEW step (their share is unselected). What
+     must NOT survive is the accepted invite itself: a stale pre-mutation payload
+     would still be offering it. */
+  check("Rekap never replays pre-mutation data: the accepted invite's action is gone",
+    recapAfterMutation.hasAcceptForAcceptedBill === false
+      && !recapAfterMutation.acceptHrefs.includes(`#/b/${inviteMutationBill.id}`),
+    JSON.stringify(recapAfterMutation));
+  check("Rekap re-derived the post-mutation state for the accepted bill",
+    recapAfterMutation.labelsForAcceptedBill.includes("Pilih item kamu")
+      && !recapAfterMutation.provisionalText.includes("Masih ada langkah yang menunggu"),
+    JSON.stringify(recapAfterMutation));
+
+  await evaluate("location.hash = '#/'");
+  await waitFor("location.hash === '#/' && !!document.querySelector('#create-btn')");
+  await waitFor(`[...document.querySelectorAll('.bill-row')]
+    .some(row => row.querySelector('strong')?.textContent === ${JSON.stringify(inviteBillTitle2)}
+      && row.getAttribute('data-pending-invite') !== 'true')`);
+  const homeAfterMutation = await evaluate(`(() => {
+    const row = [...document.querySelectorAll('.bill-row')]
+      .find(item => item.querySelector('strong')?.textContent === ${JSON.stringify(inviteBillTitle2)});
+    return {
+      found: Boolean(row),
+      flagged: row?.getAttribute('data-pending-invite') === 'true',
+      chip: row?.querySelector('.chip')?.textContent.trim() || '',
+      note: row?.querySelector('.item-share')?.textContent.trim() || '',
+    };
+  })()`);
+  check("Home also drops the invite status after the mutation",
+    homeAfterMutation.found && homeAfterMutation.flagged === false
+      && homeAfterMutation.chip !== "Menunggu jawabanmu"
+      && !homeAfterMutation.note.includes("Undangan dari"),
+    JSON.stringify(homeAfterMutation));
+
+  await signIn(host);
+  await go("#/recap");
+  check("host recap restored for the responsive sweep",
+    await waitFor("document.querySelector('.recap-person-name')?.textContent.trim() === 'Teman Kantor'"));
 
   for (const width of [320, 360, 390, 412, 430, 480, 600, 768, 820, 1024, 1040, 1280, 1440]) {
     await setViewport(width);

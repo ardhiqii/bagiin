@@ -910,17 +910,25 @@ def _build_identity_recap(identity: dict) -> dict:
         bill_data = row.get("_bill_data")
         if not bill_data or bill_data["bill"]["id"] in entry_by_bill_id:
             continue
+        # v97: `get_bills_for_identity` now also returns invite-only bills (so
+        # Home and Rekap share one universe). Membership still decides the
+        # final/provisional classification — an invite-only row must stay a
+        # pending workflow, never a member entry with a real money edge.
+        is_member = bool(row.get("_is_member", True))
         entry = {
             "bill_data": bill_data,
             "response": _compute_response(bill_data, viewer_id),
-            "member": True,
-            "invite_only": False,
+            "member": is_member,
+            "invite_only": not is_member,
         }
         entries.append(entry)
         entry_by_bill_id[bill_data["bill"]["id"]] = entry
 
     # A pending invite is an identity-scoped way to see a bill before a payment
     # row exists. Load only those explicit invite targets, never all bills.
+    # The loop is idempotent with the member pass above: a bill already loaded
+    # (now including invite-only rows) is skipped, and only a bill that this
+    # identity can reach through no other path is appended here.
     pending_invites = db.get_pending_invites(viewer_id)
     for invite in pending_invites:
         bill_id = invite["bill_id"]
@@ -1461,14 +1469,20 @@ def my_bills(identity_id: str, request: Request):
     # show owner-only actions (delete) — mirrors _owner_id, including the
     # placeholder-name resolution that paid_by_identity_id alone misses
     #
-    # private key `_bill_data` — get_bills_for_identity already loaded it once
-    # (for the settled flag); re-fetching it here too meant every bill on this
-    # list opened a fresh sqlite connection twice over, on top of what the list
-    # query itself and _bill_settled used. Pop it so it never reaches the JSON
-    # response — the existing summary fields remain unchanged while the
-    # additive pick-state fields below are populated from the same snapshot.
+    # private keys — `get_bills_for_identity` already loaded the bill snapshot
+    # once (for the settled flag); re-fetching it here too meant every bill on
+    # this list opened a fresh sqlite connection twice over, on top of what the
+    # list query itself and _bill_settled used. Pop them so they never reach
+    # the JSON response — the existing summary fields remain unchanged while
+    # the additive pick-state fields below are populated from the same
+    # snapshot. (v97: the prefix pop also covers `_is_member`,
+    # `_pending_invite_id` and `_pending_invited_by_name`, so a future private
+    # key cannot leak by being forgotten here.)
     for row in rows:
         bill_data = row.pop("_bill_data", None)
+        is_member = bool(row.pop("_is_member", True))
+        invite_id = row.pop("_pending_invite_id", None)
+        invited_by_name = row.pop("_pending_invited_by_name", None)
         if bill_data:
             (
                 row["pending_names"],
@@ -1479,18 +1493,41 @@ def my_bills(identity_id: str, request: Request):
                 row["settled"],
             ) = _list_pick_state(bill_data)
             row["owner_id"] = _owner_id(bill_data)
+            # An invite-only row is NOT a participant: the invitee holds no
+            # payment row and no selection, so `_can_manage` already answers
+            # False for them and inviting someone never hands out owner
+            # actions — asserted by test_a_pending_invite_creates_no_payment_
+            # row_and_no_owner_powers. Deliberately NOT ANDed with `is_member`:
+            # `_can_manage` (via `_owner_id`) is the single source of truth the
+            # DELETE endpoint also checks, and a membership conjunction here
+            # would be a second, independently-drifted answer to "may this
+            # person manage the bill" — the exact shape of the recurring
+            # list-vs-detail disagreement bugs (v66/v67).
             row["can_manage"] = _can_manage(bill_data, identity_id)
+            # additive, explicit pending-invite fields (v97). Present on every
+            # row so the shape is stable; True only for a row this identity can
+            # reach purely through a pending invite.
+            row["pending_invite"] = not is_member and invite_id is not None
+            row["pending_invite_id"] = invite_id if not is_member else None
+            row["pending_invited_by_name"] = (
+                invited_by_name if not is_member else None
+            )
             # personal payment state for THIS viewer: the resolved payer is
             # auto-paid (they fronted the money), otherwise check their payment
             # record. Must use the SAME resolver as the bill screen — deriving
             # it from _owner_id instead said "Kamu udah bayar" in history while
             # the bill itself showed the same person owing the full total.
+            # Same reasoning as `can_manage` above: these mirror the canonical
+            # resolver, never a membership flag.
             payer_id, _ = db.resolve_payer(bill_data)
             row["i_am_payer"] = payer_id == identity_id
             row["my_paid"] = (payer_id == identity_id) or any(
                 p["identity_id"] == identity_id and p["status"] == "paid"
                 for p in bill_data["payments"]
             )
+            # the invitee is not on the roster, so this lookup already answers
+            # 0; keep the same canonical people list rather than inventing a
+            # second money calculation for invite-only rows.
             row["my_total_idr"] = next(
                 (p.get("total_idr", 0) for p in people
                  if p.get("identity_id") == identity_id),
@@ -1519,6 +1556,11 @@ def my_bills(identity_id: str, request: Request):
             row["has_picks"] = False
             row["pending_names"] = []
             row["total_unpaid"] = 0
+            row["pending_invite"] = not is_member and invite_id is not None
+            row["pending_invite_id"] = invite_id if not is_member else None
+            row["pending_invited_by_name"] = (
+                invited_by_name if not is_member else None
+            )
     return rows
 
 
