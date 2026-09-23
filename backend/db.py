@@ -1521,11 +1521,30 @@ def _bill_settled(bill_data: dict | None) -> bool:
 
 
 def get_bills_for_identity(identity_id: str):
-    """Bills where identity is creator OR has selections/payments.
+    """Bills where identity is creator OR has selections/payments, PLUS bills
+    with a pending invite targeted at this identity (v97).
 
     A creator who left the bill (v58) drops out of it like anyone else: the
     bill stops showing up here unless they rejoin (which gives them a payment
     row, so the join below picks it up again).
+
+    v97 — the pending-invite branch: `main._build_identity_recap` has always
+    unioned `get_pending_invites(viewer_id)` on top of this function, so Rekap
+    Patungan showed an invite-only bill while `GET /api/identities/{id}/bills`
+    (Home) did not — the same identity saw two different bill universes, and
+    the invite card on Home had no row to attach to. The invite join below is
+    scoped to `v.identity_id = ?` and to `b.status = 'open'`, exactly the
+    filter `get_pending_invites` uses, so both endpoints enumerate the same
+    bill ids for the same identity and a stranger's invite stays invisible.
+
+    Invite-only rows carry the private `_is_member = 0` flag: they are NOT
+    participants, so `main.my_bills` must not grant them owner actions and
+    `_build_identity_recap` must keep classifying them `invite_only` (a
+    pending workflow is provisional until it is accepted). Two additive
+    private keys (`_pending_invite_id`, `_pending_invited_by_name`) carry the
+    invite metadata; `main.my_bills` pops every `_`-prefixed key before the
+    row goes out over HTTP. Inviting someone must never turn them into a
+    member — no payment row is created here.
 
     Each bill is fetched via `get_bill()` exactly once (v67) and handed to
     `_bill_settled`. The full payload also rides along on the row under the
@@ -1542,17 +1561,28 @@ def get_bills_for_identity(identity_id: str):
         """SELECT DISTINCT b.id, b.title, b.merchant, b.transacted_at,
                   b.total_idr, b.order_discount_idr, b.cashback_idr,
                   b.status, b.created_at, b.closed_at,
-                  b.creator_identity_id, b.paid_by_identity_id, b.paid_by_confirmed
+                  b.creator_identity_id, b.paid_by_identity_id, b.paid_by_confirmed,
+                  CASE WHEN (b.creator_identity_id = ? AND b.creator_left = 0)
+                            OR p.id IS NOT NULL THEN 1 ELSE 0 END AS _is_member,
+                  v.id AS _pending_invite_id,
+                  inviter.name AS _pending_invited_by_name
           FROM bill b
           LEFT JOIN payment p ON p.bill_id = b.id AND p.identity_id = ?
-          WHERE (b.creator_identity_id = ? AND b.creator_left = 0) OR p.id IS NOT NULL
+          LEFT JOIN bill_invite v
+                 ON v.bill_id = b.id AND v.identity_id = ? AND v.status = 'pending'
+                AND b.status = 'open'
+          LEFT JOIN identity inviter ON inviter.id = v.invited_by
+          WHERE (b.creator_identity_id = ? AND b.creator_left = 0)
+             OR p.id IS NOT NULL
+             OR v.id IS NOT NULL
           ORDER BY COALESCE(b.transacted_at, b.created_at) DESC, b.created_at DESC""",
-        (identity_id, identity_id),
+        (identity_id, identity_id, identity_id, identity_id),
     ).fetchall()
     conn.close()
     out = []
     for r in rows:
         d = dict(r)
+        d["_is_member"] = bool(d["_is_member"])
         bill_data = get_bill(d["id"])
         d["settled"] = _bill_settled(bill_data)
         d["_bill_data"] = bill_data

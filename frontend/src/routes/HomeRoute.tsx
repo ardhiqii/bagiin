@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowsDownUp, Funnel, Gear, Plus, Receipt, Trash, UsersThree } from "@phosphor-icons/react";
+import { ArrowsDownUp, EnvelopeSimple, Funnel, Gear, Plus, Receipt, Trash, UsersThree } from "@phosphor-icons/react";
 import { apiClient, onMutation } from "../lib/api";
 import { createRequestGate } from "../lib/async-state";
 import { createIdentityCache, IDENTITY_CACHE_TTL_MS } from "../lib/list-cache";
@@ -7,6 +7,7 @@ import { getListSort, setListSort } from "../lib/identity-storage";
 import { localYearMonth, monthLabel, rupiahFmt, shortDate } from "../lib/money";
 import { navigate } from "../lib/routes";
 import type { BillListRow, Identity } from "../lib/types";
+import { billListInviter, billListStatus } from "../lib/types";
 import { AppFrame, ErrorState, Topbar } from "../components/AppShell";
 import { Alert, Badge, Button, Card, Dialog, Select, Skeleton } from "../components/ui/primitives";
 
@@ -43,12 +44,14 @@ function timestamp(row: BillListRow): number {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T12:00:00`) : new Date(`${value.replace(" ", "T")}Z`);
   return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 }
-function status(row: BillListRow): { tone: "success" | "danger" | "neutral"; label: string } {
-  if (isSettled(row)) return { tone: "success", label: "Lunas" };
-  if (row.pending_names?.length) return { tone: "neutral", label: "Menunggu memilih" };
-  if ((row.total_unpaid || 0) > 0 || (row.uncovered_idr || 0) > 0) return { tone: "danger", label: "Belum lunas" };
-  return { tone: "neutral", label: "Belum dipilih" };
-}
+/* The row status lives in lib/types.ts next to the DTO it reads
+   (`billListStatus`): the chip, the status mark, the sort rank and the filter
+   buckets all consume that ONE definition, including the pending-invite branch.
+   Keeping it here instead would let the sort rank disagree with the chip the
+   moment either changed. */
+function status(row: BillListRow) { return billListStatus(row); }
+function invitedBy(row: BillListRow): string { return billListInviter(row); }
+
 function sortRows(rows: BillListRow[], mode: Sort): BillListRow[] {
   const rank = (row: BillListRow) => status(row).tone === "danger" ? 0 : status(row).tone === "neutral" ? 1 : 2;
   return [...rows].sort((a, b) => {
@@ -62,9 +65,19 @@ function sortRows(rows: BillListRow[], mode: Sort): BillListRow[] {
 
 function BillRow({ row, onDelete }: { row: BillListRow; onDelete: (row: BillListRow) => void }) {
   const state = status(row);
-  return <div className="history-row bill-row" role="button" tabIndex={0} data-id={row.id} aria-label={`Buka bill ${row.title}, ${state.label}`} onClick={() => navigate({ kind: "bill", billId: row.id })} onKeyDown={event => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigate({ kind: "bill", billId: row.id }); } }}>
-    <div className={`avatar status-mark status-${state.tone}`} aria-hidden="true"><Receipt /></div>
-    <div className="bill-row-main"><div className="bill-row-title wrap"><strong className="grow">{row.title}</strong><span className="caption bill-row-date">{shortDate(billDate(row))}</span></div><div className="bill-row-meta wrap"><Badge className="chip" tone={state.tone}>{state.label}</Badge><span className="money bill-row-amount">{rupiahFmt(row.total_idr)}</span></div>{!isSettled(row) && row.i_am_payer && <div className="item-share">Kamu yang nalangin</div>}{!isSettled(row) && !row.i_am_payer && row.has_picks && !row.my_paid && <div className="item-share">Kamu belum bayar</div>}</div>
+  /* A pending-invite row is the ONLY row whose status is not about money owed:
+     the viewer is not on the roster yet, so it gets the invite icon, a helper
+     line naming the inviter, and NO owner/money affordances. It keeps the same
+     row element (same role/tabIndex/keyboard handling) and the same bill id
+     link as every other row, because Home and Rekap must open one bill.
+
+     The delete control is gated on `can_manage` exactly as before — the server
+     already returns false for an invite-only row, so no special case is needed
+     here; asserting it again would be a second source of truth for permissions. */
+  const invite = Boolean(row.pending_invite);
+  return <div className="history-row bill-row" role="button" tabIndex={0} data-id={row.id} data-pending-invite={invite ? "true" : undefined} aria-label={invite ? `Buka bill ${row.title}, undangan dari ${invitedBy(row)} menunggu jawabanmu` : `Buka bill ${row.title}, ${state.label}`} onClick={() => navigate({ kind: "bill", billId: row.id })} onKeyDown={event => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); navigate({ kind: "bill", billId: row.id }); } }}>
+    <div className={`avatar status-mark status-${state.tone}`} aria-hidden="true">{invite ? <EnvelopeSimple /> : <Receipt />}</div>
+    <div className="bill-row-main"><div className="bill-row-title wrap"><strong className="grow">{row.title}</strong><span className="caption bill-row-date">{shortDate(billDate(row))}</span></div><div className="bill-row-meta wrap"><Badge className="chip" tone={state.tone}>{state.label}</Badge><span className="money bill-row-amount">{rupiahFmt(row.total_idr)}</span></div>{invite ? <div className="item-share">Undangan dari {invitedBy(row)} · buka untuk gabung</div> : <>{!isSettled(row) && row.i_am_payer && <div className="item-share">Kamu yang nalangin</div>}{!isSettled(row) && !row.i_am_payer && row.has_picks && !row.my_paid && <div className="item-share">Kamu belum bayar</div>}</>}</div>
     {row.can_manage && <Button type="button" variant="ghost" size="icon" className="delete-bill" aria-label={`Hapus bill ${row.title}`} onClick={event => { event.stopPropagation(); onDelete(row); }}><Trash /></Button>}
   </div>;
 }

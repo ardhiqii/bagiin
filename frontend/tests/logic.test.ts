@@ -16,6 +16,8 @@ import { createRequestGate } from "../src/lib/async-state.ts";
 import { createIdentityCache } from "../src/lib/list-cache.ts";
 import {
   applyContactToggle,
+  billListInviter,
+  billListStatus,
   contactInitial,
   DUPLICATE_TYPED_NAME_NOTICE,
   inviteFailureNotice,
@@ -26,6 +28,7 @@ import {
   togglePickedContact,
   typedNameRefusal,
 } from "../src/lib/types.ts";
+import type { BillListRow } from "../src/lib/types.ts";
 import { photoFilename, photoUrl } from "../src/lib/photo-path.ts";
 import { inputMoney, rupiahFmt, rupiahParse } from "../src/lib/money.ts";
 import { isKnownHashRoute, parseHash, routeHash } from "../src/lib/routes.ts";
@@ -406,4 +409,148 @@ test("every cache instance gets its own mutation subscription", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("a recap cache built the HomeRoute way is invalidated by a bill mutation with no recap screen mounted", async () => {
+  // Mirrors RecapRoute's module-level construction exactly: `createIdentityCache`
+  // + the app's mutation bus as the 3rd argument, with NO effect-scoped
+  // subscription anywhere. RecapRoute unmounts the moment the user leaves
+  // #/recap, so the old effect-scoped `onMutation(invalidateRecapCache)` died
+  // exactly when a write on #/b/<id> or #/create needed it, and the next Rekap
+  // visit served pre-mutation balances for the rest of the TTL (bug: v97).
+  // Nothing in this test subscribes on the recap cache's behalf, so a
+  // regression back to route-scoped invalidation fails here.
+  const originalFetch = globalThis.fetch;
+  const recapCalls: string[] = [];
+  const listCalls: string[] = [];
+  const recap = createIdentityCache<number[]>(async identityId => {
+    recapCalls.push(identityId);
+    return [identityId.length];
+  }, 60_000, onMutation);
+  // Both derived reads of one identity are alive at once (Home and Rekap are
+  // separate modules), and a write must drop BOTH slots — one shared bus
+  // listener per cache, not one shared listener total.
+  const list = createIdentityCache<number[]>(async identityId => {
+    listCalls.push(identityId);
+    return [identityId.length];
+  }, 60_000, onMutation);
+
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+
+    await Promise.all([recap.load("id-A"), list.load("id-A")]);
+    assert.deepEqual(recapCalls, ["id-A"]);
+    assert.deepEqual(listCalls, ["id-A"]);
+
+    // A write from a screen that is NOT Rekap (settle / selection / create).
+    await api("/api/bills/bill_X/settle", { method: "POST", json: {} });
+
+    await Promise.all([recap.load("id-A"), list.load("id-A")]);
+    assert.deepEqual(recapCalls, ["id-A", "id-A"]);
+    assert.deepEqual(listCalls, ["id-A", "id-A"]);
+
+    // A read must NOT invalidate the recap slot — that is what the cache is for.
+    await api("/api/identities/id-A/recap");
+    await recap.load("id-A");
+    assert.deepEqual(recapCalls, ["id-A", "id-A"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a recap response in flight when a mutation lands never repopulates the slot", async () => {
+  // The generation fence, exercised on the recap payload shape: a slow
+  // pre-mutation recap response must resolve for its own caller but must NOT be
+  // written back, or the next Rekap visit paints the pre-mutation balance
+  // without a request ever being made.
+  const originalFetch = globalThis.fetch;
+  let release: (value: number[]) => void = () => {};
+  const calls: string[] = [];
+  const recap = createIdentityCache<number[]>(identityId => {
+    calls.push(identityId);
+    return new Promise<number[]>(resolve => { release = resolve; });
+  }, 60_000, onMutation);
+
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    const pendingRecap = recap.load("id-A");
+    await api("/api/bills/bill_X/settle", { method: "POST", json: {} });
+    release([999]);
+    assert.deepEqual(await pendingRecap, [999]);
+
+    // A hit here would mean the stale response reached the slot.
+    void recap.load("id-A");
+    assert.deepEqual(calls, ["id-A", "id-A"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a failed recap load is never cached, so the next visit really retries", async () => {
+  const calls: string[] = [];
+  const recap = createIdentityCache<number[]>(async identityId => {
+    calls.push(identityId);
+    throw new Error("Koneksi bermasalah");
+  }, 60_000, onMutation);
+  await assert.rejects(() => recap.load("id-A"), /Koneksi bermasalah/);
+  await assert.rejects(() => recap.load("id-A"), /Koneksi bermasalah/);
+  assert.deepEqual(calls, ["id-A", "id-A"]);
+});
+
+test("bill list status reads a pending invite off the row and outranks every money label", () => {
+  const base = (over: Partial<BillListRow> = {}): BillListRow => ({
+    id: "bill_1",
+    title: "Makan malam",
+    status: "open",
+    creator_identity_id: "host",
+    total_idr: 120000,
+    settled: false,
+    ...over,
+  });
+
+  // A pending invite is the ONLY status that is not about money owed. The
+  // invitee has no allocation and no payment row, so a settled/danger/neutral
+  // money label would be a claim about a bill they are not on yet.
+  const invite = billListStatus(base({ pending_invite: true, total_unpaid: 90000, settled_manual: true }));
+  assert.deepEqual(invite, { tone: "neutral", label: "Menunggu jawabanmu" });
+
+  // The tone stays inside the scale the CSS and the filter buckets key on, so
+  // an invite row stays filterable rather than dropping out of every bucket.
+  for (const row of [
+    base({ pending_invite: true }),
+    base({ settled: true }),
+    base({ pending_names: ["Rina"] }),
+    base({ total_unpaid: 5000 }),
+    base(),
+  ]) {
+    assert.ok(["success", "danger", "neutral"].includes(billListStatus(row).tone), billListStatus(row).label);
+  }
+
+  // Unchanged precedence for real rows.
+  assert.deepEqual(billListStatus(base({ settled: true })), { tone: "success", label: "Lunas" });
+  assert.deepEqual(billListStatus(base({ settled_manual: true })), { tone: "success", label: "Lunas" });
+  assert.deepEqual(billListStatus(base({ pending_names: ["Rina"] })), { tone: "neutral", label: "Menunggu memilih" });
+  assert.deepEqual(billListStatus(base({ total_unpaid: 5000 })), { tone: "danger", label: "Belum lunas" });
+  assert.deepEqual(billListStatus(base({ uncovered_idr: 7000 })), { tone: "danger", label: "Belum lunas" });
+  assert.deepEqual(billListStatus(base()), { tone: "neutral", label: "Belum dipilih" });
+
+  // The server's `pending_invite=false` on a real row must not be read as an
+  // invite — the flag is authoritative, not its presence.
+  assert.deepEqual(billListStatus(base({ pending_invite: false, total_unpaid: 5000 })), { tone: "danger", label: "Belum lunas" });
+});
+
+test("bill list inviter names the inviter, or falls back honestly", () => {
+  const base = { id: "bill_1", title: "Makan malam", status: "open" as const, creator_identity_id: "host", total_idr: 1000, settled: false };
+  assert.equal(billListInviter({ ...base, pending_invited_by_name: "Rina" }), "Rina");
+  // Whitespace-only and null both fall back — the row must never render
+  // "Undangan dari  · buka untuk gabung".
+  assert.equal(billListInviter({ ...base, pending_invited_by_name: "   " }), "pengundang");
+  assert.equal(billListInviter({ ...base, pending_invited_by_name: null }), "pengundang");
+  assert.equal(billListInviter(base), "pengundang");
 });

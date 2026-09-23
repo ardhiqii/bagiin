@@ -244,7 +244,68 @@ export type BillListRow = {
   my_paid?: boolean;
   my_total_idr?: number;
   has_picks?: boolean;
+  /**
+   * v97 — pending-invite row fields, additive and present on EVERY row (stable
+   * shape, so no null-vs-missing branching is needed).
+   *
+   * True only for a row this identity can reach PURELY through a pending
+   * invite: no payment row, no selection, not an un-left creator. The invitee
+   * is therefore NOT on the roster, and every money-derived list state
+   * (`settled` / `total_unpaid` / `can_manage` / `my_*`) stays server-owned and
+   * unchanged — `can_manage` is already false for these rows, so owner actions
+   * keep gating on it alone.
+   *
+   * `GET /api/identities/{id}/bills` and `GET /api/identities/{id}/recap`
+   * enumerate the SAME bill id set for the same identity (backend v97), so the
+   * Home row and the Recap drilldown/action always point at one bill id. The
+   * client must read this flag off the LIST row and never infer invite state
+   * from the recap's actions: that would be a second source of truth for the
+   * same question, which is exactly the drift this field removes.
+   */
+  pending_invite?: boolean;
+  /** `bill_invite.id`; null unless `pending_invite` is true. */
+  pending_invite_id?: number | null;
+  /** Inviter display name; null unless `pending_invite` is true. */
+  pending_invited_by_name?: string | null;
 };
+
+/* ------------------------------------------------------------------ bill list
+   The Home list's row status, kept next to the DTO it reads so the chip, the
+   status mark, the sort rank and the filter buckets all share ONE definition.
+   Pure mapping of server-owned booleans/counts into a label — it computes no
+   money, and it never re-derives invite state from any other endpoint. */
+
+export type BillListStatus = { tone: "success" | "danger" | "neutral"; label: string };
+
+/**
+ * The ONE status for a Home row.
+ *
+ * A pending invite OUTRANKS every money-derived label: the invitee has no
+ * allocation, no payment row and no ownership, so "Belum dipilih" or "Belum
+ * lunas" would state something about money the viewer does not owe yet (bug
+ * class this guards: a bill list asserting a balance for someone who is not on
+ * the bill). `row.pending_invite` comes from the list API (v97) and is read
+ * here — never inferred from the recap's `accept_invite` actions, which would
+ * be a second source of truth for the same question.
+ *
+ * The tone stays inside the existing three-value scale on purpose: the
+ * status-mark tint and the filter buckets (Semua / Belum lunas / Lunas / Belum
+ * dipilih) are keyed on `success | danger | neutral`, so a fourth tone would
+ * need new CSS and would silently fall out of every filter.
+ */
+export function billListStatus(row: BillListRow): BillListStatus {
+  if (row.pending_invite) return { tone: "neutral", label: "Menunggu jawabanmu" };
+  if (row.settled || row.settled_manual) return { tone: "success", label: "Lunas" };
+  if (row.pending_names?.length) return { tone: "neutral", label: "Menunggu memilih" };
+  if ((row.total_unpaid || 0) > 0 || (row.uncovered_idr || 0) > 0) return { tone: "danger", label: "Belum lunas" };
+  return { tone: "neutral", label: "Belum dipilih" };
+}
+
+/** The inviter named by a pending-invite row, for the row's helper line. */
+export function billListInviter(row: BillListRow): string {
+  const name = String(row.pending_invited_by_name ?? "").trim();
+  return name || "pengundang";
+}
 
 export type PaymentAccount = {
   id: number;
