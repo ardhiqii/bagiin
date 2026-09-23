@@ -20,7 +20,9 @@ GEMINI_MODEL_CANDIDATE = os.environ.get("BAGIIN_OCR_MODEL", "").strip()
 # they belong to the OpenRouter fallback chain.
 GEMINI_MODEL = (
     GEMINI_MODEL_CANDIDATE
-    if GEMINI_MODEL_CANDIDATE and "/" not in GEMINI_MODEL_CANDIDATE and not GEMINI_MODEL_CANDIDATE.endswith(":free")
+    if GEMINI_MODEL_CANDIDATE.startswith("gemini-")
+    and "/" not in GEMINI_MODEL_CANDIDATE
+    and not GEMINI_MODEL_CANDIDATE.endswith(":free")
     else "gemini-2.5-flash"
 )
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
