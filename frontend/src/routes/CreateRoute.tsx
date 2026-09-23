@@ -369,49 +369,133 @@ export function CreateRoute({ identity, initialVerify = false }: { identity: Ide
     }
   }, [attachThenManual, photoCleanup, replaceDraft]);
 
-  const pasteFromClipboard = useCallback(async () => {
-    try {
-      const files = await readClipboardImages();
-      await startPhotoFlow(files);
-    } catch (clipboardError) {
-      setError(clipboardError instanceof Error ? clipboardError.message : "Tidak bisa membaca clipboard. Coba tempel menggunakan Ctrl+V ya");
-    }
-  }, [startPhotoFlow]);
-  const pasteWithoutOcr = useCallback(async () => {
+  const startAttachFlow = useCallback(async (input: File[]) => {
+    const batch = validateReceiptPhotoBatch(input);
+    if ("error" in batch) { setError(batch.error); return; }
     const runId = runRef.current + 1;
     runRef.current = runId;
     setBusy(true);
     setError("");
     try {
-      const files = await readClipboardImages();
-      await attachThenManual(files, "Foto ditempel tanpa OCR. Isi atau koreksi item secara manual.", runId);
-    } catch (clipboardError) {
-      setError(clipboardError instanceof Error ? clipboardError.message : "Tidak bisa membaca clipboard. Coba tempel menggunakan Ctrl+V ya");
+      await attachThenManual(batch.files, "", runId);
     } finally {
       if (runRef.current === runId) setBusy(false);
     }
   }, [attachThenManual]);
+  const readPhotoClipboard = useCallback(() => readClipboardImages(), []);
 
-  useReceiptPaste(!verify, useCallback((files: File[]) => { void startPhotoFlow(files); }, [startPhotoFlow]));
-
-  if (!verify) return <CreateStart busy={busy} error={error} onManual={() => startVerify(false)} onPhoto={files => { void startPhotoFlow(files); }} onPaste={() => { void pasteFromClipboard(); }} onPasteManual={() => { void pasteWithoutOcr(); }} />;
+  if (!verify) return <CreateStart busy={busy} error={error} onManual={() => startVerify(false)} onPhoto={files => { void startPhotoFlow(files); }} onAttach={files => { void startAttachFlow(files); }} onReadClipboard={readPhotoClipboard} />;
   const finishLeave = (allowed: boolean) => { const resolve = leavePrompt; setLeavePrompt(null); resolve?.(allowed); };
   return <><VerifyEditor draft={draft} identity={identity} updateDraft={updateDraft} cleanup={photoCleanup} onBack={() => { void photoCleanup.releaseAll(); setVerify(false); navigate({ kind: "create" }); }} onSubmit={submit} busy={busy} error={error} onError={setError} /><ConfirmDialog open={Boolean(leavePrompt)} onClose={() => finishLeave(false)} onConfirm={() => finishLeave(true)} /></>;
 }
 
 /**
- * Two real entry paths, stated as they actually behave (v95): the receipt photo
- * is read automatically into a draft you review, or you type the items in. Both
- * hidden inputs are real and separate — `capture` is never toggled on a shared
- * input, because a stale `capture` silently sends the gallery button to the
- * camera (frontend/static/create.js:149-154 records that bug).
+ * Start with the photo source, then ask how it should be processed. The old
+ * screen made "Pilih foto struk" mean OCR immediately and put "Tempel foto
+ * tanpa OCR" in a separate card, so the same choice was split across two
+ * unrelated places. Keeping the decision after a real file exists makes the
+ * flow the same for upload, camera, paste, and desktop Ctrl+V.
  */
-function CreateStart({ busy, error, onManual, onPhoto, onPaste, onPasteManual }: { busy: boolean; error: string; onManual: () => void; onPhoto: (files: File[]) => void; onPaste: () => void; onPasteManual: () => void }) {
+function CreateStart({ busy, error, onManual, onPhoto, onAttach, onReadClipboard }: {
+  busy: boolean;
+  error: string;
+  onManual: () => void;
+  onPhoto: (files: File[]) => void;
+  onAttach: (files: File[]) => void;
+  onReadClipboard: () => Promise<File[]>;
+}) {
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
-  const pick = (event: React.ChangeEvent<HTMLInputElement>) => { const files = [...(event.target.files || [])]; onPhoto(files); event.target.value = ""; };
-  return <AppFrame contextualDock><Topbar title="Buat bill" back={() => navigate({ kind: "home" })} /><main className="shell"><div className="page-intro"><p className="eyebrow">Mulai patungan</p><h1>Pilih cara masukin struk.</h1><p className="muted">Foto struknya dibaca otomatis jadi daftar item, lalu kamu periksa dulu sebelum dibagikan.</p></div><div className="choice-grid"><Card id="dz"><div className="card-title"><span><Camera /> Foto struk</span><span className="muted">Baca otomatis</span></div><input ref={cameraRef} id="create-camera-input" className="visually-hidden" type="file" accept="image/*" capture="environment" tabIndex={-1} aria-label="Ambil foto struk dengan kamera" onChange={pick} /><input ref={galleryRef} id="create-gallery-input" className="visually-hidden" type="file" accept="image/*" multiple tabIndex={-1} aria-label="Pilih foto struk dari galeri atau file" onChange={pick} /><ShadcnButton id="ocr-btn" className="btn-block" disabled={busy} onClick={() => galleryRef.current?.click()}>{busy ? <><Spinner /> Lagi baca struknya...</> : <><UploadSimple /> Pilih foto struk</>}</ShadcnButton><div className="btn-row create-photo-actions"><ShadcnButton variant="outline" disabled={busy} onClick={() => cameraRef.current?.click()}><Camera /> Kamera</ShadcnButton><ShadcnButton variant="outline" disabled={busy} onClick={onPaste}><ClipboardText /> Tempel</ShadcnButton></div><p className="field-hint">Bisa pilih sampai 2 foto struk, maksimal 5 MiB per foto.</p>{error && <p className="error-text" role="alert">{error}</p>}</Card><Card><ShadcnButton id="manual-btn" variant="outline" className="btn-block" disabled={busy} onClick={onManual}><PencilSimple /> Isi manual</ShadcnButton><ShadcnButton id="manual-paste-btn" variant="ghost" className="btn-block" disabled={busy} onClick={onPasteManual}><ClipboardText /> Tempel foto tanpa OCR</ShadcnButton><p className="muted">Isi item sendiri, atau lampirkan foto hanya sebagai referensi tanpa dibaca otomatis.</p></Card></div></main></AppFrame>;
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [photoChoiceOpen, setPhotoChoiceOpen] = useState(false);
+  const [sourceError, setSourceError] = useState("");
+  const queueFiles = useCallback((files: File[]) => {
+    const batch = validateReceiptPhotoBatch(files);
+    if ("error" in batch) { setSourceError(batch.error); return; }
+    setSourceError("");
+    setPendingFiles(batch.files);
+    setPhotoChoiceOpen(true);
+  }, []);
+  const pick = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = [...(event.target.files || [])];
+    event.target.value = "";
+    if (files.length) queueFiles(files);
+  };
+  const choosePhotoHandling = (mode: "ocr" | "attach") => {
+    const files = pendingFiles;
+    setPendingFiles([]);
+    setPhotoChoiceOpen(false);
+    if (mode === "ocr") onPhoto(files);
+    else onAttach(files);
+  };
+  const paste = async () => {
+    try {
+      queueFiles(await onReadClipboard());
+    } catch (clipboardError) {
+      setSourceError(clipboardError instanceof Error
+        ? clipboardError.message
+        : "Tidak bisa membaca clipboard. Coba tempel menggunakan Ctrl+V ya");
+    }
+  };
+  useReceiptPaste(true, queueFiles);
+  useEffect(() => {
+    if (!photoChoiceOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPhotoChoiceOpen(false);
+        setPendingFiles([]);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [photoChoiceOpen]);
+  const displayedError = sourceError || error;
+  return <AppFrame contextualDock>
+    <Topbar title="Buat bill" back={() => navigate({ kind: "home" })} />
+    <main className="shell">
+      <div className="page-intro">
+        <p className="eyebrow">Mulai patungan</p>
+        <h1>Masukkan struk atau isi manual.</h1>
+        <p className="muted">Pilih sumber foto dulu. Setelah itu kamu yang menentukan mau dibaca otomatis atau cuma dilampirkan.</p>
+      </div>
+      <div className="choice-grid">
+        <Card id="dz" className="card-accent">
+          <div className="card-title"><span><Camera /> Foto struk</span><span className="muted">Upload, kamera, atau tempel</span></div>
+          <p className="muted">Setelah fotonya masuk, pilih Baca otomatis (OCR) atau Lampirkan saja untuk isi item sendiri.</p>
+          <input ref={cameraRef} id="create-camera-input" className="visually-hidden" type="file" accept="image/*" capture="environment" tabIndex={-1} aria-label="Ambil foto struk dengan kamera" onChange={pick} />
+          <input ref={galleryRef} id="create-gallery-input" className="visually-hidden" type="file" accept="image/*" multiple tabIndex={-1} aria-label="Pilih foto struk dari galeri atau file" onChange={pick} />
+          <ShadcnButton id="ocr-btn" className="btn-block" disabled={busy} onClick={() => galleryRef.current?.click()}>
+            {busy ? <><Spinner /> Memproses foto...</> : <><UploadSimple /> Upload foto</>}
+          </ShadcnButton>
+          <div className="btn-row create-photo-actions">
+            <ShadcnButton variant="outline" disabled={busy} onClick={() => cameraRef.current?.click()}><Camera /> Kamera</ShadcnButton>
+            <ShadcnButton variant="outline" disabled={busy} onClick={() => { void paste(); }}><ClipboardText /> Tempel</ShadcnButton>
+          </div>
+          <p className="field-hint">Bisa pilih sampai 2 foto struk, maksimal 5 MiB per foto.</p>
+          {displayedError && <p className="error-text" role="alert">{displayedError}</p>}
+        </Card>
+        <Card>
+          <div className="card-title"><span><PencilSimple /> Isi manual</span><span className="muted">Tanpa foto</span></div>
+          <p className="muted">Masukkan item, harga, dan jumlah sendiri tanpa melampirkan foto.</p>
+          <ShadcnButton id="manual-btn" variant="outline" className="btn-block" disabled={busy} onClick={onManual}><PencilSimple /> Isi manual</ShadcnButton>
+        </Card>
+      </div>
+    </main>
+    {photoChoiceOpen && <div className="sheet-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) { setPhotoChoiceOpen(false); setPendingFiles([]); } }}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="photo-choice-title">
+        <div className="sheet-handle" />
+        <h2 className="sheet-title" id="photo-choice-title">Foto siap dipakai</h2>
+        <p className="sheet-sub">{pendingFiles.length} foto dipilih. Mau item dan harganya dibaca otomatis, atau kamu isi sendiri?</p>
+        <div className="stack-sm">
+          <ShadcnButton className="btn-block" onClick={() => choosePhotoHandling("ocr")}><Receipt /> Baca otomatis (OCR)</ShadcnButton>
+          <ShadcnButton variant="outline" className="btn-block" onClick={() => choosePhotoHandling("attach")}><PencilSimple /> Lampirkan saja, isi manual</ShadcnButton>
+          <ShadcnButton variant="ghost" className="btn-block" onClick={() => { setPhotoChoiceOpen(false); setPendingFiles([]); }}>Batal</ShadcnButton>
+        </div>
+      </div>
+    </div>}
+  </AppFrame>;
 }
+
 
 function VerifyEditor({ draft, identity, updateDraft, cleanup, onBack, onSubmit, busy, error, onError }: { draft: BillDraft; identity: Identity; updateDraft: (updater: (current: BillDraft) => BillDraft) => void; cleanup: PhotoCleanup; onBack: () => void; onSubmit: (event: React.FormEvent) => void; busy: boolean; error: string; onError: (error: string) => void }) {
   const [photoBusy, setPhotoBusy] = useState(false);
