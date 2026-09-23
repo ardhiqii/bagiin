@@ -410,6 +410,27 @@ export type DraftItem = {
   slot_count: number;
 };
 
+/**
+ * A proven contact PICKED on the create screen ("Yang ikut").
+ *
+ * This is deliberately NOT the same thing as `CreateBillRequest.participants`.
+ * That field is a list of free-typed NAMES that the server stores as
+ * placeholder rows with no identity behind them. A picked contact is a real
+ * identity: it cannot be sent to `POST /api/bills` (the endpoint takes names,
+ * and the person must accept/link up as a real member), so it is put on the
+ * bill AFTERWARDS with `POST /api/bills/{id}/invite`, exactly like the legacy
+ * client did (frontend/static/create.js:1936). Keeping the two in separate
+ * draft fields is what stops a proven contact from becoming a duplicate
+ * placeholder row (bug history: the legacy code had to drop same-named typed
+ * rows when a contact was picked, because both lists fed one roster).
+ */
+export type PickedContact = {
+  id: string;
+  name: string;
+  /** `last_shared` from GET /api/identities/{id}/contacts, when available. */
+  last_shared?: string;
+};
+
 export type BillDraft = {
   title: string;
   merchant: string;
@@ -423,6 +444,51 @@ export type BillDraft = {
   paid_by_myself: boolean;
   paid_by_name: string;
   extra_names: string[];
+  /** Proven contacts picked from the contact list — see `PickedContact`. */
+  picked_contacts: PickedContact[];
   photos: string[];
   photo_path?: string;
 };
+
+/* ------------------------------------------------------------------ picker
+   Pure derivations of the "Yang ikut" picker, kept next to the DTOs they
+   operate on so the create screen and the logic suite share ONE definition of
+   what each helper means. They live here rather than in the route because the
+   picker's two load-bearing rules are the kind that must be testable without a
+   DOM: (a) a picked contact never becomes a `participants` placeholder, and
+   (b) the caption never claims a shared bill it cannot prove. */
+
+/** Legacy's caption (frontend/static/create.js:1380) for a contact row. */
+export function pickerContactCaption(contact: Pick<PickedContact, "last_shared">): string {
+  return contact.last_shared ? "pernah berbagi bill" : "kontak terbukti";
+}
+
+/** `.avatar` initial, matching the invite sheet's `name.slice(0,1)` display. */
+export function contactInitial(name: string): string {
+  return String(name || "").trim().slice(0, 1).toUpperCase();
+}
+
+/** Add/remove one contact from the picked list without mutating the draft. */
+export function togglePickedContact(picked: PickedContact[], contact: PickedContact): PickedContact[] {
+  if (picked.some(item => item.id === contact.id)) return picked.filter(item => item.id !== contact.id);
+  return [...picked, { id: contact.id, name: contact.name, last_shared: contact.last_shared }];
+}
+
+/**
+ * The placeholder names that go into `CreateBillRequest.participants`.
+ *
+ * Takes the whole draft rather than `extra_names` alone so the separation is
+ * enforced in ONE place: a picked contact has an identity and MUST NOT appear
+ * here, or the bill would carry both a placeholder row and an invite for the
+ * same person.
+ */
+export function participantPlaceholders(draft: Pick<BillDraft, "extra_names">): string[] {
+  return draft.extra_names.map(name => name.trim()).filter(Boolean);
+}
+
+/** Legacy's bounded-invite copy, as a pure mapping of the settled results. */
+export function inviteFailureNotice(results: Array<{ status: "fulfilled" | "rejected" }> | null): string {
+  if (!results) return "Bill sudah jadi. Sebagian undangan masih diproses, cek lagi nanti.";
+  const failed = results.filter(result => result.status === "rejected").length;
+  return failed ? `Bill sudah jadi, tapi ${failed} undangan gagal. Coba undang lagi dari bill.` : "";
+}

@@ -12,6 +12,13 @@ import {
   normalizePaymentAccount,
 } from "../src/lib/api.ts";
 import { createRequestGate } from "../src/lib/async-state.ts";
+import {
+  contactInitial,
+  inviteFailureNotice,
+  participantPlaceholders,
+  pickerContactCaption,
+  togglePickedContact,
+} from "../src/lib/types.ts";
 import { photoFilename, photoUrl } from "../src/lib/photo-path.ts";
 import { inputMoney, rupiahFmt, rupiahParse } from "../src/lib/money.ts";
 import { isKnownHashRoute, parseHash, routeHash } from "../src/lib/routes.ts";
@@ -110,4 +117,48 @@ test("photo cleanup only accepts generated upload filenames", () => {
   assert.equal(photoFilename("../../other-bill.jpg"), null);
   assert.equal(photoFilename("0123456789abcdef.svg"), null);
   assert.equal(photoUrl("/tmp/uploads/0123456789abcdef.webp"), "/uploads/0123456789abcdef.webp");
+});
+
+/* The "Yang ikut" picker's two load-bearing rules. Both are the kind that a
+   refactor can break silently, because the wrong behaviour still LOOKS fine on
+   screen: a picked contact sent as a placeholder shows up as a second row with
+   the same name, and a caption that always says "pernah berbagi bill" reads
+   plausibly while being false for a contact the server never reported sharing
+   with. */
+test("a picked proven contact never becomes a participants placeholder", () => {
+  const draft = { extra_names: [" Budi ", "", "Sari"] };
+  assert.deepEqual(participantPlaceholders(draft), ["Budi", "Sari"]);
+  // The same person typed AND picked must still only produce the typed name
+  // here; the invite carries the identity, not this array.
+  assert.deepEqual(participantPlaceholders({ extra_names: [] }), []);
+});
+
+test("picked contacts toggle by identity and keep their last_shared evidence", () => {
+  const rina = { id: "id-rina", name: "Rina", last_shared: "2026-09-01 10:00:00" };
+  const budi = { id: "id-budi", name: "Budi" };
+  const one = togglePickedContact([], rina);
+  assert.deepEqual(one, [rina]);
+  const two = togglePickedContact(one, budi);
+  assert.deepEqual(two.map(contact => contact.id), ["id-rina", "id-budi"]);
+  // Toggling the same identity off removes it and leaves the other alone.
+  assert.deepEqual(togglePickedContact(two, rina).map(contact => contact.id), ["id-budi"]);
+  // No mutation of the input array: the draft is replaced, never patched.
+  assert.equal(two.length, 2);
+  assert.deepEqual(togglePickedContact([], { id: "x", name: "X" }), [{ id: "x", name: "X", last_shared: undefined }]);
+});
+
+test("picker caption and avatar initial match the legacy contact row", () => {
+  assert.equal(pickerContactCaption({ last_shared: "2026-09-01 10:00:00" }), "pernah berbagi bill");
+  assert.equal(pickerContactCaption({}), "kontak terbukti");
+  assert.equal(contactInitial("rina"), "R");
+  assert.equal(contactInitial("  budi"), "B");
+  assert.equal(contactInitial(""), "");
+});
+
+test("invite batch copy distinguishes failure from still-in-flight", () => {
+  // A batch that never resolved inside the 8s bound is NOT a failure.
+  assert.match(inviteFailureNotice(null), /masih diproses/);
+  assert.equal(inviteFailureNotice([{ status: "fulfilled" }, { status: "fulfilled" }]), "");
+  assert.match(inviteFailureNotice([{ status: "fulfilled" }, { status: "rejected" }]), /1 undangan gagal/);
+  assert.match(inviteFailureNotice([{ status: "rejected" }, { status: "rejected" }]), /2 undangan gagal/);
 });

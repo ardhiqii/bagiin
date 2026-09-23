@@ -269,10 +269,25 @@ const WIDTHS = [320, 360, 375, 390, 412, 430, 480, 600, 768, 820, 1024, 1040, 12
 const HEIGHT = 900;
 const failures = [];
 const createdBillIds = new Set();
+/* A bill can be created by a FIXTURE identity other than the disposable one
+   (the picker needs a contact who shared in BOTH directions, which means that
+   contact owns one of the two bills). Cleanup has to delete each bill AS ITS
+   OWNER or the API answers 403 "Hanya owner bill (yang bayar)" and the run
+   reports a cleanup failure it cannot explain. */
+const billOwners = new Map();
 const cleanupFailures = [];
+/* Request ledger for the picker assertions: the create payload (to prove a
+   picked contact does NOT leak into `participants`) and the invite calls (to
+   prove exactly one per picked contact). Only requestWillBeSent is needed, and
+   the post body rides on it, so no extra CDP domains are involved. */
+const createRequests = [];
+const inviteRequests = [];
 const billIdFromHash = hash => String(hash || "").startsWith("#/b/") ? String(hash).slice(4) : "";
-const trackBillId = billId => {
-  if (typeof billId === "string" && billId) createdBillIds.add(billId);
+const trackBillId = (billId, owner = identity) => {
+  if (typeof billId === "string" && billId) {
+    createdBillIds.add(billId);
+    if (owner) billOwners.set(billId, owner);
+  }
 };
 let executed = 0;
 
@@ -331,10 +346,38 @@ const discovery = await cdpDiscovery();
 if (!discovery) process.exit(2);
 
 let identity;
+let proofContacts = [];
 try {
   const stamp = `${Date.now().toString(36)}-${process.pid}`;
   identity = await api("POST", "/api/identities", { name: `E2E Create ${stamp}`, creator: true });
   check("disposable identity has credentials", Boolean(identity.id), identity.id ? "created" : "missing id");
+  /* Two PROVEN contacts, one per sharing direction, so the "Yang ikut" picker
+     has a real roster to render and the invite assertions below have real
+     targets. This is the same fixture shape tools/e2e_creator_controls.mjs uses
+     for the bill screen's invite sheet. */
+  const contactA = await api("POST", "/api/identities", { name: `E2E Contact A ${stamp}`, creator: false });
+  const contactB = await api("POST", "/api/identities", { name: `E2E Contact B ${stamp}`, creator: false });
+  const mineForContacts = await api("POST", "/api/bills", {
+    title: `Prove A ${stamp}`,
+    items: [{ name: "Kopi", price: 20000, discount: 0, quantity: 1, mode: "free" }],
+    subtotal: 20000, tax: 0, service: 0, total: 20000, tax_included: false,
+  }, identity);
+  trackBillId(mineForContacts.id);
+  await api("POST", `/api/bills/${mineForContacts.id}/join`, {}, contactA);
+  const theirsForContacts = await api("POST", "/api/bills", {
+    title: `Prove B ${stamp}`,
+    items: [{ name: "Teh", price: 8000, discount: 0, quantity: 1, mode: "free" }],
+    subtotal: 8000, tax: 0, service: 0, total: 8000, tax_included: false,
+  }, contactB);
+  trackBillId(theirsForContacts.id, contactB);
+  await api("POST", `/api/bills/${theirsForContacts.id}/join`, {}, identity);
+  const proven = await api("GET", `/api/identities/${identity.id}/contacts`, undefined, identity);
+  proofContacts = [contactA, contactB];
+  check("proven-contact fixture covers both sharing directions",
+    Array.isArray(proven)
+      && proven.some(contact => contact.id === contactA.id)
+      && proven.some(contact => contact.id === contactB.id),
+    JSON.stringify(proven.map(contact => ({ id: contact.id, last_shared: contact.last_shared }))));
 } catch (error) {
   console.error(`ERROR: disposable Bagiin server unavailable at ${BASE_URL}: ${error.message}`);
   process.exit(1);
@@ -368,6 +411,20 @@ ws.addEventListener("message", event => {
     pageErrors.push(message.params.args?.map(arg => arg.value ?? arg.description ?? "").join(" ") || "console error");
   } else if (message.method === "Log.entryAdded" && message.params?.entry?.level === "error") {
     pageErrors.push(message.params.entry.text || "browser log error");
+  } else if (message.method === "Network.requestWillBeSent") {
+    /* The picker assertions need the request PAYLOADS, not just the fact that a
+       call happened: `participants` must not contain a picked contact, and each
+       picked contact must produce exactly one invite for its own identity. */
+    const request = message.params?.request;
+    if (request?.method === "POST" && request.url.endsWith("/api/bills")) {
+      let data = null;
+      try { data = request.postData ? JSON.parse(request.postData) : null; } catch { data = null; }
+      createRequests.push({ url: request.url, data });
+    } else if (request?.method === "POST" && request.url.includes("/invite")) {
+      let data = null;
+      try { data = request.postData ? JSON.parse(request.postData) : null; } catch { data = null; }
+      inviteRequests.push({ url: request.url, data });
+    }
   }
 });
 const send = (method, params = {}) => {
@@ -391,7 +448,37 @@ const navigate = async url => {
   await sleep(700);
 };
 
+/**
+ * Wait for the "Yang ikut" proven-contact list to leave its loading state and
+ * report what it rendered. Returns ids (to match the fixture's identities),
+ * the row copy, and whether any row is still busy.
+ */
+const waitForPicker = async () => {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const state = await evaluate(`(() => {
+      const host = document.querySelector("#people-pick");
+      if (!host) return { present: false, busy: null, ids: [], rows: [] };
+      const boxes = [...host.querySelectorAll('input[type="checkbox"]')];
+      return {
+        present: true,
+        busy: host.getAttribute("aria-busy"),
+        ids: boxes.map(box => box.id),
+        rows: [...host.querySelectorAll(".account-row")].map(row => ({
+          avatar: row.querySelector(".avatar")?.textContent?.trim() || "",
+          name: row.querySelector(".item-name")?.textContent?.trim() || "",
+          caption: row.querySelector(".caption")?.textContent?.trim() || "",
+          label: row.querySelector('input[type="checkbox"]')?.getAttribute("aria-label") || "",
+        })),
+      };
+    })()`);
+    if (state.present && state.busy === null) return state;
+    await sleep(200);
+  }
+  return { present: false, busy: "timeout", ids: [], rows: [] };
+};
+
 const identityJson = JSON.stringify(JSON.stringify(identity));
+const stamp = `${Date.now().toString(36)}-${process.pid}`;
 const createAndManual = async () => {
   await navigate(`${BASE_URL}/?e2e=${Date.now()}#/create`);
   await evaluate(`localStorage.setItem("bagiin_identity", ${identityJson})`);
@@ -434,6 +521,33 @@ const readCase = async (width, color) => evaluate(`(() => {
   const dateHelper = document.querySelector(".date-helper");
   const datePlaceholder = document.querySelector(".vf-date-placeholder");
   const modeHelper = document.querySelector(".vf-mode-helper");
+  /* --- metadata row geometry -------------------------------------------------
+     The two side-by-side cells of .verify-detail-card .form-grid must share an
+     input top and an input height no matter which one is taller. The date cell
+     carries a .date-helper line the merchant cell does not, and because .field
+     is display: grid its implicit align-self: stretch used to inflate the
+     merchant CELL to the row height, which inflated the merchant INPUT to
+     66.5px (every other control is the 46px --control-height) with its top
+     20.5px below the date input's top at 390px. */
+  const metaCell = selector => {
+    const input = document.querySelector(selector);
+    const cell = input ? input.closest(".field") : null;
+    const label = cell ? cell.querySelector("label") : null;
+    const box = element => { if (!element) return null; const r = element.getBoundingClientRect(); return { top: r.top, height: r.height }; };
+    const labelLines = label ? (() => { const range = document.createRange(); range.selectNodeContents(label); return range.getClientRects().length; })() : 0;
+    /* A cell's natural height is label + gap + control, and only ONE cell in the
+       row carries the extra helper line. The .field gap is 5-7px depending on
+       the height breakpoint, so the row height is the two cells' own content
+       plus that gap — anything materially taller is the stretch coming back. */
+    const gap = cell ? parseFloat(getComputedStyle(cell).rowGap || getComputedStyle(cell).gap || "6") : 6;
+    const contentHeight = cell
+      ? [...cell.children].reduce((sum, child) => sum + (child.getBoundingClientRect().height || 0), 0) + gap * Math.max(0, cell.children.length - 1)
+      : 0;
+    return { cell: box(cell), input: box(input), label: box(label), labelLines, contentHeight };
+  };
+  const metadata = { merchant: metaCell("#merchant-input"), date: metaCell("#date-input") };
+  const detailCard = document.querySelector(".verify-detail-card");
+  const detailCardHeight = detailCard ? detailCard.getBoundingClientRect().height : null;
   const totalInstruction = [...document.querySelectorAll(".info-box")].find(el => el.textContent.includes("Total baris dihitung"));
   const deleteButton = firstItem?.querySelector('[data-role="del"]');
   const rectTop = selector => document.querySelector(selector)?.getBoundingClientRect().top ?? null;
@@ -456,6 +570,8 @@ const readCase = async (width, color) => evaluate(`(() => {
       accessibleName: participantAccessibleName,
       explicitName: explicitParticipantName,
     },
+    metadata,
+    detailCardHeight,
     repaired: {
       nameLabel: Boolean(nameLabel && nameLabel.textContent.trim() === "Nama item" && name.id && nameLabel.htmlFor === name.id),
       dateHelper: Boolean(dateHelper && dateHelper.textContent.includes("Opsional, pilih tanggal transaksi.")),
@@ -497,6 +613,12 @@ const readCase = async (width, color) => evaluate(`(() => {
   await send("Page.enable");
   await send("Runtime.enable");
   await send("Log.enable");
+  /* The picker assertions read `Network.requestWillBeSent` payloads (the create
+     body's `participants`, and one invite per picked contact). CDP emits those
+     events only after the Network domain is enabled on this session — without
+     this the ledger stays empty and the two assertions fail with "[]" even
+     though the requests really went out. */
+  await send("Network.enable");
 
   for (const color of ["light", "dark"]) {
     await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: color }] });
@@ -545,6 +667,42 @@ const readCase = async (width, color) => evaluate(`(() => {
           return { filledHidden, emptyVisible };
         })()`);
         check(`${prefix}: date placeholder toggles with value`, dateToggle.filledHidden && dateToggle.emptyVisible, JSON.stringify(dateToggle));
+
+        /* ---- metadata row layout (the user's "jd nya aneh layoutnya") ---------
+           Two side-by-side cells must line up even though only one carries a
+           helper line. Measured here for the EMPTY date; the FILLED case is
+           asserted below next to the date write, so both axes are covered at
+           every width without re-reading the whole case. */
+        const metaGeometryOk = snapshot => {
+          const merchant = snapshot?.metadata?.merchant;
+          const date = snapshot?.metadata?.date;
+          if (!merchant?.input || !date?.input || !merchant?.label || !date?.label) return false;
+          const sameHeight = Math.abs(merchant.input.height - date.input.height) <= 0.5;
+          const sameTop = Math.abs(merchant.input.top - date.input.top) <= 1;
+          // One line each: the wrapped merchant label measured 38.5px where a
+          // single line is 18px.
+          const labelsSingleLine = merchant.labelLines === 1 && date.labelLines === 1
+            && merchant.label.height <= 24 && date.label.height <= 24;
+          // Neither cell is taller than its OWN content: the inflated merchant
+          // cell measured 110px against 69px of content.
+          const cellsNatural = Math.abs(merchant.cell.height - merchant.contentHeight) <= 1
+            && Math.abs(date.cell.height - date.contentHeight) <= 1;
+          return sameHeight && sameTop && labelsSingleLine && cellsNatural;
+        };
+        check(`${prefix}: metadata cells share input height and top (date empty)`, metaGeometryOk(initial), JSON.stringify(initial.metadata));
+        const metaCardBefore = initial.detailCardHeight;
+        const metaFilled = await evaluate(`(() => {
+          const input = document.querySelector("#date-input");
+          input.value = "2026-09-06";
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          return true;
+        })()`);
+        await sleep(120);
+        const filledSnapshot = metaFilled ? await readCase(width, color) : null;
+        check(`${prefix}: metadata cells share input height and top (date filled)`, metaGeometryOk(filledSnapshot), JSON.stringify(filledSnapshot?.metadata));
+        check(`${prefix}: metadata card does not grow when the date is filled`,
+          Boolean(filledSnapshot) && filledSnapshot.detailCardHeight <= metaCardBefore + 1,
+          `${metaCardBefore} -> ${filledSnapshot?.detailCardHeight}`);
         const entryClear = initial.dimensions.viewport >= 1040 || Boolean(
           initial.entry?.detail && initial.entry?.date && initial.entry?.line && initial.entry?.topbar && initial.entry?.dock
           && initial.entry.detail.top >= initial.entry.topbar.bottom - 1
@@ -752,6 +910,86 @@ const readCase = async (width, color) => evaluate(`(() => {
               && createPayload?.payload?.total === 24000,
             JSON.stringify(createCapture));
 
+          /* ---- "Yang ikut" proven-contact picker ---------------------------
+             The React port had dropped this whole block: no fetch, no rows, no
+             invite. Three things are asserted, in the order they break:
+             1. the proven contacts render as pickable rows;
+             2. picking them does NOT leak into the create payload's
+                `participants` (that array is placeholder names only, and a
+                leaked identity would put the person on the bill twice);
+             3. each picked contact produces exactly ONE
+                POST /api/bills/{id}/invite for that identity, after the bill
+                exists.
+             The create above already navigated to the bill, so remount the
+             editor first — that remount is also what re-runs the contacts fetch
+             and proves the list is fetched, not carried over. */
+          await navigate(`${BASE_URL}/?e2e=${Date.now()}#/create`);
+          await evaluate(`localStorage.setItem("bagiin_identity", ${identityJson})`);
+          await navigate(`${BASE_URL}/?e2e=${Date.now()}#/create`);
+          await evaluate(`document.querySelector("#manual-btn")?.click()`);
+          await sleep(300);
+          const pickerReady = await waitForPicker();
+          check(`${prefix}: proven contacts render as pickable rows`,
+            pickerReady.rows.length === proofContacts.length
+              && proofContacts.every(contact => pickerReady.ids.includes(`people-pick-${contact.id}`))
+              && pickerReady.rows.every(row => row.avatar && row.name && row.caption),
+            JSON.stringify(pickerReady));
+
+          const pickedInvitesBefore = inviteRequests.length;
+          const createsBeforePicker = createRequests.length;
+          const pickerSubmit = await evaluate(`(async () => {
+            const boxes = [...document.querySelectorAll('#people-pick input[type="checkbox"]')];
+            for (const box of boxes) box.click();
+            const set = (selector, value) => {
+              const input = document.querySelector(selector);
+              if (!input) throw new Error("missing " + selector);
+              input.value = value;
+              input.dispatchEvent(new Event("input", { bubbles: true }));
+              input.dispatchEvent(new Event("change", { bubbles: true }));
+            };
+            set('[data-role="name"]', "Picker item");
+            set('[data-role="price"]', "25000");
+            set("#subtotal-input", "25000");
+            await new Promise(resolve => setTimeout(resolve, 50));
+            const typed = document.querySelector("#person-name-input");
+            typed.value = "Tamu ${stamp}";
+            document.querySelector("#person-name-add").click();
+            await new Promise(resolve => setTimeout(resolve, 50));
+            const before = location.hash;
+            await createBillFinal();
+            for (let i = 0; i < 60 && !location.hash.startsWith("#/b/"); i += 1) await new Promise(resolve => setTimeout(resolve, 100));
+            return { before, hash: location.hash, checked: boxes.filter(box => box.checked).length };
+          })()`).catch(error => ({ error: error.message }));
+          await sleep(600);
+          const pickerBillId = billIdFromHash(pickerSubmit?.hash);
+          trackBillId(pickerBillId);
+          const createWithPicker = createRequests.slice(createsBeforePicker)
+            .find(requestItem => requestItem.url.endsWith("/api/bills") && requestItem.data);
+          check(`${prefix}: picking a proven contact keeps it out of create participants`,
+            Boolean(createWithPicker)
+              && Array.isArray(createWithPicker.data.participants)
+              && !createWithPicker.data.participants.some(name => proofContacts.some(contact => contact.name === name)),
+            JSON.stringify(createWithPicker?.data?.participants));
+          const pickerInvites = inviteRequests.slice(pickedInvitesBefore)
+            .filter(requestItem => requestItem.url.includes(`/api/bills/${pickerBillId}/invite`));
+          check(`${prefix}: each picked contact gets exactly one invite request`,
+            Boolean(pickerBillId)
+              && pickerInvites.length === proofContacts.length
+              && pickerSubmit?.checked === proofContacts.length
+              && proofContacts.every(contact => pickerInvites.filter(requestItem => requestItem.data?.identity_id === contact.id).length === 1),
+            JSON.stringify({ billId: pickerBillId, invites: pickerInvites.map(requestItem => requestItem.data), checked: pickerSubmit?.checked }));
+          if (pickerBillId) {
+            const pickerBill = await api("GET", `/api/bills/${pickerBillId}`, undefined, identity);
+            const invitedNames = pickerBill.people.map(personItem => personItem.name);
+            const typedName = pickerBill.participants.find(participant => participant.identity_id === null)?.name || "";
+            check(`${prefix}: picked contacts land on the bill and typed names stay placeholders`,
+              proofContacts.every(contact => invitedNames.includes(contact.name))
+                && typedName === `Tamu ${stamp}`,
+              JSON.stringify({ people: invitedNames, participants: pickerBill.participants }));
+          } else {
+            check(`${prefix}: picked contacts land on the bill and typed names stay placeholders`, false, "no bill id from picker submit");
+          }
+
           const manual = await evaluate(`(() => {
             renderVerify({
               title: "Manual",
@@ -902,7 +1140,7 @@ const readCase = async (width, color) => evaluate(`(() => {
   if (identity) {
     for (const billId of createdBillIds) {
       try {
-        await api("DELETE", `/api/bills/${billId}`, undefined, identity);
+        await api("DELETE", `/api/bills/${billId}`, undefined, billOwners.get(billId) || identity);
         try {
           await api("GET", `/api/bills/${billId}`, undefined, identity);
         } catch (error) {
