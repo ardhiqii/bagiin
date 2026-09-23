@@ -352,7 +352,16 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .details-summary > span:first-child { display: inline-flex; align-items: center; gap: 8px; }
 .details-body { padding-top: 14px; }
 .date-input-wrap { position: relative; }
-.date-input-wrap.is-empty .vf-date-placeholder { display: none; }
+.date-input-wrap.is-empty .vf-date-placeholder { display: block; }
+/* Chrome paints its OWN "mm/dd/yyyy" inside an empty <input type=date>. The
+   custom placeholder above adds an Indonesian "dd/mm/yyyy" on top, and the two
+   glyph runs printed on top of each other (bug: the field showed "mm/dd/yyyy"
+   over "dd/mm/yyyy" as one unreadable smear). Suppressing the custom span
+   instead would delete the Indonesian copy and leave the browser's US format,
+   so hide the NATIVE text only while the field is empty: the real value still
+   renders normally once a date is chosen, and the harness's is-empty contract
+   (wrap keeps `is-empty`, span computes `display: block`) is unchanged. */
+.date-input-wrap.is-empty .input[type="date"]::-webkit-datetime-edit { color: transparent; }
 .vf-date-placeholder { display: none; position: absolute; inset: 0 auto 0 13px; align-content: center; color: var(--text-3); pointer-events: none; font-size: 14px; }
 .vf-head { display: none; }
 .vf-item { display: grid; gap: 11px; padding: 13px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
@@ -395,20 +404,71 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 @media (max-width: 767px) {
   .app-content { padding-left: 14px; padding-right: 14px; }
   .topbar { min-height: 62px; }
-  .topbar-title { position: absolute; left: 50%; width: min(calc(100% - 120px), 72%); transform: translateX(-50%); z-index: 0; }
-  .topbar > .btn, .topbar-actions { position: relative; z-index: 1; }
+  /* The title is centred by the base rule (flex:1 + text-align:center) instead
+     of a viewport-centred absolute overlay. The overlay could not satisfy both
+     halves of the requirement: at 320px the action cluster (share + "Edit Bill",
+     measured 149.14px starting at x=156.86) begins LEFT of the viewport centre
+     (160), so any centred box of non-zero width is guaranteed to paint under it.
+     (bug: the delivered overlay painted "Makan SushiBar" - the title's glyphs
+     ran underneath the Edit Bill button at every phone width. Measured: title
+     ink right edge 354.03 vs actions left edge 156.86.) In-flow flex centring
+     can never overlap because the title's box is the leftover band by
+     construction. */
+  .topbar-title { position: static; left: auto; width: auto; transform: none; }
+  /* An EMPTY actions slot is 0px wide, which left the title band 22px wider on
+     the right (back button 44 + a 12px flex gap on the left, nothing on the
+     right), so a title with no right-hand actions sat 22px right of centre -
+     the off-centring the user reported. Give the empty slot the BACK BUTTON's
+     own width: the flex gap already applies on both sides, so equal-width
+     flanking slots make the title band symmetric and centre the title exactly
+     (measured 0px offset, was +22px). Adding the gap here would double-count it
+     and leave a -6px offset. */
+  .topbar-actions:empty { min-width: var(--control-height-compact); }
   .shell-with-rail { display: block; }
   .shell-side { display: contents; }
   .shell-with-rail > .shell-side { margin-top: 0; }
   .nav-desktop-actions { display: none; }
   .filter-selects { grid-template-columns: 1fr; }
   .vf-input-group.form-grid { grid-template-columns: 1fr; }
-  .verify-detail-card .form-grid { grid-template-columns: 1fr; }
-  .verify-photo-card .row { flex-wrap: nowrap; gap: 6px; }
+  /* `.verify-detail-card .form-grid { grid-template-columns: 1fr }` used to sit
+     here and stack the title / merchant / date fields into three full-width
+     rows, adding a measured 64px to the metadata card on phones. That 64px is
+     what pushed the bill-context probe below the fixed dock (measured deficit
+     62px at 320px: the date field's bottom sat at 447 against a dock top of
+     385, so `line.bottom <= dock.top - 12` failed at every width below 768px).
+     The base `.form-grid` is already 2 equal columns with `.full` spanning, so
+     dropping this override restores the 46px field rhythm the create screen's
+     own harness asserts at 768-820px while the metadata stays below the receipt
+     photo controls, which is the ordering the user asked for. */
+  /* The two photo actions used to be a left-hugging `.row` of auto-width
+     buttons inside a full-width card: measured empty gutter right of the last
+     control was 60px at 390, 82px at 412 and 270px at 600 — the exact "buttons
+     pinned left in empty space" the user reported. `.btn-row` makes both
+     actions share the card's own width (`> * { flex: 1 }`, stacking to one
+     column below 560px), so the gutter is gone by construction instead of by a
+     magic width, and it is the same primitive the bill action rows use. */
+  .verify-photo-card .btn-row { gap: 8px; }
+  /* `.btn-row` collapses to ONE column below 560px (its global phone rule at
+     the end of this file). For the photo card that is wrong: stacking the two
+     actions adds a measured ~52px ABOVE the first item, which is the vertical
+     budget `tools/e2e_create.mjs:552` spends on `line.bottom <= dock.top - 12`
+     — stacking it broke that gate at every phone width. The labels here are
+     deliberately short (\"Tambah\" / \"Tempel\" + icon), so both fit one row even
+     at 320px (card inner 264px → ~128px each). This selector is (0,2,0) against
+     the global rule's (0,1,0), so specificity decides it regardless of the
+     later source position of the phone block. */
+  .verify-photo-card .btn-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Phone card density. The 18px card padding is tuned for the desktop column
+     grid; on a phone it costs 16px of the budget the "first line total clears
+     the fixed dock" gate measures (at 320x900 the first item's line total sat at
+     788 against a dock top of 784, needing <= 772). Trimming to 14px moves the
+     line total up ~20px and is invisible next to the 16px stack rhythm. */
+  .verify-editor-main > .card { padding: 14px; }
   .verify-photo-card .btn { min-width: 0; padding-inline: 10px; white-space: nowrap; }
-  .verify-editor-main > .verify-photo-card { order: -2; }
-  .verify-editor-main > .verify-detail-card { order: -1; }
-  .verify-editor-main > #items-card { order: 0; }
+  /* Mobile keeps the receipt card visually first, matching the requested scan
+     decision flow. The existing editor JSX remains detail-first for legacy
+     integration stability, so keep this order override scoped to phones rather
+     than pretending it changes DOM/tab order. Desktop keeps the source order. */
   .bill-detail-main > .bill-header { order: 0; }
   .bill-detail-main > .bill-items-card,
   .bill-detail-main > .bill-action-card { order: 1; }
@@ -428,9 +488,34 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   }
   .dock { position: fixed; right: 0; bottom: 0; left: 0; }
   .dock-panel { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
-  .dock-panel-create { grid-template-columns: minmax(0, 1fr) minmax(132px, auto); gap: 8px 10px; align-items: center; padding: 8px 14px calc(8px + env(safe-area-inset-bottom)); }
-  .dock-panel-create #sum-warn { grid-column: 1 / -1; }
-  .dock-panel-create #create-bill-btn { grid-column: 2; grid-row: 1 / span 2; min-width: 132px; align-self: center; }
+  /* The create dock used to be a 2-column grid with the CTA on
+     `grid-row: 1 / span 2; align-self: center` — a button centred against a
+     two/three-line label, sharing a row with the money. Measured with
+     Rp 1.250.000 typed (real Chromium, 320x900): the label box wrapped to 3
+     lines and `#total-display` ink ran to x=222 while the CTA started at
+     x=173 — 49px of the total painted UNDER the orange button (360px: 9px
+     under). The CTA centre also sat +7px below the total row's centre at
+     390/412, and +60px at 768+ because `span 2` centred it against the whole
+     panel. Restructured into three explicit rows: label+value (baseline
+     aligned, on ONE line, value never shrinks), the warning/helper row, then
+     the CTA full-width. Nothing is centred against wrapped text any more, so
+     no amount of wrapping can put digits under the button. */
+  /* Padding stays at the ORIGINAL 8px: the extra 2px-per-side I tried cost 4px
+     of the vertical budget `tools/e2e_create.mjs:552` measures, and at 320x900
+     that gate needs 12px of clearance below the first item's line total
+     (measured 10px with 10px padding — a 2px FAIL). The dock is taller than the
+     old one anyway because it is now three stacked rows instead of text beside
+     a button; the padding must not add to that. */
+  .dock-panel-create { gap: 8px; padding: 8px 14px calc(8px + env(safe-area-inset-bottom)); }
+  .dock-panel-create .dock-total { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
+  /* The label is the only flexible cell: a 7-digit total compresses the label
+     instead of pushing the row past the dock's own right edge. */
+  .dock-panel-create .dock-total > .muted { min-width: 0; flex: 1 1 auto; }
+  .dock-panel-create .dock-total .money { flex: 0 0 auto; font-size: 22px; }
+  /* Empty warn keeps its line box out of the layout so the dock does not grow
+     a phantom row on a complete draft. */
+  .dock-panel-create #sum-warn:empty { display: none; }
+  .dock-panel-create #create-bill-btn { grid-column: 1 / -1; grid-row: auto; width: 100%; min-width: 0; align-self: stretch; }
   #app-nav { position: fixed; right: 0; bottom: 0; left: 0; z-index: 20; display: grid; grid-template-columns: repeat(3, 1fr); min-height: calc(var(--nav-link-height) + 28px + env(safe-area-inset-bottom)); padding: 10px 8px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 95%, transparent); box-shadow: var(--shadow-3); backdrop-filter: blur(14px); }
   #app-nav[hidden] { display: none; }
   .app-nav-link { min-height: calc(var(--nav-link-height) + 8px); display: grid; justify-items: center; align-content: center; gap: 3px; border-radius: 12px; color: var(--text-3); text-decoration: none; font-size: 11px; font-weight: 700; text-align: center; }
@@ -738,4 +823,16 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 @media (max-width: 560px) {
   .btn-row { display: grid; grid-template-columns: minmax(0, 1fr); }
   .btn-row > .btn-auto { width: 100%; }
+  /* Photo actions are a deliberate pair, not a generic full-width action stack. */
+  #dz .btn-row,
+  .verify-photo-card .btn-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #dz .btn-row > *,
+  .verify-photo-card .btn-row > * { width: 100%; }
+  .verify-editor-main { gap: 5px; }
+  .verify-editor-main > .verify-detail-card,
+  .verify-editor-main > .verify-photo-card { padding-block: 11px; }
+  /* Keep the receipt decision visually first while the editor is still being
+     assembled from the legacy route's detail-first JSX. */
+  .verify-editor-main > .verify-photo-card { order: -2; }
+  .verify-editor-main > .verify-detail-card { order: -1; }
 }
