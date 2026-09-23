@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Camera, Check, ClipboardText, PencilSimple, Plus, Receipt, Trash, UploadSimple, UsersThree } from "@phosphor-icons/react";
 import { apiClient, apiJson, ocrFailureMessage } from "../lib/api";
-import { useHashLeaveGuard } from "../lib/leave-guard";
+import { clearHashLeaveGuard, useHashLeaveGuard } from "../lib/leave-guard";
 import { navigate } from "../lib/routes";
 import { rupiahFmt, rupiahParse } from "../lib/money";
+import { formatTransactionDate, parseTransactionDate } from "../lib/transaction-date";
 import {
   applyContactToggle,
   contactInitial,
@@ -283,6 +284,7 @@ export function CreateRoute({ identity, initialVerify = false }: { identity: Ide
     const current = draftRef.current;
     const saved = await saveBill();
     current.photos.forEach(photo => photoCleanup.markAttached(photo));
+    clearHashLeaveGuard();
     navigate({ kind: "bill", billId: saved.billId });
     void invitePickedContacts(saved.billId, current.picked_contacts);
     return saved.result;
@@ -507,11 +509,13 @@ function CreateStart({ busy, error, onManual, onPhoto, onAttach, onReadClipboard
 
 function VerifyEditor({ draft, identity, updateDraft, cleanup, onBack, onSubmit, busy, error, photoError, onError, onPhotoError }: { draft: BillDraft; identity: Identity; updateDraft: (updater: (current: BillDraft) => BillDraft) => void; cleanup: PhotoCleanup; onBack: () => void; onSubmit: (event: React.FormEvent) => void; busy: boolean; error: string; photoError: string; onError: (error: string) => void; onPhotoError: (error: string) => void }) {
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [dateText, setDateText] = useState(() => formatTransactionDate(draft.transacted_at));
   const [, refreshDerived] = useState(0);
   const subtotal = useMemo(() => draft.items.every(item => validQuantity(item.quantity)) ? draft.items.reduce((sum, item) => sum + Math.max(0, item.price - item.discount) * item.quantity, 0) : null, [draft.items]);
   const total = subtotal == null ? null : Math.max(0, subtotal - draft.order_discount - draft.cashback + (draft.tax_included ? 0 : draft.tax) + draft.service);
   const valid = validDraft(draft);
   const setField = (patch: Partial<BillDraft>) => updateDraft(current => ({ ...current, ...patch }));
+
   /* Rule 2 of the legacy duplicate guards (frontend/static/create.js:1341-1342):
      a typed name that matches an already-picked proven contact is REFUSED with
      the legacy's toast copy and is NOT pushed into `extra_names`. Two lists
@@ -553,7 +557,7 @@ function VerifyEditor({ draft, identity, updateDraft, cleanup, onBack, onSubmit,
     }
   };
   useReceiptPaste(true, useCallback((files: File[]) => { void addPhotos(files); }, [draft.photos]));
-  return <AppFrame contextualDock><Topbar title="Periksa bill" back={onBack} /><main className="shell shell-with-rail"><div className="shell-main stack verify-editor-main"><Card className="verify-detail-card"><div className="form-grid"><div className="field full"><Label htmlFor="title-input">Judul bill</Label><Input id="title-input" value={draft.title} onChange={event => setField({ title: event.target.value })} placeholder="Contoh: Makan sushi" /></div><div className="field"><Label htmlFor="merchant-input">Tempat, opsional</Label><Input id="merchant-input" value={draft.merchant} onChange={event => setField({ merchant: event.target.value })} placeholder="Nama tempat" /></div><div className="field"><Label htmlFor="date-input">Tanggal transaksi</Label><div id="date-input-wrap" className={`date-input-wrap ${draft.transacted_at ? "" : "is-empty"}`}><Input id="date-input" type="date" value={draft.transacted_at} onChange={event => setField({ transacted_at: event.target.value })} /><span className="vf-date-placeholder" aria-hidden="true">dd/mm/yyyy</span></div><p className="date-helper">Opsional, pilih tanggal transaksi.</p></div></div></Card>
+  return <AppFrame contextualDock><Topbar title="Periksa bill" back={onBack} /><main className="shell shell-with-rail"><div className="shell-main stack verify-editor-main"><Card className="verify-detail-card"><div className="form-grid"><div className="field full"><Label htmlFor="title-input">Judul bill</Label><Input id="title-input" value={draft.title} onChange={event => setField({ title: event.target.value })} placeholder="Contoh: Makan sushi" /></div><div className="field"><Label htmlFor="merchant-input">Tempat, opsional</Label><Input id="merchant-input" value={draft.merchant} onChange={event => setField({ merchant: event.target.value })} placeholder="Nama tempat" /></div><div className="field"><Label htmlFor="date-input">Tanggal transaksi</Label><div id="date-input-wrap" className="date-input-wrap"><Input id="date-input" type="text" inputMode="numeric" maxLength={10} placeholder="dd/mm/yyyy" value={dateText} onChange={event => { const value = event.target.value; setDateText(value); setField({ transacted_at: parseTransactionDate(value) }); }} /></div><p className="date-helper">Opsional, pilih tanggal transaksi.</p></div></div></Card>
     <Card className="verify-photo-card"><div className="card-title"><span>Foto struk</span><span className="muted">{draft.photos.length} dari {MAX_RECEIPT_PHOTOS} foto</span></div><input id="verify-file-input" className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" tabIndex={-1} aria-label="Pilih foto struk dari file" onChange={addPhoto} />{draft.photos.length > 0 && <ReceiptPhotoGallery paths={draft.photos} />}<div className="btn-row"><Button id="verify-add-photo" type="button" size="sm" variant="outline" disabled={photoBusy} aria-label="Tambah foto struk" onClick={() => document.getElementById("verify-file-input")?.click()}><UploadSimple /> {photoBusy ? "Menyimpan..." : "Tambah"}</Button><Button id="verify-paste-photo" type="button" size="sm" variant="outline" disabled={photoBusy} aria-label="Tempel foto dari clipboard" onClick={() => { void pastePhoto(); }}><ClipboardText /> Tempel</Button></div>{photoError && <p id="photo-error" className="error-text photo-inline-error" role="alert">{photoError}</p>}{draft.photos.length > 0 ? <p className="field-hint">{draft.photos.length} foto siap dilampirkan. Maksimal {MAX_RECEIPT_PHOTOS} foto, 5 MiB per foto.</p> : <p className="field-hint">Opsional. Item bisa diisi manual walau tanpa foto.</p>}</Card>
     <Card id="items-card" className="verify-items-card"><div className="card-title"><span><Receipt /> Item</span><Button id="add-item-btn" size="sm" variant="outline" type="button" onClick={() => updateDraft(current => ({ ...current, items: [...current.items, emptyItem()] }))}><Plus /> Tambah</Button></div><div className="vf-head" aria-hidden="true"><span>Nama item</span><span>Harga satuan</span><span>Jumlah dibeli</span><span>Potongan</span><span>Total</span></div><div id="items-list" className="stack-sm">{draft.items.map((item, index) => <VerifyItem key={item.id} item={item} index={index} canDelete={draft.items.length > 1} onChange={patch => updateItem(item.id, patch)} onDelete={() => updateDraft(current => ({ ...current, items: current.items.filter(candidate => candidate.id !== item.id) }))} />)}</div><div className="info-box">Total baris dihitung dari harga, potongan, dan jumlah item.</div></Card>
     <Card><div className="card-title"><span>Biaya tambahan</span><span className="muted">Opsional</span></div><div className="form-grid"><MoneyField id="subtotal-input" label="Subtotal" value={subtotal || 0} displayValue={subtotal == null ? "" : new Intl.NumberFormat("id-ID").format(subtotal)} onValue={() => refreshDerived(value => value + 1)} /><MoneyField id="tax-input" label="Pajak" value={draft.tax} onValue={tax => setField({ tax })} /><MoneyField id="service-input" label="Service" value={draft.service} onValue={service => setField({ service })} /><MoneyField id="order-discount-input" label="Diskon pesanan" value={draft.order_discount} onValue={order_discount => setField({ order_discount })} /><MoneyField id="cashback-input" label="Cashback" value={draft.cashback} onValue={cashback => setField({ cashback })} /></div><label className="check-label"><input type="checkbox" checked={draft.tax_included} onChange={event => setField({ tax_included: event.target.checked })} /> Pajak sudah termasuk dalam harga item</label></Card>
