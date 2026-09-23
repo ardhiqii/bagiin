@@ -828,11 +828,37 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   .verify-photo-card .btn-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #dz .btn-row > *,
   .verify-photo-card .btn-row > * { width: 100%; }
-  .verify-editor-main { gap: 5px; }
+  .verify-editor-main { gap: 12px; }
   .verify-editor-main > .verify-detail-card,
-  .verify-editor-main > .verify-photo-card { padding-block: 11px; }
-  /* Keep the receipt decision visually first while the editor is still being
-     assembled from the legacy route's detail-first JSX. */
+  .verify-editor-main > .verify-photo-card { padding-block: 12px; }
+  .verify-photo-card .field-hint { margin-top: 4px; line-height: 1.35; }
+  .verify-detail-card .form-grid { row-gap: 14px; column-gap: 14px; }
+  .verify-detail-card .field { gap: 7px; }
+  .verify-items-card .info-box { margin-top: 8px; line-height: 1.4; }
   .verify-editor-main > .verify-photo-card { order: -2; }
   .verify-editor-main > .verify-detail-card { order: -1; }
+}
+
+/* Short phones need a compact inner rhythm, not smaller section gaps. This keeps
+   the first line total clear of the fixed create dock at 844-900px heights. */
+@media (max-width: 767px) and (max-height: 900px) {
+  .verify-editor-main { gap: 10px; }
+  .verify-editor-main > .verify-detail-card,
+  .verify-editor-main > .verify-photo-card { padding-block: 10px; }
+  .verify-photo-card .field-hint { margin-top: 2px; }
+  .verify-detail-card .form-grid { row-gap: 12px; }
+  .verify-detail-card .field { gap: 6px; }
+  .vf-item { gap: 8px; padding-block: 10px; }
+  .vf-input-group.stack-sm { row-gap: 8px; }
+}
+
+@media (max-width: 480px) and (max-height: 900px) {
+  .verify-editor-main { gap: 8px; }
+  .verify-editor-main > .verify-detail-card,
+  .verify-editor-main > .verify-photo-card { padding-block: 8px; }
+  .verify-photo-card .field-hint { margin-top: 0; }
+  .verify-detail-card .form-grid { row-gap: 10px; }
+  .verify-detail-card .field { gap: 5px; }
+  .vf-item { gap: 5px; }
+  .vf-input-group.stack-sm { row-gap: 4px; }
 }
