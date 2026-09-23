@@ -21,6 +21,7 @@ import {
 } from "../lib/types";
 import { usePhotoCleanup, type PhotoCleanup } from "../lib/photos";
 import { AppFrame, Topbar } from "../components/AppShell";
+import { ReceiptPhotoGallery } from "../components/ReceiptPhotoGallery";
 import { Button as ShadcnButton } from "../components/ui/button";
 import { Button, Card, Input, Label, Spinner } from "../components/ui/primitives";
 import { ConfirmDialog } from "../components/feedback";
@@ -238,6 +239,7 @@ export function CreateRoute({ identity, initialVerify = false }: { identity: Ide
   const draftRef = useRef(draft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [photoError, setPhotoError] = useState("");
   const photoCleanup = usePhotoCleanup();
   const [leavePrompt, setLeavePrompt] = useState<((allowed: boolean) => void) | null>(null);
   // One counter guards every async photo/OCR run, mirroring the legacy
@@ -287,7 +289,7 @@ export function CreateRoute({ identity, initialVerify = false }: { identity: Ide
   }, [photoCleanup, saveBill]);
 
   useEffect(() => {
-    const applyVerifyPayload = (payload: VerifyPayload, manual = false) => { const next = normalizePayload(payload); replaceDraft(next); setVerify(true); setError(""); if (!manual && location.hash !== "#/create/verify") navigate({ kind: "verify" }); };
+    const applyVerifyPayload = (payload: VerifyPayload, manual = false) => { const next = normalizePayload(payload); replaceDraft(next); setVerify(true); setError(""); setPhotoError(""); if (!manual && location.hash !== "#/create/verify") navigate({ kind: "verify" }); };
     const onRenderVerify = (event: Event) => { const detail = (event as CustomEvent<{ payload: VerifyPayload; manual?: boolean }>).detail; if (detail?.payload) flushSync(() => applyVerifyPayload(detail.payload, detail.manual)); };
     const pending = globalWindow().__bagiinVerify;
     if (pending) { delete globalWindow().__bagiinVerify; applyVerifyPayload(pending.payload, pending.manual); }
@@ -297,7 +299,7 @@ export function CreateRoute({ identity, initialVerify = false }: { identity: Ide
     return () => { window.removeEventListener("bagiin:render-verify", onRenderVerify); if (globalWindow().createBillFinal === createBillFinal) delete globalWindow().createBillFinal; };
   }, [createBillAndInvite, replaceDraft]);
 
-  const startVerify = (fromPhoto = false) => { replaceDraft(blankDraft()); setError(""); setVerify(true); navigate({ kind: "verify" }); if (fromPhoto) window.setTimeout(() => document.getElementById("verify-file-input")?.click(), 0); };
+  const startVerify = (fromPhoto = false) => { replaceDraft(blankDraft()); setError(""); setPhotoError(""); setVerify(true); navigate({ kind: "verify" }); if (fromPhoto) window.setTimeout(() => document.getElementById("verify-file-input")?.click(), 0); };
   const submit = async (event: React.FormEvent) => { event.preventDefault(); setBusy(true); setError(""); try { await globalWindow().createBillFinal?.(); } catch (err) { setError(err instanceof Error ? err.message : "Bill belum dapat dibuat"); } finally { setBusy(false); } };
 
   /**
@@ -316,10 +318,11 @@ export function CreateRoute({ identity, initialVerify = false }: { identity: Ide
     } catch (uploadError) {
       uploaded.forEach(path => photoCleanup.markRemoved(path));
       if (runRef.current !== runId) return;
+      setError("");
       replaceDraft(blankDraft());
       setVerify(true);
       navigate({ kind: "verify" });
-      setError(uploadError instanceof Error ? uploadError.message : "Foto belum dapat disimpan");
+      setPhotoError(uploadError instanceof Error ? uploadError.message : "Foto belum dapat disimpan");
       return;
     }
     if (runRef.current !== runId) { uploaded.forEach(path => { void photoCleanup.release(path); }); return; }
@@ -327,7 +330,7 @@ export function CreateRoute({ identity, initialVerify = false }: { identity: Ide
     replaceDraft(next);
     setVerify(true);
     navigate({ kind: "verify" });
-    setError(message);
+    setPhotoError(message);
   }, [photoCleanup, replaceDraft]);
 
   /** The "Foto struk" path: picker/camera -> POST /api/ocr -> verify review. */
@@ -338,6 +341,7 @@ export function CreateRoute({ identity, initialVerify = false }: { identity: Ide
     runRef.current = runId;
     setBusy(true);
     setError("");
+    setPhotoError("");
     try {
       const result = await apiClient.photos.ocr(batch.files);
       const photos = photoPathsFrom(result);
@@ -376,6 +380,7 @@ export function CreateRoute({ identity, initialVerify = false }: { identity: Ide
     runRef.current = runId;
     setBusy(true);
     setError("");
+    setPhotoError("");
     try {
       await attachThenManual(batch.files, "", runId);
     } finally {
@@ -386,7 +391,7 @@ export function CreateRoute({ identity, initialVerify = false }: { identity: Ide
 
   if (!verify) return <CreateStart busy={busy} error={error} onManual={() => startVerify(false)} onPhoto={files => { void startPhotoFlow(files); }} onAttach={files => { void startAttachFlow(files); }} onReadClipboard={readPhotoClipboard} />;
   const finishLeave = (allowed: boolean) => { const resolve = leavePrompt; setLeavePrompt(null); resolve?.(allowed); };
-  return <><VerifyEditor draft={draft} identity={identity} updateDraft={updateDraft} cleanup={photoCleanup} onBack={() => { void photoCleanup.releaseAll(); setVerify(false); navigate({ kind: "create" }); }} onSubmit={submit} busy={busy} error={error} onError={setError} /><ConfirmDialog open={Boolean(leavePrompt)} onClose={() => finishLeave(false)} onConfirm={() => finishLeave(true)} /></>;
+  return <><VerifyEditor draft={draft} identity={identity} updateDraft={updateDraft} cleanup={photoCleanup} onBack={() => { void photoCleanup.releaseAll(); setVerify(false); navigate({ kind: "create" }); }} onSubmit={submit} busy={busy} error={error} photoError={photoError} onError={setError} onPhotoError={setPhotoError} /><ConfirmDialog open={Boolean(leavePrompt)} onClose={() => finishLeave(false)} onConfirm={() => finishLeave(true)} /></>;
 }
 
 /**
@@ -497,7 +502,7 @@ function CreateStart({ busy, error, onManual, onPhoto, onAttach, onReadClipboard
 }
 
 
-function VerifyEditor({ draft, identity, updateDraft, cleanup, onBack, onSubmit, busy, error, onError }: { draft: BillDraft; identity: Identity; updateDraft: (updater: (current: BillDraft) => BillDraft) => void; cleanup: PhotoCleanup; onBack: () => void; onSubmit: (event: React.FormEvent) => void; busy: boolean; error: string; onError: (error: string) => void }) {
+function VerifyEditor({ draft, identity, updateDraft, cleanup, onBack, onSubmit, busy, error, photoError, onError, onPhotoError }: { draft: BillDraft; identity: Identity; updateDraft: (updater: (current: BillDraft) => BillDraft) => void; cleanup: PhotoCleanup; onBack: () => void; onSubmit: (event: React.FormEvent) => void; busy: boolean; error: string; photoError: string; onError: (error: string) => void; onPhotoError: (error: string) => void }) {
   const [photoBusy, setPhotoBusy] = useState(false);
   const [, refreshDerived] = useState(0);
   const subtotal = useMemo(() => draft.items.every(item => validQuantity(item.quantity)) ? draft.items.reduce((sum, item) => sum + Math.max(0, item.price - item.discount) * item.quantity, 0) : null, [draft.items]);
@@ -524,8 +529,8 @@ function VerifyEditor({ draft, identity, updateDraft, cleanup, onBack, onSubmit,
   const addPhotos = async (input: File[]) => {
     const slots = MAX_RECEIPT_PHOTOS - draft.photos.filter(Boolean).length;
     const batch = validateReceiptPhotoBatch(input, slots);
-    if ("error" in batch) { onError(batch.error); return; }
-    setPhotoBusy(true); onError("");
+    if ("error" in batch) { onPhotoError(batch.error); return; }
+    setPhotoBusy(true); onPhotoError("");
     try {
       const uploaded: string[] = [];
       for (const file of batch.files) {
@@ -533,7 +538,7 @@ function VerifyEditor({ draft, identity, updateDraft, cleanup, onBack, onSubmit,
         if (result.photo_path) { cleanup.track(result.photo_path); uploaded.push(result.photo_path); }
       }
       if (uploaded.length) updateDraft(current => ({ ...current, photos: [...current.photos, ...uploaded], photo_path: current.photo_path || uploaded[0] }));
-    } catch (err) { onError(err instanceof Error ? err.message : "Foto belum dapat disimpan"); } finally { setPhotoBusy(false); }
+    } catch (err) { onPhotoError(err instanceof Error ? err.message : "Foto belum dapat disimpan"); } finally { setPhotoBusy(false); }
   };
   const addPhoto = async (event: React.ChangeEvent<HTMLInputElement>) => { const files = [...(event.target.files || [])]; event.target.value = ""; if (files.length) await addPhotos(files); };
   const pastePhoto = async () => {
@@ -541,12 +546,12 @@ function VerifyEditor({ draft, identity, updateDraft, cleanup, onBack, onSubmit,
       const files = await readClipboardImages();
       await addPhotos(files);
     } catch (clipboardError) {
-      onError(clipboardError instanceof Error ? clipboardError.message : "Tidak bisa membaca clipboard. Coba tempel menggunakan Ctrl+V ya");
+      onPhotoError(clipboardError instanceof Error ? clipboardError.message : "Tidak bisa membaca clipboard. Coba tempel menggunakan Ctrl+V ya");
     }
   };
   useReceiptPaste(true, useCallback((files: File[]) => { void addPhotos(files); }, [draft.photos]));
   return <AppFrame contextualDock><Topbar title="Periksa bill" back={onBack} /><main className="shell shell-with-rail"><div className="shell-main stack verify-editor-main"><Card className="verify-detail-card"><div className="form-grid"><div className="field full"><Label htmlFor="title-input">Judul bill</Label><Input id="title-input" value={draft.title} onChange={event => setField({ title: event.target.value })} placeholder="Contoh: Makan sushi" /></div><div className="field"><Label htmlFor="merchant-input">Tempat, opsional</Label><Input id="merchant-input" value={draft.merchant} onChange={event => setField({ merchant: event.target.value })} placeholder="Nama tempat" /></div><div className="field"><Label htmlFor="date-input">Tanggal transaksi</Label><div id="date-input-wrap" className={`date-input-wrap ${draft.transacted_at ? "" : "is-empty"}`}><Input id="date-input" type="date" value={draft.transacted_at} onChange={event => setField({ transacted_at: event.target.value })} /><span className="vf-date-placeholder" aria-hidden="true">dd/mm/yyyy</span></div><p className="date-helper">Opsional, pilih tanggal transaksi.</p></div></div></Card>
-    <Card className="verify-photo-card"><div className="card-title"><span>Foto struk</span><span className="muted">{draft.photos.length} dari {MAX_RECEIPT_PHOTOS} foto</span></div><input id="verify-file-input" className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" tabIndex={-1} aria-label="Pilih foto struk dari file" onChange={addPhoto} /><div className="btn-row"><Button id="verify-add-photo" type="button" size="sm" variant="outline" disabled={photoBusy} aria-label="Tambah foto struk" onClick={() => document.getElementById("verify-file-input")?.click()}><UploadSimple /> {photoBusy ? "Menyimpan..." : "Tambah"}</Button><Button id="verify-paste-photo" type="button" size="sm" variant="outline" disabled={photoBusy} aria-label="Tempel foto dari clipboard" onClick={() => { void pastePhoto(); }}><ClipboardText /> Tempel</Button></div>{draft.photos.length > 0 ? <p className="field-hint">{draft.photos.length} foto siap dilampirkan. Maksimal {MAX_RECEIPT_PHOTOS} foto, 5 MiB per foto.</p> : <p className="field-hint">Opsional. Item bisa diisi manual walau tanpa foto.</p>}</Card>
+    <Card className="verify-photo-card"><div className="card-title"><span>Foto struk</span><span className="muted">{draft.photos.length} dari {MAX_RECEIPT_PHOTOS} foto</span></div><input id="verify-file-input" className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" tabIndex={-1} aria-label="Pilih foto struk dari file" onChange={addPhoto} />{draft.photos.length > 0 && <ReceiptPhotoGallery paths={draft.photos} />}<div className="btn-row"><Button id="verify-add-photo" type="button" size="sm" variant="outline" disabled={photoBusy} aria-label="Tambah foto struk" onClick={() => document.getElementById("verify-file-input")?.click()}><UploadSimple /> {photoBusy ? "Menyimpan..." : "Tambah"}</Button><Button id="verify-paste-photo" type="button" size="sm" variant="outline" disabled={photoBusy} aria-label="Tempel foto dari clipboard" onClick={() => { void pastePhoto(); }}><ClipboardText /> Tempel</Button></div>{photoError && <p id="photo-error" className="error-text photo-inline-error" role="alert">{photoError}</p>}{draft.photos.length > 0 ? <p className="field-hint">{draft.photos.length} foto siap dilampirkan. Maksimal {MAX_RECEIPT_PHOTOS} foto, 5 MiB per foto.</p> : <p className="field-hint">Opsional. Item bisa diisi manual walau tanpa foto.</p>}</Card>
     <Card id="items-card" className="verify-items-card"><div className="card-title"><span><Receipt /> Item</span><Button id="add-item-btn" size="sm" variant="outline" type="button" onClick={() => updateDraft(current => ({ ...current, items: [...current.items, emptyItem()] }))}><Plus /> Tambah</Button></div><div className="vf-head" aria-hidden="true"><span>Nama item</span><span>Harga satuan</span><span>Jumlah dibeli</span><span>Potongan</span><span>Total</span></div><div id="items-list" className="stack-sm">{draft.items.map((item, index) => <VerifyItem key={item.id} item={item} index={index} canDelete={draft.items.length > 1} onChange={patch => updateItem(item.id, patch)} onDelete={() => updateDraft(current => ({ ...current, items: current.items.filter(candidate => candidate.id !== item.id) }))} />)}</div><div className="info-box">Total baris dihitung dari harga, potongan, dan jumlah item.</div></Card>
     <Card><div className="card-title"><span>Biaya tambahan</span><span className="muted">Opsional</span></div><div className="form-grid"><MoneyField id="subtotal-input" label="Subtotal" value={subtotal || 0} displayValue={subtotal == null ? "" : new Intl.NumberFormat("id-ID").format(subtotal)} onValue={() => refreshDerived(value => value + 1)} /><MoneyField id="tax-input" label="Pajak" value={draft.tax} onValue={tax => setField({ tax })} /><MoneyField id="service-input" label="Service" value={draft.service} onValue={service => setField({ service })} /><MoneyField id="order-discount-input" label="Diskon pesanan" value={draft.order_discount} onValue={order_discount => setField({ order_discount })} /><MoneyField id="cashback-input" label="Cashback" value={draft.cashback} onValue={cashback => setField({ cashback })} /></div><label className="check-label"><input type="checkbox" checked={draft.tax_included} onChange={event => setField({ tax_included: event.target.checked })} /> Pajak sudah termasuk dalam harga item</label></Card>
     <details className="card verify-people-card" open><summary className="details-summary"><span><UsersThree /> Yang ikut</span><span className="muted">Opsional</span></summary><div className="details-body stack-sm"><PeoplePicker identity={identity} picked={draft.picked_contacts} onToggle={contact => updateDraft(current => ({ ...current, ...applyContactToggle(current, contact) }))} /><p className="field-hint">Tambahkan nama teman yang akan menerima undangan, atau biarkan mereka masuk dari link.</p>{draft.extra_names.map((name, index) => <div className="row" key={`${name}-${index}`}><Input aria-label={`Nama peserta ${index + 1}`} value={name} onChange={event => updateDraft(current => ({ ...current, extra_names: current.extra_names.map((currentName, currentIndex) => currentIndex === index ? event.target.value : currentName) }))} /><Button type="button" variant="ghost" size="icon" aria-label={`Hapus peserta ${name}`} onClick={() => updateDraft(current => ({ ...current, extra_names: current.extra_names.filter((_, currentIndex) => currentIndex !== index) }))}><Trash /></Button></div>)}<div className="row"><Input id="person-name-input" aria-label="Nama peserta baru" placeholder="Nama teman" onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addTypedName(event.currentTarget); } }} /><Button id="person-name-add" type="button" variant="outline" aria-label="Tambah peserta" onClick={() => addTypedName(document.getElementById("person-name-input") as HTMLInputElement | null)}><Plus /> Tambah</Button></div></div></details>

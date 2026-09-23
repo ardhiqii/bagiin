@@ -14,7 +14,15 @@ import urllib.request
 
 log = logging.getLogger("bagiin.ocr")
 
-GEMINI_MODEL = os.environ.get("BAGIIN_OCR_MODEL", "gemini-3.5-flash")
+GEMINI_MODEL_CANDIDATE = os.environ.get("BAGIIN_OCR_MODEL", "").strip()
+# A previous deployment accidentally put an OpenRouter model id in the
+# Gemini-only setting. Never send provider-qualified or :free ids to Google;
+# they belong to the OpenRouter fallback chain.
+GEMINI_MODEL = (
+    GEMINI_MODEL_CANDIDATE
+    if GEMINI_MODEL_CANDIDATE and "/" not in GEMINI_MODEL_CANDIDATE and not GEMINI_MODEL_CANDIDATE.endswith(":free")
+    else "gemini-2.5-flash"
+)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 OR_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
