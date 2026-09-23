@@ -32,15 +32,40 @@ DEFAULT_OPENROUTER_OCR_MODELS = (
     "google/gemma-4-26b-a4b-it:free",
     "google/gemma-4-31b-it:free",
     "dots-studio/dots-3-note-preview:free",
-    "thinkingmachines/inkling-small:free",
-    "thinkingmachines/inkling:free",
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "openrouter/free",
 )
+# (bug v98: `thinkingmachines/inkling-small:free` and `thinkingmachines/inkling:free`
+# were in this default chain and returned HTTP 403 on every attempt - live probe and
+# production journal (2026-09-23 20:41 & 21:41) both show `failure=http_error status=403`.
+# A route that cannot serve the request is not a fallback; keeping it in the chain only
+# burned wall-clock that a working free vision route needed.)
 
 
 def _is_free_openrouter_model(model: str) -> bool:
     return model == "openrouter/free" or model.endswith(":free")
+
+
+# (bug v98: a route that answers 403 on every attempt is not a fallback. These
+# ids were in the default chain AND in the production systemd override
+# (OPENROUTER_OCR_MODELS), so they burned a full provider round-trip each on
+# every receipt - production journal 2026-09-23 20:41/21:41 shows
+# `thinkingmachines/inkling-small:free failure=http_error status=403` and
+# `thinkingmachines/inkling:free failure=http_error status=403` right after the
+# only working free routes had already been consumed by 429/timeout. Filtering
+# here (not only in the DEFAULT tuple) means an existing env override also stops
+# spending budget on them, without touching production config.)
+_UNSUPPORTED_OPENROUTER_OCR_MODELS = (
+    "thinkingmachines/inkling-small:free",
+    "thinkingmachines/inkling:free",
+)
+
+
+def _is_supported_openrouter_vision_model(model: str) -> bool:
+    return (
+        _is_free_openrouter_model(model)
+        and model not in _UNSUPPORTED_OPENROUTER_OCR_MODELS
+    )
 
 
 def _parse_openrouter_models(models_value=None, legacy_model=None) -> tuple[str, ...]:
@@ -59,7 +84,7 @@ def _parse_openrouter_models(models_value=None, legacy_model=None) -> tuple[str,
     models = []
     for raw_model in configured.split(","):
         model = raw_model.strip()
-        if not model or not _is_free_openrouter_model(model) or model in models:
+        if not model or not _is_supported_openrouter_vision_model(model) or model in models:
             continue
         models.append(model)
     return tuple(models) or DEFAULT_OPENROUTER_OCR_MODELS
@@ -70,22 +95,47 @@ OPENROUTER_OCR_MODELS = _parse_openrouter_models()
 # requests use OR_MODELS and pass the selected model explicitly per payload.
 OR_MODELS = OPENROUTER_OCR_MODELS
 OR_MODEL = OR_MODELS[0]
-MAX_ATTEMPTS = 3
-RETRY_CODES = (429, 500, 502, 503, 504)
-# (bug v66: Gemini alone could retry up to 3x60s + backoff, then OpenRouter fallback
-# another 3x90s + backoff -> ~465s worst case on a single request. Cloudflare cuts the
-# connection at 100s and returns its own 524 HTML, so anything past that point burns
-# CPU for nobody. Both providers now share ONE wall-clock budget for the whole call.)
-# Keep the whole provider chain below the reverse-proxy timeout while allowing
-# a free vision model to spend ~40s on one receipt. The old 45s/15s split made
-# a real 200-response fallback look broken when its first two models returned
-# fast 429s and the third model needed the remaining time.
-OCR_BUDGET_SECONDS = 90.0
-_ATTEMPT_TIMEOUT_CAP = 55.0
+# (bug v98: Gemini used to retry 3x with a 2s/4s backoff before the fallback
+# chain even started. Against a shared wall-clock budget that is pure
+# amplification - each retry multiplies the time a dead primary can hold the
+# request and shrinks what is left for the free routes that actually answer.
+# One attempt per provider hop; breadth now comes from the model chain, not
+# from repeating a failing call.)
+MAX_ATTEMPTS = 1
+# (RETRY_CODES was removed with the Gemini retry loop it gated; a single attempt
+# per provider hop is the contract now. Do not reintroduce status-based retries
+# here - see the budget note below.)
+# (bug v98: the edge boundary is nginx, not Cloudflare. The bagiin.ardhiqi.com
+# vhost in /etc/nginx/sites-enabled/bagiin.ardhiqi.com.conf sets NO
+# proxy_read_timeout, so the nginx default (60s) applies to /api/. Production
+# proof: nginx logged `upstream timed out (110: Connection timed out) ... POST
+# /api/ocr` at 2026-09-23 22:33:31 while uvicorn logged `POST /api/ocr 200 OK`
+# at 22:33:38 - the backend finished ~7s AFTER the client was already told 504.
+# The previous 90s/55s budget could never fit inside that boundary: any request
+# slow enough to use it was guaranteed to surface as a proxy 504. The whole
+# provider chain now has one hard deadline with real margin below 60s.)
+_EDGE_PROXY_TIMEOUT_SECONDS = 60.0
+_BUDGET_OVERHEAD_SECONDS = 5.0
+# A live probe (2026-09-23) measured 49.7s of wall-clock for a chain whose hard
+# budget was 45s: urllib's timeout bounds each socket operation, not the whole
+# response, so one slow-but-trickling model can overshoot the deadline that the
+# loop enforces between attempts. The budget must therefore leave room for that
+# overshoot, not just for request setup.
+_BUDGET_OVERSHOOT_ALLOWANCE_SECONDS = 7.0
+OCR_BUDGET_SECONDS = 40.0
+_ATTEMPT_TIMEOUT_CAP = 20.0
 _MIN_ATTEMPT_SECONDS = 3.0
+# Small floor held back for each candidate still queued behind the current one.
+# It only bites when the models ahead actually consumed wall-clock; when they
+# fail fast (429 in ~0.2s) the later slices stay generous.
+_MIN_LATER_MODEL_SECONDS = 5.0
 _OPENROUTER_MAX_ATTEMPTS = 2
+# Reserve a bounded slice for the fallback so a hanging primary cannot spend the
+# whole budget before the free chain is ever tried. The reserve only caps the
+# primary deadline; a fast primary failure hands the full remaining budget to
+# OpenRouter.
 _OPENROUTER_FALLBACK_RATIO = 2 / 3
-_OPENROUTER_FALLBACK_MAX_SECONDS = 60.0
+_OPENROUTER_FALLBACK_MAX_SECONDS = 30.0
 
 SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Semua gambar dalam satu permintaan adalah halaman atau potongan dari SATU pesanan yang sama.
 Gabungkan bukti dari semua gambar dan jangan menghitung baris, diskon, pajak, atau total yang tumpang tindih dua kali. Output JSON EXACTLY:
@@ -169,7 +219,8 @@ def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
     records = _image_records(image_bytes, mime_type)
     provider_input = image_bytes if isinstance(image_bytes, (bytes, bytearray, memoryview)) else records
     started = time.monotonic()
-    deadline = started + max(0.0, OCR_BUDGET_SECONDS)
+    budget = _hard_budget_seconds()
+    deadline = started + budget
     # (bug v66 review: Gemini dulu menerima deadline penuh, jadi provider yang
     # menggantung bisa menghabiskan seluruh budget sebelum fallback dimulai.)
     # Reserve only when a fallback is configured; Gemini keeps the full budget
@@ -178,7 +229,7 @@ def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
     if OR_API_KEY:
         fallback_seconds = min(
             _OPENROUTER_FALLBACK_MAX_SECONDS,
-            max(0.0, OCR_BUDGET_SECONDS * _OPENROUTER_FALLBACK_RATIO),
+            max(0.0, budget * _OPENROUTER_FALLBACK_RATIO),
         )
     primary_deadline = deadline - fallback_seconds
     providers_tried = []
@@ -211,7 +262,7 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
         deadline = float(mime_type)
         mime_type = "image/jpeg"
     if deadline is None:
-        deadline = time.monotonic() + OCR_BUDGET_SECONDS
+        deadline = time.monotonic() + _hard_budget_seconds()
     records = _image_records(image_bytes, mime_type)
     image_parts = [
         {
@@ -268,10 +319,11 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
             )
             if code == 429 and "quota" in body.lower():
                 raise RuntimeError("kuota harian habis (reset tengah malam)")
-            backoff = 2 * (attempt + 1)
-            if code in RETRY_CODES and attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
-                time.sleep(backoff)
-                continue
+            # (bug v98: retrying a 429/5xx here re-sent the same request with a
+            # growing backoff while the shared budget drained, so the free
+            # fallback chain - the only thing that ever answers - got a fraction
+            # of the time. One attempt per provider hop: a failing Gemini call
+            # now hands its remaining budget straight to OpenRouter.)
             raise RuntimeError(f"HTTP {code}")
         except Exception:
             log.warning(
@@ -280,10 +332,6 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
                 attempt + 1,
                 MAX_ATTEMPTS,
             )
-            backoff = 2 * (attempt + 1)
-            if attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
-                time.sleep(backoff)
-                continue
             raise RuntimeError("Permintaan OCR gagal")
     if data is None:
         raise RuntimeError("Kegagalan setelah beberapa percobaan (waktu habis)")
@@ -331,22 +379,57 @@ def _active_openrouter_models() -> tuple[str, ...]:
     models = tuple(
         model.strip()
         for model in configured_models
-        if isinstance(model, str) and model.strip() and _is_free_openrouter_model(model.strip())
+        if isinstance(model, str)
+        and model.strip()
+        and _is_supported_openrouter_vision_model(model.strip())
     )
     return models or DEFAULT_OPENROUTER_OCR_MODELS
+
+
+def _hard_budget_seconds(requested: float | None = None) -> float:
+    """Clamp the whole-call budget below the edge proxy's read timeout.
+
+    The edge deadline is what the user actually experiences: if the provider
+    chain outlives it, the client sees a proxy 504 even when a free model later
+    returns a perfectly good 200 (bug v98). Every entry point derives its
+    deadline from here so a config/constant mistake cannot re-open that gap.
+    """
+    ceiling = max(
+        _MIN_ATTEMPT_SECONDS,
+        _EDGE_PROXY_TIMEOUT_SECONDS
+        - _BUDGET_OVERHEAD_SECONDS
+        - _BUDGET_OVERSHOOT_ALLOWANCE_SECONDS,
+    )
+    wanted = OCR_BUDGET_SECONDS if requested is None else requested
+    try:
+        wanted = float(wanted)
+    except (TypeError, ValueError):
+        wanted = OCR_BUDGET_SECONDS
+    return max(0.0, min(wanted, ceiling))
 
 
 def _openrouter_model_deadline(deadline: float, remaining_models: int) -> float:
     """Give each candidate a real attempt slice within the shared deadline.
 
-    Dividing the remaining wall-clock time by every model still in the list
-    starved a later candidate even when earlier models failed immediately with
-    429. The outer deadline already bounds the whole chain, so each candidate
-    can use the normal per-attempt cap without exceeding the request budget.
+    Two opposite failures are documented here. Dividing the whole remaining
+    budget by the number of models is right in shape - a fast 429 from an
+    earlier model must not consume the slice a later, working model needs - but
+    a too-small share made the slice useless (bug v98: the third candidate got
+    ~5s after two instant 429s and never finished). Handing the first candidate
+    the entire per-attempt cap fixed that and broke the other end: a hanging
+    route could eat the budget of every free route behind it.
+
+    So: hold back a small floor for every model still queued (the reserve only
+    bites when the models ahead actually spent wall-clock), give the current
+    candidate what is left up to the per-attempt cap, and never pass the shared
+    hard deadline. The head cannot starve the tail, and a chain of fast failures
+    still hands its best slice to whichever route finally answers.
     """
     now = time.monotonic()
     remaining = max(0.0, deadline - now)
-    return min(deadline, now + min(_ATTEMPT_TIMEOUT_CAP, remaining))
+    reserve = min(remaining, _MIN_LATER_MODEL_SECONDS * (remaining_models - 1))
+    slice_seconds = max(_MIN_ATTEMPT_SECONDS, remaining - reserve)
+    return min(deadline, now + min(_ATTEMPT_TIMEOUT_CAP, slice_seconds))
 
 
 def _openrouter_ocr(

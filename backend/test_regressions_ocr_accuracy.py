@@ -241,6 +241,292 @@ def test_openrouter_model_config_preserves_order_and_legacy_override():
     assert all(ocr._is_free_openrouter_model(model) for model in ocr.DEFAULT_OPENROUTER_OCR_MODELS)
 
 
+# ---- v98: default chain contains no known-dead vision routes ----
+
+
+def test_default_chain_excludes_known_403_routes():
+    """(bug v98) production journal 2026-09-23 20:41/21:41 shows both Inkling
+    routes answering HTTP 403 on every attempt, after the only working free
+    routes had already been consumed by 429/timeout."""
+    for dead in (
+        "thinkingmachines/inkling-small:free",
+        "thinkingmachines/inkling:free",
+    ):
+        assert dead not in ocr.DEFAULT_OPENROUTER_OCR_MODELS
+        assert not ocr._is_supported_openrouter_vision_model(dead)
+
+
+def test_unsupported_routes_are_dropped_from_env_override_too():
+    """The production systemd override still names the 403 routes; filtering must
+    happen at parse time so no config change is needed to stop paying for them."""
+    parsed = ocr._parse_openrouter_models(
+        "google/gemma-4-26b-a4b-it:free,thinkingmachines/inkling-small:free,"
+        "thinkingmachines/inkling:free,dots-studio/dots-3-note-preview:free",
+        "",
+    )
+    assert parsed == (
+        "google/gemma-4-26b-a4b-it:free",
+        "dots-studio/dots-3-note-preview:free",
+    )
+    # An override made ONLY of dead routes still falls back to a usable chain.
+    assert ocr._parse_openrouter_models(
+        "thinkingmachines/inkling:free", ""
+    ) == ocr.DEFAULT_OPENROUTER_OCR_MODELS
+
+
+def test_active_models_drops_injected_unsupported_route(monkeypatch):
+    monkeypatch.setattr(
+        ocr,
+        "OR_MODELS",
+        ("ok:free", "thinkingmachines/inkling:free"),
+    )
+    monkeypatch.setattr(ocr, "OR_MODEL", "ok:free")
+    assert ocr._active_openrouter_models() == ("ok:free",)
+
+
+def test_default_chain_still_only_offers_free_routes():
+    assert ocr.DEFAULT_OPENROUTER_OCR_MODELS == (
+        "google/gemma-4-26b-a4b-it:free",
+        "google/gemma-4-31b-it:free",
+        "dots-studio/dots-3-note-preview:free",
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+        "openrouter/free",
+    )
+
+
+# ---- v98: hard budget safely below the edge proxy read timeout ----
+
+
+def test_hard_budget_is_below_edge_proxy_timeout_with_margin():
+    """(bug v98) the bagiin nginx vhost sets no proxy_read_timeout, so the 60s
+    nginx default is the real boundary; a budget at/above it turns a later 200
+    into a client-visible 504."""
+    assert ocr.OCR_BUDGET_SECONDS < ocr._EDGE_PROXY_TIMEOUT_SECONDS
+    # Budget + setup overhead + the measured per-request overshoot must all fit.
+    assert (
+        ocr.OCR_BUDGET_SECONDS
+        + ocr._BUDGET_OVERHEAD_SECONDS
+        + ocr._BUDGET_OVERSHOOT_ALLOWANCE_SECONDS
+    ) <= ocr._EDGE_PROXY_TIMEOUT_SECONDS
+    assert ocr._hard_budget_seconds() == ocr.OCR_BUDGET_SECONDS
+
+
+def test_hard_budget_clamps_an_overlarge_configured_value():
+    assert ocr._hard_budget_seconds(10_000.0) == (
+        ocr._EDGE_PROXY_TIMEOUT_SECONDS
+        - ocr._BUDGET_OVERHEAD_SECONDS
+        - ocr._BUDGET_OVERSHOOT_ALLOWANCE_SECONDS
+    )
+    assert ocr._hard_budget_seconds(12.5) == 12.5
+    assert ocr._hard_budget_seconds(0) == 0.0
+    # Defensive: a malformed override must not blow the deadline open.
+    assert ocr._hard_budget_seconds("not-a-number") == ocr.OCR_BUDGET_SECONDS
+
+
+def test_whole_chain_deadline_uses_the_clamped_budget(monkeypatch):
+    """A huge OCR_BUDGET_SECONDS constant must not push the chain past the edge."""
+    monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
+    monkeypatch.setattr(ocr, "OR_API_KEY", "fake-openrouter-key")
+    monkeypatch.setattr(ocr, "OCR_BUDGET_SECONDS", 10_000.0)
+    observed = {}
+    clock_start = time.monotonic()
+
+    def slow_gemini(image_bytes, mime_type, deadline):
+        observed["primary_deadline"] = deadline
+        raise RuntimeError("simulated primary failure")
+
+    def fallback(image_bytes, deadline, mime_type="image/jpeg"):
+        observed["fallback_deadline"] = deadline
+        return {
+            "merchant": "",
+            "date": "",
+            "items": [],
+            "subtotal": 0,
+            "order_discount": 0,
+            "tax": 0,
+            "service": 0,
+            "total": 0,
+            "tax_included": False,
+        }
+
+    monkeypatch.setattr(ocr, "_gemini_ocr", slow_gemini)
+    monkeypatch.setattr(ocr, "_openrouter_ocr", fallback)
+
+    ocr.ocr_receipt(b"image", "image/jpeg")
+
+    ceiling = ocr._EDGE_PROXY_TIMEOUT_SECONDS - ocr._BUDGET_OVERHEAD_SECONDS
+    whole_call = observed["fallback_deadline"] - clock_start
+    assert 0 < whole_call <= ceiling + 0.5
+    # The primary hop must also stay inside the same single budget.
+    assert observed["primary_deadline"] <= observed["fallback_deadline"]
+
+
+def test_gemini_does_not_retry_a_retryable_status(monkeypatch):
+    """(bug v98) a 429/5xx from Gemini used to be retried with a growing backoff
+    before the fallback started, which is pure amplification inside one budget."""
+    monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
+    calls = []
+
+    def fake_urlopen(request, timeout=None):
+        calls.append(timeout)
+        raise urllib_http_error(request, b'{"error":"rate limited"}', code=429)
+
+    monkeypatch.setattr(ocr.urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError):
+        ocr._gemini_ocr(b"image", "image/jpeg", time.monotonic() + 30)
+
+    assert len(calls) == 1
+
+
+def test_openrouter_head_cannot_consume_the_whole_chain_budget():
+    """A hanging first model must leave a usable slice for the models behind it.
+
+    (bug v98) The previous version handed the head the entire per-attempt cap, so
+    one hanging free route could eat the budget the working route needed.
+    """
+    deadline = time.monotonic() + ocr.OCR_BUDGET_SECONDS
+    slots = len(ocr.DEFAULT_OPENROUTER_OCR_MODELS)
+    head = ocr._openrouter_model_deadline(deadline, slots)
+    head_slice = head - time.monotonic()
+    left_for_tail = deadline - head
+    later_models = slots - 1
+
+    assert head_slice <= ocr._ATTEMPT_TIMEOUT_CAP
+    # Every model still queued keeps at least its floor of real wall-clock.
+    assert left_for_tail >= ocr._MIN_LATER_MODEL_SECONDS * later_models
+    # The last model gets the whole remaining window, capped by the per-attempt
+    # limit, and never anything past the shared hard deadline.
+    last = ocr._openrouter_model_deadline(deadline, 1)
+    last_slice = last - time.monotonic()
+    assert 0 < last_slice <= min(ocr._ATTEMPT_TIMEOUT_CAP, ocr.OCR_BUDGET_SECONDS)
+    assert last <= deadline
+
+
+def test_openrouter_403_advances_to_next_model(monkeypatch):
+    """403 is the exact production failure for the removed Inkling routes."""
+    requests = []
+    monkeypatch.setattr(ocr, "OR_MODELS", ("dead:free", "live:free"))
+    monkeypatch.setattr(ocr, "_downscale", lambda image: image)
+
+    def fake_urlopen(request, timeout=None):
+        requests.append(request)
+        if _model_from_request(request) == "dead:free":
+            raise urllib_http_error(request, b'{"error":"forbidden"}', code=403)
+        return _provider_response()
+
+    monkeypatch.setattr(ocr.urllib.request, "urlopen", fake_urlopen)
+
+    result = ocr._openrouter_ocr(b"image", time.monotonic() + 10)
+
+    assert result["total"] == 100
+    assert [_model_from_request(request) for request in requests] == ["dead:free", "live:free"]
+
+
+def test_openrouter_429_advances_to_next_model(monkeypatch):
+    requests = []
+    monkeypatch.setattr(ocr, "OR_MODELS", ("busy:free", "live:free"))
+    monkeypatch.setattr(ocr, "_downscale", lambda image: image)
+
+    def fake_urlopen(request, timeout=None):
+        requests.append(request)
+        if _model_from_request(request) == "busy:free":
+            raise urllib_http_error(request, b'{"error":"quota"}', code=429)
+        return _provider_response()
+
+    monkeypatch.setattr(ocr.urllib.request, "urlopen", fake_urlopen)
+
+    result = ocr._openrouter_ocr(b"image", time.monotonic() + 10)
+
+    assert result["total"] == 100
+    assert [_model_from_request(request) for request in requests] == ["busy:free", "live:free"]
+
+
+def test_openrouter_chain_completes_within_one_hard_budget(monkeypatch):
+    """Every model fails fast; the whole chain must still fit one budget and must
+    never sleep its way past the deadline."""
+    monkeypatch.setattr(ocr, "OR_MODELS", ("a:free", "b:free", "c:free"))
+    monkeypatch.setattr(ocr, "_downscale", lambda image: image)
+    monkeypatch.setattr(
+        ocr.urllib.request,
+        "urlopen",
+        lambda request, timeout=None: (_ for _ in ()).throw(
+            urllib_http_error(request, b'{"error":"nope"}', code=403)
+        ),
+    )
+
+    started = time.monotonic()
+    with pytest.raises(RuntimeError):
+        ocr._openrouter_ocr(b"image", time.monotonic() + 3)
+
+    assert time.monotonic() - started < 5
+
+
+def test_request_returns_below_the_edge_proxy_boundary(monkeypatch):
+    """(bug v98) The real requirement, stated as elapsed wall-clock.
+
+    urllib's timeout bounds individual socket operations, not the total response
+    read, so a provider that trickles its body can overshoot the deadline the
+    loop enforces between attempts (a live probe measured 49.7s against a 45s
+    budget). The budget therefore carries an explicit overshoot allowance. This
+    test makes every provider consume its full per-attempt slice AND adds a
+    synthetic trickle overrun on top, then asserts the whole call still returns
+    before the 60s edge boundary - the boundary that nginx enforces because the
+    bagiin vhost sets no proxy_read_timeout.
+
+    NOTE: this asserts a bounded RETURN, not strict cancellation - ocr.py does
+    not (and does not claim to) kill an in-flight socket mid-read.
+    """
+    def slow_trickling_urlopen(request, timeout=None):
+        # Burn the whole granted slice, then overrun it the way a trickling body
+        # does: urllib only notices at the next socket operation.
+        time.sleep((timeout or 0) + 2)
+        raise urllib_http_error(request, b'{"error":"slow"}', code=504)
+
+    monkeypatch.setattr(ocr.urllib.request, "urlopen", slow_trickling_urlopen)
+    monkeypatch.setattr(ocr, "_downscale", lambda image: image)
+
+    # Primary + fallback both hang/trickle, so the overshoot can happen twice.
+    monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
+    monkeypatch.setattr(ocr, "OR_API_KEY", "fake-openrouter-key")
+
+    # Scale every timing constant - INCLUDING the edge boundary - by the same
+    # factor. The test therefore asserts the exact production relationship
+    # (whole call returns inside the boundary even with a trickle overrun on
+    # every hop) without waiting the real ~50s.
+    scale = 0.2
+    for name in (
+        "OCR_BUDGET_SECONDS",
+        "_ATTEMPT_TIMEOUT_CAP",
+        "_MIN_LATER_MODEL_SECONDS",
+        "_BUDGET_OVERHEAD_SECONDS",
+        "_BUDGET_OVERSHOOT_ALLOWANCE_SECONDS",
+        "_EDGE_PROXY_TIMEOUT_SECONDS",
+    ):
+        monkeypatch.setattr(ocr, name, getattr(ocr, name) * scale)
+    monkeypatch.setattr(ocr, "_MIN_ATTEMPT_SECONDS", 0.2)
+
+    started = time.monotonic()
+    with pytest.raises(RuntimeError):
+        ocr.ocr_receipt(b"image", "image/jpeg")
+    elapsed = time.monotonic() - started
+
+    boundary = ocr._EDGE_PROXY_TIMEOUT_SECONDS
+    assert elapsed < boundary, (
+        f"whole request took {elapsed:.2f}s, edge boundary is {boundary:.2f}s "
+        f"-> this is exactly the client-visible 504 from bug v98"
+    )
+
+
+def test_budget_plus_overhead_plus_overshoot_fits_the_edge(monkeypatch):
+    """The three allowances must never sum past the boundary at production size."""
+    assert (
+        ocr.OCR_BUDGET_SECONDS
+        + ocr._BUDGET_OVERHEAD_SECONDS
+        + ocr._BUDGET_OVERSHOOT_ALLOWANCE_SECONDS
+    ) < ocr._EDGE_PROXY_TIMEOUT_SECONDS
+
+
 def test_openrouter_passes_selected_model_in_each_payload(monkeypatch):
     requests = []
     monkeypatch.setattr(ocr, "OR_MODELS", ("first:free", "second:free"))
@@ -266,6 +552,7 @@ def test_ocr_receipt_keeps_time_for_a_slow_later_free_model(monkeypatch):
             return self.now
 
     clock = _Clock()
+    started = clock.now
     monkeypatch.setattr(ocr, "time", clock)
     monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
     monkeypatch.setattr(ocr, "OR_API_KEY", "fake-openrouter-key")
@@ -283,7 +570,13 @@ def test_ocr_receipt_keeps_time_for_a_slow_later_free_model(monkeypatch):
         if model != models[-1]:
             clock.now += 0.1
             raise ocr._OpenRouterFailure("rate_limited", status=429)
-        assert deadline - clock.now >= 30.0
+        # (bug v98: this used to assert >= 30.0, which was only reachable with the
+        # 90s budget that made the backend outlive the edge proxy and surface as a
+        # 504. The requirement is that a later candidate is not STARVED - it gets
+        # its whole per-attempt window, not the ~5s share-based slice.)
+        remaining = ocr._hard_budget_seconds() - (clock.now - started)
+        assert deadline - clock.now == min(ocr._ATTEMPT_TIMEOUT_CAP, remaining)
+        assert deadline - clock.now >= ocr._MIN_ATTEMPT_SECONDS
         return {
             "merchant": "",
             "date": "",
