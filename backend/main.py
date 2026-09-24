@@ -2602,15 +2602,16 @@ def manifest(request: Request):
 
 @app.api_route("/", methods=["GET", "HEAD"])
 def index(request: Request):
-    # Strategy B: Vite owns the document and emits hashed /assets files. Keep
-    # the legacy template as a local/development fallback until a build exists
-    # (the service must build frontend/dist before a production restart).
+    # Vite owns the document and emits hashed /assets files. Never silently
+    # switch to the frozen legacy document: a restart without a build must be
+    # visible to the operator rather than serving a second frontend runtime.
     index_path = DIST_DIR / "index.html"
-    content = (
-        index_path.read_bytes()
-        if index_path.is_file()
-        else _render_template(FRONTEND_DIR / "index.html")
-    )
+    if not index_path.is_file():
+        raise HTTPException(
+            503,
+            "Frontend belum dibuild. Jalankan npm run build sebelum menjalankan service.",
+        )
+    content = index_path.read_bytes()
     return _no_cache_response(
         content,
         "text/html; charset=utf-8", request,

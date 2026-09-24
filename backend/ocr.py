@@ -4,6 +4,7 @@ from decimal import Decimal, ROUND_DOWN
 import io
 import json
 import logging
+import math
 import os
 import re
 import socket
@@ -252,7 +253,14 @@ def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
     providers_tried = []
     if GEMINI_API_KEY:
         try:
-            return _gemini_ocr(provider_input, mime_type, primary_deadline)
+            result = _gemini_ocr(provider_input, mime_type, primary_deadline)
+            # urllib's timeout applies to socket operations, not necessarily
+            # the whole response. Treat a provider that trickles past its
+            # reserved slice as timed out so a late primary response cannot
+            # bypass the shared deadline or starve the fallback contract.
+            if time.monotonic() > primary_deadline:
+                raise RuntimeError("waktu habis")
+            return result
         except RuntimeError:
             providers_tried.append("Gemini")
             log.warning("Gemini OCR model=%s failure=provider, coba OpenRouter", GEMINI_MODEL)
@@ -429,6 +437,8 @@ def _hard_budget_seconds(requested: float | None = None) -> float:
         wanted = float(wanted)
     except (TypeError, ValueError):
         wanted = OCR_BUDGET_SECONDS
+    if not math.isfinite(wanted):
+        wanted = OCR_BUDGET_SECONDS
     return max(0.0, min(wanted, ceiling))
 
 
@@ -486,12 +496,19 @@ def _openrouter_ocr(
             break
         model_deadline = _openrouter_model_deadline(deadline, len(models) - index)
         try:
-            return _openrouter_model_ocr(
+            result = _openrouter_model_ocr(
                 payload_images,
                 payload_mimes,
                 model,
                 model_deadline,
             )
+            # A read can outlive urllib's per-operation timeout when upstream
+            # keeps sending bytes. Do not return a late success beyond this
+            # model's reserved slice: continue with a later candidate while
+            # the shared request deadline still has time left.
+            if time.monotonic() > model_deadline:
+                raise _OpenRouterFailure("timeout")
+            return result
         except _OpenRouterFailure as failure:
             # (bug v66: provider bodies can contain receipt fields or other
             # sensitive response data; only the selected model and a safe
