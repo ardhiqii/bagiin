@@ -19,7 +19,8 @@ gateway, just a link.
 
 ## Features
 
-- 📷 **Receipt OCR** via Google Gemini free tier — items, prices, merchant, date
+- 📷 **Receipt OCR** via Gemini with an optional bounded OpenRouter free-model
+  fallback — items, prices, merchant, date
 - 🔗 **Link sharing, no accounts** — identity is just a name on the device
 - 🔑 **Recovery/transfer code** — move your identity to another browser with a
   generated code (regenerating kills the old code)
@@ -37,7 +38,7 @@ gateway, just a link.
 |---|---|
 | Backend | FastAPI + SQLite (stdlib `sqlite3`) |
 | Frontend | TypeScript + React 18 + Vite, project-owned shadcn-style primitives |
-| OCR | Google Gemini (`gemini-3.5-flash`, free tier) |
+| OCR | Gemini (`gemini-3.5-flash`) with optional OpenRouter `:free` fallback |
 | Deploy | nginx + Let's Encrypt, Cloudflare DNS, systemd |
 | Tests | Python pytest + Node frontend logic/browser E2E |
 
@@ -72,7 +73,7 @@ npm run build
 cd ../backend
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt   # fastapi, uvicorn, slowapi, google-genai (or as installed)
-export GEMINI_API_KEY=...         # required for OCR; other features work without it
+# Set the OCR provider credential in your local environment; other features work without OCR.
 uvicorn main:app --reload --port 8082
 ```
 
@@ -97,9 +98,12 @@ identity-scoped writes require an authenticated secret.
 
 The formal `<50 KB gzip` budget applies to source-owned application assets.
 Vendor React and icon runtime are reported separately, and the full delivered
-asset size is reported alongside them. The current build measurement is 44.03
-KB gzip (43.00 KiB) for app-owned assets, 59.75 KB gzip (58.35 KiB) for vendor
-and icon runtime, and 103.78 KB gzip (101.35 KiB) for all generated assets.
+asset size is reported alongside them. A prior split baseline recorded 44.03 KB
+gzip (43.00 KiB) for app-owned assets, 59.75 KB gzip (58.35 KiB) for vendor and
+icon runtime, and 103.78 KB gzip (101.35 KiB) for all generated assets. The
+latest local `npm run build` output reported 133.13 KB gzip total (130.01 KiB),
+including the 45.48 KB gzip React chunk; this is a measured local baseline, not
+a release claim. Re-run the build after dependency or bundling changes.
 
 ## Tests
 

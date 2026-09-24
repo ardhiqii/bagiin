@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { ArrowsDownUp, EnvelopeSimple, Funnel, Gear, Plus, Receipt, Trash, UsersThree } from "@phosphor-icons/react";
-import { apiClient, onMutation } from "../lib/api";
-import { createRequestGate } from "../lib/async-state";
-import { createIdentityCache, IDENTITY_CACHE_TTL_MS } from "../lib/list-cache";
-import { getListSort, setListSort } from "../lib/identity-storage";
-import { localYearMonth, monthLabel, rupiahFmt, shortDate } from "../lib/money";
-import { navigate } from "../lib/routes";
-import { pendingInviteActionArgs, pendingInviteActionModel, type PendingInviteAction } from "../lib/pending-invite";
-import type { BillListRow, Identity } from "../lib/types";
-import { billListStatus } from "../lib/types";
-import { AppFrame, ErrorState, Topbar } from "../components/AppShell";
-import { Alert, Badge, Button, Card, Dialog, Select, Skeleton } from "../components/ui/primitives";
+import { apiClient, onMutation } from "../../lib/api";
+import { createRequestGate } from "../../lib/async-state";
+import { createIdentityCache, IDENTITY_CACHE_TTL_MS } from "../../lib/list-cache";
+import { getListSort, setListSort } from "../../lib/identity-storage";
+import { localYearMonth, monthLabel, rupiahFmt, shortDate } from "../../lib/money";
+import { navigate } from "../../lib/routes";
+import { pendingInviteActionArgs, pendingInviteActionModel, type PendingInviteAction } from "../../lib/pending-invite";
+import type { BillListRow, Identity } from "../../lib/types";
+import { billListStatus } from "../../lib/types";
+import { AppFrame, ErrorState, Topbar } from "../../components/layout/AppShell";
+import { Alert, Badge, Button, Card, Dialog, Select, Skeleton } from "../../components/ui/primitives";
 
 /**
  * The Home list is the app's most-repeated read: every route change back to
@@ -91,7 +91,7 @@ function BillRow({ row, onDelete, onInviteAction, inviteBusy, inviteError }: {
   </div>;
 }
 
-export function HomeRoute({ identity }: { identity: Identity }) {
+export function HomeScreen({ identity }: { identity: Identity }) {
   const [rows, setRows] = useState<BillListRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

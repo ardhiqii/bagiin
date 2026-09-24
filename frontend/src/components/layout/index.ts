@@ -9,4 +9,4 @@ export {
   ShareDialogContent,
   Topbar,
   useDockSpace,
-} from "../AppShell";
+} from "./AppShell";
