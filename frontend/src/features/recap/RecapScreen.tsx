@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, CheckCircle, Clock, PencilSimple, Receipt, UsersThree, Wallet } from "@phosphor-icons/react";
-import { api, normalizeRecap, onMutation } from "../lib/api";
-import { createRequestGate } from "../lib/async-state";
-import { getAliases, setAliases } from "../lib/identity-storage";
-import { createIdentityCache, IDENTITY_CACHE_TTL_MS } from "../lib/list-cache";
-import { rupiahFmt } from "../lib/money";
-import { navigate } from "../lib/routes";
-import type { Identity, RecapAction, RecapBill, RecapResponse } from "../lib/types";
-import { AppFrame, Topbar } from "../components/AppShell";
-import { Alert, Badge, Button, Card, Dialog, Input, Label, Skeleton } from "../components/ui/primitives";
+import { api, normalizeRecap, onMutation } from "../../lib/api";
+import { createRequestGate } from "../../lib/async-state";
+import { getAliases, setAliases } from "../../lib/identity-storage";
+import { createIdentityCache, IDENTITY_CACHE_TTL_MS } from "../../lib/list-cache";
+import { rupiahFmt } from "../../lib/money";
+import { navigate } from "../../lib/routes";
+import type { Identity, RecapAction, RecapBill, RecapResponse } from "../../lib/types";
+import { AppFrame, Topbar } from "../../components/layout/AppShell";
+import { Alert, Badge, Button, Card, Dialog, Input, Label, Skeleton } from "../../components/ui/primitives";
 
 type RecapActionView = RecapAction & {
   kind?: string;
@@ -143,7 +143,7 @@ function normalizeRecapForRoute(value: unknown): RecapPayload {
  * subscribes to the app's mutation bus at CONSTRUCTION time (3rd argument),
  * not from a component effect. This screen unmounts the moment the user leaves
  * #/recap, so an effect-scoped listener disappeared exactly when a write on
- * BillRoute/CreateRoute/Settings needed it — Rekap then served pre-mutation
+ * BillScreen/CreateScreen/SettingsScreen needed it — Rekap then served pre-mutation
  * data for the rest of the TTL after the next visit (bug: v97 — settle a bill
  * on #/b/<id>, tap Rekap, see the balance from before the settle). Module scope
  * is required, not incidental: this runs once per page load and no unmount can
@@ -420,7 +420,7 @@ function AliasDialog({ target, onClose }: { target: { id: string; canonical: str
   </Dialog>;
 }
 
-export function RecapRoute({ identity }: { identity: Identity }) {
+export function RecapScreen({ identity }: { identity: Identity }) {
   const [data, setData] = useState<RecapPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

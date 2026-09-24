@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Camera, Check, ClipboardText, PencilSimple, Plus, Receipt, Trash, UploadSimple, UsersThree } from "@phosphor-icons/react";
-import { apiClient, apiJson, ocrFailureMessage } from "../lib/api";
-import { clearHashLeaveGuard, useHashLeaveGuard } from "../lib/leave-guard";
-import { navigate } from "../lib/routes";
-import { rupiahFmt, rupiahParse } from "../lib/money";
-import { formatTransactionDate, parseTransactionDate } from "../lib/transaction-date";
+import { apiClient, apiJson, ocrFailureMessage } from "../../lib/api";
+import { clearHashLeaveGuard, useHashLeaveGuard } from "../../lib/leave-guard";
+import { navigate } from "../../lib/routes";
+import { rupiahFmt, rupiahParse } from "../../lib/money";
+import { formatTransactionDate, parseTransactionDate } from "../../lib/transaction-date";
 import {
   applyContactToggle,
   contactInitial,
@@ -19,13 +19,13 @@ import {
   type DraftItem,
   type Identity,
   type PickedContact,
-} from "../lib/types";
-import { usePhotoCleanup, type PhotoCleanup } from "../lib/photos";
-import { AppFrame, Topbar } from "../components/AppShell";
-import { ReceiptPhotoGallery } from "../components/ReceiptPhotoGallery";
-import { Button as ShadcnButton } from "../components/ui/button";
-import { Button, Card, Input, Label, Spinner } from "../components/ui/primitives";
-import { ConfirmDialog } from "../components/feedback";
+} from "../../lib/types";
+import { usePhotoCleanup, type PhotoCleanup } from "../../lib/photos";
+import { AppFrame, Topbar } from "../../components/layout/AppShell";
+import { ReceiptPhotoGallery } from "../../components/ReceiptPhotoGallery";
+import { Button as ShadcnButton } from "../../components/ui/button";
+import { Button, Card, Input, Label, Spinner } from "../../components/ui/primitives";
+import { ConfirmDialog } from "../../components/feedback";
 
 type OcrItem = { name?: string; price?: number | string; price_idr?: number; discount?: number | string; discount_idr?: number; quantity?: number | string; mode?: "free" | "slot" | string; slot_count?: number };
 /** The verify payload may carry already-picked proven contacts (the OCR/manual
@@ -234,7 +234,7 @@ function showBillNotice(message: string): void {
   window.setTimeout(() => node.remove(), 4000);
 }
 
-export function CreateRoute({ identity, initialVerify = false }: { identity: Identity; initialVerify?: boolean }) {
+export function CreateScreen({ identity, initialVerify = false }: { identity: Identity; initialVerify?: boolean }) {
   const [verify, setVerify] = useState(initialVerify);
   const [draft, setDraft] = useState<BillDraft>(() => blankDraft());
   const draftRef = useRef(draft);

@@ -597,7 +597,7 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   content: ""; position: absolute; left: 2px; top: 14px; bottom: 14px; width: 4px;
   border-radius: var(--r-full); background: var(--border-strong);
 }
-/* The tone names the row actually carries are HomeRoute's
+/* The tone names the row actually carries are HomeScreen's
    status-{danger,neutral,success}; the legacy is-ok/is-due/is-done/is-idle
    names are kept for parity with the ported markup. Both are matched, and the
    status-* half must be kept in step with the .status-mark.status-* block

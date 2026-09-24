@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Key, Palette, Plus, SignOut, Trash, UserCircle, Wallet } from "@phosphor-icons/react";
-import { apiClient } from "../lib/api";
-import { createRequestGate } from "../lib/async-state";
-import { navigate } from "../lib/routes";
-import type { ThemePreference } from "../lib/theme";
-import type { Identity, PaymentAccount, PaymentAccountInput } from "../lib/types";
-import { AccountRows, AppFrame, Topbar } from "../components/AppShell";
-import { Alert, Badge, Button, Card, Dialog, Input, Label, Spinner, Switch } from "../components/ui/primitives";
+import { apiClient } from "../../lib/api";
+import { createRequestGate } from "../../lib/async-state";
+import { navigate } from "../../lib/routes";
+import type { ThemePreference } from "../../lib/theme";
+import type { Identity, PaymentAccount, PaymentAccountInput } from "../../lib/types";
+import { AccountRows, AppFrame, Topbar } from "../../components/layout/AppShell";
+import { Alert, Badge, Button, Card, Dialog, Input, Label, Spinner, Switch } from "../../components/ui/primitives";
 
-export function SettingsRoute({ identity, onIdentity, onLogout, themePreference, onThemeChange }: { identity: Identity; onIdentity: (value: Identity) => void; onLogout: () => void; themePreference: ThemePreference; onThemeChange: (value: ThemePreference) => void }) {
+export function SettingsScreen({ identity, onIdentity, onLogout, themePreference, onThemeChange }: { identity: Identity; onIdentity: (value: Identity) => void; onLogout: () => void; themePreference: ThemePreference; onThemeChange: (value: ThemePreference) => void }) {
   const [profile, setProfile] = useState({ name: identity.name, has_code: Boolean(identity.has_code), auto_accept: identity.auto_accept !== false });
   const [accounts, setAccounts] = useState<PaymentAccount[]>([]);
   const [busy, setBusy] = useState(false);

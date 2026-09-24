@@ -2,7 +2,7 @@
  * One-slot, identity-scoped cache for a screen's read payload.
  *
  * The Home bill list is the app's most-repeated read: every navigation back to
- * Home remounts HomeRoute and used to re-fetch, even a second after the last
+ * Home remounts HomeScreen and used to re-fetch, even a second after the last
  * one. The cache is deliberately ONE slot — bounded by construction, not by an
  * eviction policy — and it is keyed by the identity it was fetched FOR, so:
  *
