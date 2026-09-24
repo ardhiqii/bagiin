@@ -40,6 +40,29 @@ import { inputMoney, rupiahFmt, rupiahParse } from "../src/lib/money.ts";
 import { isKnownHashRoute, parseHash, routeHash } from "../src/lib/routes.ts";
 import { createSelectionSaveQueue, serializeSelections } from "../src/lib/selection-queue.ts";
 import { formatTransactionDate, parseTransactionDate } from "../src/lib/transaction-date.ts";
+import { pendingInviteActionArgs, pendingInviteActionModel } from "../src/lib/pending-invite.ts";
+
+test("pending invite action model keeps inviter and scoped callback arguments", () => {
+  const pending = {
+    id: "bill-pending",
+    title: "Makan bareng",
+    total_idr: 125000,
+    can_manage: false,
+    pending_invite: true,
+    pending_invite_id: 42,
+    pending_invited_by_name: "Rina",
+  } as BillListRow;
+  assert.deepEqual(pendingInviteActionModel(pending), {
+    pending: true,
+    inviter: "Rina",
+    billId: "bill-pending",
+    inviteId: 42,
+  });
+  assert.deepEqual(pendingInviteActionArgs(pending, "accept"), ["bill-pending", 42]);
+  assert.deepEqual(pendingInviteActionArgs(pending, "decline"), ["bill-pending", 42]);
+  assert.equal(pendingInviteActionArgs({ ...pending, pending_invite: false }, "accept"), null);
+  assert.equal(pendingInviteActionArgs({ ...pending, pending_invite_id: null }, "decline"), null);
+});
 
 test("transaction dates use explicit Indonesian day/month/year formatting", () => {
   assert.equal(formatTransactionDate("2023-09-26"), "26/09/2023");

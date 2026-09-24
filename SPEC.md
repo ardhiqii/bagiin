@@ -1373,3 +1373,9 @@ delete/set-payer/tandai lunas orang lain).
 - Jika edge mengembalikan 502/503/504 atau body OCR kosong, UI menjelaskan bahwa baca otomatis gagal dan foto tetap tersimpan untuk input manual. Detail provider 4xx tetap ditampilkan, sementara endpoint non-OCR tetap memakai pesan generic.
 - Regression backend dan frontend mencakup model eligibility, advancement 403/429/timeout, hard elapsed boundary, retry structured-output yang sempit, error mapper OCR-only, dan fallback foto/manual. Perubahan sudah diverifikasi di feature branch tetapi belum dideploy ke production.
 - Residual risk dicatat: timeout `urllib` membatasi operasi socket, bukan pembatalan paksa saat body sedang trickle. Card ops terpisah untuk menaikkan `proxy_read_timeout` nginx tetap blocked sampai ada approval eksplisit.
+
+### 2026-09-24 (v100), aksi undangan pending di Home
+
+- Baris bill dengan `pending_invite=true` sekarang menampilkan tombol aksesibel "Terima" dan "Tolak" bersama copy nama pengundang yang sudah ada. Tombol hanya muncul jika `pending_invite_id` tersedia, tidak membuka baris bill saat diklik, dan navigasi keyboard pada baris tetap dipertahankan.
+- Kedua aksi memanggil endpoint scoped memakai pasangan `bill_id` dan `pending_invite_id` dari row yang sama. Setelah berhasil, row dihapus dari tampilan lalu list di-refresh; jika gagal, row tetap tampil dan memberi pesan santai "Undangannya belum bisa diproses, coba lagi ya.".
+- Ditambahkan regression test deterministic untuk model aksi pending dan argumen callback endpoint. Tidak ada perubahan backend, API contract, aset, atau deploy.
