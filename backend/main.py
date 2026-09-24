@@ -1232,6 +1232,21 @@ def _build_identity_recap(identity: dict) -> dict:
 
 # ---------- identity ----------
 
+def _identity_response(ident: dict) -> dict:
+    """Return identity fields safe for the creating/restoring client.
+
+    Database rows also contain ``identity_code_hash`` and timestamps. The hash
+    is recovery proof material, not an API field; returning the whole row from
+    create/restore made it visible to any caller of the unauthenticated restore
+    endpoint.
+    """
+    return {
+        key: ident[key]
+        for key in ("id", "name", "role", "secret")
+        if key in ident
+    }
+
+
 async def _read_json(request: Request) -> dict:
     try:
         raw = await request.body()
@@ -1260,7 +1275,7 @@ async def create_identity(request: Request):
     if not name:
         raise HTTPException(400, "Nama wajib diisi")
     ident = db.new_identity(name, role="creator" if data.get("creator") else "guest")
-    return ident
+    return _identity_response(ident)
 
 
 @app.post("/api/identities/restore")
@@ -1280,7 +1295,7 @@ async def restore_identity(request: Request):
         ident = db.get_identity(ident["id"])
         if not ident or not ident.get("secret"):
             raise HTTPException(409, "Identitas belum bisa dipulihkan, coba lagi")
-    return ident
+    return _identity_response(ident)
 
 
 @app.post("/api/identities/{identity_id}/bind")
@@ -2554,8 +2569,8 @@ def serve_photo(filename: str):
 # Cache strategy (industry-standard content hashing):
 #   * A Vite build serves dist/index.html and hashed files under /assets.
 #     The document is served no-cache + ETag so browsers/CF revalidate it.
-#   * Until a build exists, / falls back to the legacy template, whose
-#     /static/@HASH URLs are rendered dynamically for the same guarantees.
+#   * Legacy static files remain available only for non-runtime assets such as
+#     the favicon and manifest; the frozen legacy document is never a fallback.
 #   * Every hashed file under /static or /assets is immutable, max-age=1y.
 #     Content changes -> a new hash -> cache never goes stale.
 

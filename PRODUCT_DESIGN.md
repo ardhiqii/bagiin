@@ -1,6 +1,9 @@
 # Bagiin Product, UX, and Architecture Foundation
 
-Status: current direction for the React-only rebuild. This document replaces the old visual/migration assumptions. It is planning and architecture guidance, not a claim that the rebuild is already shipped.
+Status: current product direction for the React + TypeScript + Vite runtime. This
+document replaces the old visual/migration assumptions. Some folder moves and
+foundation work remain planned; claims about shipped routes and API behavior must
+be checked against the current source and `SPEC.md`'s endpoint inventory.
 
 Related documents:
 
@@ -47,7 +50,7 @@ Bagiin is not currently a full Splitwise replacement. Do not expand the first re
 
 The following claims were true of the old plan and are now **retired**. Do not reintroduce them; if any document, comment, or commit message states one, that statement is stale.
 
-- **"No build step, no framework, no npm. Vanilla JS."** Retired. React + TypeScript + Vite is the target and only frontend runtime; `npm` is now part of the frontend workflow.
+- **"No build step, no framework, no npm. Vanilla JS."** Retired. React + TypeScript + Vite is the shipped and only frontend runtime; `npm` is part of the frontend workflow.
 - **"`frontend/static/` is the fallback and rollback path."** Retired. The legacy runtime is frozen and scheduled for removal after React route parity and browser verification. It is not a fallback or a rollback path; `frontend/src` → `frontend/dist` is the only shipped path.
 - **"Status: DRAFT (brainstorm). Belum ada kode."** Retired. Bagiin is live at `https://bagiin.ardhiqi.com/`; `SPEC.md` is now an active business reference and changelog, not a brainstorm.
 - **"Folder-version cache-busting (`static/v51` → `static/v52`)."** Retired. That was a legacy workaround for a Cloudflare partial-cache incident. The current frontend serves hashed Vite output from `frontend/dist`; there are no version folders to bump.
@@ -211,7 +214,8 @@ Final money and provisional money must have separate sections, labels, and visua
 
 ### Runtime decision
 
-React + TypeScript + Vite is the only target frontend runtime. The old vanilla files are frozen and will be removed after parity verification:
+React + TypeScript + Vite is the only shipped frontend runtime. The old vanilla
+files are frozen and will be removed after parity verification:
 
 - `frontend/static/app.js`
 - `frontend/static/screens.js`
@@ -219,7 +223,10 @@ React + TypeScript + Vite is the only target frontend runtime. The old vanilla f
 - `frontend/static/bill.js`
 - `frontend/static/recap.js`
 
-`frontend/static/` may temporarily hold non-runtime assets such as favicon, manifest, brand images, and OG assets.
+`frontend/static/` may temporarily hold non-runtime assets such as favicon,
+manifest, brand images, and OG assets. It is not a runtime fallback. FastAPI
+serves `frontend/dist/index.html` and hashed `/assets/` output; if the build is
+absent, `/` returns a visible 503 instead of selecting a second document/runtime.
 
 ### Target folder structure
 
@@ -304,12 +311,29 @@ frontend/src/
 
 ### Foundation
 
-- Tailwind CSS **v4** is the utility layer. v4 has no `tailwind.config.js`; theme values live in CSS (`@theme` / `@import "tailwindcss"`) in `src/styles/globals.css`. Note the current mismatch: `frontend/components.json:7` still points at a `tailwind.config.js` that does not exist, and `frontend/package.json` has no `tailwindcss` dependency yet. Activating Tailwind (Phase 2) means adding the v4 dependency and fixing `components.json` — not creating a v4-incompatible config file.
+- Tailwind CSS v4 is the utility layer, provided by the checked-in `tailwindcss`
+  and `@tailwindcss/vite` dev dependencies. v4 has no `tailwind.config.js`;
+  theme values live in CSS (`@theme` / `@import "tailwindcss"`) in
+  `src/styles/globals.css`. `components.json` intentionally leaves its config
+  path empty for this v4 setup.
 - shadcn/ui components are copied into the repository and customized, not consumed as an opaque runtime package.
 - CSS variables are the theme source.
 - `class-variance-authority` defines variants.
 - Phosphor remains the single icon family.
 - Do not mix legacy class vocabulary and new component vocabulary inside the same rebuilt surface.
+
+### Shipped theme contract
+
+The current React app exposes three Settings preferences: `system`, `light`, and
+`dark`. The preference is stored in `localStorage` under `bagiin_theme` with a
+safe `system` default. `system` resolves `(prefers-color-scheme: dark)` and
+subscribes to media-query changes; explicit preferences do not follow later OS
+changes. React writes the resolved value to
+`document.documentElement.dataset.theme` and the selected preference to
+`data-theme-preference`. `tokens.css` owns both semantic token maps and
+`color-scheme`; its media-query block also gives an unmounted/system first-paint
+fallback. Settings is the user-facing control; there is no separate theme
+runtime or per-route token map.
 
 ### Visual direction: warm utility
 
@@ -445,7 +469,9 @@ These rules came from real takeover bugs. Restoring them here so the file agents
 
 ### Phase 2: foundation
 
-- Activate Tailwind and customized shadcn foundation.
+- Tailwind v4 and the customized shadcn foundation are present; complete the
+  remaining primitive/state coverage and visual checks without introducing a
+  second token or icon system.
 - Move semantic tokens into `src/styles/tokens.css`.
 - Rebuild layout and shared primitives.
 - Add component state tests and light/dark visual checks.
@@ -466,9 +492,10 @@ Rebuild in this order:
 
 ### Phase 4: React-only cutover
 
-- React build owns the application entry.
-- Backend serves built React assets in production.
-- Legacy runtime scripts are removed after parity verification.
+- React build already owns the application entry.
+- Backend already serves built React assets in production and returns 503 when
+  the build is absent rather than selecting a legacy document.
+- Legacy runtime scripts are removed after the remaining parity verification.
 - Legacy inline runtime style is removed after token parity is verified.
 - Remaining static files are classified as asset-only or deleted.
 

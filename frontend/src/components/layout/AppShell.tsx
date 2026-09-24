@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, Copy, PencilSimple, Plus, Receipt, ShareNetwork, SignOut, Trash, UserCircle, UsersThree, Wallet } from "@phosphor-icons/react";
-import { apiClient } from "../lib/api";
-import { getStoredName, setStoredIdentity, setStoredName } from "../lib/identity-storage";
+import { apiClient } from "../../lib/api";
+import { getStoredName, setStoredIdentity, setStoredName } from "../../lib/identity-storage";
 
-import type { Identity, PaymentAccount } from "../lib/types";
-import { brandLabel } from "../lib/brand-logos";
-import { BrandLogo } from "./BrandLogo";
-import { BrandMark } from "./BrandMark";
-import { Button, Card, Input, Label, Spinner } from "./ui/primitives";
+import type { Identity, PaymentAccount } from "../../lib/types";
+import { brandLabel } from "../../lib/brand-logos";
+import { BrandLogo } from "../BrandLogo";
+import { BrandMark } from "../BrandMark";
+import { Button, Card, Input, Label, Spinner } from "../ui/primitives";
 
 
 /** The topbar lockup, restored to the legacy design system.
@@ -290,7 +290,7 @@ export function Onboarding({ onIdentity, legacyIdentity = null }: { onIdentity: 
   </div></div></AppFrame>;
 }
 
-export { EmptyState, ErrorState, LoadingState } from "./feedback";
+export { EmptyState, ErrorState, LoadingState } from "../feedback";
 
 type AccountRowsProps = {
   accounts?: PaymentAccount[];

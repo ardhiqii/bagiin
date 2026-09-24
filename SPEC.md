@@ -23,8 +23,9 @@ Semua kesimpen: history bill.
 
 ### Tujuan
 - Mobile-first, fokus enak dipake di HP (mayoritas Android mid-range, buka dari WhatsApp)
-- Biaya operasional Rp 0 (OCR pake free tier)
-- Tanpa akun, tanpa password. Cukup nama + localStorage
+- Biaya operasional ditargetkan rendah dengan provider OCR free-tier saat tersedia.
+- Tanpa akun tradisional; sesi perangkat memakai identity + secret dan dapat
+  dipindahkan dengan kode pemulihan.
 - Satu bill = satu link. Fokus: "bagi bill ini", bukan kelola utang piutang
 - Transparan: tiap orang liat breakdown detail (item + pajak + total)
 
@@ -78,10 +79,13 @@ Semua kesimpen: history bill.
 | S7 | Riwayat | List bill (bulan -> judul -> total -> status) |
 | S8 | Pulihkan identitas | Input identity code |
 
-Navigation: SINGLE PAGE + segmented tabs (pola proven Settle Up/Tricount: segmented pills
-di header, FAB/tombol aksi utama di bawah), BUKAN bottom tabs (Splitwise pake bottom tabs
-karena app-nya berat multi-modul; buat app satu-fitur tanpa akun itu overkill).
-Alur guest (S4-S5) single-page penuh, fokus, tanpa tab.
+Navigation shipped sekarang memakai hash routes di React, bukan segmented tabs legacy:
+`#/` untuk Home, `#/recap` untuk Rekap Patungan, `#/settings` untuk Akun,
+`#/create` untuk pilihan buat bill, `#/create/verify` untuk editor verifikasi, dan
+`#/b/<bill_id>` untuk detail bill. Pada viewport mobile, Home/Rekap/Akun memakai
+fixed bottom navigation; layar create/verify dan bill memakai contextual action dock
+sebagai gantinya. Desktop memakai shell/rail sesuai ruang yang tersedia. Alur guest
+tetap fokus di detail bill tanpa nav utama yang mengganggu.
 
 ## 5. Aturan bisnis
 
@@ -143,96 +147,151 @@ Alur guest (S4-S5) single-page penuh, fokus, tanpa tab.
 - `unpaid` -> `paid` (klaim guest) -> `confirmed` (opsional, creator setuju).
 - v1: cukup paid/unpaid. Two-way confirm boleh di fase 2.
 
-## 6. Data model (SQLite)
+## 6. Data model (SQLite, current)
 
 ```
-identity
-  id TEXT PK            -- random UUID (device)
-  name TEXT
-  role TEXT             -- 'creator' | 'guest'  (bisa dua-duanya)
-  secret TEXT NULL      -- secret sesi perangkat; wajib untuk mutation
-  identity_code_hash TEXT NULL   -- hash kode pemulihan
-  created_at
+identity: id TEXT PK, name, role, identity_code_hash, secret, auto_accept,
+created_at. `id` and `secret` are generated opaque values; the id is a public
+reference while the secret authenticates mutations.
 
-bill
-  id TEXT PK            -- kode 6-8 char, public (ada di URL)
-  creator_identity_id FK
-  title TEXT            -- "Makan Sushi"
-  photo_path TEXT       -- struk tersimpan lokal (resized)
-  subtotal_idr INT, tax_idr INT, service_idr INT, total_idr INT
-  tax_mode TEXT         -- 'proportional' | 'equal' | 'creator'
-  status TEXT           -- 'open' | 'closed'
-  created_at, closed_at
+bill: id TEXT PK (URL-safe token), creator_identity_id FK, title, merchant,
+transacted_at, legacy photo_path, paid_by_name, paid_by_identity_id,
+paid_by_confirmed, subtotal_idr, tax_idr, service_idr, order_discount_idr,
+cashback_idr, total_idr, tax_mode, tax_included, participant_count, status,
+creator_left, settled_manual, created_at, closed_at.
 
-item
-  id INTEGER PK, bill_id FK
-  name TEXT, price_idr INT
-  sort_order INT
+bill_participant: bill_id FK, name, nullable identity_id, sort_order. A typed
+name is a warning/roster label until an identity claims it.
 
-selection          -- siapa centang item apa (bisa 1 item banyak orang)
-  id INTEGER PK, item_id FK, identity_id FK
-  UNIQUE(item_id, identity_id)
+item: id INTEGER PK, bill_id FK, name, price_idr, sort_order, mode (`free` or
+`slot`), nullable slot_count, discount_idr, quantity.
 
-payment
-  id INTEGER PK, bill_id FK, identity_id FK
-  amount_idr INT, status TEXT ('unpaid'|'paid'), paid_at
-  UNIQUE(bill_id, identity_id)
+selection: id INTEGER PK, item_id FK, identity_id FK, qty, UNIQUE(item_id,
+identity_id). `payment`: id INTEGER PK, bill_id FK, identity_id FK,
+amount_idr, status, paid_at, UNIQUE(bill_id, identity_id).
 
-payment_profile   -- milik identity, opsional
-  id INTEGER PK, identity_id FK
-  type TEXT ('bank'|'ewallet')
-  label TEXT            -- "BCA", "DANA"
-  detail TEXT           -- "1234567890 a.n. Aufa" / "0812xxxx"
+payment_account: id INTEGER PK, identity_id FK, brand, account_no, nullable
+holder_name, sort_order. The older `payment_profile` table remains in the
+compatibility schema but has no current endpoint or active query path.
+`bill_invite`: id INTEGER PK, bill_id FK, identity_id FK, invited_by FK,
+status (`pending`, `accepted`, or `declined`), created_at, UNIQUE(bill_id,
+identity_id). `bill_photo`: id INTEGER PK, bill_id FK, path, sort_order. The
+legacy `bill.photo_path` remains for backfill/compatibility; current multi-photo
+reads use `bill_photo`.
 ```
 
 Perhitungan total per orang TIDAK disimpan - dihitung on-the-fly dari items +
 selections + tax_mode (selalu konsisten, gak ada drift data).
 
-## 7. API (REST, JSON)
+## 7. API (REST, JSON; current `backend/main.py`)
 
-```
-POST /api/identities            -- buat identity (name) -> {id, name, secret}
-POST /api/identities/restore    -- {code} -> identity + secret (atau 404)
-POST /api/identities/{id}/bind  -- legacy: {code} -> bind secret (atau 403)
-GET  /api/bills/{code}          -- detail bill + items + tax info (public read)
-POST /api/bills                 -- creator: buat bill (items, tax_mode, photo)
-PATCH /api/bills/{code}         -- creator: edit items, tax_mode, close bill
-POST /api/bills/{code}/selections      -- guest: set centang item (bulk upsert)
-GET  /api/bills/{code}/summary  -- creator: per-orang breakdown + status
-POST /api/bills/{code}/payments/{identity_id}/paid   -- guest: tandai bayar
-GET  /api/me/bills              -- riwayat by identity (device)
-POST /api/identities/payment-profiles  -- creator: simpan rekening/e-money
-```
+The following is the implemented endpoint inventory. Unless marked public-read,
+identity-scoped routes require both `X-Identity-Id` and `X-Identity-Secret`; a
+path id alone is never a credential. Full bill responses are built by the
+canonical `_compute_response` adapter. Creation, close, delete, invite, and
+decline intentionally return acknowledgements as noted below.
 
-Auth: bill code = akses baca publik. Semua mutation identity-scoped wajib mengirim
-`X-Identity-Id` dan secret sesi yang benar lewat `X-Identity-Secret`; id saja bukan
-kredensial. Legacy identity dengan `secret IS NULL` harus dipulihkan lewat recovery
-code atau di-bind lewat endpoint di atas sebelum dapat melakukan mutation. Creator-only
-action tetap memvalidasi identity yang sudah terautentikasi dan rate limit berlaku
-per IP (lihat Section 9).
+Identity and account routes:
 
-### Token entropy (dari riset OWASP, verified)
-- Bill code di URL: jangan 6-8 char pendek (30-40 bit, keburu brute-force).
-  Pakai `secrets.token_urlsafe(16)` = 128-bit, URL `/b/<22-char>`.
-  Gak masalah panjang karena dishare lewat tap link (WhatsApp), bukan diketik manual.
-- Identity code: tetap 10-12 char manusiawi (diketik manual), diproteksi rate limit
-  + lockout setelah N percobaan gagal.
-- Rate limit (SlowAPI, in-memory cukup di 1 VPS):
-  create bill 5-10/min/IP, GET share page 30-60/min/IP + cap total view per token
-  (mis. 1000, anti-scrape), upload foto 5-10/min/IP max 5MB.
+| Method and path | Access and result |
+|---|---|
+| `POST /api/identities` | Public create; returns the new identity session. |
+| `POST /api/identities/restore` | Recovery-code restore; returns the identity session or 404. Rate limited. |
+| `POST /api/identities/{identity_id}/bind` | Recovery-code bind for a legacy identity; returns a session or 403/404. Rate limited. |
+| `POST /api/identities/{identity_id}/code` | Authenticated owner sets/replaces the recovery-code hash; `{ok:true}`. |
+| `POST /api/identities/{identity_id}/code/generate` | Authenticated owner generates a new code; returns `{code}`. Rate limited. |
+| `POST /api/identities/{identity_id}/name` | Authenticated owner updates the name; `{ok:true}`. |
+| `GET /api/identities/{identity_id}/me` | Authenticated owner profile (`has_code`, `auto_accept`). |
+| `GET /api/identities/{identity_id}/accounts` | Authenticated owner payment-account list. |
+| `POST /api/identities/{identity_id}/accounts` | Authenticated owner adds a payment account. Rate limited. |
+| `PUT /api/accounts/{account_id}` / `DELETE /api/accounts/{account_id}` | Authenticated owner updates or deletes their payment account. Rate limited on PUT. |
+| `GET /api/identities/{identity_id}/contacts` | Authenticated owner’s proven contacts; optional `?q=` search. |
+| `POST /api/identities/{identity_id}/auto_accept` | Authenticated owner toggles direct-invite behavior; `{ok:true}`. Rate limited. |
+| `GET /api/identities/{identity_id}/bills` | Authenticated identity-scoped Home/history list, including pending invites. |
+| `GET /api/identities/{identity_id}/recap` | Authenticated identity-scoped final/provisional recap. |
+| `GET /api/identities/{identity_id}/invites` | Authenticated identity-scoped pending invites. |
 
-## 8. OCR - Gemini free tier
+Bill, selection, payment, invite, and photo routes:
 
-- **Verified (2026-08-09):** Google free tier masih ada, key AQ.Ab8... (disimpan
-  /opt/projects/bagiin/backend/.env) valid di free tier, tanpa kartu. Limit ratusan request/hari
-  per project - jauh di atas kebutuhan (beberapa struk/minggu).
-- **MODEL YANG DIPAKAI: `gemini-3.5-flash`** (verified: baca struk test 100% bener,
-  output JSON clean). CATATAN: `gemini-2.5-flash` udah GAK tersedia buat user baru
-  (HTTP 404 "no longer available to new users") - jangan dipakai. Fallback:
-  `gemini-3.6-flash` (sama bagusnya, output lebih pendek).
-- Prompt: kirim gambar + minta output JSON terstruktur:
-  `{items: [{name, price}], subtotal, tax, service, total}` (locale id-ID, Rp).
-- Struk miring/buram: minta retry 1x, kalau gagal -> fallback manual entry.
+| Method and path | Access and result |
+|---|---|
+| `POST /api/bills` | Authenticated creator creates a bill; returns `{id}`. Rate limited. |
+| `GET /api/bills/{bill_id}` | Public-read bill payload; optional valid session adds viewer permissions. |
+| `PUT /api/bills/{bill_id}` | Effective owner edits an open bill and returns the full payload. |
+| `PUT /api/bills/{bill_id}/paid_by` | Effective owner sets the payer and returns the full payload. |
+| `DELETE /api/bills/{bill_id}` / `POST /api/bills/{bill_id}/close` | Effective owner deletes or closes; returns `{ok:true}`. Close is retained for compatibility; creator UI does not use it as allocation finality. |
+| `POST /api/bills/{bill_id}/join` | Authenticated identity joins through the public link; full payload. |
+| `POST /api/bills/{bill_id}/selections` | Authenticated member replaces their picks (empty list explicitly clears); full payload. |
+| `PUT /api/bills/{bill_id}/items/{item_id}/slots` | Effective owner changes slot capacity; full payload. |
+| `DELETE /api/bills/{bill_id}/items/{item_id}/selections/{identity_id}` | Slot owner or manager releases a selection; full payload. |
+| `POST /api/bills/{bill_id}/payments/{identity_id}/paid` / `.../unpaid` | Member or manager changes payment status; full payload. |
+| `POST /api/bills/{bill_id}/reopen` | Effective owner reopens a closed bill; full payload. |
+| `POST /api/bills/{bill_id}/settle` / `.../unsettle` | Effective owner sets or clears manual settlement; full payload. Settlement is separate from allocation. |
+| `POST /api/bills/{bill_id}/invite` | Effective owner invites a proven contact; returns `{status: "joined"|"pending"}`. Rate limited. |
+| `POST /api/bills/{bill_id}/invites/{invite_id}/accept` / `.../decline` | Target accepts (full payload) or declines (`{ok:true}`). Rate limited. |
+| `DELETE /api/bills/{bill_id}/invites/{invite_id}` | Effective owner withdraws a pending invite; full payload. Rate limited. |
+| `DELETE /api/bills/{bill_id}/people/{identity_id}` / `POST /api/bills/{bill_id}/leave` | Manager removes a member or member leaves; full payload. |
+| `POST /api/bills/{bill_id}/photo` / `DELETE /api/bills/{bill_id}/photos/{photo_id}` | Manager attaches/removes a photo on an open bill; full payload. Upload is rate limited. |
+| `POST /api/photos` / `DELETE /api/photos/{filename}` | Authenticated standalone manual-flow upload/release; returns a path or `{deleted:true}`. Upload is rate limited. |
+| `POST /api/ocr` | Authenticated multipart OCR for up to two photos; returns normalized draft data plus photo paths, or a safe 422. Rate limited. |
+
+Static routes are separate from the JSON API: `GET/HEAD /` serves the built
+`frontend/dist/index.html`, `/assets/` serves hashed Vite assets, and
+`GET/HEAD /static/manifest.json` serves the manifest. `/uploads/{filename}` is
+an allowlisted image read with private immutable caching. If the build is absent,
+`/` returns 503 rather than switching to a second frontend runtime.
+
+### Token and request limits (implemented)
+- Bill ids use `secrets.token_urlsafe(16)` and are public link references.
+- Generated recovery codes are three groups of four characters from an
+  unambiguous alphabet; the stored value is a hash. Replacing a code invalidates
+  the previous one. The restore and bind paths do not implement an additional
+  lockout counter or threshold; their protection here is the configured
+  per-IP rate limit and normal invalid-code response.
+- Current SlowAPI limits in `backend/main.py` include identity create 30/min,
+  restore 10/min, legacy bind 20/min, code generation 5/min, account writes
+  30/min, bill creation 10/min, invite actions 20/min, photo/OCR uploads
+  10/min, and auto-accept 20/min. Read-only bill GET has no decorator-level
+  rate limit in the current source. Limits are process-local and keyed by remote
+  address; deployment may add edge controls, but no undocumented cap is part of
+  the application contract.
+
+## 8. OCR - Gemini primary, OpenRouter fallback (current)
+
+- The provider adapter reads credentials from runtime environment variables; the
+  values are intentionally not documented here. Without either configured
+  provider, the API returns a safe manual-entry message rather than exposing
+  configuration details.
+- Primary model is `gemini-3.5-flash` unless `BAGIIN_OCR_MODEL` contains a
+  valid Gemini-only model id. OpenRouter is an optional fallback chain. Its
+  parser accepts only `:free` models or `openrouter/free`, filters unsupported
+  candidates, de-duplicates them, and honors `OPENROUTER_OCR_MODELS` with the
+  older singular override as compatibility input.
+- The normalized public OCR result contains `merchant`, `date`, `items` with
+  `name`, `price`, `discount`, `quantity`, plus `subtotal`, `order_discount`,
+  `tax`, `service`, `total`, `tax_included`, and saved photo paths.
+- **Deadline chain (source-grounded):** one request uses a default 40-second
+  hard budget. The clamp is below the 60-second edge proxy read timeout by
+  subtracting 5 seconds setup overhead, 7 seconds measured socket overshoot,
+  and a 2-second safety margin; the resulting maximum is 46 seconds. When
+  OpenRouter is configured, the adapter reserves up to two-thirds of the budget
+  or 30 seconds, whichever is lower, for fallback; at the default 40-second
+  budget this leaves Gemini roughly 13.33 seconds. If Gemini fails or is absent,
+  OpenRouter tries its ordered free models within the shared deadline. Each
+  candidate gets at most 20 seconds, reserves at least 5 seconds for queued
+  candidates (capped at half the remaining window), and never returns a success
+  after its slice/deadline. A model may retry once only when the optional
+  structured JSON response hint is rejected with the narrow supported 400/422
+  shape; other provider failures advance to the next candidate.
+- The client-facing OCR failure is a safe 422 message and preserves the photo so
+  the creator can retry or continue manually. Raw provider bodies, credentials,
+  and proxy 502/503/504 text are not the primary UI contract.
+- Prompt: kirim satu atau dua gambar dan minta output JSON terstruktur dengan
+  merchant/date, item `name`/`price`/`discount`/`quantity`, subtotal, order
+  discount, tax, service, total, dan `tax_included` (locale id-ID, Rp).
+- Provider failures advance through the configured chain under the shared
+  deadline; there is no general three-attempt Gemini retry. If all providers
+  fail, the photo remains available and the creator continues with manual entry.
 - **Verifikasi & edit = bagian WAJIB dari flow (bukan emergency).** Setelah OCR,
   creator SELALU lewat screen verifikasi sebelum share. Ini editor lengkap:
   - **OCR juga baca merchant (nama tempat) + date (tanggal transaksi)** -> auto-fill
@@ -270,44 +329,47 @@ per IP (lihat Section 9).
   Implement: `createImageBitmap` + `canvas.toBlob('image/jpeg', 0.7)`.
   Upload max 5MB di rate limit. Server simpan di disk, BUKAN SQLite blob.
 
-## 9. Identitas & keamanan
+## 9. Identitas & keamanan (current)
 
 - localStorage (verified MDN): 5 MiB per origin, private mode bisa 0/quota error.
   Simpan identity session (`identity_id` + `secret`), nama, dan preferensi hanya
   sebagai cache perangkat. SEMUA akses
   localStorage dibungkus try/catch + fallback in-memory (app tetap jalan tanpa storage).
   Server = source of truth via share link; localStorage cuma cache.
-- Identity code: random 10-12 char (base32, tanpa O/0/I/1), tampil SEKALI,
-  disimpan server sebagai hash, ada tombol "ganti kode" (invalidasi lama).
+- Identity code: generated as 12 characters in three groups of four from an
+  unambiguous alphabet, shown to the owner, stored server-side as a hash, and
+  replaced by the generate/set actions (invalidating the old code).
 - PENTING di UI: kode identitas = RAHASIA (jangan dishare). Kode bill = PUBLIK.
 - Tanpa akun -> konsekuensi: ganti device = identitas gak kebawa kecuali restore code;
   recovery code menjadi bukti untuk mengikat secret sesi pada identity legacy.
-- Rate limit + token entropy: lihat Section 7 (128-bit bill token, identity code
-  dilockout setelah N gagal).
+- Invalid recovery attempts receive the normal invalid-code response. The current
+  implementation has per-IP rate limits but no documented or implemented
+  failed-attempt lockout threshold; do not promise one in UI or docs.
 - Receipt photo: privat, cuma bisa diakses via bill code (yang udah dishare creator).
 
-## 10. Teknologi & deployment
+## 10. Teknologi & deployment (current)
 
 - Backend: FastAPI + SQLite (pattern stockbit-backend: venv + systemd).
   Path: /opt/projects/bagiin/backend
 - Frontend: TypeScript + React 18 + Vite, dengan primitives project-owned bergaya
   shadcn/ui. Source utama ada di `frontend/src`; `frontend/dist` adalah output build
-  yang di-serve FastAPI di `/` dan `/assets/`. `frontend/static/` legacy tetap
-  dipertahankan sebagai fallback lokal dan jalur rollback.
+  yang di-serve FastAPI di `/` dan `/assets/`. `frontend/static/` runtime lama
+  dibekukan dan hanya boleh tersisa untuk aset non-runtime selama migrasi; server
+  tidak fallback ke dokumen legacy jika build tidak ada.
   Build wajib dijalankan sebelum restart service: `npm ci --no-audit --no-fund`,
   `npm run typecheck`, lalu `npm run build`.
   Budget dipisah agar terukur: source-owned app bundle < 50KB gzip, vendor React/icon
-  dilaporkan terpisah. Pengukuran build saat ini dengan gzip level 9: app-owned
-  44.03KB (43.00KiB), vendor/icon 59.75KB (58.35KiB), dan seluruh asset 103.78KB
-  (101.35KiB). App-owned tetap lulus budget.
+  dilaporkan terpisah. Baseline split yang pernah dicatat dengan gzip level 9:
+  app-owned 44.03KB (43.00KiB), vendor/icon 59.75KB (58.35KiB), dan seluruh asset
+  103.78KB (101.35KiB). Build lokal terbaru (`npm run build`) menghasilkan
+  133.13KB gzip total (130.01KiB), termasuk chunk React 45.48KB gzip. Ini adalah
+  measurement lokal, bukan jaminan release atau pengganti pengukuran app/vendor;
+  jalankan build ulang setelah perubahan dependency atau bundling.
   Path: /opt/projects/bagiin/frontend
-- Nginx reverse proxy + HTTPS (Let's Encrypt), subdomain: bagiin.ardhiqi.com.
-  Infra note (cek 2026-08-09): VPS IP 209.17.118.186, zone ardhiqi.com di Cloudflare,
-  A record bagiin SUDAH ada (proxied=true). Pattern deploy: certbot --dns-cloudflare (kredensial
-  /root/.secrets/cloudflare.ini) + vhost di /etc/nginx/sites-available/ + A record
-  via Cloudflare API (lihat skill hermes-infrastructure, pola stockbit.ardhiqi.com).
-- TANPA auth_basic (guest butuh akses via link)
-- Receipt storage: local disk (mis. /var/www/uploads), nama file random uuid4 hex,
+- Deployment uses an HTTPS reverse proxy and system service around the FastAPI
+  app. Keep provider credentials, host addresses, credential-file locations,
+  and proxy configuration out of this repository documentation.
+- Receipt storage: local disk outside SQLite, with random generated filenames,
   path traversal guard, metadata di SQLite. JANGAN di SQLite blob.
   Header `Cache-Control: private, max-age=31536000, immutable` (receipt immutable).
   Volume: ~200KB x 1000 receipt = 200MB, muat di VPS mana pun.
@@ -317,8 +379,13 @@ per IP (lihat Section 9).
 - Viewport & safe-area (verified caniuse): `width=device-width, initial-scale=1,
   viewport-fit=cover` + `height: 100dvh` (fallback 100vh) + fixed bottom bar
   `padding-bottom: calc(env(safe-area-inset-bottom) + 12px)`.
-- Dark mode: `prefers-color-scheme` + `<meta name="color-scheme" content="light dark">`
-  (native controls ikut), theme-color dua varian. Ikut sistem, tanpa toggle di v1.
+- Theme is shipped as a manual Settings preference with three values: `system`,
+  `light`, and `dark`, persisted under the browser key `bagiin_theme`. `system`
+  follows `(prefers-color-scheme: dark)` and listens for changes; explicit modes
+  win over the system setting. React resolves the value to
+  `document.documentElement.dataset.theme` (`light`/`dark`) and also writes
+  `data-theme-preference`; CSS variables and `color-scheme` are defined in
+  `frontend/src/styles/tokens.css`, with an unmounted system-media fallback.
 - Share WhatsApp (verified FAQ WA): `https://wa.me/?text=<urlencoded>` (tanpa nomor =
   contact picker) + `navigator.share()` kalau support, fallback wa.me.
   og meta dinamis per bill (og:title/description/image absolute URL, image 1200x630
@@ -363,7 +430,8 @@ Obsidian/VS Code (selera user), satu accent orange, hijau/merah CUMI untuk statu
 - Kartu: border tipis, shadow tipis, radius konsisten. Bukan card-shadow tebal.
 - Item terpilih: border orange 1.5px + bg #FFF7ED.
 - Anggota: inisial avatar, bg netral. JANGAN warna-warni per anggota.
-- Dark mode: fase 2 (auto prefers-color-scheme, token swap).
+- Theme behavior is shipped: system/light/dark preference, Settings control,
+  persisted browser preference, and semantic light/dark token maps.
 
 ### Mobile rules (WAJIB)
 - Touch target min 44px (48px ideal). Bottom sheet max 85% tinggi layar.
@@ -400,13 +468,27 @@ Obsidian/VS Code (selera user), satu accent orange, hijau/merah CUMI untuk statu
 - Summary creator: "Belum bayar: Rina (Rp 81.667)" / "Bagian kosong: Rp 40.000"
 - Identity code: "Simpan kode ini. Jangan dishare ke siapa pun."
 
-## 13. Roadmap
+## 13. Roadmap (current)
 
-- **Fase 1 (MVP):** S1-S7, US-1..4, OCR Gemini, split + pajak proporsional,
-  paid/unpaid, history, payment profiles. Tidak ada identity code.
-- **Fase 2:** Identity code (US-5), dark mode, PWA service worker, two-way confirm,
-  fallback OCR lokal.
-- **Fase 3 (opsional):** balance/utang piutang, reminder otomatis, export CSV.
+Shipped foundation and current product: React + TypeScript + Vite owns the
+frontend entry, hash-route Home/Create/Verify/Bill/Rekap/Akun flows exist, OCR
+has Gemini plus the bounded OpenRouter fallback, identity sessions use secrets
+and recovery codes, direct invites exist, and recap separates final/provisional/
+settled states. These are current-state claims grounded in the source tree and
+the endpoint inventory above, not future roadmap items.
+
+Next work is intentionally incremental:
+
+- **Foundation completion:** move remaining flat React modules toward the target
+  feature/lib ownership structure, activate the documented Tailwind v4 dependency
+  only when the primitive migration is ready, and remove frozen legacy runtime
+  files after route parity/browser verification.
+- **Product follow-ups:** optional Google binding to an existing identity, a
+  local OCR worker only after benchmark evidence, and async OCR only if measured
+  provider latency justifies queue complexity.
+- **Later/optional:** balance simplification, reminders, and CSV export. Payment
+  gateway, group management, recurring expenses, and general finance features
+  remain outside the current product boundary.
 
 ## 14. Pertanyaan terbuka (status 2026-08-09)
 
@@ -440,8 +522,10 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 
 ## Sumber & status verifikasi
 
-- [x] Gemini free tier masih ada (dicek langsung 2026-08-09, halaman rate-limits Google)
-- [x] OpenRouter :free vision models ada (API dicek langsung): gemma-4-31b-it:free dkk
+- [x] Provider/model availability was checked historically on 2026-08-09; this
+      is not a guarantee of current quota or upstream availability.
+- [x] OpenRouter `:free` vision routes were checked historically on 2026-08-09;
+      the runtime now filters candidates and advances within one deadline.
 - [x] tasteskill.dev dicek langsung; skill design-taste-frontend sudah terpasang di Hermes
 - [x] Spek desain: hasil subagent riset (Revolut/Wise/Splitwise/GoPay/OVO/DANA patterns)
 - [x] Mobile UX patterns: subagent riset via browser CDP (Play Store screenshots,
@@ -544,8 +628,8 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
   recap, payment, identity, route guard, leave guard, responsive dock/rail, dan
   compatibility selector legacy dipertahankan di bawah `frontend/src`.
 - FastAPI menyajikan `frontend/dist` pada `/` dan `/assets/` dengan root/manifest
-  no-cache + ETag serta hashed asset immutable. `frontend/static/` tetap tersedia
-  sebagai fallback rollback; production harus build sebelum restart service.
+  no-cache + ETag serta hashed asset immutable. `frontend/static/` tersisa untuk
+  aset non-runtime selama migrasi; production harus build sebelum restart service.
 - Regression final dijalankan terhadap database dan upload directory isolated:
   `npm ci`, typecheck, build, frontend logic, full pytest `398 passed, 1 skipped`,
   browser create `28 matrix cases, 0 failed`, smoke, settled, recap, guest route
@@ -623,7 +707,10 @@ dibagi rata (murah dibangun, 1 tabel selection udah cukup).
 - Layout React sekarang memakai breakpoint yang eksplisit: form dan grid menumpuk di layar sempit, rail desktop baru aktif saat ruang cukup, dan daftar bill/rekap dapat menyusut tanpa horizontal overflow.
 - Fixed mobile navigation dan contextual action dock menghormati safe area serta reserve ruang berdasarkan tinggi surface yang benar-benar dirender. Field yang sedang fokus tidak tertutup dock, termasuk saat keyboard virtual mengubah viewport.
 - Create/manual verify, bill detail, home, settings, dan recap memakai primitive UI project-owned yang sama, dengan kontrol minimum 44px, wrap untuk label panjang, dan state loading/error/empty yang tetap terbaca di mobile maupun desktop.
-- Kontrak API, schema, kalkulasi uang, status final/payment, guest flow, identity recovery, dan `frontend/static/` fallback tidak berubah. Tailwind tidak ditambahkan sebagai dependency karena CSS design tokens yang sudah ada cukup untuk batch ini.
+- Kontrak API, schema, kalkulasi uang, status final/payment, guest flow, dan
+  identity recovery tidak berubah pada snapshot historis ini. `frontend/static/`
+  diperlakukan sebagai aset/non-runtime; Tailwind belum menjadi dependency pada
+  snapshot tersebut, tetapi sudah menjadi dependency pada tree sekarang.
 - Browser regression baru mencakup shell, dock/nav clearance, overflow, breakpoint `320` sampai `1440px`, light/dark state, storage isolation, dan zero page/console error. Full pytest serta flow create, smoke, settled, recap, guest guard, legacy recovery, creator, payment, deletion, dan rounding tetap diverifikasi sebelum merge.
 
 ### 2026-09-14 (v87), recovery identity legacy tanpa trust-on-first-use
@@ -992,10 +1079,10 @@ stepper inline, multi-foto, settle sekaligus, konfirmasi payer by name).
 
 **Tes**
 
-- `backend/conftest.py` baru: suite-nya selama ini kebind ke direktori upload
-  **produksi** (`/var/www/bagiin-uploads`) karena cuma `BAGIIN_DB` yang di-set per
-  file — di VPS itu berarti nulis JPEG tes ke folder live. Rate limiter juga
-  dimatiin pas tes (bucket-nya global per-IP, suite-nya nge-429 sendiri).
+- `backend/conftest.py` baru: suite-nya selama ini bisa terikat ke direktori
+  upload live karena hanya database yang diisolasi per file — berisiko menulis
+  JPEG tes ke data deployment. Rate limiter juga dimatikan saat tes (bucket-nya
+  global per-IP, suite-nya nge-429 sendiri).
 - `test_regressions_v65.py` (8 tes) buat semua temuan di atas. Total 138 lulus.
 - ⚠️ `test_regressions_v62.py::test_confirm_by_name_resolves_and_confirms` sekarang
   GAGAL — dia nge-assert perilaku yang jadi celah takeover di atas. File-nya
