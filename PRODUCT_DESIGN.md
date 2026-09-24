@@ -114,10 +114,12 @@ An invite row is never a bill member: it gets no payment row, no owner action, a
 
 ### 3.2 Create bill
 
-The first decision is the input mode:
+The first decision is the input mode. **Target copy — not shipped:** the labels below are the intended wording; the shipped React screen currently renders `Foto struk` and `Isi manual` for the same two choices (`frontend/src/routes/CreateRoute.tsx:473,488`), and the legacy-only strings `Scan struk otomatis` / `Isi manual tanpa scan` exist solely in the frozen runtime (`frontend/static/create.js`).
 
 - `Scan struk otomatis`
 - `Isi manual tanpa scan`
+
+Align the shipped labels with this line or change this line when the create screen is rebuilt — the two must not stay divergent.
 
 Do not expose every optional field at equal visual weight on the first render. Progressive disclosure is preferred.
 
@@ -152,7 +154,7 @@ Rules:
 - Fast OCR is the default.
 - OCR failure never blocks bill creation.
 - Keep the uploaded photo after failure.
-- Show `Coba baca lagi` and `Isi manual`. **Target copy:** the shipped React surface currently renders `Coba lagi` (`frontend/src/components/feedback.tsx:23`, `routes/RecapRoute.tsx:121`) and only the OCR-specific backend errors return `Coba baca lagi`. Align the shipped string with this line or change this line when the OCR states are rebuilt — the two must not stay divergent.
+- Show `Coba baca lagi` and `Isi manual`. **Target copy — not shipped anywhere yet:** `Coba baca lagi` does not exist in the codebase; it is proposed copy for the OCR failure state. The shipped React surface renders the shorter `Coba lagi` (`frontend/src/components/feedback.tsx:23`, `routes/RecapRoute.tsx:121`), and the OCR-specific backend errors today return `"Layanan AI gratis sedang penuh atau mengalami gangguan. Coba lagi beberapa menit kemudian atau isi secara manual."` (`backend/main.py:2487,2495`, `backend/ocr.py:273`) or `"Isi manual dulu ya."` (`backend/main.py:2485,2498`, `backend/ocr.py:234`). Align the shipped string with this line or change this line when the OCR states are rebuilt — the two must not stay divergent.
 - Do not use raw 502/503/504 as the main user-facing headline.
 - Manual entry uses the same editor and validation as OCR results.
 - If the user edited OCR output and requests retry, show a confirmation before replacing current edits.
@@ -421,7 +423,8 @@ These rules came from real takeover bugs. Restoring them here so the file agents
 - **Only an explicit `identity_id` on `PUT /paid_by` sets `paid_by_confirmed`.** Passing a `name` resolves the identity **for display only** and must never confirm. Doing otherwise was a real takeover bug: anyone holding the link could rename themselves to the placeholder name, join, and be confirmed as the sole owner — locking the creator out of their own bill with a 403. A payer matched only by name is display-only and never manages.
 - **`can_manage` is computed per viewer and returned in the payload.** The frontend gates on `can_manage`, never on `owner_id`. `owner_id` appears in every bill payload (so anyone with the share link knows it) and is therefore not a permission signal.
 - **Creator exit is the `bill.creator_left` flag, not a deleted row.** Everyone else's membership is derived from their payment/selection rows, so leaving just deletes those; the creator has no such rows. Rejoining via the link, or the bill falling back to them as owner, clears the flag. **The owner cannot leave** — they hold the bill.
-- **`_compute_response()` in `main.py` is the single canonical bill payload builder.** Every mutating endpoint returns it, so the client always gets full recomputed bill state after any write. Do not make a screen (or a new endpoint) invent its own interpretation of the same state.
+- **`_compute_response()` in `main.py` is the single canonical bill payload builder.** The bill read and every bill write that needs full state go through it: `GET /bills/{id}`, `PUT /bills/{id}`, `PUT /bills/{id}/paid_by`, `POST /bills/{id}/join`, `POST /bills/{id}/invites/{id}/accept`, `DELETE /bills/{id}/invites/{id}`, `DELETE /bills/{id}/people/{identity_id}`, `POST /bills/{id}/leave`, `POST /bills/{id}/selections`, `PUT /bills/{id}/items/{item_id}/slots`, `DELETE /bills/{id}/items/{item_id}/selections/{identity_id}`, `POST /bills/{id}/payments/{identity_id}/paid`, `POST /bills/{id}/payments/{identity_id}/unpaid`, `POST /bills/{id}/reopen`, `POST /bills/{id}/settle`, `POST /bills/{id}/unsettle`, `POST /bills/{id}/photo`, and `DELETE /bills/{id}/photos/{photo_id}`. Do not make a screen (or a new endpoint) invent its own interpretation of the same state.
+- **Exception — these five bill endpoints return a minimal acknowledgment instead of the full payload:** `POST /bills` (creation; `db.create_bill()` returns only `{"id": ...}`), `POST /bills/{id}/close` (`{"ok": True}`), `DELETE /bills/{id}` (`{"ok": True}` — the bill is gone), `POST /bills/{id}/invites/{id}/decline` (`{"ok": True}`), and `POST /bills/{id}/invite` (`{"status": "joined"|"pending"}`). A client must not expect full bill state from these; re-fetch or wait for the next full-state response.
 
 ---
 
