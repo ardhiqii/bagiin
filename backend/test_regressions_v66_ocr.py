@@ -224,6 +224,46 @@ def test_gemini_attempt_stops_once_budget_spent():
         _ur.urlopen = orig
 
 
+def test_late_gemini_success_is_rejected_in_favor_of_fallback(monkeypatch):
+    """A provider response arriving after its reserved slice is not success."""
+    monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
+    monkeypatch.setattr(ocr, "OR_API_KEY", "fake-openrouter-key")
+    monkeypatch.setattr(ocr, "OCR_BUDGET_SECONDS", 3.0)
+
+    class _Clock:
+        def __init__(self):
+            self.now = 100.0
+
+        def monotonic(self):
+            return self.now
+
+    clock = _Clock()
+    monkeypatch.setattr(ocr, "time", clock)
+    fallback_result = {
+        "merchant": "fallback",
+        "date": "",
+        "items": [],
+        "subtotal": 0,
+        "order_discount": 0,
+        "tax": 0,
+        "service": 0,
+        "total": 0,
+        "tax_included": False,
+    }
+
+    def late_gemini(image_bytes, mime_type, deadline):
+        clock.now = deadline + 0.1
+        return {"merchant": "late"}
+
+    def fallback(image_bytes, deadline, mime_type="image/jpeg"):
+        return fallback_result
+
+    monkeypatch.setattr(ocr, "_gemini_ocr", late_gemini)
+    monkeypatch.setattr(ocr, "_openrouter_ocr", fallback)
+
+    assert ocr.ocr_receipt(b"fake-image-bytes", "image/jpeg") is fallback_result
+
+
 # ---------- B5: honest, non-leaking "not configured" message ----------
 
 def test_no_provider_configured_message_does_not_leak_env_var_names(monkeypatch):

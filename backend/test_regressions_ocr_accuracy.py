@@ -346,6 +346,11 @@ def test_hard_budget_clamps_an_overlarge_configured_value():
     assert ocr._hard_budget_seconds("not-a-number") == ocr.OCR_BUDGET_SECONDS
 
 
+def test_hard_budget_rejects_non_finite_configured_values():
+    assert ocr._hard_budget_seconds(float("nan")) == ocr.OCR_BUDGET_SECONDS
+    assert ocr._hard_budget_seconds(float("inf")) == ocr.OCR_BUDGET_SECONDS
+
+
 def test_hard_budget_invariant_holds_at_the_clamp_value(monkeypatch):
     """(review F2) the clamp must be closed under its own ceiling.
 
@@ -580,6 +585,37 @@ def test_openrouter_403_advances_to_next_model(monkeypatch):
 
     assert result["total"] == 100
     assert [_model_from_request(request) for request in requests] == ["dead:free", "live:free"]
+
+
+def test_late_openrouter_model_advances_to_next_candidate(monkeypatch):
+    calls = []
+    clock = _freeze_ocr_clock(monkeypatch)
+    monkeypatch.setattr(ocr, "OR_MODELS", ("slow:free", "live:free"))
+    monkeypatch.setattr(ocr, "OR_MODEL", "slow:free")
+    monkeypatch.setattr(ocr, "_downscale", lambda image: image)
+
+    def late_model(image_b64, image_mime, model, deadline):
+        calls.append(model)
+        if model == "slow:free":
+            clock.now = deadline + 0.1
+            return {"merchant": "late"}
+        return {
+            "merchant": "live",
+            "date": "",
+            "items": [],
+            "subtotal": 0,
+            "tax": 0,
+            "service": 0,
+            "total": 0,
+            "tax_included": False,
+        }
+
+    monkeypatch.setattr(ocr, "_openrouter_model_ocr", late_model)
+
+    result = ocr._openrouter_ocr(b"image", clock.now + 10)
+
+    assert result["merchant"] == "live"
+    assert calls == ["slow:free", "live:free"]
 
 
 def test_openrouter_429_advances_to_next_model(monkeypatch):

@@ -54,6 +54,17 @@ def test_root_serves_built_react_index_with_revalidation_headers():
     assert not_modified.headers["etag"] == etag
 
 
+def test_root_does_not_fall_back_to_legacy_html_when_dist_is_missing(monkeypatch, tmp_path):
+    missing_dist = tmp_path / "dist"
+    monkeypatch.setattr(main, "DIST_DIR", missing_dist)
+
+    response = client.get("/")
+
+    assert response.status_code == 503
+    assert "Frontend belum dibuild" in response.json()["detail"]
+    assert "legacy" not in response.text.lower()
+
+
 def test_manifest_keeps_legacy_no_cache_contract_and_resolves_hashes():
     response = client.get("/static/manifest.json")
 
