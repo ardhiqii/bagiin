@@ -39,6 +39,18 @@ import { photoFilename, photoUrl } from "../src/lib/photo-path.ts";
 import { inputMoney, rupiahFmt, rupiahParse } from "../src/lib/money.ts";
 import { isKnownHashRoute, parseHash, routeHash } from "../src/lib/routes.ts";
 import { createSelectionSaveQueue, serializeSelections } from "../src/lib/selection-queue.ts";
+import { formatTransactionDate, parseTransactionDate } from "../src/lib/transaction-date.ts";
+
+test("transaction dates use explicit Indonesian day/month/year formatting", () => {
+  assert.equal(formatTransactionDate("2023-09-26"), "26/09/2023");
+  assert.equal(parseTransactionDate("26/09/2023"), "2023-09-26");
+  assert.equal(formatTransactionDate(""), "");
+  assert.equal(parseTransactionDate(""), "");
+  assert.equal(parseTransactionDate("26/09/20"), "");
+  assert.equal(parseTransactionDate("31/02/2023"), "");
+  assert.equal(parseTransactionDate("2023-09-26"), "");
+  assert.equal(formatTransactionDate("2023-02-30"), "");
+});
 
 test("hash routes preserve public bill links and canonicalize history", () => {
   assert.deepEqual(parseHash("#/b/bill_ABC-123").route, { kind: "bill", billId: "bill_ABC-123" });
