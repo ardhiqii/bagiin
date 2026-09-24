@@ -104,6 +104,16 @@ def test_settling_cancels_pending_invite_across_home_recap_and_accept():
     )
     assert cancelled.status_code == 409, cancelled.text
     assert db.get_invite(invite_id)["status"] == "cancelled"
+    assert client.post(f"/api/bills/{bill_id}/unsettle", headers=_h(owner)).status_code == 200
+    reinvited = client.post(
+        f"/api/bills/{bill_id}/invite", json={"identity_id": guest["id"]},
+        headers=_h(owner),
+    )
+    assert reinvited.status_code == 200, reinvited.text
+    assert reinvited.json()["status"] == "pending"
+    reopened = db.get_invite(invite_id)
+    assert reopened is not None
+    assert reopened["status"] == "pending"
 
 
 def test_duplicate_selection_merge_still_obeys_maximum_qty():

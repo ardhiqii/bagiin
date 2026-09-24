@@ -584,6 +584,17 @@ def create_invite(bill_id: str, identity_id: str, invited_by: str) -> dict:
                 row = dict(existing)
                 row["reopened_from_decline"] = True
                 return row
+            if existing["status"] == "cancelled":
+                conn.execute(
+                    "UPDATE bill_invite SET status = 'pending', invited_by = ? "
+                    "WHERE bill_id = ? AND identity_id = ?",
+                    (invited_by, bill_id, identity_id),
+                )
+                conn.commit()
+                existing = conn.execute(
+                    "SELECT * FROM bill_invite WHERE bill_id = ? AND identity_id = ?",
+                    (bill_id, identity_id),
+                ).fetchone()
             row = dict(existing)
             row["reopened_from_decline"] = False
             return row
