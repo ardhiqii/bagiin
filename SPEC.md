@@ -1,11 +1,13 @@
-# Bagiin - Product Spec
+# Bagiin - Business Spec and Changelog
 
-> App web mobile-first untuk split bill bareng. Foto struk -> OCR gratis -> share link ->
-> orang milih item -> pajak otomatis -> tombol "udah bayar" + info rekening. Tanpa akun.
+> Business rules, API/data semantics, and historical release notes for Bagiin.
+> Current product direction, React architecture, design foundation, and migration
+> ownership live in `PRODUCT_DESIGN.md`. Agent/project rules live in `AGENTS.md`.
 >
-> Status: DRAFT (brainstorm, 2026-08-09). Belum ada kode.
+> Status: active business reference. This file is not the frontend architecture
+> source of truth and should not duplicate the design-system plan.
 > Nama: BAGIIN (keputusan user 2026-08-09, rename dari PATUNGAN).
-> Domain: bagiin.ardhiqi.com (A record SUDAH ada, proxied, VPS IP 209.17.118.186).
+> Domain: bagiin.ardhiqi.com.
 
 ---
 
@@ -1184,7 +1186,8 @@ Kode sama persis dengan v51. Folder `static/v51` di-serve ulang sebagai `static/
 karena Cloudflare nyimpen draft partial yang sempat ke-request lewat domain live pas
 pengembangan (app.js cuma 3,5KB, screens/bill.js juga versi lama). File bener ada di
 git; CF tetap nyajian versi rusak sampai path-nya ganti. Bump versi folder = mekanisme
-cache-busting resmi project (lihat CLAUDE.md).
+cache-busting resmi project (mekanisme lama, sudah pensiun — lihat "Retired assumptions"
+di `PRODUCT_DESIGN.md`; sekarang frontend dilayani dari build Vite ber-hash di `frontend/dist`).
 
 ### v53 (2026-08-12) — polish copy: kapitalisasi konsisten
 
