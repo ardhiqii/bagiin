@@ -256,6 +256,18 @@ def _to_str(value, field: str, *, maxlen: int | None = None) -> str:
     return v
 
 
+def _tax_mode(value, *, absent_default: str | None = None) -> str | None:
+    """Validate the documented tax allocation modes before persistence."""
+    if value is None or value == "":
+        if absent_default is not None:
+            return absent_default
+        raise HTTPException(400, "tax_mode wajib diisi")
+    mode = _to_str(value, "tax_mode", maxlen=20).lower()
+    if mode not in _VALID_TAX_MODES:
+        raise HTTPException(400, "tax_mode harus proportional, equal, atau creator")
+    return mode
+
+
 def _required_recovery_code(value) -> str:
     """Require a text recovery proof before looking up or binding an identity."""
     if not isinstance(value, str):
@@ -276,6 +288,7 @@ _MAX_IDR = 10**12  # a trillion rupiah -- comfortably above any real bill,
 
 _MAX_PARTICIPANT_COUNT = 10_000  # generous for a shared bill, but not unbounded
 _MAX_ITEM_QUANTITY = 99
+_VALID_TAX_MODES = {"proportional", "equal", "creator"}
 _MISSING = object()
 
 
@@ -689,8 +702,6 @@ def _recap_is_final(
     A pending invite-only view is still provisional until that workflow is
     accepted, even when the rest of the allocation is complete.
     """
-    if response.get("settled"):
-        return True
     if pending_workflow:
         return False
     if not response.get("total_ok", True):
@@ -701,6 +712,8 @@ def _recap_is_final(
         return False
     if _recap_payer_unresolved(bill_data, response):
         return False
+    if response.get("settled"):
+        return True
     # An untouched open bill reconciles through the owner fallback, but it is
     # not a meaningful allocation yet. Closed legacy bills keep their existing
     # final classification even when they predate a selection.
@@ -937,9 +950,12 @@ def _build_identity_recap(identity: dict) -> dict:
         bill_data = db.get_bill(bill_id)
         if not bill_data:
             continue
+        response = _compute_response(bill_data, viewer_id)
+        if response.get("settled"):
+            continue
         entry = {
             "bill_data": bill_data,
-            "response": _compute_response(bill_data, viewer_id),
+            "response": response,
             "member": False,
             "invite_only": True,
         }
@@ -1663,7 +1679,7 @@ async def create_bill(request: Request):
         title=title,
         merchant=merchant,
         transacted_at=transacted_at,
-        tax_mode=_to_str(data.get("tax_mode"), "Cara bagi pajak", maxlen=20) or "proportional",
+        tax_mode=_tax_mode(data.get("tax_mode"), absent_default="proportional") or "proportional",
         participant_count=participant_count,
         tax_included=tax_included,
         subtotal=effective_subtotal,
@@ -1757,6 +1773,10 @@ async def update_bill(bill_id: str, request: Request):
     # filter, so a partial-update client quietly moved the bill to another
     # month (bug: v66 audit). An explicit null/"" still nulls the column.
     merchant = db.UNCHANGED
+    if "tax_mode" in data:
+        tax_mode = _tax_mode(data.get("tax_mode"))
+    else:
+        tax_mode = db.UNCHANGED
     if "merchant" in data:
         merchant = _to_str(data.get("merchant"), "Nama tempat", maxlen=120) or None
     transacted_at = db.UNCHANGED
@@ -1788,6 +1808,7 @@ async def update_bill(bill_id: str, request: Request):
         title=_to_str(data.get("title"), "Judul bill", maxlen=120) or bill_data["bill"]["title"],
         merchant=merchant,
         transacted_at=transacted_at,
+        tax_mode=tax_mode,
         participants=participants,
         participant_count=participant_count,
         items=normalized_items,
@@ -1976,6 +1997,11 @@ def accept_invite(bill_id: str, invite_id: int, request: Request):
 @limiter.limit("20/minute")
 def decline_invite(bill_id: str, invite_id: int, request: Request):
     ident = _identity_from_request(request)
+    bill_data = _bill_or_404(bill_id)
+    if bill_data["bill"]["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup")
+    if _compute_response(bill_data, ident["id"]).get("settled"):
+        raise HTTPException(409, "Bill udah lunas semua")
     inv = db.get_invite(invite_id)
     if not inv or inv["bill_id"] != bill_id or inv["identity_id"] != ident["id"]:
         raise HTTPException(404, "Undangan tidak ditemukan")
@@ -1990,7 +2016,12 @@ def list_pending_invites(identity_id: str, request: Request):
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
         raise HTTPException(403, "Identitas tidak cocok")
-    return db.get_pending_invites(identity_id)
+    invites = db.get_pending_invites(identity_id)
+    return [
+        invite for invite in invites
+        if (bill_data := db.get_bill(invite["bill_id"]))
+        and not _compute_response(bill_data, ident["id"]).get("settled")
+    ]
 
 
 @app.delete("/api/bills/{bill_id}/invites/{invite_id}")
@@ -2005,6 +2036,10 @@ def cancel_bill_invite(bill_id: str, invite_id: int, request: Request):
     ident = _identity_from_request(request)
     if not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
+    if bill_data["bill"]["status"] != "open":
+        raise HTTPException(403, "Bill sudah ditutup")
+    if _compute_response(bill_data, ident["id"]).get("settled"):
+        raise HTTPException(409, "Bill udah lunas semua")
     if not db.cancel_invite(bill_id, invite_id):
         raise HTTPException(404, "Undangan tidak ditemukan")
     return _compute_response(db.get_bill(bill_id), ident["id"])
@@ -2140,6 +2175,10 @@ async def set_selections(bill_id: str, request: Request):
     merged: dict[int, int] = {}
     for p in picks:
         merged[p["item_id"]] = merged.get(p["item_id"], 0) + p["qty"]
+    for item_id, qty in merged.items():
+        if qty > _MAX_ITEM_QUANTITY:
+            item_name = valid[item_id]["name"]
+            raise HTTPException(400, f"{item_name} maksimal {_MAX_ITEM_QUANTITY} porsi")
     picks = [{"item_id": k, "qty": v} for k, v in merged.items()]
     # slot capacity check: per item, sum of other people's qty + mine <= slot_count
     others: dict[int, int] = {}
@@ -2282,6 +2321,7 @@ def settle_bill(bill_id: str, request: Request):
     if not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
     db.set_settled_manual(bill_id, True)
+    db.cancel_pending_invites(bill_id)
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
 

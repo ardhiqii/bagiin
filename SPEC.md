@@ -1379,3 +1379,11 @@ delete/set-payer/tandai lunas orang lain).
 - Baris bill dengan `pending_invite=true` sekarang menampilkan tombol aksesibel "Terima" dan "Tolak" bersama copy nama pengundang yang sudah ada. Tombol hanya muncul jika `pending_invite_id` tersedia, tidak membuka baris bill saat diklik, dan navigasi keyboard pada baris tetap dipertahankan.
 - Kedua aksi memanggil endpoint scoped memakai pasangan `bill_id` dan `pending_invite_id` dari row yang sama. Setelah berhasil, row dihapus dari tampilan lalu list di-refresh; jika gagal, row tetap tampil dan memberi pesan santai "Undangannya belum bisa diproses, coba lagi ya.".
 - Ditambahkan regression test deterministic untuk model aksi pending dan argumen callback endpoint. Tidak ada perubahan backend, API contract, aset, atau deploy.
+
+### 2026-09-24 (v101), backend invariant audit
+
+- Rekap sekarang memeriksa blocker allocation (`pending_selection`, slot yang belum tertutup, payer unresolved, dan workflow pending) sebelum flag `settled`. Manual settle hanya menutup sisi pembayaran; tidak mengubah allocation yang belum final menjadi final.
+- Pending invite dibatalkan saat manual settle dan invite-only bill yang sudah settled tidak lagi muncul di Home/Rekap/inbox invite. Endpoint decline/cancel juga menolak mutasi pada bill closed atau settled, sehingga tidak ada lagi row invite yang tampil tetapi accept berakhir 409.
+- Duplicate selection setelah merge tetap dibatasi maksimal 99 porsi per item, termasuk payload yang mengirim item ID sama beberapa kali.
+- `tax_mode` kini hanya menerima `proportional`, `equal`, atau `creator` pada create dan update. PUT bill benar-benar menyimpan mode baru, sementara request tanpa field itu mempertahankan mode lama.
+- Regression backend v101 menutup lima kasus tersebut melalui HTTP/TestClient dan readback state. Perubahan belum dideploy sampai focused/full suite dan browser/API smoke pass.

@@ -680,6 +680,18 @@ def decline_invite(invite_id: int, identity_id: str) -> bool:
     return ok
 
 
+def cancel_pending_invites(bill_id: str) -> int:
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE bill_invite SET status = 'cancelled' WHERE bill_id = ? AND status = 'pending'",
+        (bill_id,),
+    )
+    conn.commit()
+    changed = cur.rowcount
+    conn.close()
+    return changed
+
+
 def identity_on_bill(bill_id: str, identity_id: str) -> bool:
     """True if identity is already a participant (payment row) or the creator
     who hasn't walked out.
@@ -920,7 +932,8 @@ UNCHANGED = object()  # "this field was not in the request" (vs. explicitly null
 
 
 def update_bill(bill_id: str, title: str, merchant=UNCHANGED,
-                transacted_at=UNCHANGED, participants: list[str] | None = None,
+                transacted_at=UNCHANGED, tax_mode=UNCHANGED,
+                participants: list[str] | None = None,
                 items: list[dict] = None, subtotal: int = 0, tax: int = 0,
                 service: int = 0, total: int = 0,
                 participant_count=UNCHANGED,
@@ -949,6 +962,9 @@ def update_bill(bill_id: str, title: str, merchant=UNCHANGED,
                 "tax_included = ?"]
     params = [title, subtotal, tax, service, order_discount, cashback, total,
               1 if tax_included else 0]
+    if tax_mode is not UNCHANGED:
+        set_cols.append("tax_mode = ?")
+        params.append(tax_mode)
     if merchant is not UNCHANGED:
         set_cols.append("merchant = ?")
         params.append(merchant)
@@ -1585,6 +1601,8 @@ def get_bills_for_identity(identity_id: str):
         d["_is_member"] = bool(d["_is_member"])
         bill_data = get_bill(d["id"])
         d["settled"] = _bill_settled(bill_data)
+        if not d["_is_member"] and d["_pending_invite_id"] and d["settled"]:
+            continue
         d["_bill_data"] = bill_data
         out.append(d)
     return out
