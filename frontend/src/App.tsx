@@ -4,6 +4,7 @@ import { apiJson, configureApi, onMutation } from "./lib/api";
 import { getStoredIdentity, setStoredIdentity, setStoredName } from "./lib/identity-storage";
 import { installHashLeaveGuard } from "./lib/leave-guard";
 import { isKnownHashRoute, navigate, parseHash, type Route } from "./lib/routes";
+import { applyTheme, getStoredTheme, setStoredTheme, type ThemePreference } from "./lib/theme";
 import type { Identity } from "./lib/types";
 import { ErrorState, LoadingState, Onboarding } from "./components/AppShell";
 
@@ -29,6 +30,7 @@ export function App() {
   const [identity, setIdentity] = useState<Identity | null>(() => getStoredIdentity());
   const [route, setRoute] = useState<Route>(() => parseHash().route);
   const [generation, setGeneration] = useState(0);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(() => getStoredTheme());
   const authenticatedIdentity = hasSessionSecret(identity) ? identity : null;
 
   const updateIdentity = useCallback((next: Identity | null) => {
@@ -38,6 +40,12 @@ export function App() {
   }, []);
   const logout = useCallback(() => { updateIdentity(null); navigate({ kind: "home" }, true); }, [updateIdentity]);
   const onMutationRefresh = useCallback(() => setGeneration(value => value + 1), []);
+  const updateTheme = useCallback((next: ThemePreference) => {
+    setThemePreference(next);
+    setStoredTheme(next);
+  }, []);
+
+  useEffect(() => applyTheme(themePreference), [themePreference]);
 
   useLayoutEffect(() => {
     // A legacy id is a public reference, not an authenticated session. Keep
@@ -104,7 +112,7 @@ export function App() {
       return <Onboarding legacyIdentity={identity} onIdentity={updateIdentity} />;
     }
     switch (route.kind) {
-      case "settings": return <SettingsRoute identity={authenticatedIdentity} onIdentity={updateIdentity} onLogout={logout} key={generation} />;
+      case "settings": return <SettingsRoute identity={authenticatedIdentity} onIdentity={updateIdentity} onLogout={logout} themePreference={themePreference} onThemeChange={updateTheme} key={generation} />;
       case "recap": return <RecapRoute identity={authenticatedIdentity} key={generation} />;
       case "create": return <CreateRoute identity={authenticatedIdentity} />;
       case "verify": return <CreateRoute identity={authenticatedIdentity} initialVerify />;
@@ -112,7 +120,7 @@ export function App() {
       case "unknown": return null;
       default: return <HomeRoute identity={authenticatedIdentity} key={generation} />;
     }
-  }, [authenticatedIdentity, generation, identity, logout, route, updateIdentity]);
+  }, [authenticatedIdentity, generation, identity, logout, route, themePreference, updateIdentity, updateTheme]);
 
   return <div className="app-root"><main id="app"><Suspense fallback={<RouteFallback />}>{content}</Suspense></main></div>;
 }

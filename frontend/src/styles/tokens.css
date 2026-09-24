@@ -1,0 +1,118 @@
+@theme inline {
+  --color-bagiin-bg: var(--bg);
+  --color-bagiin-surface: var(--surface);
+  --color-bagiin-surface-2: var(--surface-2);
+  --color-bagiin-surface-3: var(--surface-3);
+  --color-bagiin-border: var(--border);
+  --color-bagiin-text: var(--text);
+  --color-bagiin-text-2: var(--text-2);
+  --color-bagiin-text-3: var(--text-3);
+  --color-bagiin-accent: var(--accent);
+  --color-bagiin-accent-soft: var(--accent-soft);
+  --color-bagiin-green: var(--green);
+  --color-bagiin-red: var(--red);
+  --font-sans: var(--font);
+}
+
+:root,
+:root[data-theme="light"] {
+  --bg: #faf8f5;
+  --surface: #ffffff;
+  --surface-2: #f4f1ec;
+  --surface-3: #ebe6de;
+  --border: #e7e1d8;
+  --border-strong: #d5cdc1;
+  --text: #1b1917;
+  --text-2: #5c544b;
+  --text-3: #756b60;
+  --accent: #be4507;
+  --accent-press: #a63c05;
+  --accent-soft: #fff3e9;
+  --accent-line: #f6c9a4;
+  --green: #147a3d;
+  --green-soft: #eaf7ef;
+  --red: #c42b21;
+  --red-soft: #fdeeec;
+  --on-accent: #ffffff;
+  --on-green: #ffffff;
+  --on-red: #ffffff;
+  --shadow-1: 0 1px 2px rgba(74, 52, 30, .05);
+  --shadow-2: 0 8px 24px -12px rgba(74, 52, 30, .22), 0 1px 3px rgba(74, 52, 30, .06);
+  --shadow-3: 0 24px 48px -18px rgba(43, 28, 14, .28);
+  --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --radius-xs: 8px;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-full: 999px;
+  --ease: cubic-bezier(.2, .7, .3, 1);
+  --control-height: 46px;
+  --control-height-compact: 44px;
+  --nav-link-height: 48px;
+  --surface-clearance: 24px;
+  --r-xs: var(--radius-xs);
+  --r-sm: var(--radius-sm);
+  --r-md: var(--radius-md);
+  --r-lg: var(--radius-lg);
+  --r-full: var(--radius-full);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #151311;
+  --surface: #1f1c19;
+  --surface-2: #2a2622;
+  --surface-3: #332e28;
+  --border: #332e28;
+  --border-strong: #463e36;
+  --text: #f7f3ee;
+  --text-2: #c0b7ac;
+  --text-3: #a49a8a;
+  --accent: #f97316;
+  --accent-press: #fb8b3c;
+  --on-accent: #231202;
+  --on-green: #231202;
+  --on-red: #231202;
+  --accent-soft: #2e1a0b;
+  --accent-line: #54300f;
+  --green: #4ade80;
+  --green-soft: #12271a;
+  --red: #f87171;
+  --red-soft: #2e1512;
+  --shadow-1: none;
+  --shadow-2: 0 8px 24px -10px rgba(0, 0, 0, .7);
+  --shadow-3: 0 24px 56px -18px rgba(0, 0, 0, .8);
+  color-scheme: dark;
+}
+
+/* Keep the system preference useful before React starts and for consumers that
+   render the stylesheet without the theme controller. A resolved data-theme
+   always wins once the app has mounted. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg: #151311;
+    --surface: #1f1c19;
+    --surface-2: #2a2622;
+    --surface-3: #332e28;
+    --border: #332e28;
+    --border-strong: #463e36;
+    --text: #f7f3ee;
+    --text-2: #c0b7ac;
+    --text-3: #a49a8a;
+    --accent: #f97316;
+    --accent-press: #fb8b3c;
+    --on-accent: #231202;
+    --on-green: #231202;
+    --on-red: #231202;
+    --accent-soft: #2e1a0b;
+    --accent-line: #54300f;
+    --green: #4ade80;
+    --green-soft: #12271a;
+    --red: #f87171;
+    --red-soft: #2e1512;
+    --shadow-1: none;
+    --shadow-2: 0 8px 24px -10px rgba(0, 0, 0, .7);
+    --shadow-3: 0 24px 56px -18px rgba(0, 0, 0, .8);
+    color-scheme: dark;
+  }
+}

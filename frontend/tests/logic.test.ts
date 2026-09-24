@@ -41,6 +41,7 @@ import { isKnownHashRoute, parseHash, routeHash } from "../src/lib/routes.ts";
 import { createSelectionSaveQueue, serializeSelections } from "../src/lib/selection-queue.ts";
 import { formatTransactionDate, parseTransactionDate } from "../src/lib/transaction-date.ts";
 import { pendingInviteActionArgs, pendingInviteActionModel } from "../src/lib/pending-invite.ts";
+import { applyTheme, getStoredTheme, resolveTheme, setStoredTheme } from "../src/lib/theme.ts";
 
 test("pending invite action model keeps inviter and scoped callback arguments", () => {
   const pending = {
@@ -84,6 +85,44 @@ test("hash routes preserve public bill links and canonicalize history", () => {
   assert.equal(parseHash("#/not-a-route").route.kind, "unknown");
   assert.equal(parseHash("#/b/%E0%A4%A").route.kind, "unknown");
   assert.equal(parseHash("#/b/%E0%A4%A").valid, false);
+});
+
+test("theme preference defaults to system, persists valid choices, and resolves system mode", () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+  } as Storage;
+  assert.equal(getStoredTheme(storage), "system");
+  setStoredTheme("dark", storage);
+  assert.equal(getStoredTheme(storage), "dark");
+  values.set("bagiin_theme", "unexpected");
+  assert.equal(getStoredTheme(storage), "system");
+  assert.equal(resolveTheme("system", true), "dark");
+  assert.equal(resolveTheme("system", false), "light");
+  assert.equal(resolveTheme("light", true), "light");
+});
+
+test("applyTheme updates the document and follows system changes only in system mode", () => {
+  const root = { dataset: {} as Record<string, string> };
+  const documentRef = { documentElement: root } as unknown as Document;
+  let systemDark = false;
+  let changes = 0;
+  const listeners = new Set<() => void>();
+  const media = {
+    get matches() { return systemDark; },
+    addEventListener: (_type: string, listener: () => void) => { listeners.add(listener); },
+    removeEventListener: (_type: string, listener: () => void) => { listeners.delete(listener); },
+  };
+  const stop = applyTheme("system", documentRef, () => media);
+  assert.equal(root.dataset.theme, "light");
+  systemDark = true;
+  listeners.forEach(listener => { changes += 1; listener(); });
+  assert.equal(root.dataset.theme, "dark");
+  assert.equal(changes, 1);
+  assert.equal(root.dataset.themePreference, "system");
+  stop();
+  assert.equal(listeners.size, 0);
 });
 
 test("identity headers never invent or expose a secret", () => {
