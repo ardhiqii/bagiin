@@ -29,7 +29,7 @@ gateway, just a link.
   brand-colored chips, shown in the pay sheet with one-tap copy
 - 🧮 **Fair split math** — shared items divided evenly, proportional tax, rupiah
   rounding invariants covered by tests
-- 📱 **Mobile-first**, dark/light mode, React + TypeScript build with legacy static rollback
+- 📱 **Mobile-first**, dark/light mode, React + TypeScript build; the legacy static runtime is frozen and scheduled for removal (see `PRODUCT_DESIGN.md`)
 
 ## Tech stack
 
@@ -55,8 +55,10 @@ bagiin/
 ├── frontend/
 │   ├── src/          # React + TypeScript routes, API adapters, primitives
 │   ├── package.json  # Vite build and frontend checks
-│   └── static/       # legacy frontend kept for fallback and rollback
-└── SPEC.md          # product spec & changelog
+│   └── static/       # frozen legacy runtime, scheduled for removal; asset-only in the meantime
+├── AGENTS.md        # project rules for agents
+├── PRODUCT_DESIGN.md # current product, UX, architecture, design direction
+└── SPEC.md          # business rules & changelog
 ```
 
 ## Local development
@@ -78,8 +80,9 @@ Open http://localhost:8082
 
 > FastAPI serves the Vite output from `frontend/dist/` at `/` and `/assets/`.
 > `frontend/dist/` is generated and ignored, so rebuild before restarting the
-> service. The legacy `frontend/static/` tree remains available as a fallback
-> and rollback path.
+> service. The legacy `frontend/static/` runtime is frozen and scheduled for
+> removal after React route parity and browser verification; until then it is
+> kept only as a source of non-runtime assets. There is no second runtime path.
 
 ### Identity recovery
 
