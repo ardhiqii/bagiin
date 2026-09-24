@@ -1,91 +1,14 @@
+@import "tailwindcss";
+@import "./tokens.css";
+@import "./utilities.css";
+
 :root {
-  --bg: #faf8f5;
-  --surface: #ffffff;
-  --surface-2: #f4f1ec;
-  --surface-3: #ebe6de;
-  --border: #e7e1d8;
-  --border-strong: #d5cdc1;
-  --text: #1b1917;
-  --text-2: #5c544b;
-  --text-3: #756b60;
-  --accent: #be4507;
-  --accent-press: #a63c05;
-  --accent-soft: #fff3e9;
-  --accent-line: #f6c9a4;
-  --green: #147a3d;
-  --green-soft: #eaf7ef;
-  --red: #c42b21;
-  --red-soft: #fdeeec;
-  /* Foreground for text sitting on --accent/--green/--red fills. The legacy
-     design system in frontend/index.html defines these per theme
-     (--on-accent:#FFFFFF light, #231202 dark) because the dark accents are
-     deliberately BRIGHT: white on --accent #F97316 is only 2.8:1, while the
-     dark ink is 6.5:1. The React port dropped these tokens and hardcoded #fff,
-     which silently failed WCAG AA in dark mode. */
-  --on-accent: #ffffff;
-  --on-green: #ffffff;
-  --on-red: #ffffff;
-  --shadow-1: 0 1px 2px rgba(74,52,30,.05);
-  --shadow-2: 0 8px 24px -12px rgba(74,52,30,.22), 0 1px 3px rgba(74,52,30,.06);
-  --shadow-3: 0 24px 48px -18px rgba(43,28,14,.28);
-  --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --radius-xs: 8px;
-  --radius-sm: 10px;
-  --radius-md: 16px;
-  --radius-lg: 22px;
-  --radius-full: 999px;
-  /* Legacy token names, aliased (not renamed) so the component rules ported
-     verbatim from the <style> block in frontend/index.html keep resolving and
-     stay byte-comparable with their origin. Only the names the recovered rules
-     actually reference are aliased (v89 CSS recovery). */
-  --r-xs: var(--radius-xs);
-  --r-sm: var(--radius-sm);
-  --r-md: var(--radius-md);
-  --r-lg: var(--radius-lg);
-  --r-full: var(--radius-full);
-  --ease: cubic-bezier(.2,.7,.3,1);
-  --control-height: 46px;
-  --control-height-compact: 44px;
-  --nav-link-height: 48px;
-  --surface-clearance: 24px;
   font-family: var(--font);
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #151311;
-    --surface: #1f1c19;
-    --surface-2: #2a2622;
-    --surface-3: #332e28;
-    --border: #332e28;
-    --border-strong: #463e36;
-    --text: #f7f3ee;
-    --text-2: #c0b7ac;
-    --text-3: #a49a8a;
-    --accent: #f97316;
-    --accent-press: #fb8b3c;
-    /* Bright dark-mode accents need DARK ink: white would be 2.8:1 on
-       --accent and 1.7:1 on --green. Matches the legacy --on-accent. */
-    --on-accent: #231202;
-    --on-green: #231202;
-    --on-red: #231202;
-    --accent-soft: #2e1a0b;
-    --accent-line: #54300f;
-    --green: #4ade80;
-    --green-soft: #12271a;
-    --red: #f87171;
-    --red-soft: #2e1512;
-    --shadow-1: none;
-    --shadow-2: 0 8px 24px -10px rgba(0,0,0,.7);
-    --shadow-3: 0 24px 56px -18px rgba(0,0,0,.8);
-    color-scheme: dark;
-  }
 }
 
 * { box-sizing: border-box; }
@@ -266,6 +189,8 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 
 #app-nav { display: none; }
 .nav-desktop-actions { display: flex; }
+.theme-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.theme-options .btn { flex: 1 1 96px; }
 .list-controls { display: grid; gap: 10px; padding-bottom: 12px; }
 .filter-chips { display: flex; flex-wrap: wrap; gap: 7px; }
 .filter-chip { min-height: var(--control-height-compact); border: 1px solid var(--border); border-radius: var(--radius-full); padding: 0 11px; color: var(--text-2); background: var(--surface); font-size: 12px; font-weight: 700; }

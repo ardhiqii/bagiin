@@ -6,6 +6,20 @@
     <meta name="theme-color" content="#faf8f5" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#151311" media="(prefers-color-scheme: dark)" />
     <meta name="color-scheme" content="light dark" />
+    <script>
+      (() => {
+        try {
+          const preference = localStorage.getItem("bagiin_theme");
+          const valid = preference === "light" || preference === "dark" || preference === "system";
+          const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const theme = valid && preference !== "system" ? preference : systemDark ? "dark" : "light";
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.dataset.themePreference = valid ? preference : "system";
+        } catch {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
     <meta name="description" content="Foto struk, bagikan tautan, semua orang memilih itemnya sendiri. Pajak terbagi otomatis." />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Bagiin" />
@@ -46,8 +60,13 @@
         --r-sm: 10px; --r-md: 16px; --r-full: 999px;
         --font: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
       }
+      :root[data-theme="dark"] {
+        --bg: #151311; --surface: #1f1c19; --surface-2: #2a2622; --surface-3: #332e28;
+        --border: #332e28; --text: #f7f3ee; --text-2: #c0b7ac; --text-3: #a49a8a;
+        --accent: #f97316; --accent-soft: #2e1a0b; --accent-line: #54300f;
+      }
       @media (prefers-color-scheme: dark) {
-        :root {
+        :root:not([data-theme]) {
           --bg: #151311; --surface: #1f1c19; --surface-2: #2a2622; --surface-3: #332e28;
           --border: #332e28; --text: #f7f3ee; --text-2: #c0b7ac; --text-3: #a49a8a;
           --accent: #f97316; --accent-soft: #2e1a0b; --accent-line: #54300f;
