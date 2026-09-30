@@ -1473,7 +1473,14 @@ delete/set-payer/tandai lunas orang lain).
 ### 2026-09-24 (v101), backend invariant audit
 
 - Rekap sekarang memeriksa blocker allocation (`pending_selection`, slot yang belum tertutup, payer unresolved, dan workflow pending) sebelum flag `settled`. Manual settle hanya menutup sisi pembayaran; tidak mengubah allocation yang belum final menjadi final.
+
 - Pending invite dibatalkan saat manual settle dan invite-only bill yang sudah settled tidak lagi muncul di Home/Rekap/inbox invite. Endpoint decline/cancel juga menolak mutasi pada bill closed atau settled, sehingga tidak ada lagi row invite yang tampil tetapi accept berakhir 409.
 - Duplicate selection setelah merge tetap dibatasi maksimal 99 porsi per item, termasuk payload yang mengirim item ID sama beberapa kali.
 - `tax_mode` kini hanya menerima `proportional`, `equal`, atau `creator` pada create dan update. PUT bill benar-benar menyimpan mode baru, sementara request tanpa field itu mempertahankan mode lama.
 - Regression backend v101 menutup lima kasus tersebut melalui HTTP/TestClient dan readback state. Perubahan belum dideploy sampai focused/full suite dan browser/API smoke pass.
+
+### 2026-09-30 (v102), bounded local OCR fallback
+
+- Setelah Gemini dan seluruh kandidat OpenRouter gagal, OCR dapat memakai executable `tesseract` lokal dengan `eng` sebagai bahasa default. Engine ini opsional: hanya aktif jika binary tersedia dan dapat dimatikan aman melalui `BAGIIN_LOCAL_OCR_ENABLED=false`.
+- Eksekusi lokal memakai argv eksplisit tanpa shell, temporary directory terisolasi, cleanup otomatis, dan timeout yang tetap berada di dalam deadline OCR. Tidak ada Python OCR library atau instalasi paket baru.
+- Parser lokal hanya menerima baris item dengan nominal trailing yang jelas serta label subtotal, pajak, service, diskon, dan total yang terbaca. Teks kosong/tidak berguna, error executable, atau timeout tetap mengarah ke foto tersimpan dan input manual; bentuk normalized OCR publik tidak berubah.

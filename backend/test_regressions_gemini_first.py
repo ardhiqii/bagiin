@@ -4,9 +4,13 @@ import json
 import os
 import sys
 import tempfile
+import threading
+import time
 import urllib.error
 from email.message import Message
 from pathlib import Path
+
+import pytest
 
 os.environ.setdefault("BAGIIN_DB", str(Path(tempfile.mkdtemp()) / "gemini-first.db"))
 os.environ.setdefault("BAGIIN_UPLOAD_DIR", str(Path(tempfile.mkdtemp()) / "uploads"))
@@ -38,6 +42,12 @@ def _openrouter_response():
                 }),
             },
         }],
+    })
+
+
+def _openrouter_content_response(content):
+    return _Response({
+        "choices": [{"message": {"content": content}}],
     })
 
 
@@ -126,3 +136,96 @@ def test_gemini_failure_reaches_openrouter_with_sanitized_classification(monkeyp
     assert "private provider body" not in caplog.text
     assert "test-gemini-key" not in caplog.text
     assert "test-openrouter-key" not in caplog.text
+
+
+def test_openrouter_ignores_thought_parts_and_keeps_answer():
+    thought = {
+        "type": "text",
+        "thought": True,
+        "text": '{"merchant":"thought-only","items":[]}',
+    }
+    answer = {
+        "type": "text",
+        "text": '{"merchant":"answer","items":[],"total":0}',
+    }
+
+    result = ocr._normalize_openrouter_response(
+        {"choices": [{"message": {"content": [thought, answer]}}]}
+    )
+
+    assert result["merchant"] == "answer"
+
+
+def test_openrouter_rejects_thought_only_content():
+    with pytest.raises(ocr._OpenRouterFailure) as raised:
+        ocr._normalize_openrouter_response({
+            "choices": [{"message": {"content": [{
+                "type": "text",
+                "thought": True,
+                "text": '{"merchant":"must-not-be-used","items":[]}',
+            }]}}]
+        })
+
+    assert raised.value.kind == "invalid_response"
+
+
+def test_openrouter_extracts_json_with_markdown_and_trailing_prose():
+    content = (
+        "Berikut hasil pembacaan:\n"
+        "```json\n"
+        '{"merchant":"Warung","items":[],"total":0}'
+        "\n```\n"
+        "Semoga membantu."
+    )
+
+    result = ocr._normalize_openrouter_response(
+        {"choices": [{"message": {"content": content}}]}
+    )
+
+    assert result["merchant"] == "Warung"
+
+
+def test_openrouter_retries_invalid_200_without_json_option(monkeypatch):
+    requests = []
+
+    def urlopen(request, timeout=None):
+        requests.append(request)
+        if len(requests) == 1:
+            return _openrouter_content_response("not JSON")
+        return _openrouter_response()
+
+    monkeypatch.setattr(ocr.urllib.request, "urlopen", urlopen)
+    result = ocr._openrouter_model_ocr(
+        "aW1hZ2U=", "image/jpeg", "test-model:free", time.monotonic() + 5
+    )
+
+    assert result["merchant"] == "Fallback Warung"
+    assert len(requests) == 2
+    assert json.loads(requests[0].data.decode())["response_format"] == {"type": "json_object"}
+    assert "response_format" not in json.loads(requests[1].data.decode())
+
+
+def test_openrouter_response_read_deadline_is_classified_as_timeout(monkeypatch):
+    class _BlockingResponse:
+        def __init__(self):
+            self.release = threading.Event()
+            self.closed = False
+
+        def read(self):
+            self.release.wait()
+            return b"{}"
+
+        def close(self):
+            self.closed = True
+            self.release.set()
+
+    response = _BlockingResponse()
+    monkeypatch.setattr(ocr.urllib.request, "urlopen", lambda request, timeout=None: response)
+
+    with pytest.raises(ocr._OpenRouterFailure) as raised:
+        ocr._openrouter_model_ocr(
+            "aW1hZ2U=", "image/jpeg", "slow-model:free", time.monotonic() + 0.03
+        )
+
+    assert raised.value.kind == "timeout"
+    assert response.closed is True
