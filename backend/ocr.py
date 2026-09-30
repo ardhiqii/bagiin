@@ -7,7 +7,10 @@ import logging
 import math
 import os
 import re
+import shutil
 import socket
+import subprocess
+import tempfile
 import threading
 import time
 from datetime import date as _date
@@ -187,6 +190,9 @@ _OPENROUTER_MAX_ATTEMPTS = 2
 # OpenRouter.
 _OPENROUTER_FALLBACK_RATIO = 2 / 3
 _OPENROUTER_FALLBACK_MAX_SECONDS = 30.0
+_LOCAL_OCR_TIMEOUT_SECONDS = 10.0
+_LOCAL_OCR_LANGUAGE = "eng"
+_LOCAL_OCR_DISABLED_VALUES = frozenset({"0", "false", "no", "off"})
 
 SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Semua gambar dalam satu permintaan adalah halaman atau potongan dari SATU pesanan yang sama.
 Gabungkan bukti dari semua gambar dan jangan menghitung baris, diskon, pajak, atau total yang tumpang tindih dua kali. Output JSON EXACTLY:
@@ -256,14 +262,15 @@ def _image_records(
 
 
 def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
-    """OCR via Gemini; kalau Gemini gagal (quota/error), fallback ke OpenRouter gratis."""
+    """OCR via hosted providers, then a bounded local Tesseract fallback."""
     # (bug v66: pesan error dulu nge-leak nama env var mentah-mentah ke toast user,
     # misal "Gemini: GEMINI_API_KEY not set; cadangan: OPENROUTER_API_KEY not set" -
     # bahasa Inggris di app berbahasa Indonesia, dan judulnya bohong ["lagi penuh"]
     # padahal servernya yang belum disetel. Detail teknis sekarang cuma ke log;
     # user cuma liat kalimat pendek yang jujur, dan "belum disetel" dibedain dari
     # "lagi penuh / gagal baca".)
-    if not GEMINI_API_KEY and not OR_API_KEY:
+    local_available = _local_ocr_available()
+    if not GEMINI_API_KEY and not OR_API_KEY and not local_available:
         log.error("OCR tidak berjalan: GEMINI_API_KEY dan OPENROUTER_API_KEY sama-sama kosong")
         raise RuntimeError("Fitur baca struk otomatis belum disetel di server. Isi manual dulu ya.")
 
@@ -316,10 +323,248 @@ def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
     else:
         log.warning("OPENROUTER_API_KEY kosong, tidak ada fallback")
 
+    if local_available and time.monotonic() < deadline:
+        try:
+            return _local_ocr(provider_input, mime_type=mime_type, deadline=deadline)
+        except RuntimeError:
+            log.warning("Local Tesseract OCR gagal, lanjutkan ke input manual")
+    elif local_available:
+        log.warning("Local Tesseract OCR dilewati karena budget waktu habis")
+
+    # Preserve the established configuration message for a server with no
+    # hosted provider. This is also the safe manual-entry path when a local
+    # binary is present but cannot decode the uploaded image.
+    if not GEMINI_API_KEY and not OR_API_KEY:
+        raise RuntimeError("Fitur baca struk otomatis belum disetel di server. Isi manual dulu ya.")
+
     log.error("OCR gagal total: providers=%s", ",".join(providers_tried) or "none")
     raise RuntimeError(
         "Layanan AI gratis sedang penuh atau mengalami gangguan. Coba lagi beberapa menit kemudian atau isi secara manual."
     )
+
+
+def _local_ocr_available() -> bool:
+    """Return whether the optional local OCR engine is safe to invoke."""
+    configured = os.environ.get("BAGIIN_LOCAL_OCR_ENABLED", "").strip().lower()
+    if configured in _LOCAL_OCR_DISABLED_VALUES:
+        return False
+    return shutil.which("tesseract") is not None
+
+
+def _local_image_suffix(mime_type: str) -> str:
+    suffixes = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/tiff": ".tiff",
+        "image/bmp": ".bmp",
+    }
+    return suffixes.get(str(mime_type or "").lower(), ".img")
+
+
+def _local_amount_match(line: str):
+    return re.search(r"(?i)(?:rp\s*)?([0-9][0-9.,]*)\s*$", line.strip())
+
+
+def _local_amount(line: str) -> int:
+    match = _local_amount_match(line)
+    if match is None:
+        return 0
+    return max(0, _to_int_truncated(match.group(1)))
+
+
+def _local_date(line: str) -> str:
+    match = re.search(
+        r"(?<!\d)(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)"
+        r"|(?<!\d)(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?!\d)",
+        line,
+    )
+    if match is None:
+        return ""
+    if match.group(1):
+        year, month, day = match.group(1), match.group(2), match.group(3)
+    else:
+        day, month, year = match.group(4), match.group(5), match.group(6)
+    candidate = f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+    try:
+        _date.fromisoformat(candidate)
+    except ValueError:
+        return ""
+    return candidate
+
+
+def _local_label(line: str) -> str:
+    normalized = re.sub(r"[^a-z]+", " ", line.lower()).strip()
+    if re.match(r"^(grand total|total bayar|total|jumlah bayar)\b", normalized):
+        return "total"
+    if re.match(r"^(sub total|subtotal|jumlah subtotal|jumlah harga)\b", normalized):
+        return "subtotal"
+    if re.match(r"^(ppn|pb1|pajak|tax)\b", normalized):
+        return "tax"
+    if re.match(r"^(service|layanan|handling|sc)\b", normalized):
+        return "service"
+    if re.match(r"^(diskon|discount|voucher|promo)\b", normalized):
+        return "order_discount"
+    return ""
+
+
+_LOCAL_AMOUNT_TOKEN = re.compile(
+    r"(?i)(?<![A-Za-z0-9])(?:rp\s*)?[0-9][0-9.,]*"
+)
+_LOCAL_METADATA_MARKER = re.compile(
+    r"(?i)\b(?:invoice|inv|order|receipt|cashier|kasir|address|alamat|"
+    r"jalan|jl|street|st|road|rd|avenue|ave|phone|telp|telephone|"
+    r"mobile|hp)\b"
+)
+
+
+def _local_is_metadata(line: str) -> bool:
+    """Reject receipt identifiers, staff/address lines, and their numbers."""
+    return bool(
+        _LOCAL_METADATA_MARKER.search(line)
+        or re.search(r"(?i)\b(?:no|number)\s*[:#]?\s*\d", line)
+    )
+
+
+def _local_item(line: str) -> dict | None:
+    """Parse only a line with a clear trailing Rupiah amount."""
+    stripped = line.strip()
+    if (
+        not stripped
+        or _local_date(stripped)
+        or _local_label(stripped)
+        or _local_is_metadata(stripped)
+        or re.match(
+            r"(?i)^(jumlah|cash|tunai|kembalian|change|bayar|nomor|no\.?|telp|meja|table)\b",
+            stripped,
+        )
+    ):
+        return None
+    amount_match = _local_amount_match(stripped)
+    if amount_match is None or not re.search(r"[A-Za-zÀ-ÿ]", stripped):
+        return None
+    body = stripped[:amount_match.start()].strip(" -:")
+    quantity = 1
+    quantity_match = re.match(r"^(\d{1,2})\s*[x×]\s*(.+)$", body, re.IGNORECASE)
+    if quantity_match:
+        quantity = int(quantity_match.group(1))
+        item_body = quantity_match.group(2).strip()
+        amounts = list(_LOCAL_AMOUNT_TOKEN.finditer(item_body))
+        if not amounts:
+            name = item_body
+            price = _local_amount(stripped)
+        else:
+            # `2 x ITEM unit-price line-total` is the only multi-value shape
+            # accepted. A repeated row never becomes an inferred quantity.
+            price_match = amounts[-2] if len(amounts) >= 2 else amounts[-1]
+            name = item_body[:price_match.start()].strip(" -:")
+            price = _to_int_truncated(price_match.group(0))
+    else:
+        name = body
+        price = _local_amount(stripped)
+    if not name or not 1 <= quantity <= 99 or price <= 0:
+        return None
+    return {"name": name, "price": price, "discount": 0, "quantity": quantity}
+
+
+def _normalize_local_text(text: str) -> dict:
+    """Convert conservative Tesseract text into the existing OCR contract."""
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("Hasil OCR lokal kosong, isi data secara manual.")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    parsed = {
+        "merchant": "",
+        "date": "",
+        "items": [],
+        "subtotal": 0,
+        "order_discount": 0,
+        "tax": 0,
+        "service": 0,
+        "total": 0,
+        "tax_included": False,
+    }
+    for line in lines:
+        line_date = _local_date(line)
+        if line_date and not parsed["date"]:
+            parsed["date"] = line_date
+        label = _local_label(line)
+        if label:
+            if "%" not in line:
+                parsed[label] = _local_amount(line)
+            continue
+        item = _local_item(line)
+        if item is not None:
+            parsed["items"].append(item)
+            continue
+        if (
+            not parsed["merchant"]
+            and not _local_amount_match(line)
+            and re.search(r"[A-Za-zÀ-ÿ]", line)
+        ):
+            parsed["merchant"] = line[:120]
+    if not parsed["items"] and not any(
+        parsed[key] > 0
+        for key in ("subtotal", "order_discount", "tax", "service", "total")
+    ):
+        raise RuntimeError("Hasil OCR lokal tidak berisi data struk yang dapat dibaca.")
+    return _normalize(parsed)
+
+
+def _local_ocr(
+    image_bytes,
+    mime_type: str | list[str] = "image/jpeg",
+    deadline: float | None = None,
+) -> dict:
+    """Run the installed Tesseract executable with bounded temp-file I/O."""
+    if not _local_ocr_available():
+        raise RuntimeError("Local OCR tidak tersedia")
+    if deadline is None:
+        deadline = time.monotonic() + _LOCAL_OCR_TIMEOUT_SECONDS
+    tesseract = shutil.which("tesseract")
+    if not tesseract:
+        raise RuntimeError("Local OCR tidak tersedia")
+    records = _image_records(image_bytes, mime_type)
+    texts = []
+    with tempfile.TemporaryDirectory(prefix="bagiin-ocr-") as directory:
+        for index, (raw, image_mime) in enumerate(records):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError("Local OCR melewati batas waktu")
+            image_path = os.path.join(
+                directory,
+                f"input-{index}{_local_image_suffix(image_mime)}",
+            )
+            with open(image_path, "wb") as image_file:
+                image_file.write(raw)
+            argv = [
+                tesseract,
+                image_path,
+                "stdout",
+                "-l",
+                _LOCAL_OCR_LANGUAGE,
+                "--psm",
+                "6",
+            ]
+            try:
+                completed = subprocess.run(
+                    argv,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=min(_LOCAL_OCR_TIMEOUT_SECONDS, remaining),
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as error:
+                raise RuntimeError("Local OCR melewati batas waktu") from error
+            except OSError as error:
+                raise RuntimeError("Local OCR tidak dapat dijalankan") from error
+            if completed.returncode != 0:
+                raise RuntimeError("Local OCR gagal membaca gambar")
+            output = completed.stdout
+            if isinstance(output, bytes):
+                output = output.decode("utf-8", "replace")
+            if isinstance(output, str) and output.strip():
+                texts.append(output)
+    return _normalize_local_text("\n".join(texts))
 
 
 def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline: float | None = None) -> dict:
