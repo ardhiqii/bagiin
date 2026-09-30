@@ -15,17 +15,37 @@ import urllib.request
 
 log = logging.getLogger("bagiin.ocr")
 
-GEMINI_MODEL_CANDIDATE = os.environ.get("BAGIIN_OCR_MODEL", "").strip()
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
 # A previous deployment accidentally put an OpenRouter model id in the
 # Gemini-only setting. Never send provider-qualified or :free ids to Google;
 # they belong to the OpenRouter fallback chain.
-GEMINI_MODEL = (
-    GEMINI_MODEL_CANDIDATE
-    if GEMINI_MODEL_CANDIDATE.startswith("gemini-")
-    and "/" not in GEMINI_MODEL_CANDIDATE
-    and not GEMINI_MODEL_CANDIDATE.endswith(":free")
-    else "gemini-3.5-flash"
-)
+
+
+def _select_gemini_model(candidate: str | None) -> str:
+    """Keep Google model configuration provider-local and identifier-safe."""
+    candidate = str(candidate or "").strip()
+    if (
+        re.fullmatch(r"gemini-[a-z0-9]+(?:[.-][a-z0-9]+)*", candidate)
+        is not None
+    ):
+        return candidate
+    return DEFAULT_GEMINI_MODEL
+
+
+def _configured_gemini_model(primary=None, legacy=None) -> str:
+    """Prefer the provider-local setting over a stale legacy override."""
+    if primary is None:
+        primary = os.environ.get("GEMINI_MODEL", "")
+    if legacy is None:
+        legacy = os.environ.get("BAGIIN_OCR_MODEL", "")
+    primary = str(primary or "").strip()
+    return _select_gemini_model(primary if primary else legacy)
+
+
+GEMINI_MODEL_CANDIDATE = os.environ.get("GEMINI_MODEL", "").strip()
+if not GEMINI_MODEL_CANDIDATE:
+    GEMINI_MODEL_CANDIDATE = os.environ.get("BAGIIN_OCR_MODEL", "").strip()
+GEMINI_MODEL = _configured_gemini_model()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 OR_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
@@ -36,6 +56,18 @@ DEFAULT_OPENROUTER_OCR_MODELS = (
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "openrouter/free",
 )
+
+
+class _GeminiFailure(RuntimeError):
+    """Internal failure with only a safe-to-log class/status."""
+
+    def __init__(self, kind: str, status: int | None = None):
+        self.kind = kind
+        self.status = status
+        label = kind if status is None else f"{kind} status={status}"
+        super().__init__(label)
+
+
 # (bug v98: `thinkingmachines/inkling-small:free` and `thinkingmachines/inkling:free`
 # were in this default chain and returned HTTP 403 on every attempt - live probe and
 # production journal (2026-09-23 20:41 & 21:41) both show `failure=http_error status=403`.
@@ -261,6 +293,13 @@ def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
             if time.monotonic() > primary_deadline:
                 raise RuntimeError("waktu habis")
             return result
+        except _GeminiFailure as failure:
+            providers_tried.append("Gemini")
+            log.warning(
+                "Gemini OCR model=%s failure=%s, coba OpenRouter",
+                GEMINI_MODEL,
+                failure,
+            )
         except RuntimeError:
             providers_tried.append("Gemini")
             log.warning("Gemini OCR model=%s failure=provider, coba OpenRouter", GEMINI_MODEL)
@@ -334,7 +373,7 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
             break
         except urllib.error.HTTPError as e:
             code = e.code
-            body = e.read().decode()[:300]
+            body = _read_http_error_body(e)
             log.warning(
                 "Gemini OCR model=%s failure=http status=%d attempt=%d/%d",
                 GEMINI_MODEL,
@@ -343,13 +382,32 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
                 MAX_ATTEMPTS,
             )
             if code == 429 and "quota" in body.lower():
-                raise RuntimeError("kuota harian habis (reset tengah malam)")
+                raise _GeminiFailure("rate_limited", status=code)
             # (bug v98: retrying a 429/5xx here re-sent the same request with a
             # growing backoff while the shared budget drained, so the free
             # fallback chain - the only thing that ever answers - got a fraction
             # of the time. One attempt per provider hop: a failing Gemini call
             # now hands its remaining budget straight to OpenRouter.)
-            raise RuntimeError(f"HTTP {code}")
+            raise _GeminiFailure(_http_failure_class(code), status=code)
+        except (socket.timeout, TimeoutError):
+            log.warning(
+                "Gemini OCR model=%s failure=timeout attempt=%d/%d",
+                GEMINI_MODEL,
+                attempt + 1,
+                MAX_ATTEMPTS,
+            )
+            raise _GeminiFailure("timeout")
+        except urllib.error.URLError as error:
+            log.warning(
+                "Gemini OCR model=%s failure=request_error attempt=%d/%d",
+                GEMINI_MODEL,
+                attempt + 1,
+                MAX_ATTEMPTS,
+            )
+            kind = "timeout" if isinstance(
+                error.reason, (socket.timeout, TimeoutError)
+            ) else "request_error"
+            raise _GeminiFailure(kind)
         except Exception:
             log.warning(
                 "Gemini OCR model=%s failure=request attempt=%d/%d",
@@ -357,16 +415,16 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
                 attempt + 1,
                 MAX_ATTEMPTS,
             )
-            raise RuntimeError("Permintaan OCR gagal")
+            raise _GeminiFailure("request_error")
     if data is None:
         raise RuntimeError("Kegagalan setelah beberapa percobaan (waktu habis)")
 
     try:
         text = _gemini_response_text(data)
         parsed = _parse_json_text(text)
-    except Exception:
-        raise RuntimeError("respons tidak bisa dibaca")
-    return _normalize(parsed)
+        return _normalize(parsed)
+    except Exception as error:
+        raise _GeminiFailure("invalid_response") from error
 
 
 def _gemini_response_text(data) -> str:
