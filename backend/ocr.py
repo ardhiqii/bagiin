@@ -8,6 +8,7 @@ import math
 import os
 import re
 import socket
+import threading
 import time
 from datetime import date as _date
 import urllib.error
@@ -369,11 +370,14 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
         timeout = min(_ATTEMPT_TIMEOUT_CAP, remaining)
         try:
             resp = urllib.request.urlopen(req, timeout=timeout)
-            data = json.loads(resp.read())
+            data = json.loads(_read_response_body(resp, deadline))
             break
         except urllib.error.HTTPError as e:
             code = e.code
-            body = _read_http_error_body(e)
+            try:
+                body = _read_http_error_body(e, deadline)
+            except TimeoutError as error:
+                raise _GeminiFailure("timeout") from error
             log.warning(
                 "Gemini OCR model=%s failure=http status=%d attempt=%d/%d",
                 GEMINI_MODEL,
@@ -605,13 +609,25 @@ def _openrouter_model_ocr(
                 timeout=min(_ATTEMPT_TIMEOUT_CAP, remaining),
             )
             try:
-                data = json.loads(response.read())
+                data = json.loads(_read_response_body(response, deadline))
             except (TypeError, ValueError, json.JSONDecodeError) as error:
+                # A body that is not even a valid OpenRouter envelope cannot
+                # be repaired by dropping response_format; advance to the
+                # next model as before.
                 raise _OpenRouterFailure("invalid_json") from error
-            return _normalize_openrouter_response(data)
+            try:
+                return _normalize_openrouter_response(data)
+            except _OpenRouterFailure as failure:
+                if structured and failure.kind in ("invalid_json", "invalid_response"):
+                    structured = False
+                    continue
+                raise
         except urllib.error.HTTPError as error:
             code = error.code
-            body = _read_http_error_body(error)
+            try:
+                body = _read_http_error_body(error, deadline)
+            except TimeoutError as timeout_error:
+                raise _OpenRouterFailure("timeout") from timeout_error
             if structured and _structured_response_rejected(code, body):
                 # Some free OpenRouter models reject response_format even
                 # though they accept the same vision prompt. Retry this model
@@ -639,10 +655,7 @@ def _openrouter_model_ocr(
 def _normalize_openrouter_response(data) -> dict:
     try:
         content = data["choices"][0]["message"]["content"]
-        if isinstance(content, list):
-            content = "".join(
-                c.get("text", "") for c in content if isinstance(c, dict)
-            )
+        content = _openrouter_content_text(content)
         parsed = _parse_json_text(content)
         return _normalize(parsed)
     except _OpenRouterFailure:
@@ -651,16 +664,103 @@ def _normalize_openrouter_response(data) -> dict:
         raise _OpenRouterFailure("invalid_response") from error
 
 
-def _read_http_error_body(error: urllib.error.HTTPError) -> str:
+def _openrouter_content_text(content) -> str:
+    """Normalize string/part-array answers without treating thoughts as OCR."""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        raise TypeError("content is not text")
+
+    text_parts = []
+    for part in content:
+        if isinstance(part, str):
+            text_parts.append(part)
+            continue
+        if not isinstance(part, dict):
+            continue
+        part_type = str(part.get("type", "")).strip().lower()
+        if (
+            part.get("thought") is True
+            or part_type in {"thought", "thinking", "reasoning"}
+        ):
+            continue
+        text = part.get("text")
+        if isinstance(text, str):
+            text_parts.append(text)
+    return "".join(text_parts)
+
+
+def _close_response(response) -> None:
+    close = getattr(response, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            pass
+
+
+def _read_response_body(response, deadline: float, max_bytes: int | None = None):
+    """Read a provider body without allowing a trickle past its deadline.
+
+    urllib's timeout applies to individual socket operations, not the complete
+    response body. Run the compatibility-friendly no-argument ``read`` call
+    in a daemon thread so the caller can close the response and classify a
+    late body as a timeout even when the upstream keeps sending bytes.
+    """
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        _close_response(response)
+        raise TimeoutError("response body deadline exceeded")
+
+    body = []
+    failure = []
+
+    def read_body() -> None:
+        try:
+            if max_bytes is None:
+                body.append(response.read())
+                return
+            try:
+                body.append(response.read(max_bytes))
+            except TypeError:
+                # Small test doubles and adapters often expose read() without
+                # urllib's optional byte-count argument.
+                body.append(response.read())
+        except Exception as error:
+            failure.append(error)
+
+    reader = threading.Thread(target=read_body, daemon=True)
+    reader.start()
+    reader.join(remaining)
+    if reader.is_alive() or time.monotonic() > deadline:
+        _close_response(response)
+        raise TimeoutError("response body deadline exceeded")
+    if failure:
+        raise failure[0]
+    return body[0] if body else b""
+
+
+def _read_http_error_body(
+    error: urllib.error.HTTPError,
+    deadline: float | None = None,
+) -> str:
     try:
-        body = error.read(4096)
+        if deadline is None:
+            body = error.read(4096)
+        else:
+            body = _read_response_body(error, deadline, max_bytes=4096)
+    except TimeoutError:
+        raise
     except TypeError:
         # A small fake HTTPError in a test or adapter may expose read() without
         # urllib's optional byte-count argument.
-        try:
-            body = error.read()
-        except Exception:
-            return ""
+        if deadline is None:
+            try:
+                body = error.read()
+            except Exception:
+                return ""
+        else:
+            raise
     except Exception:
         return ""
     if isinstance(body, bytes):
@@ -760,16 +860,21 @@ def _downscale(image_bytes: bytes, max_side: int = 1280) -> bytes:
 
 
 def _parse_json_text(text: str) -> dict:
-    """Strip markdown fences, ambil JSON pertama yang valid."""
-    text = str(text or "").strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-    # kalau masih ada teks di luar JSON, ambil bagian {...} pertama
-    if not text.startswith("{"):
-        m = re.search(r"\{.*\}", text, re.DOTALL)
-        if m:
-            text = m.group(0)
-    return json.loads(text)
+    """Extract the first JSON object, allowing harmless prose or markdown."""
+    if not isinstance(text, str):
+        raise TypeError("OCR response is not text")
+    text = text.strip()
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(text):
+        if character != "{":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(text, index)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    raise ValueError("OCR response did not contain a JSON object")
 
 
 def _rupiah_decimal(value) -> Decimal:
