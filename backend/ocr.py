@@ -4,14 +4,9 @@ from decimal import Decimal, ROUND_DOWN
 import io
 import json
 import logging
-import math
 import os
 import re
-import shutil
 import socket
-import subprocess
-import tempfile
-import threading
 import time
 from datetime import date as _date
 import urllib.error
@@ -19,37 +14,7 @@ import urllib.request
 
 log = logging.getLogger("bagiin.ocr")
 
-DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
-# A previous deployment accidentally put an OpenRouter model id in the
-# Gemini-only setting. Never send provider-qualified or :free ids to Google;
-# they belong to the OpenRouter fallback chain.
-
-
-def _select_gemini_model(candidate: str | None) -> str:
-    """Keep Google model configuration provider-local and identifier-safe."""
-    candidate = str(candidate or "").strip()
-    if (
-        re.fullmatch(r"gemini-[a-z0-9]+(?:[.-][a-z0-9]+)*", candidate)
-        is not None
-    ):
-        return candidate
-    return DEFAULT_GEMINI_MODEL
-
-
-def _configured_gemini_model(primary=None, legacy=None) -> str:
-    """Prefer the provider-local setting over a stale legacy override."""
-    if primary is None:
-        primary = os.environ.get("GEMINI_MODEL", "")
-    if legacy is None:
-        legacy = os.environ.get("BAGIIN_OCR_MODEL", "")
-    primary = str(primary or "").strip()
-    return _select_gemini_model(primary if primary else legacy)
-
-
-GEMINI_MODEL_CANDIDATE = os.environ.get("GEMINI_MODEL", "").strip()
-if not GEMINI_MODEL_CANDIDATE:
-    GEMINI_MODEL_CANDIDATE = os.environ.get("BAGIIN_OCR_MODEL", "").strip()
-GEMINI_MODEL = _configured_gemini_model()
+GEMINI_MODEL = os.environ.get("BAGIIN_OCR_MODEL", "gemini-3.5-flash")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 OR_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
@@ -57,52 +22,15 @@ DEFAULT_OPENROUTER_OCR_MODELS = (
     "google/gemma-4-26b-a4b-it:free",
     "google/gemma-4-31b-it:free",
     "dots-studio/dots-3-note-preview:free",
+    "thinkingmachines/inkling-small:free",
+    "thinkingmachines/inkling:free",
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "openrouter/free",
 )
 
 
-class _GeminiFailure(RuntimeError):
-    """Internal failure with only a safe-to-log class/status."""
-
-    def __init__(self, kind: str, status: int | None = None):
-        self.kind = kind
-        self.status = status
-        label = kind if status is None else f"{kind} status={status}"
-        super().__init__(label)
-
-
-# (bug v98: `thinkingmachines/inkling-small:free` and `thinkingmachines/inkling:free`
-# were in this default chain and returned HTTP 403 on every attempt - live probe and
-# production journal (2026-09-23 20:41 & 21:41) both show `failure=http_error status=403`.
-# A route that cannot serve the request is not a fallback; keeping it in the chain only
-# burned wall-clock that a working free vision route needed.)
-
-
 def _is_free_openrouter_model(model: str) -> bool:
     return model == "openrouter/free" or model.endswith(":free")
-
-
-# (bug v98: a route that answers 403 on every attempt is not a fallback. These
-# ids were in the default chain AND in the production systemd override
-# (OPENROUTER_OCR_MODELS), so they burned a full provider round-trip each on
-# every receipt - production journal 2026-09-23 20:41/21:41 shows
-# `thinkingmachines/inkling-small:free failure=http_error status=403` and
-# `thinkingmachines/inkling:free failure=http_error status=403` right after the
-# only working free routes had already been consumed by 429/timeout. Filtering
-# here (not only in the DEFAULT tuple) means an existing env override also stops
-# spending budget on them, without touching production config.)
-_UNSUPPORTED_OPENROUTER_OCR_MODELS = (
-    "thinkingmachines/inkling-small:free",
-    "thinkingmachines/inkling:free",
-)
-
-
-def _is_supported_openrouter_vision_model(model: str) -> bool:
-    return (
-        _is_free_openrouter_model(model)
-        and model not in _UNSUPPORTED_OPENROUTER_OCR_MODELS
-    )
 
 
 def _parse_openrouter_models(models_value=None, legacy_model=None) -> tuple[str, ...]:
@@ -121,7 +49,7 @@ def _parse_openrouter_models(models_value=None, legacy_model=None) -> tuple[str,
     models = []
     for raw_model in configured.split(","):
         model = raw_model.strip()
-        if not model or not _is_supported_openrouter_vision_model(model) or model in models:
+        if not model or not _is_free_openrouter_model(model) or model in models:
             continue
         models.append(model)
     return tuple(models) or DEFAULT_OPENROUTER_OCR_MODELS
@@ -132,67 +60,21 @@ OPENROUTER_OCR_MODELS = _parse_openrouter_models()
 # requests use OR_MODELS and pass the selected model explicitly per payload.
 OR_MODELS = OPENROUTER_OCR_MODELS
 OR_MODEL = OR_MODELS[0]
-# (bug v98: Gemini used to retry 3x with a 2s/4s backoff before the fallback
-# chain even started. Against a shared wall-clock budget that is pure
-# amplification - each retry multiplies the time a dead primary can hold the
-# request and shrinks what is left for the free routes that actually answer.
-# One attempt per provider hop; breadth now comes from the model chain, not
-# from repeating a failing call.)
-MAX_ATTEMPTS = 1
-# (RETRY_CODES was removed with the Gemini retry loop it gated; a single attempt
-# per provider hop is the contract now. Do not reintroduce status-based retries
-# here - see the budget note below.)
-# (bug v98: the edge boundary is nginx, not Cloudflare. The bagiin.ardhiqi.com
-# vhost in /etc/nginx/sites-enabled/bagiin.ardhiqi.com.conf sets NO
-# proxy_read_timeout, so the nginx default (60s) applies to /api/. Production
-# proof: nginx logged `upstream timed out (110: Connection timed out) ... POST
-# /api/ocr` at 2026-09-23 22:33:31 while uvicorn logged `POST /api/ocr 200 OK`
-# at 22:33:38 - the backend finished ~7s AFTER the client was already told 504.
-# The previous 90s/55s budget could never fit inside that boundary: any request
-# slow enough to use it was guaranteed to surface as a proxy 504. The whole
-# provider chain now has one hard deadline with real margin below 60s.)
-_EDGE_PROXY_TIMEOUT_SECONDS = 60.0
-_BUDGET_OVERHEAD_SECONDS = 5.0
-# A live probe (2026-09-23) measured 49.7s of wall-clock for a chain whose hard
-# budget was 45s: urllib's timeout bounds each socket operation, not the whole
-# response, so one slow-but-trickling model can overshoot the deadline that the
-# loop enforces between attempts. The budget must therefore leave room for that
-# overshoot, not just for request setup.
-_BUDGET_OVERSHOOT_ALLOWANCE_SECONDS = 7.0
-# (review F2: the clamp must be closed under its own ceiling. The ceiling used
-# to be exactly 60 - 5 - 7 = 48, and 48 + 5 + 7 = 60 is the boundary itself -
-# zero margin - so a config that raised OCR_BUDGET_SECONDS to the clamp value
-# re-opened the very gap this budget exists to close, while the margin test only
-# ever proved the invariant for the shipped 40s. The ceiling now subtracts this
-# safety value as well.)
-_BUDGET_SAFETY_MARGIN_SECONDS = 2.0
-OCR_BUDGET_SECONDS = 40.0
-_ATTEMPT_TIMEOUT_CAP = 20.0
+MAX_ATTEMPTS = 3
+RETRY_CODES = (429, 500, 502, 503, 504)
+# (bug v66: Gemini alone could retry up to 3x60s + backoff, then OpenRouter fallback
+# another 3x90s + backoff -> ~465s worst case on a single request. Cloudflare cuts the
+# connection at 100s and returns its own 524 HTML, so anything past that point burns
+# CPU for nobody. Both providers now share ONE wall-clock budget for the whole call.)
+OCR_BUDGET_SECONDS = 45.0
+_ATTEMPT_TIMEOUT_CAP = 15.0
 _MIN_ATTEMPT_SECONDS = 3.0
-# Small floor held back for each candidate still queued behind the current one.
-# It only bites when the models ahead actually consumed wall-clock; when they
-# fail fast (429 in ~0.2s) the later slices stay generous.
-_MIN_LATER_MODEL_SECONDS = 5.0
-# (review F4: that per-model floor grew linearly with chain length, so the worst
-# case - primary provider burned its whole window, 5 free routes queued - gave
-# the FIRST candidate only 6.67s of a 26.67s window because the 4 routes behind
-# it held back 20s between them. A vision read of a receipt routinely needs
-# longer than that, and the routes behind usually answer 429 in ~0.2s, so the
-# reservation guarded budget that was never spent. The tail reserve is now also
-# capped at this fraction of the remaining window: the head always keeps at
-# least half, everyone behind it still shares a real slice, and the schedule no
-# longer degrades just because the chain got longer.)
-_RESERVE_MAX_FRACTION = 0.5
 _OPENROUTER_MAX_ATTEMPTS = 2
-# Reserve a bounded slice for the fallback so a hanging primary cannot spend the
-# whole budget before the free chain is ever tried. The reserve only caps the
-# primary deadline; a fast primary failure hands the full remaining budget to
-# OpenRouter.
-_OPENROUTER_FALLBACK_RATIO = 2 / 3
-_OPENROUTER_FALLBACK_MAX_SECONDS = 30.0
-_LOCAL_OCR_TIMEOUT_SECONDS = 10.0
-_LOCAL_OCR_LANGUAGE = "eng"
-_LOCAL_OCR_DISABLED_VALUES = frozenset({"0", "false", "no", "off"})
+# Keep a bounded slice for the fallback instead of letting a slow primary
+# consume the shared deadline. The ratio makes tiny test budgets scale down,
+# while the cap keeps production fallback latency predictable.
+_OPENROUTER_FALLBACK_RATIO = 1 / 3
+_OPENROUTER_FALLBACK_MAX_SECONDS = 15.0
 
 SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Semua gambar dalam satu permintaan adalah halaman atau potongan dari SATU pesanan yang sama.
 Gabungkan bukti dari semua gambar dan jangan menghitung baris, diskon, pajak, atau total yang tumpang tindih dua kali. Output JSON EXACTLY:
@@ -262,23 +144,21 @@ def _image_records(
 
 
 def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
-    """OCR via hosted providers, then a bounded local Tesseract fallback."""
+    """OCR via Gemini; kalau Gemini gagal (quota/error), fallback ke OpenRouter gratis."""
     # (bug v66: pesan error dulu nge-leak nama env var mentah-mentah ke toast user,
     # misal "Gemini: GEMINI_API_KEY not set; cadangan: OPENROUTER_API_KEY not set" -
     # bahasa Inggris di app berbahasa Indonesia, dan judulnya bohong ["lagi penuh"]
     # padahal servernya yang belum disetel. Detail teknis sekarang cuma ke log;
     # user cuma liat kalimat pendek yang jujur, dan "belum disetel" dibedain dari
     # "lagi penuh / gagal baca".)
-    local_available = _local_ocr_available()
-    if not GEMINI_API_KEY and not OR_API_KEY and not local_available:
+    if not GEMINI_API_KEY and not OR_API_KEY:
         log.error("OCR tidak berjalan: GEMINI_API_KEY dan OPENROUTER_API_KEY sama-sama kosong")
         raise RuntimeError("Fitur baca struk otomatis belum disetel di server. Isi manual dulu ya.")
 
     records = _image_records(image_bytes, mime_type)
     provider_input = image_bytes if isinstance(image_bytes, (bytes, bytearray, memoryview)) else records
     started = time.monotonic()
-    budget = _hard_budget_seconds()
-    deadline = started + budget
+    deadline = started + max(0.0, OCR_BUDGET_SECONDS)
     # (bug v66 review: Gemini dulu menerima deadline penuh, jadi provider yang
     # menggantung bisa menghabiskan seluruh budget sebelum fallback dimulai.)
     # Reserve only when a fallback is configured; Gemini keeps the full budget
@@ -287,27 +167,13 @@ def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
     if OR_API_KEY:
         fallback_seconds = min(
             _OPENROUTER_FALLBACK_MAX_SECONDS,
-            max(0.0, budget * _OPENROUTER_FALLBACK_RATIO),
+            max(0.0, OCR_BUDGET_SECONDS * _OPENROUTER_FALLBACK_RATIO),
         )
     primary_deadline = deadline - fallback_seconds
     providers_tried = []
     if GEMINI_API_KEY:
         try:
-            result = _gemini_ocr(provider_input, mime_type, primary_deadline)
-            # urllib's timeout applies to socket operations, not necessarily
-            # the whole response. Treat a provider that trickles past its
-            # reserved slice as timed out so a late primary response cannot
-            # bypass the shared deadline or starve the fallback contract.
-            if time.monotonic() > primary_deadline:
-                raise RuntimeError("waktu habis")
-            return result
-        except _GeminiFailure as failure:
-            providers_tried.append("Gemini")
-            log.warning(
-                "Gemini OCR model=%s failure=%s, coba OpenRouter",
-                GEMINI_MODEL,
-                failure,
-            )
+            return _gemini_ocr(provider_input, mime_type, primary_deadline)
         except RuntimeError:
             providers_tried.append("Gemini")
             log.warning("Gemini OCR model=%s failure=provider, coba OpenRouter", GEMINI_MODEL)
@@ -323,248 +189,10 @@ def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
     else:
         log.warning("OPENROUTER_API_KEY kosong, tidak ada fallback")
 
-    if local_available and time.monotonic() < deadline:
-        try:
-            return _local_ocr(provider_input, mime_type=mime_type, deadline=deadline)
-        except RuntimeError:
-            log.warning("Local Tesseract OCR gagal, lanjutkan ke input manual")
-    elif local_available:
-        log.warning("Local Tesseract OCR dilewati karena budget waktu habis")
-
-    # Preserve the established configuration message for a server with no
-    # hosted provider. This is also the safe manual-entry path when a local
-    # binary is present but cannot decode the uploaded image.
-    if not GEMINI_API_KEY and not OR_API_KEY:
-        raise RuntimeError("Fitur baca struk otomatis belum disetel di server. Isi manual dulu ya.")
-
     log.error("OCR gagal total: providers=%s", ",".join(providers_tried) or "none")
     raise RuntimeError(
         "Layanan AI gratis sedang penuh atau mengalami gangguan. Coba lagi beberapa menit kemudian atau isi secara manual."
     )
-
-
-def _local_ocr_available() -> bool:
-    """Return whether the optional local OCR engine is safe to invoke."""
-    configured = os.environ.get("BAGIIN_LOCAL_OCR_ENABLED", "").strip().lower()
-    if configured in _LOCAL_OCR_DISABLED_VALUES:
-        return False
-    return shutil.which("tesseract") is not None
-
-
-def _local_image_suffix(mime_type: str) -> str:
-    suffixes = {
-        "image/jpeg": ".jpg",
-        "image/png": ".png",
-        "image/webp": ".webp",
-        "image/tiff": ".tiff",
-        "image/bmp": ".bmp",
-    }
-    return suffixes.get(str(mime_type or "").lower(), ".img")
-
-
-def _local_amount_match(line: str):
-    return re.search(r"(?i)(?:rp\s*)?([0-9][0-9.,]*)\s*$", line.strip())
-
-
-def _local_amount(line: str) -> int:
-    match = _local_amount_match(line)
-    if match is None:
-        return 0
-    return max(0, _to_int_truncated(match.group(1)))
-
-
-def _local_date(line: str) -> str:
-    match = re.search(
-        r"(?<!\d)(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)"
-        r"|(?<!\d)(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?!\d)",
-        line,
-    )
-    if match is None:
-        return ""
-    if match.group(1):
-        year, month, day = match.group(1), match.group(2), match.group(3)
-    else:
-        day, month, year = match.group(4), match.group(5), match.group(6)
-    candidate = f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
-    try:
-        _date.fromisoformat(candidate)
-    except ValueError:
-        return ""
-    return candidate
-
-
-def _local_label(line: str) -> str:
-    normalized = re.sub(r"[^a-z]+", " ", line.lower()).strip()
-    if re.match(r"^(grand total|total bayar|total|jumlah bayar)\b", normalized):
-        return "total"
-    if re.match(r"^(sub total|subtotal|jumlah subtotal|jumlah harga)\b", normalized):
-        return "subtotal"
-    if re.match(r"^(ppn|pb1|pajak|tax)\b", normalized):
-        return "tax"
-    if re.match(r"^(service|layanan|handling|sc)\b", normalized):
-        return "service"
-    if re.match(r"^(diskon|discount|voucher|promo)\b", normalized):
-        return "order_discount"
-    return ""
-
-
-_LOCAL_AMOUNT_TOKEN = re.compile(
-    r"(?i)(?<![A-Za-z0-9])(?:rp\s*)?[0-9][0-9.,]*"
-)
-_LOCAL_METADATA_MARKER = re.compile(
-    r"(?i)\b(?:invoice|inv|order|receipt|cashier|kasir|address|alamat|"
-    r"jalan|jl|street|st|road|rd|avenue|ave|phone|telp|telephone|"
-    r"mobile|hp)\b"
-)
-
-
-def _local_is_metadata(line: str) -> bool:
-    """Reject receipt identifiers, staff/address lines, and their numbers."""
-    return bool(
-        _LOCAL_METADATA_MARKER.search(line)
-        or re.search(r"(?i)\b(?:no|number)\s*[:#]?\s*\d", line)
-    )
-
-
-def _local_item(line: str) -> dict | None:
-    """Parse only a line with a clear trailing Rupiah amount."""
-    stripped = line.strip()
-    if (
-        not stripped
-        or _local_date(stripped)
-        or _local_label(stripped)
-        or _local_is_metadata(stripped)
-        or re.match(
-            r"(?i)^(jumlah|cash|tunai|kembalian|change|bayar|nomor|no\.?|telp|meja|table)\b",
-            stripped,
-        )
-    ):
-        return None
-    amount_match = _local_amount_match(stripped)
-    if amount_match is None or not re.search(r"[A-Za-zÀ-ÿ]", stripped):
-        return None
-    body = stripped[:amount_match.start()].strip(" -:")
-    quantity = 1
-    quantity_match = re.match(r"^(\d{1,2})\s*[x×]\s*(.+)$", body, re.IGNORECASE)
-    if quantity_match:
-        quantity = int(quantity_match.group(1))
-        item_body = quantity_match.group(2).strip()
-        amounts = list(_LOCAL_AMOUNT_TOKEN.finditer(item_body))
-        if not amounts:
-            name = item_body
-            price = _local_amount(stripped)
-        else:
-            # `2 x ITEM unit-price line-total` is the only multi-value shape
-            # accepted. A repeated row never becomes an inferred quantity.
-            price_match = amounts[-2] if len(amounts) >= 2 else amounts[-1]
-            name = item_body[:price_match.start()].strip(" -:")
-            price = _to_int_truncated(price_match.group(0))
-    else:
-        name = body
-        price = _local_amount(stripped)
-    if not name or not 1 <= quantity <= 99 or price <= 0:
-        return None
-    return {"name": name, "price": price, "discount": 0, "quantity": quantity}
-
-
-def _normalize_local_text(text: str) -> dict:
-    """Convert conservative Tesseract text into the existing OCR contract."""
-    if not isinstance(text, str) or not text.strip():
-        raise RuntimeError("Hasil OCR lokal kosong, isi data secara manual.")
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    parsed = {
-        "merchant": "",
-        "date": "",
-        "items": [],
-        "subtotal": 0,
-        "order_discount": 0,
-        "tax": 0,
-        "service": 0,
-        "total": 0,
-        "tax_included": False,
-    }
-    for line in lines:
-        line_date = _local_date(line)
-        if line_date and not parsed["date"]:
-            parsed["date"] = line_date
-        label = _local_label(line)
-        if label:
-            if "%" not in line:
-                parsed[label] = _local_amount(line)
-            continue
-        item = _local_item(line)
-        if item is not None:
-            parsed["items"].append(item)
-            continue
-        if (
-            not parsed["merchant"]
-            and not _local_amount_match(line)
-            and re.search(r"[A-Za-zÀ-ÿ]", line)
-        ):
-            parsed["merchant"] = line[:120]
-    if not parsed["items"] and not any(
-        parsed[key] > 0
-        for key in ("subtotal", "order_discount", "tax", "service", "total")
-    ):
-        raise RuntimeError("Hasil OCR lokal tidak berisi data struk yang dapat dibaca.")
-    return _normalize(parsed)
-
-
-def _local_ocr(
-    image_bytes,
-    mime_type: str | list[str] = "image/jpeg",
-    deadline: float | None = None,
-) -> dict:
-    """Run the installed Tesseract executable with bounded temp-file I/O."""
-    if not _local_ocr_available():
-        raise RuntimeError("Local OCR tidak tersedia")
-    if deadline is None:
-        deadline = time.monotonic() + _LOCAL_OCR_TIMEOUT_SECONDS
-    tesseract = shutil.which("tesseract")
-    if not tesseract:
-        raise RuntimeError("Local OCR tidak tersedia")
-    records = _image_records(image_bytes, mime_type)
-    texts = []
-    with tempfile.TemporaryDirectory(prefix="bagiin-ocr-") as directory:
-        for index, (raw, image_mime) in enumerate(records):
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise RuntimeError("Local OCR melewati batas waktu")
-            image_path = os.path.join(
-                directory,
-                f"input-{index}{_local_image_suffix(image_mime)}",
-            )
-            with open(image_path, "wb") as image_file:
-                image_file.write(raw)
-            argv = [
-                tesseract,
-                image_path,
-                "stdout",
-                "-l",
-                _LOCAL_OCR_LANGUAGE,
-                "--psm",
-                "6",
-            ]
-            try:
-                completed = subprocess.run(
-                    argv,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    timeout=min(_LOCAL_OCR_TIMEOUT_SECONDS, remaining),
-                    check=False,
-                )
-            except subprocess.TimeoutExpired as error:
-                raise RuntimeError("Local OCR melewati batas waktu") from error
-            except OSError as error:
-                raise RuntimeError("Local OCR tidak dapat dijalankan") from error
-            if completed.returncode != 0:
-                raise RuntimeError("Local OCR gagal membaca gambar")
-            output = completed.stdout
-            if isinstance(output, bytes):
-                output = output.decode("utf-8", "replace")
-            if isinstance(output, str) and output.strip():
-                texts.append(output)
-    return _normalize_local_text("\n".join(texts))
 
 
 def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline: float | None = None) -> dict:
@@ -572,7 +200,7 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
         deadline = float(mime_type)
         mime_type = "image/jpeg"
     if deadline is None:
-        deadline = time.monotonic() + _hard_budget_seconds()
+        deadline = time.monotonic() + OCR_BUDGET_SECONDS
     records = _image_records(image_bytes, mime_type)
     image_parts = [
         {
@@ -615,14 +243,11 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
         timeout = min(_ATTEMPT_TIMEOUT_CAP, remaining)
         try:
             resp = urllib.request.urlopen(req, timeout=timeout)
-            data = json.loads(_read_response_body(resp, deadline))
+            data = json.loads(resp.read())
             break
         except urllib.error.HTTPError as e:
             code = e.code
-            try:
-                body = _read_http_error_body(e, deadline)
-            except TimeoutError as error:
-                raise _GeminiFailure("timeout") from error
+            body = e.read().decode()[:300]
             log.warning(
                 "Gemini OCR model=%s failure=http status=%d attempt=%d/%d",
                 GEMINI_MODEL,
@@ -631,32 +256,12 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
                 MAX_ATTEMPTS,
             )
             if code == 429 and "quota" in body.lower():
-                raise _GeminiFailure("rate_limited", status=code)
-            # (bug v98: retrying a 429/5xx here re-sent the same request with a
-            # growing backoff while the shared budget drained, so the free
-            # fallback chain - the only thing that ever answers - got a fraction
-            # of the time. One attempt per provider hop: a failing Gemini call
-            # now hands its remaining budget straight to OpenRouter.)
-            raise _GeminiFailure(_http_failure_class(code), status=code)
-        except (socket.timeout, TimeoutError):
-            log.warning(
-                "Gemini OCR model=%s failure=timeout attempt=%d/%d",
-                GEMINI_MODEL,
-                attempt + 1,
-                MAX_ATTEMPTS,
-            )
-            raise _GeminiFailure("timeout")
-        except urllib.error.URLError as error:
-            log.warning(
-                "Gemini OCR model=%s failure=request_error attempt=%d/%d",
-                GEMINI_MODEL,
-                attempt + 1,
-                MAX_ATTEMPTS,
-            )
-            kind = "timeout" if isinstance(
-                error.reason, (socket.timeout, TimeoutError)
-            ) else "request_error"
-            raise _GeminiFailure(kind)
+                raise RuntimeError("kuota harian habis (reset tengah malam)")
+            backoff = 2 * (attempt + 1)
+            if code in RETRY_CODES and attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
+                time.sleep(backoff)
+                continue
+            raise RuntimeError(f"HTTP {code}")
         except Exception:
             log.warning(
                 "Gemini OCR model=%s failure=request attempt=%d/%d",
@@ -664,16 +269,20 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
                 attempt + 1,
                 MAX_ATTEMPTS,
             )
-            raise _GeminiFailure("request_error")
+            backoff = 2 * (attempt + 1)
+            if attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
+                time.sleep(backoff)
+                continue
+            raise RuntimeError("Permintaan OCR gagal")
     if data is None:
         raise RuntimeError("Kegagalan setelah beberapa percobaan (waktu habis)")
 
     try:
         text = _gemini_response_text(data)
         parsed = _parse_json_text(text)
-        return _normalize(parsed)
-    except Exception as error:
-        raise _GeminiFailure("invalid_response") from error
+    except Exception:
+        raise RuntimeError("respons tidak bisa dibaca")
+    return _normalize(parsed)
 
 
 def _gemini_response_text(data) -> str:
@@ -711,72 +320,17 @@ def _active_openrouter_models() -> tuple[str, ...]:
     models = tuple(
         model.strip()
         for model in configured_models
-        if isinstance(model, str)
-        and model.strip()
-        and _is_supported_openrouter_vision_model(model.strip())
+        if isinstance(model, str) and model.strip() and _is_free_openrouter_model(model.strip())
     )
     return models or DEFAULT_OPENROUTER_OCR_MODELS
 
 
-def _hard_budget_seconds(requested: float | None = None) -> float:
-    """Clamp the whole-call budget below the edge proxy's read timeout.
-
-    The edge deadline is what the user actually experiences: if the provider
-    chain outlives it, the client sees a proxy 504 even when a free model later
-    returns a perfectly good 200 (bug v98). Every entry point derives its
-    deadline from here so a config/constant mistake cannot re-open that gap.
-
-    (review F2: the ceiling itself has to keep the margin, not just the shipped
-    default. It subtracts the setup overhead, the measured overshoot allowance
-    AND a safety value, so `ceiling + overhead + overshoot < edge` holds for
-    every value this function can return - including when a config raises
-    OCR_BUDGET_SECONDS above the clamp, where the ceiling is the answer.)
-    """
-    ceiling = max(
-        _MIN_ATTEMPT_SECONDS,
-        _EDGE_PROXY_TIMEOUT_SECONDS
-        - _BUDGET_OVERHEAD_SECONDS
-        - _BUDGET_OVERSHOOT_ALLOWANCE_SECONDS
-        - _BUDGET_SAFETY_MARGIN_SECONDS,
-    )
-    wanted = OCR_BUDGET_SECONDS if requested is None else requested
-    try:
-        wanted = float(wanted)
-    except (TypeError, ValueError):
-        wanted = OCR_BUDGET_SECONDS
-    if not math.isfinite(wanted):
-        wanted = OCR_BUDGET_SECONDS
-    return max(0.0, min(wanted, ceiling))
-
-
 def _openrouter_model_deadline(deadline: float, remaining_models: int) -> float:
-    """Give each candidate a real attempt slice within the shared deadline.
-
-    Two opposite failures are documented here. Dividing the whole remaining
-    budget by the number of models is right in shape - a fast 429 from an
-    earlier model must not consume the slice a later, working model needs - but
-    a too-small share made the slice useless (bug v98: the third candidate got
-    ~5s after two instant 429s and never finished). Handing the first candidate
-    the entire per-attempt cap fixed that and broke the other end: a hanging
-    route could eat the budget of every free route behind it.
-
-    So: hold back a small floor for every model still queued (the reserve only
-    bites when the models ahead actually spent wall-clock), cap that total
-    reserve so it cannot grow without bound as the chain gets longer, give the
-    current candidate what is left up to the per-attempt cap, and never pass the
-    shared hard deadline. The head cannot starve the tail, the tail cannot
-    starve the head, and a chain of fast failures still hands its best slice to
-    whichever route finally answers.
-    """
+    """Give every remaining model a fair slice of the shared wall-clock budget."""
     now = time.monotonic()
     remaining = max(0.0, deadline - now)
-    reserve = min(
-        remaining,
-        _MIN_LATER_MODEL_SECONDS * (remaining_models - 1),
-        remaining * _RESERVE_MAX_FRACTION,
-    )
-    slice_seconds = max(_MIN_ATTEMPT_SECONDS, remaining - reserve)
-    return min(deadline, now + min(_ATTEMPT_TIMEOUT_CAP, slice_seconds))
+    share = remaining / max(1, remaining_models)
+    return min(deadline, now + min(_ATTEMPT_TIMEOUT_CAP, share))
 
 
 def _openrouter_ocr(
@@ -803,19 +357,12 @@ def _openrouter_ocr(
             break
         model_deadline = _openrouter_model_deadline(deadline, len(models) - index)
         try:
-            result = _openrouter_model_ocr(
+            return _openrouter_model_ocr(
                 payload_images,
                 payload_mimes,
                 model,
                 model_deadline,
             )
-            # A read can outlive urllib's per-operation timeout when upstream
-            # keeps sending bytes. Do not return a late success beyond this
-            # model's reserved slice: continue with a later candidate while
-            # the shared request deadline still has time left.
-            if time.monotonic() > model_deadline:
-                raise _OpenRouterFailure("timeout")
-            return result
         except _OpenRouterFailure as failure:
             # (bug v66: provider bodies can contain receipt fields or other
             # sensitive response data; only the selected model and a safe
@@ -854,25 +401,13 @@ def _openrouter_model_ocr(
                 timeout=min(_ATTEMPT_TIMEOUT_CAP, remaining),
             )
             try:
-                data = json.loads(_read_response_body(response, deadline))
+                data = json.loads(response.read())
             except (TypeError, ValueError, json.JSONDecodeError) as error:
-                # A body that is not even a valid OpenRouter envelope cannot
-                # be repaired by dropping response_format; advance to the
-                # next model as before.
                 raise _OpenRouterFailure("invalid_json") from error
-            try:
-                return _normalize_openrouter_response(data)
-            except _OpenRouterFailure as failure:
-                if structured and failure.kind in ("invalid_json", "invalid_response"):
-                    structured = False
-                    continue
-                raise
+            return _normalize_openrouter_response(data)
         except urllib.error.HTTPError as error:
             code = error.code
-            try:
-                body = _read_http_error_body(error, deadline)
-            except TimeoutError as timeout_error:
-                raise _OpenRouterFailure("timeout") from timeout_error
+            body = _read_http_error_body(error)
             if structured and _structured_response_rejected(code, body):
                 # Some free OpenRouter models reject response_format even
                 # though they accept the same vision prompt. Retry this model
@@ -900,7 +435,10 @@ def _openrouter_model_ocr(
 def _normalize_openrouter_response(data) -> dict:
     try:
         content = data["choices"][0]["message"]["content"]
-        content = _openrouter_content_text(content)
+        if isinstance(content, list):
+            content = "".join(
+                c.get("text", "") for c in content if isinstance(c, dict)
+            )
         parsed = _parse_json_text(content)
         return _normalize(parsed)
     except _OpenRouterFailure:
@@ -909,103 +447,16 @@ def _normalize_openrouter_response(data) -> dict:
         raise _OpenRouterFailure("invalid_response") from error
 
 
-def _openrouter_content_text(content) -> str:
-    """Normalize string/part-array answers without treating thoughts as OCR."""
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        raise TypeError("content is not text")
-
-    text_parts = []
-    for part in content:
-        if isinstance(part, str):
-            text_parts.append(part)
-            continue
-        if not isinstance(part, dict):
-            continue
-        part_type = str(part.get("type", "")).strip().lower()
-        if (
-            part.get("thought") is True
-            or part_type in {"thought", "thinking", "reasoning"}
-        ):
-            continue
-        text = part.get("text")
-        if isinstance(text, str):
-            text_parts.append(text)
-    return "".join(text_parts)
-
-
-def _close_response(response) -> None:
-    close = getattr(response, "close", None)
-    if callable(close):
-        try:
-            close()
-        except Exception:
-            pass
-
-
-def _read_response_body(response, deadline: float, max_bytes: int | None = None):
-    """Read a provider body without allowing a trickle past its deadline.
-
-    urllib's timeout applies to individual socket operations, not the complete
-    response body. Run the compatibility-friendly no-argument ``read`` call
-    in a daemon thread so the caller can close the response and classify a
-    late body as a timeout even when the upstream keeps sending bytes.
-    """
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
-        _close_response(response)
-        raise TimeoutError("response body deadline exceeded")
-
-    body = []
-    failure = []
-
-    def read_body() -> None:
-        try:
-            if max_bytes is None:
-                body.append(response.read())
-                return
-            try:
-                body.append(response.read(max_bytes))
-            except TypeError:
-                # Small test doubles and adapters often expose read() without
-                # urllib's optional byte-count argument.
-                body.append(response.read())
-        except Exception as error:
-            failure.append(error)
-
-    reader = threading.Thread(target=read_body, daemon=True)
-    reader.start()
-    reader.join(remaining)
-    if reader.is_alive() or time.monotonic() > deadline:
-        _close_response(response)
-        raise TimeoutError("response body deadline exceeded")
-    if failure:
-        raise failure[0]
-    return body[0] if body else b""
-
-
-def _read_http_error_body(
-    error: urllib.error.HTTPError,
-    deadline: float | None = None,
-) -> str:
+def _read_http_error_body(error: urllib.error.HTTPError) -> str:
     try:
-        if deadline is None:
-            body = error.read(4096)
-        else:
-            body = _read_response_body(error, deadline, max_bytes=4096)
-    except TimeoutError:
-        raise
+        body = error.read(4096)
     except TypeError:
         # A small fake HTTPError in a test or adapter may expose read() without
         # urllib's optional byte-count argument.
-        if deadline is None:
-            try:
-                body = error.read()
-            except Exception:
-                return ""
-        else:
-            raise
+        try:
+            body = error.read()
+        except Exception:
+            return ""
     except Exception:
         return ""
     if isinstance(body, bytes):
@@ -1105,21 +556,16 @@ def _downscale(image_bytes: bytes, max_side: int = 1280) -> bytes:
 
 
 def _parse_json_text(text: str) -> dict:
-    """Extract the first JSON object, allowing harmless prose or markdown."""
-    if not isinstance(text, str):
-        raise TypeError("OCR response is not text")
-    text = text.strip()
-    decoder = json.JSONDecoder()
-    for index, character in enumerate(text):
-        if character != "{":
-            continue
-        try:
-            parsed, _ = decoder.raw_decode(text, index)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    raise ValueError("OCR response did not contain a JSON object")
+    """Strip markdown fences, ambil JSON pertama yang valid."""
+    text = str(text or "").strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    # kalau masih ada teks di luar JSON, ambil bagian {...} pertama
+    if not text.startswith("{"):
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if m:
+            text = m.group(0)
+    return json.loads(text)
 
 
 def _rupiah_decimal(value) -> Decimal:

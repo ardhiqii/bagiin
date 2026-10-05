@@ -443,18 +443,11 @@ async function ensureIdentity(name) {
   return state.identity;
 }
 
-/**
- * Legacy identities can only be bound after an explicit recovery proof.
- * The onboarding restore flow uses /restore, which returns the newly bound
- * secret; this helper remains only for any compatibility caller that already
- * has the recovery code and must never make an empty bind request.
- */
-async function ensureSecret(recoveryCode) {
+/** Identities created before v51 hold no secret. Claim one, once. */
+async function ensureSecret() {
   if (!state.identity || state.identity.secret) return;
-  const code = typeof recoveryCode === "string" ? recoveryCode.trim() : "";
-  if (!code) return;
   try {
-    const r = await apiJson(`/api/identities/${state.identity.id}/bind`, "POST", { code });
+    const r = await apiJson(`/api/identities/${state.identity.id}/bind`, "POST", {});
     if (r && r.secret) {
       state.identity.secret = r.secret;
       lsSet(LS_KEYS.ident, state.identity);
@@ -1003,3 +996,5 @@ window.addEventListener("hashchange", onHashChange);
 // image and destroy the whole session
 ["dragover", "drop"].forEach(ev =>
   window.addEventListener(ev, (e) => { if (!e.target.closest(".dropzone")) e.preventDefault(); }));
+
+ensureSecret();

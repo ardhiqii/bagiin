@@ -173,28 +173,29 @@ function bindPhotoActions(data) {
 }
 
 // ---------- helpers ----------
-// Find "me" in a sel_by_item list. Identity id is authoritative (duplicate
-// names must NEVER misattribute picks); name is only a fallback for legacy
-// rows that predate identity ids.
+// Resolve the viewer's selection once, then derive both sides of the picker
+// from that decision. Identity id is authoritative; a legacy name is usable
+// only when exactly one id-less row matches (bug: initial render treated
+// duplicate legacy names as "mine" while optimistic rerender filtered both
+// rows out as "others", so the status changed before the server responded).
+function resolvePickerSelections(selList, me) {
+  const selections = selList || [];
+  if (!me) return { mine: null, others: selections };
+  const byId = selections.find(s => s.id === me.id);
+  if (byId) return { mine: byId, others: selections.filter(s => s !== byId) };
+  const legacyMatches = selections.filter(s =>
+    s.id == null && normName(s.name) === normName(me.name));
+  if (legacyMatches.length === 1) {
+    const mine = legacyMatches[0];
+    return { mine, others: selections.filter(s => s !== mine) };
+  }
+  return { mine: null, others: selections };
+}
 function mySelEntry(selList, me) {
-  if (!selList || !me) return null;
-  const byId = selList.find(s => s.id === me.id);
-  if (byId) return byId;
-  // legacy rows without id: match by name, but only when unambiguous
-  const sameName = selList.filter(s => normName(s.name) === normName(me.name));
-  return sameName.length === 1 ? sameName[0] : null;
+  return resolvePickerSelections(selList, me).mine;
 }
 function othersSel(selList, me) {
-  // Mirror mySelEntry's id-authoritative logic (inverted): exclude only me —
-  // by id, or by name ONLY for legacy rows that predate identity ids. A
-  // DIFFERENT person with the same name but their own id is still "other"
-  // (bug: name-based exclusion dropped them, so row text said "1 porsi · Rp
-  // 30.000/porsi" while computeMyBreakdown split the price by 2 → two
-  // contradicting prices for the same item)
-  return (selList || []).filter(s =>
-    s.id !== me.id
-    && !(s.id == null && normName(s.name) === normName(me.name))
-  );
+  return resolvePickerSelections(selList, me).others;
 }
 
 // The backend is the authority on money. computeMyBreakdown re-implements the
@@ -690,40 +691,89 @@ function billItemQuantity(it) {
   return /^(?:[1-9]|[1-9][0-9])$/.test(raw) ? Number(raw) : 1;
 }
 
-function itemRowHtml(it, data, mySel, myName, me, readOnly) {
-  const selList = (data.sel_by_item[it.id] || []);
-  const mine = mySelEntry(selList, me) || (myName && selList.find(s => !s.id && normName(s.name) === normName(myName)));
-  const myQty = mine ? (mine.qty || 1) : 0;
-  const isSel = myQty > 0;
+// Keep receipt units separate from the portions/slots people claim. A single
+// purchased line can be shared by several people, and `qty` is their claimed
+// servings (or fixed slots), not another receipt quantity (bug: "N porsi"
+// looked like N units bought and made shared items hard to reason about).
+function pickerShareInfo(it, selList, myQty = 0, readOnly = false) {
+  const purchasedQty = billItemQuantity(it);
+  const selections = selList || [];
+  const mineTxt = readOnly && myQty > 0 ? ` · kamu ${myQty}×` : "";
   const isSlot = it.mode === "slot" && it.slot_count;
   const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
-  const purchasedQty = billItemQuantity(it);
-  const modeLabel = isSlot ? "Bagi per porsi" : "Dibagi rata";
-  let shareText;
-  // "kamu N×" only where there is no stepper to read it off (closed bills).
-  // On an open bill the stepper sits right there showing the same number, and
-  // on a 390px phone that duplicate pushed the detail line onto three rows.
   if (isSlot) {
+    const taken = selections.reduce((s, x) => s + (x.qty || 1), 0);
+    const participantCount = selections.length;
+    const empty = Math.max(0, it.slot_count - taken);
     const perSlot = Math.floor(eff * purchasedQty / it.slot_count);
     const perSlotMax = Math.ceil(eff * purchasedQty / it.slot_count);
     const shareLabel = perSlot === perSlotMax
       ? `${fmt(perSlot)}/bagian`
       : `${fmt(perSlot)}–${fmt(perSlotMax).replace(/^Rp\s*/, "")}/bagian`;
-    const taken = selList.reduce((s, x) => s + (x.qty || 1), 0);
-    const empty = Math.max(0, it.slot_count - taken);
-    const mineTxt = readOnly && myQty > 0 ? ` · kamu ${myQty}×` : "";
-    shareText = `${taken}/${it.slot_count} bagian · ${shareLabel}${mineTxt}${empty > 0 ? ` · ${empty} kosong` : ""}`;
-  } else if (selList.length === 0) {
-    shareText = "belum dipilih";
-  } else {
-    const totalQty = selList.reduce((s, x) => s + (x.qty || 1), 0);
-    const perServing = Math.floor(eff * purchasedQty / totalQty);
-    const mineTxt = readOnly && myQty > 0 ? ` · kamu ${myQty}×` : "";
-    shareText = `${totalQty} porsi · ${fmt(perServing)}/porsi${mineTxt}`;
+    const hasMine = myQty > 0;
+    const hasOthers = taken > myQty;
+    const status = taken >= it.slot_count && !hasMine
+      ? { label: "Sudah penuh", key: "full" }
+      : hasMine ? (hasOthers
+        ? { label: "Kamu ikut ambil", key: "shared" }
+        : { label: "Kamu ambil", key: "mine" })
+        : taken > 0
+          ? { label: "Sudah diambil", key: "taken" }
+          : { label: "Belum ada yang ambil", key: "empty" };
+    return {
+      statusLabel: status.label,
+      statusClass: `picker-status-${status.key}`,
+      detail: `${taken}/${it.slot_count} bagian diambil oleh ${participantCount} orang · ${shareLabel}${mineTxt}${empty > 0 ? ` · ${empty} kosong` : ""}`,
+    };
   }
+  const totalQty = selections.reduce((s, x) => s + (x.qty || 1), 0);
+  const participantCount = selections.length;
+  const hasMine = myQty > 0;
+  const hasOthers = totalQty > myQty;
+  const status = hasMine ? (hasOthers
+    ? { label: "Kamu ikut ambil", key: "shared" }
+    : { label: "Kamu ambil", key: "mine" })
+    : totalQty > 0
+      ? { label: "Sudah diambil", key: "taken" }
+      : { label: "Belum ada yang ambil", key: "empty" };
+  return {
+    statusLabel: status.label,
+    statusClass: `picker-status-${status.key}`,
+    detail: totalQty > 0
+      ? `${totalQty} porsi diambil oleh ${participantCount} orang · ${fmt(Math.floor(eff * purchasedQty / totalQty))}/porsi${mineTxt}`
+      : "",
+  };
+}
+
+function pickerShareText(it, selList, myQty = 0, readOnly = false) {
+  const info = pickerShareInfo(it, selList, myQty, readOnly);
+  return info.detail ? `${info.statusLabel} · ${info.detail}` : info.statusLabel;
+}
+
+function pickerShareHtml(it, selList, myQty = 0, readOnly = false) {
+  const info = pickerShareInfo(it, selList, myQty, readOnly);
+  return `<span class="picker-status ${info.statusClass}" data-picker-status>${esc(info.statusLabel)}</span>`
+    + (info.detail ? `<span class="picker-share-detail"> · ${esc(info.detail)}</span>` : "");
+}
+
+function itemRowHtml(it, data, mySel, myName, me, readOnly) {
+  const selList = (data.sel_by_item[it.id] || []);
+  const mine = mySelEntry(selList, me);
+  const myQty = mine ? (mine.qty || 1) : 0;
+  const isSel = myQty > 0;
+  const isSlot = it.mode === "slot" && it.slot_count;
+  const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
+  const modeLabel = isSlot ? "Bagi per porsi" : "Dibagi rata";
+  const shareHtml = pickerShareHtml(it, selList, myQty, readOnly);
   const priceHtml = it.discount_idr > 0
     ? `<span class="price-was">${fmt(it.price_idr)}</span> <span class="price-now">${fmt(eff)}</span>`
     : fmt(eff);
+  // Receipt-unit wording is useful in the creator's read-only detail, but it
+  // distracts from the picker status for guests (bug: picker rows exposed the
+  // internal "dibeli" hint alongside the new status/detail copy).
+  const receiptQtyHtml = readOnly
+    ? `<span class="muted" style="display:block;font-size:11px;font-weight:500;">${fmt(eff)} × ${billItemQuantity(it)} dibeli</span>`
+    : "";
   // Slot items with no room left must not look tappable — a dead row that
   // flashes "slot abis" every tap is noise. The stepper stays hidden and the
   // row drops the checkbox affordance (bug: full-slot rows kept the checkbox
@@ -731,13 +781,13 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
   const isFull = isSlot && (selList.reduce((s, x) => s + (x.qty || 1), 0) >= it.slot_count) && myQty === 0;
   const a11y = readOnly || isFull
     ? ""
-    : ` role="checkbox" tabindex="0" aria-checked="${isSel}" aria-label="${esc(it.name)}, ${fmt(eff * purchasedQty)}"`;
+    : ` role="checkbox" tabindex="0" aria-checked="${isSel}" aria-label="${esc(it.name)}, ${fmt(eff * billItemQuantity(it))}"`;
   return `
     <div class="item-row${isSel ? " selected" : ""}${!readOnly && !isFull ? " item-tappable" : ""}${isFull ? " item-full" : ""}" data-item="${it.id}"${a11y}>
       ${!readOnly || isSel ? (isFull ? `<div class="item-check item-check-full">${ic("x")}</div>` : `<div class="item-check">${ic("check")}</div>`) : ""}
       <div class="item-info">
         <div class="item-name">${esc(it.name)} <span class="slot-badge">${modeLabel}</span></div>
-        <div class="item-share">${shareText}</div>
+        <div class="item-share">${shareHtml}</div>
       </div>
       ${!readOnly ? `
       <!-- the +/- disabled state used to be set only by renderPickRows, i.e.
@@ -749,7 +799,7 @@ function itemRowHtml(it, data, mySel, myName, me, readOnly) {
         <span class="step-qty" aria-live="polite">${myQty || 0}</span>
         <button type="button" class="step-btn step-inc" aria-label="Tambah"${isSlot && myQty >= it.slot_count - (selList.reduce((s, x) => s + (x.qty || 1), 0) - myQty) ? " disabled" : ""}>+</button>
       </div>` : ""}
-      <div class="money item-price"><span class="item-line-total">${fmt(eff * purchasedQty)}</span><span class="muted" style="display:block;font-size:11px;font-weight:500;">${fmt(eff)} × ${purchasedQty} dibeli</span></div>
+      <div class="money item-price"><span class="item-line-total">${fmt(eff * billItemQuantity(it))}</span>${receiptQtyHtml}</div>
     </div>`;
 }
 
@@ -913,18 +963,16 @@ function renderPickRows(data, me, useServer) {
     const isSlot = it && it.mode === "slot" && it.slot_count;
     const selList = othersSel(data.sel_by_item[id], me);
     if (shareEl && it) {
-      if (isSlot) {
-        const taken = selList.reduce((s, x) => s + (x.qty || 1), 0) + qty;
-        const empty = Math.max(0, it.slot_count - taken);
-        shareEl.textContent = `${taken}/${it.slot_count} bagian${empty > 0 ? ` · ${empty} kosong` : ""}`;
-      } else if (sel || selList.length > 0) {
-        const totalQty = selList.reduce((s, x) => s + (x.qty || 1), 0) + qty;
-        const eff = Math.max(0, it.price_idr - (it.discount_idr || 0));
-        const perServing = Math.floor(eff * billItemQuantity(it) / totalQty);
-        shareEl.textContent = `${totalQty} porsi · ${fmt(perServing)}/porsi`;
-      } else {
-        shareEl.textContent = "belum dipilih";
+      const visibleSelections = qty > 0 ? [...selList, { qty }] : selList;
+      const shareInfo = pickerShareInfo(it, visibleSelections, qty, false);
+      const statusEl = $(".picker-status", row);
+      const detailEl = $(".picker-share-detail", row);
+      if (statusEl) {
+        statusEl.className = `picker-status ${shareInfo.statusClass}`;
+        statusEl.textContent = shareInfo.statusLabel;
       }
+      if (detailEl) detailEl.textContent = shareInfo.detail ? ` · ${shareInfo.detail}` : "";
+      if (!statusEl) shareEl.textContent = pickerShareText(it, visibleSelections, qty, false);
     }
     // stepper live state: qty number, minus dead only at 0, plus dead when a
     // slot item is maxed. Minus used to die at 1 on slot items while tapping
@@ -948,6 +996,26 @@ function renderPickRows(data, me, useServer) {
     const fullNow = isSlot && !sel && (othersSel(data.sel_by_item[id], me).reduce((s, x) => s + (x.qty || 1), 0) >= it.slot_count);
     row.classList.toggle("item-full", fullNow && !sel);
     row.classList.toggle("item-tappable", !fullNow || sel);
+    const check = $(".item-check", row);
+    if (fullNow && !sel) {
+      row.removeAttribute("role");
+      row.removeAttribute("tabindex");
+      row.removeAttribute("aria-checked");
+      row.removeAttribute("aria-label");
+      if (check) {
+        check.classList.add("item-check-full");
+        check.innerHTML = ic("x");
+      }
+    } else {
+      row.setAttribute("role", "checkbox");
+      row.setAttribute("tabindex", "0");
+      row.setAttribute("aria-checked", sel ? "true" : "false");
+      row.setAttribute("aria-label", `${it.name}, ${fmt((it.price_idr - (it.discount_idr || 0)) * billItemQuantity(it))}`);
+      if (check) {
+        check.classList.remove("item-check-full");
+        check.innerHTML = ic("check");
+      }
+    }
   });
 }
 
@@ -1077,18 +1145,9 @@ function perServingEst(it, othersQty, myQty) {
 // reconstruct calc.py's canonical stable-identity order from the payload.
 // selQty===0 drops me out entirely (a release).
 function mergeLiveSelectors(selList, myId, myName, myQty) {
-  const isMe = s => (s.id ? s.id === myId : (!s.id && normName(s.name) === normName(myName)));
-  const out = [];
-  let found = false;
-  (selList || []).forEach(s => {
-    if (isMe(s)) {
-      found = true;
-      if (myQty > 0) out.push({ id: myId, qty: myQty });
-    } else {
-      out.push({ id: s.id, qty: s.qty || 1 });
-    }
-  });
-  if (!found && myQty > 0) out.push({ id: myId, qty: myQty });
+  const resolved = resolvePickerSelections(selList, { id: myId, name: myName });
+  const out = resolved.others.map(s => ({ id: s.id, qty: s.qty || 1 }));
+  if (myQty > 0) out.push({ id: myId, qty: myQty });
   return out;
 }
 
@@ -1296,7 +1355,7 @@ function openPaySheet(data, me, alreadyPaid) {
           if (it.mode === "slot" && it.slot_count) {
             const perSlot = Math.floor(lineTotal / it.slot_count);
             myPrice = perSlot * myQty;
-            shareNote = `${myQty} bagian · ${fmt(perSlot)}/bagian`;
+            shareNote = pickerShareText(it, [...othersSel(data.sel_by_item[it.id], me), { qty: myQty }], myQty, false);
           } else {
             // free item: split by total portions taken (others + mine), like
             // the backend and like computeMyBreakdown — NOT by selector count.
@@ -1307,7 +1366,7 @@ function openPaySheet(data, me, alreadyPaid) {
             const othersN = othersSel(data.sel_by_item[it.id], me).reduce((x, y) => x + (y.qty || 1), 0);
             const n = Math.max(1, othersN + myLive);
             myPrice = n > 1 ? Math.floor(lineTotal / n) * myLive : lineTotal;
-            shareNote = n > 1 ? `dibagi ${n} porsi` : "";
+            shareNote = pickerShareText(it, [...othersSel(data.sel_by_item[it.id], me), { qty: myLive }], myLive, false);
           }
           const priceNote = it.discount_idr > 0
             ? `diskon ${fmt(it.discount_idr)} dari ${fmt(it.price_idr)}`

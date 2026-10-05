@@ -5,6 +5,19 @@ gateway, just a link.
 
 **Live:** https://bagiin.ardhiqi.com
 
+## Version lines
+
+`main` is the vanilla JavaScript release line served from `/opt/projects/bagiin`.
+The React rebuild belongs on `next/react-v2` in a separate worktree at
+`/opt/projects/bagiin-react`. Work on React never changes the live checkout.
+Short-lived feature branches target the appropriate line through a pull request.
+Tag each deployed commit so the live version and rollback point are unambiguous.
+
+The running service reads files from `/opt/projects/bagiin`; a GitHub push alone
+does not deploy anything. Update that checkout from `main` only after reviewing
+and testing the release. Frontend files are served directly from disk, so do not
+edit them in the live checkout while users are loading the site.
+
 ## How it works
 
 1. **Creator** takes a photo of the receipt → OCR reads the items, total, and even
@@ -19,8 +32,7 @@ gateway, just a link.
 
 ## Features
 
-- 📷 **Receipt OCR** via Gemini with an optional bounded OpenRouter free-model
-  fallback — items, prices, merchant, date
+- 📷 **Receipt OCR** via Google Gemini free tier — items, prices, merchant, date
 - 🔗 **Link sharing, no accounts** — identity is just a name on the device
 - 🔑 **Recovery/transfer code** — move your identity to another browser with a
   generated code (regenerating kills the old code)
@@ -30,17 +42,17 @@ gateway, just a link.
   brand-colored chips, shown in the pay sheet with one-tap copy
 - 🧮 **Fair split math** — shared items divided evenly, proportional tax, rupiah
   rounding invariants covered by tests
-- 📱 **Mobile-first**, dark/light mode, React + TypeScript build; the legacy static runtime is frozen and scheduled for removal (see `PRODUCT_DESIGN.md`)
+- 📱 **Mobile-first**, dark/light mode, no build step (vanilla JS)
 
 ## Tech stack
 
 | Layer | Choice |
 |---|---|
 | Backend | FastAPI + SQLite (stdlib `sqlite3`) |
-| Frontend | TypeScript + React 18 + Vite, project-owned shadcn-style primitives |
-| OCR | Gemini (`gemini-3.5-flash`) with optional OpenRouter `:free` fallback |
+| Frontend | Vanilla JS SPA (no framework, no build step) |
+| OCR | Google Gemini (`gemini-3.5-flash`, free tier) |
 | Deploy | nginx + Let's Encrypt, Cloudflare DNS, systemd |
-| Tests | Python pytest + Node frontend logic/browser E2E |
+| Tests | Python stdlib scripts (`test_calc_regression.py`, `test_features.py`) |
 
 ## Project structure
 
@@ -54,76 +66,33 @@ bagiin/
 │   ├── test_calc_regression.py
 │   └── test_features.py
 ├── frontend/
-│   ├── src/          # React + TypeScript routes, API adapters, primitives
-│   ├── package.json  # Vite build and frontend checks
-│   └── static/       # frozen legacy runtime, scheduled for removal; asset-only in the meantime
-├── AGENTS.md        # project rules for agents
-├── PRODUCT_DESIGN.md # current product, UX, architecture, design direction
-└── SPEC.md          # business rules & changelog
+│   ├── index.html   # shell + inline CSS
+│   └── static/v10/  # app.js (router/state), screens.js, bill.js
+└── SPEC.md          # product spec & changelog
 ```
 
 ## Local development
 
 ```bash
-cd frontend
-npm ci --no-audit --no-fund
-npm run typecheck
-npm run build
-
-cd ../backend
+cd backend
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt   # fastapi, uvicorn, slowapi, google-genai (or as installed)
-# Set the OCR provider credential in your local environment; other features work without OCR.
+export GEMINI_API_KEY=...          # required for OCR; other features work without it
 uvicorn main:app --reload --port 8082
 ```
 
 Open http://localhost:8082
 
-> FastAPI serves the Vite output from `frontend/dist/` at `/` and `/assets/`.
-> `frontend/dist/` is generated and ignored, so rebuild before restarting the
-> service. The legacy `frontend/static/` runtime is frozen and scheduled for
-> removal after React route parity and browser verification; until then it is
-> kept only as a source of non-runtime assets. There is no second runtime path.
-
-### Identity recovery
-
-Identity IDs are public references, not credentials. New and recovered sessions
-use both `X-Identity-Id` and `X-Identity-Secret`. Legacy identities from before
-secret binding must be restored with their recovery code, or explicitly bound
-with `POST /api/identities/{id}/bind` and `{ "code": "..." }`; an id-only request
-never mints a secret. Public bill links remain readable without a session, while
-identity-scoped writes require an authenticated secret.
-
-### Bundle accounting
-
-The formal `<50 KB gzip` budget applies to source-owned application assets.
-Vendor React and icon runtime are reported separately, and the full delivered
-asset size is reported alongside them. A prior split baseline recorded 44.03 KB
-gzip (43.00 KiB) for app-owned assets, 59.75 KB gzip (58.35 KiB) for vendor and
-icon runtime, and 103.78 KB gzip (101.35 KiB) for all generated assets. The
-latest local `npm run build` output reported 133.13 KB gzip total (130.01 KiB),
-including the 45.48 KB gzip React chunk; this is a measured local baseline, not
-a release claim. Re-run the build after dependency or bundling changes.
+> Static frontend is served from `frontend/static/`. The backend inserts a
+> content hash into each script URL and revalidates `index.html`; no version
+> folder or manual cache-busting step is needed.
 
 ## Tests
 
 ```bash
 cd backend
-venv/bin/python -B -m pytest -q
-
-cd ../frontend
-npm run typecheck
-npm run build
-npm run test:logic
-
-cd ..
-node tools/e2e_create.mjs <base-url> <cdp-url>
-node tools/e2e_smoke.mjs <base-url> <cdp-url>
-node tools/e2e_settled.mjs <base-url> <cdp-url>
-node tools/e2e_recap.mjs <base-url> <cdp-url>
-node tools/e2e_guest_route_guard.mjs <base-url> <cdp-url>
-node tools/e2e_rounding.mjs <base-url> <cdp-url>
-node tools/e2e_uiux_responsive.mjs <base-url> <cdp-url>
+venv/bin/python test_calc_regression.py   # split math invariants
+BAGIIN_DB=/tmp/bagiin_test.db venv/bin/python test_features.py  # edit diff, accounts, codes
 ```
 
 ## License

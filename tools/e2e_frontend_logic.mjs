@@ -275,6 +275,12 @@ assert.match(recap, /clearAppNavBadge\(\);\n\s*content\.innerHTML = recapErrorHt
 assert.match(screens, /class="right home-desktop-routes"[\s\S]*id="recap-btn"[\s\S]*id="settings-btn"/);
 assert.match(index, /home-desktop-routes/);
 assert.match(screens, /id="create-btn"/);
+// A full row may be visually muted, but its status badge must not inherit
+// reduced opacity: it carries the only explicit explanation that the row is
+// unavailable and must remain legible in both token sets.
+assert.doesNotMatch(index, /\.item-full\s*\{[^}]*opacity\s*:/);
+assert.match(index, /\.item-full \.item-name,[\s\S]*?\.picker-share-detail \{ opacity:\.55; \}/);
+assert.match(index, /\.picker-status-full \{ color:var\(--red\); background:var\(--red-soft\);/);
 
 // The optimistic split remains available for the picker, but its number must
 // be visibly labeled as pending until the authoritative server payload lands.
@@ -595,5 +601,281 @@ renderPickHarness.renderPickRows(exactData, { id: "me" }, true);
 assert.equal(renderNodes[".dock-total .label"].textContent, "Total kamu");
 assert.equal(renderNodes["#my-cashback"].textContent, "−Rp 40000");
 assert.equal(renderNodes["#my-final-total"].textContent, "Rp 75000");
+
+// Picker copy must execute the production renderer, not just assert that a
+// phrase exists in source. Receipt quantity and claimed servings are separate
+// facts: one purchased line may be shared, and one person may claim multiple
+// servings. The same helper is also used by optimistic rerenders.
+const pickerSource = bill.slice(
+  bill.indexOf("function billItemQuantity"),
+  bill.indexOf("function bindItemRows"),
+);
+const pickerResolverSource = bill.slice(
+  bill.indexOf("function resolvePickerSelections"),
+  bill.indexOf("// The backend is the authority on money"),
+);
+const liveMergeSource = bill.slice(
+  bill.indexOf("function mergeLiveSelectors"),
+  bill.indexOf("// LOCAL ESTIMATE ONLY"),
+);
+const pickerHarness = vm.runInNewContext(`
+  const fmt = value => "Rp " + value;
+  const esc = value => String(value);
+  const ic = () => "";
+  const normName = value => String(value || "").trim().toLowerCase();
+  ${pickerResolverSource}
+  ${pickerSource}
+  ({ itemRowHtml, pickerShareText });
+`);
+function pickerItem(item, selections, me = { id: "alice", name: "Alice" }, readOnly = false) {
+  return pickerHarness.itemRowHtml(
+    item,
+    { sel_by_item: { [item.id]: selections } },
+    null,
+    me.name,
+    me,
+    readOnly,
+  );
+}
+function pickerText(html) { return html.replace(/<[^>]*>/g, ""); }
+const freeOne = { id: 1, name: "Nasi", price_idr: 10_000, discount_idr: 0, quantity: 1, mode: "free" };
+const emptyHtml = pickerItem(freeOne, []);
+assert.match(pickerText(emptyHtml), /Belum ada yang ambil/);
+assert.match(emptyHtml, /class="picker-status picker-status-empty"[^>]*>Belum ada yang ambil<\/span>/);
+assert.doesNotMatch(emptyHtml, /dibeli/i);
+
+const ambiguousLegacyHtml = pickerItem(freeOne, [
+  { name: "Alice", qty: 1 },
+  { name: "alice", qty: 1 },
+]);
+assert.doesNotMatch(ambiguousLegacyHtml, /class="item-row selected/);
+assert.match(pickerText(ambiguousLegacyHtml), /Sudah diambil · 2 porsi diambil oleh 2 orang · Rp 5000\/porsi/);
+assert.doesNotMatch(pickerText(ambiguousLegacyHtml), /Kamu ambil|Kamu ikut ambil/);
+const mergeHarness = vm.runInNewContext(`
+  const normName = value => String(value || "").trim().toLowerCase();
+  ${pickerResolverSource}
+  ${liveMergeSource}
+  ({ mergeLiveSelectors });
+`);
+const duplicateLegacyMerge = mergeHarness.mergeLiveSelectors(
+  [{ name: "Alice", qty: 1 }, { name: "alice", qty: 1 }],
+  "alice-id", "Alice", 0,
+);
+assert.equal(duplicateLegacyMerge.length, 2);
+assert.deepEqual(duplicateLegacyMerge.map(s => s.qty), [1, 1]);
+assert.equal(duplicateLegacyMerge.some(s => s.id === "alice-id"), false);
+
+const otherOnlyHtml = pickerItem(freeOne, [{ id: "bob", name: "Bob", qty: 1 }]);
+assert.match(pickerText(otherOnlyHtml), /Sudah diambil · 1 porsi diambil oleh 1 orang · Rp 10000\/porsi/);
+assert.match(otherOnlyHtml, /class="picker-status picker-status-taken"[^>]*>Sudah diambil<\/span>/);
+assert.doesNotMatch(otherOnlyHtml, /dibeli/i);
+
+const oneQtyHtml = pickerItem(freeOne, [{ id: "alice", name: "Alice", qty: 1 }]);
+assert.match(pickerText(oneQtyHtml), /Kamu ambil · 1 porsi diambil oleh 1 orang · Rp 10000\/porsi/);
+assert.match(oneQtyHtml, /class="picker-status picker-status-mine"[^>]*>Kamu ambil<\/span>/);
+assert.match(oneQtyHtml, /data-item="1"/);
+assert.match(oneQtyHtml, /aria-checked="true"/);
+assert.match(oneQtyHtml, /class="step-qty"[^>]*>1<\/span>/);
+
+const quantityThree = { ...freeOne, id: 2, quantity: 3 };
+const purchasedThreeHtml = pickerItem(quantityThree, [{ id: "alice", name: "Alice", qty: 1 }]);
+assert.match(pickerText(purchasedThreeHtml), /Kamu ambil · 1 porsi diambil oleh 1 orang · Rp 30000\/porsi/);
+assert.match(purchasedThreeHtml, /item-line-total">Rp 30000<\/span>/);
+assert.match(purchasedThreeHtml, /aria-label="Nasi, Rp 30000"/);
+assert.doesNotMatch(purchasedThreeHtml, /dibeli/i);
+const readOnlyHtml = pickerItem(quantityThree, [{ id: "alice", name: "Alice", qty: 1 }], undefined, true);
+assert.match(readOnlyHtml, /Rp 10000 × 3 dibeli/i);
+
+const sharedHtml = pickerItem(
+  { ...freeOne, id: 3 },
+  [{ id: "alice", name: "Alice", qty: 1 }, { id: "bob", name: "Bob", qty: 1 }],
+);
+assert.match(pickerText(sharedHtml), /Kamu ikut ambil · 2 porsi diambil oleh 2 orang · Rp 5000\/porsi/);
+assert.match(sharedHtml, /class="picker-status picker-status-shared"[^>]*>Kamu ikut ambil<\/span>/);
+
+const claimedTwoHtml = pickerItem({ ...quantityThree, id: 4 }, [{ id: "alice", name: "Alice", qty: 2 }]);
+assert.match(pickerText(claimedTwoHtml), /Kamu ambil · 2 porsi diambil oleh 1 orang · Rp 15000\/porsi/);
+assert.match(claimedTwoHtml, /class="step-qty"[^>]*>2<\/span>/);
+
+const slotHtml = pickerItem(
+  { id: 5, name: "Sate", price_idr: 10_000, discount_idr: 0, quantity: 2, mode: "slot", slot_count: 4 },
+  [{ id: "alice", name: "Alice", qty: 2 }, { id: "bob", name: "Bob", qty: 1 }],
+);
+assert.match(pickerText(slotHtml), /Kamu ikut ambil · 3\/4 bagian diambil oleh 2 orang · Rp 5000\/bagian · 1 kosong/);
+const fullSlotHtml = pickerItem(
+  { id: 6, name: "Minum", price_idr: 8_000, discount_idr: 0, quantity: 1, mode: "slot", slot_count: 2 },
+  [{ id: "bob", name: "Bob", qty: 2 }],
+  { id: "alice", name: "Alice" },
+);
+assert.match(pickerText(fullSlotHtml), /Sudah penuh · 2\/2 bagian diambil oleh 1 orang · Rp 4000\/bagian/);
+assert.match(fullSlotHtml, /class="picker-status picker-status-full"[^>]*>Sudah penuh<\/span>/);
+assert.doesNotMatch(fullSlotHtml, /dibeli/i);
+assert.match(fullSlotHtml, /class="item-row item-full"/);
+assert.doesNotMatch(fullSlotHtml, /role="checkbox"/);
+const fullOwnedHtml = pickerItem(
+  { id: 7, name: "Kopi", price_idr: 8_000, discount_idr: 0, quantity: 1, mode: "slot", slot_count: 2 },
+  [{ id: "alice", name: "Alice", qty: 2 }],
+);
+assert.match(pickerText(fullOwnedHtml), /Kamu ambil · 2\/2 bagian diambil oleh 1 orang · Rp 4000\/bagian/);
+assert.doesNotMatch(fullOwnedHtml, /class="item-row item-full"/);
+assert.match(pickerHarness.pickerShareText(quantityThree, [{ qty: 2 }]), /Sudah diambil · 2 porsi diambil oleh 1 orang/);
+const payShareSource = bill.slice(
+  bill.indexOf("function openPaySheet"),
+  bill.indexOf("// ---------- Where the money goes"),
+);
+assert.match(payShareSource, /pickerShareText\(it, \[\.\.\.othersSel\(data\.sel_by_item\[it\.id\], me\), \{ qty: my(?:Qty|Live) \}\]/);
+assert.doesNotMatch(payShareSource, /dibagi \$\{n\} porsi/);
+
+// Exercise the real optimistic render path after a quantity change. It must
+// use the same purchased-vs-claimed distinction as the initial row renderer.
+const optimisticRenderSource = bill.slice(
+  bill.indexOf("function renderPickRows"),
+  bill.indexOf("async function updateGuestSelection"),
+);
+function pickerDomRow(id) {
+  const attrs = {};
+  const classes = new Set(["item-row", "item-tappable"]);
+  const checkClasses = new Set(["item-check"]);
+  return {
+    dataset: { item: String(id) },
+    attrs,
+    classes,
+    parts: {
+      share: { textContent: "" },
+      status: { className: "picker-status picker-status-empty", textContent: "" },
+      detail: { textContent: "" },
+      qty: { textContent: "" },
+      dec: {},
+      inc: {},
+      check: {
+        classList: {
+          add(name) { checkClasses.add(name); },
+          remove(name) { checkClasses.delete(name); },
+          contains(name) { return checkClasses.has(name); },
+        },
+        innerHTML: "",
+      },
+    },
+    classList: {
+      toggle(name, force) {
+        if (force) classes.add(name); else classes.delete(name);
+      },
+      add(name) { classes.add(name); },
+      remove(name) { classes.delete(name); },
+      contains(name) { return classes.has(name); },
+    },
+    hasAttribute(name) { return Object.hasOwn(attrs, name); },
+    setAttribute(name, value) { attrs[name] = String(value); },
+    removeAttribute(name) { delete attrs[name]; },
+  };
+}
+const optimisticRow = pickerDomRow(7);
+const fullRow = pickerDomRow(8);
+const ambiguousLegacyRow = pickerDomRow(9);
+const optimisticHarness = vm.runInNewContext(`
+  const state = { currentBillId: "optimistic-bill", selQty: new Map([[7, 2]]) };
+  const fmt = value => "Rp " + value;
+  const ic = name => "<" + name + ">";
+  const normName = value => String(value || "").trim().toLowerCase();
+  const renderNodes = {};
+  function $(selector, root) {
+    if (root === optimisticRow) {
+      if (selector === ".item-share") return optimisticRow.parts.share;
+      if (selector === ".step-qty") return optimisticRow.parts.qty;
+      if (selector === ".step-dec") return optimisticRow.parts.dec;
+      if (selector === ".step-inc") return optimisticRow.parts.inc;
+      if (selector === ".item-check") return optimisticRow.parts.check;
+      if (selector === ".picker-status") return optimisticRow.parts.status;
+      if (selector === ".picker-share-detail") return optimisticRow.parts.detail;
+    }
+    if (root === fullRow) {
+      if (selector === ".item-share") return fullRow.parts.share;
+      if (selector === ".step-qty") return fullRow.parts.qty;
+      if (selector === ".step-dec") return fullRow.parts.dec;
+      if (selector === ".step-inc") return fullRow.parts.inc;
+      if (selector === ".item-check") return fullRow.parts.check;
+      if (selector === ".picker-status") return fullRow.parts.status;
+      if (selector === ".picker-share-detail") return fullRow.parts.detail;
+    }
+    if (root === ambiguousLegacyRow) {
+      if (selector === ".item-share") return ambiguousLegacyRow.parts.share;
+      if (selector === ".step-qty") return ambiguousLegacyRow.parts.qty;
+      if (selector === ".step-dec") return ambiguousLegacyRow.parts.dec;
+      if (selector === ".step-inc") return ambiguousLegacyRow.parts.inc;
+      if (selector === ".item-check") return ambiguousLegacyRow.parts.check;
+      if (selector === ".picker-status") return ambiguousLegacyRow.parts.status;
+      if (selector === ".picker-share-detail") return ambiguousLegacyRow.parts.detail;
+    }
+    return null;
+  }
+  function $$(selector) { return selector === "#pick-items .item-row" ? [optimisticRow, fullRow, ambiguousLegacyRow] : []; }
+  function computeMyBreakdown() { return { grossSub: 0, orderDiscount: 0, sub: 0, tax: 0, total: 0 }; }
+  function myBreakdown() { return { grossSub: 0, orderDiscount: 0, sub: 0, tax: 0, total: 0 }; }
+  function billCashback() { return 0; }
+  function taxServiceTotal() { return 0; }
+  ${pickerResolverSource}
+  ${pickerSource.match(/function billItemQuantity[\s\S]*?\n\}/)[0]}
+  ${pickerSource.match(/function pickerShareInfo[\s\S]*?\n\}/)[0]}
+  ${pickerSource.match(/function pickerShareText[\s\S]*?\n\}/)[0]}
+  ${optimisticRenderSource}
+  ({ renderPickRows });
+`, { optimisticRow, fullRow, ambiguousLegacyRow });
+optimisticHarness.renderPickRows({
+  bill: { id: "optimistic-bill", cashback_idr: 0, order_discount_idr: 0, tax_idr: 0, service_idr: 0 },
+  items: [
+    { id: 7, name: "Nasi", price_idr: 10_000, discount_idr: 0, quantity: 3, mode: "free" },
+    { id: 8, name: "Kopi", price_idr: 8_000, discount_idr: 0, quantity: 1, mode: "slot", slot_count: 2 },
+    { id: 9, name: "Soto", price_idr: 10_000, discount_idr: 0, quantity: 1, mode: "free" },
+  ],
+  sel_by_item: {
+    7: [{ id: "bob", name: "Bob", qty: 1 }],
+    8: [{ id: "bob", name: "Bob", qty: 2 }],
+    9: [{ name: "Alice", qty: 1 }, { name: "alice", qty: 1 }],
+  },
+  people: [],
+}, { id: "alice", name: "Alice" }, false);
+assert.equal(optimisticRow.parts.status.textContent, "Kamu ikut ambil");
+assert.equal(optimisticRow.parts.status.className, "picker-status picker-status-shared");
+assert.match(optimisticRow.parts.status.textContent + optimisticRow.parts.detail.textContent, /Kamu ikut ambil · 3 porsi diambil oleh 2 orang · Rp 10000\/porsi/);
+assert.equal(String(optimisticRow.parts.qty.textContent), "2");
+assert.equal(fullRow.parts.status.textContent, "Sudah penuh");
+assert.equal(fullRow.parts.status.className, "picker-status picker-status-full");
+assert.match(fullRow.parts.status.textContent + fullRow.parts.detail.textContent, /Sudah penuh · 2\/2 bagian diambil oleh 1 orang · Rp 4000\/bagian/);
+assert.equal(fullRow.attrs.role, undefined);
+assert.equal(fullRow.attrs.tabindex, undefined);
+assert.equal(fullRow.attrs["aria-checked"], undefined);
+assert.equal(fullRow.attrs["aria-label"], undefined);
+assert.equal(fullRow.classes.has("item-full"), true);
+assert.equal(fullRow.classes.has("item-tappable"), false);
+assert.equal(fullRow.parts.check.classList.contains("item-check-full"), true);
+assert.equal(ambiguousLegacyRow.parts.status.textContent, "Sudah diambil");
+assert.equal(ambiguousLegacyRow.parts.status.className, "picker-status picker-status-taken");
+assert.match(ambiguousLegacyRow.parts.status.textContent + ambiguousLegacyRow.parts.detail.textContent, /Sudah diambil · 2 porsi diambil oleh 2 orang · Rp 5000\/porsi/);
+assert.equal(ambiguousLegacyRow.classes.has("selected"), false);
+
+optimisticHarness.renderPickRows({
+  bill: { id: "optimistic-bill", cashback_idr: 0, order_discount_idr: 0, tax_idr: 0, service_idr: 0 },
+  items: [
+    { id: 7, name: "Nasi", price_idr: 10_000, discount_idr: 0, quantity: 3, mode: "free" },
+    { id: 8, name: "Kopi", price_idr: 8_000, discount_idr: 0, quantity: 1, mode: "slot", slot_count: 2 },
+    { id: 9, name: "Soto", price_idr: 10_000, discount_idr: 0, quantity: 1, mode: "free" },
+  ],
+  sel_by_item: {
+    7: [{ id: "bob", name: "Bob", qty: 1 }],
+    8: [{ id: "bob", name: "Bob", qty: 1 }],
+    9: [{ name: "Alice", qty: 1 }, { name: "alice", qty: 1 }],
+  },
+  people: [],
+}, { id: "alice", name: "Alice" }, false);
+assert.equal(fullRow.attrs.role, "checkbox");
+assert.equal(fullRow.attrs.tabindex, "0");
+assert.equal(fullRow.attrs["aria-checked"], "false");
+assert.equal(fullRow.classes.has("item-full"), false);
+assert.equal(fullRow.classes.has("item-tappable"), true);
+assert.equal(fullRow.parts.check.classList.contains("item-check-full"), false);
+assert.equal(fullRow.parts.status.textContent, "Sudah diambil");
+assert.equal(fullRow.parts.status.className, "picker-status picker-status-taken");
+assert.equal(ambiguousLegacyRow.parts.status.textContent, "Sudah diambil");
+assert.equal(ambiguousLegacyRow.classes.has("selected"), false);
 
 console.log("frontend logic regression assertions: PASS");

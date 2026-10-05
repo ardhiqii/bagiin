@@ -67,9 +67,8 @@ def _identity_from_request(request: Request):
     the creator's id to rename them, attach their own bank account to the
     creator's profile, mint a recovery code and own the account for good.)
 
-    Identities created before v51 have no secret; their old public id is not
-    enough to authenticate. They must be restored or explicitly bound with
-    the recovery code first.
+    Identities created before v51 have no secret; they keep working until the
+    client calls /bind, which mints one (trust on first use).
     """
     ident_id = request.headers.get("X-Identity-Id", "")
     if not ident_id:
@@ -78,8 +77,6 @@ def _identity_from_request(request: Request):
     if not ident:
         raise HTTPException(404, "Identitas tidak ditemukan")
     stored = ident.get("secret")
-    if not stored:
-        raise HTTPException(403, "Sesi lama perlu dipulihkan dengan code pemulihan")
     if stored:
         given = request.headers.get("X-Identity-Secret", "")
         if not given or not secrets.compare_digest(str(stored), given):
@@ -256,30 +253,6 @@ def _to_str(value, field: str, *, maxlen: int | None = None) -> str:
     return v
 
 
-def _tax_mode(value, *, absent_default: str | None = None) -> str | None:
-    """Validate the documented tax allocation modes before persistence."""
-    if value is None or value == "":
-        if absent_default is not None:
-            return absent_default
-        raise HTTPException(400, "tax_mode wajib diisi")
-    mode = _to_str(value, "tax_mode", maxlen=20).lower()
-    if mode not in _VALID_TAX_MODES:
-        raise HTTPException(400, "tax_mode harus proportional, equal, atau creator")
-    return mode
-
-
-def _required_recovery_code(value) -> str:
-    """Require a text recovery proof before looking up or binding an identity."""
-    if not isinstance(value, str):
-        raise HTTPException(400, "Code harus teks")
-    code = value.strip()
-    if not code:
-        raise HTTPException(400, "Code wajib diisi")
-    if len(code) > 100:
-        raise HTTPException(400, "Code maksimal 100 karakter")
-    return code
-
-
 _MAX_IDR = 10**12  # a trillion rupiah -- comfortably above any real bill,
 # comfortably below what sqlite3's INSERT can choke on. `_to_int` calls for
 # money had `minv=0` but no `maxv`, so e.g. `1e20` reached sqlite3 and raised
@@ -288,7 +261,6 @@ _MAX_IDR = 10**12  # a trillion rupiah -- comfortably above any real bill,
 
 _MAX_PARTICIPANT_COUNT = 10_000  # generous for a shared bill, but not unbounded
 _MAX_ITEM_QUANTITY = 99
-_VALID_TAX_MODES = {"proportional", "equal", "creator"}
 _MISSING = object()
 
 
@@ -702,6 +674,8 @@ def _recap_is_final(
     A pending invite-only view is still provisional until that workflow is
     accepted, even when the rest of the allocation is complete.
     """
+    if response.get("settled"):
+        return True
     if pending_workflow:
         return False
     if not response.get("total_ok", True):
@@ -712,8 +686,6 @@ def _recap_is_final(
         return False
     if _recap_payer_unresolved(bill_data, response):
         return False
-    if response.get("settled"):
-        return True
     # An untouched open bill reconciles through the owner fallback, but it is
     # not a meaningful allocation yet. Closed legacy bills keep their existing
     # final classification even when they predate a selection.
@@ -923,25 +895,17 @@ def _build_identity_recap(identity: dict) -> dict:
         bill_data = row.get("_bill_data")
         if not bill_data or bill_data["bill"]["id"] in entry_by_bill_id:
             continue
-        # v97: `get_bills_for_identity` now also returns invite-only bills (so
-        # Home and Rekap share one universe). Membership still decides the
-        # final/provisional classification — an invite-only row must stay a
-        # pending workflow, never a member entry with a real money edge.
-        is_member = bool(row.get("_is_member", True))
         entry = {
             "bill_data": bill_data,
             "response": _compute_response(bill_data, viewer_id),
-            "member": is_member,
-            "invite_only": not is_member,
+            "member": True,
+            "invite_only": False,
         }
         entries.append(entry)
         entry_by_bill_id[bill_data["bill"]["id"]] = entry
 
     # A pending invite is an identity-scoped way to see a bill before a payment
     # row exists. Load only those explicit invite targets, never all bills.
-    # The loop is idempotent with the member pass above: a bill already loaded
-    # (now including invite-only rows) is skipped, and only a bill that this
-    # identity can reach through no other path is appended here.
     pending_invites = db.get_pending_invites(viewer_id)
     for invite in pending_invites:
         bill_id = invite["bill_id"]
@@ -950,12 +914,9 @@ def _build_identity_recap(identity: dict) -> dict:
         bill_data = db.get_bill(bill_id)
         if not bill_data:
             continue
-        response = _compute_response(bill_data, viewer_id)
-        if response.get("settled"):
-            continue
         entry = {
             "bill_data": bill_data,
-            "response": response,
+            "response": _compute_response(bill_data, viewer_id),
             "member": False,
             "invite_only": True,
         }
@@ -1232,21 +1193,6 @@ def _build_identity_recap(identity: dict) -> dict:
 
 # ---------- identity ----------
 
-def _identity_response(ident: dict) -> dict:
-    """Return identity fields safe for the creating/restoring client.
-
-    Database rows also contain ``identity_code_hash`` and timestamps. The hash
-    is recovery proof material, not an API field; returning the whole row from
-    create/restore made it visible to any caller of the unauthenticated restore
-    endpoint.
-    """
-    return {
-        key: ident[key]
-        for key in ("id", "name", "role", "secret")
-        if key in ident
-    }
-
-
 async def _read_json(request: Request) -> dict:
     try:
         raw = await request.body()
@@ -1275,41 +1221,38 @@ async def create_identity(request: Request):
     if not name:
         raise HTTPException(400, "Nama wajib diisi")
     ident = db.new_identity(name, role="creator" if data.get("creator") else "guest")
-    return _identity_response(ident)
+    return ident
 
 
 @app.post("/api/identities/restore")
 @limiter.limit("10/minute")
 async def restore_identity(request: Request):
     data = await _read_json(request)
-    # Unauthenticated endpoint (no identity/secret needed to restore), but the
-    # recovery code is the proof that authorizes returning the identity secret.
-    code = _required_recovery_code(data.get("code"))
+    # unauthenticated endpoint (no identity/secret needed to restore) -- a
+    # non-string code (list/dict) reached `.strip()` -> AttributeError -> 500,
+    # reachable by anyone (bug: v66 audit, A12)
+    code = _to_str(data.get("code"), "Code", maxlen=100)
     ident = db.restore_identity(code)
     if not ident:
         raise HTTPException(404, "Code tidak dikenal")
-    if not ident.get("secret"):
-        # A concurrent restore may win the atomic first bind; re-read so both
-        # legitimate holders receive the same bound secret.
-        db.bind_secret(ident["id"], code)
-        ident = db.get_identity(ident["id"])
-        if not ident or not ident.get("secret"):
-            raise HTTPException(409, "Identitas belum bisa dipulihkan, coba lagi")
-    return _identity_response(ident)
+    return ident
 
 
 @app.post("/api/identities/{identity_id}/bind")
 @limiter.limit("20/minute")
-async def bind_identity_secret(identity_id: str, request: Request):
-    """Bind a legacy identity only when its recovery code proves ownership."""
-    data = await _read_json(request)
-    code = _required_recovery_code(data.get("code"))
+def bind_identity_secret(identity_id: str, request: Request):
+    """Mint the auth secret for an identity created before v51.
+
+    Trust on first use: the browser that still holds only the old id calls
+    this once and stores what it gets back. Identities that already have a
+    secret return 403 — the secret is never re-issued.
+    """
     ident = db.get_identity(identity_id)
     if not ident:
         raise HTTPException(404, "Identitas tidak ditemukan")
-    secret = db.bind_secret(identity_id, code)
+    secret = db.bind_secret(identity_id)
     if not secret:
-        raise HTTPException(403, "Code tidak cocok atau identitas ini sudah memiliki sesi")
+        raise HTTPException(403, "Identitas ini sudah memiliki sesi")
     return {"id": identity_id, "name": ident["name"], "secret": secret}
 
 
@@ -1500,20 +1443,14 @@ def my_bills(identity_id: str, request: Request):
     # show owner-only actions (delete) — mirrors _owner_id, including the
     # placeholder-name resolution that paid_by_identity_id alone misses
     #
-    # private keys — `get_bills_for_identity` already loaded the bill snapshot
-    # once (for the settled flag); re-fetching it here too meant every bill on
-    # this list opened a fresh sqlite connection twice over, on top of what the
-    # list query itself and _bill_settled used. Pop them so they never reach
-    # the JSON response — the existing summary fields remain unchanged while
-    # the additive pick-state fields below are populated from the same
-    # snapshot. (v97: the prefix pop also covers `_is_member`,
-    # `_pending_invite_id` and `_pending_invited_by_name`, so a future private
-    # key cannot leak by being forgotten here.)
+    # private key `_bill_data` — get_bills_for_identity already loaded it once
+    # (for the settled flag); re-fetching it here too meant every bill on this
+    # list opened a fresh sqlite connection twice over, on top of what the list
+    # query itself and _bill_settled used. Pop it so it never reaches the JSON
+    # response — the existing summary fields remain unchanged while the
+    # additive pick-state fields below are populated from the same snapshot.
     for row in rows:
         bill_data = row.pop("_bill_data", None)
-        is_member = bool(row.pop("_is_member", True))
-        invite_id = row.pop("_pending_invite_id", None)
-        invited_by_name = row.pop("_pending_invited_by_name", None)
         if bill_data:
             (
                 row["pending_names"],
@@ -1524,41 +1461,18 @@ def my_bills(identity_id: str, request: Request):
                 row["settled"],
             ) = _list_pick_state(bill_data)
             row["owner_id"] = _owner_id(bill_data)
-            # An invite-only row is NOT a participant: the invitee holds no
-            # payment row and no selection, so `_can_manage` already answers
-            # False for them and inviting someone never hands out owner
-            # actions — asserted by test_a_pending_invite_creates_no_payment_
-            # row_and_no_owner_powers. Deliberately NOT ANDed with `is_member`:
-            # `_can_manage` (via `_owner_id`) is the single source of truth the
-            # DELETE endpoint also checks, and a membership conjunction here
-            # would be a second, independently-drifted answer to "may this
-            # person manage the bill" — the exact shape of the recurring
-            # list-vs-detail disagreement bugs (v66/v67).
             row["can_manage"] = _can_manage(bill_data, identity_id)
-            # additive, explicit pending-invite fields (v97). Present on every
-            # row so the shape is stable; True only for a row this identity can
-            # reach purely through a pending invite.
-            row["pending_invite"] = not is_member and invite_id is not None
-            row["pending_invite_id"] = invite_id if not is_member else None
-            row["pending_invited_by_name"] = (
-                invited_by_name if not is_member else None
-            )
             # personal payment state for THIS viewer: the resolved payer is
             # auto-paid (they fronted the money), otherwise check their payment
             # record. Must use the SAME resolver as the bill screen — deriving
             # it from _owner_id instead said "Kamu udah bayar" in history while
             # the bill itself showed the same person owing the full total.
-            # Same reasoning as `can_manage` above: these mirror the canonical
-            # resolver, never a membership flag.
             payer_id, _ = db.resolve_payer(bill_data)
             row["i_am_payer"] = payer_id == identity_id
             row["my_paid"] = (payer_id == identity_id) or any(
                 p["identity_id"] == identity_id and p["status"] == "paid"
                 for p in bill_data["payments"]
             )
-            # the invitee is not on the roster, so this lookup already answers
-            # 0; keep the same canonical people list rather than inventing a
-            # second money calculation for invite-only rows.
             row["my_total_idr"] = next(
                 (p.get("total_idr", 0) for p in people
                  if p.get("identity_id") == identity_id),
@@ -1587,11 +1501,6 @@ def my_bills(identity_id: str, request: Request):
             row["has_picks"] = False
             row["pending_names"] = []
             row["total_unpaid"] = 0
-            row["pending_invite"] = not is_member and invite_id is not None
-            row["pending_invite_id"] = invite_id if not is_member else None
-            row["pending_invited_by_name"] = (
-                invited_by_name if not is_member else None
-            )
     return rows
 
 
@@ -1694,7 +1603,7 @@ async def create_bill(request: Request):
         title=title,
         merchant=merchant,
         transacted_at=transacted_at,
-        tax_mode=_tax_mode(data.get("tax_mode"), absent_default="proportional") or "proportional",
+        tax_mode=_to_str(data.get("tax_mode"), "Cara bagi pajak", maxlen=20) or "proportional",
         participant_count=participant_count,
         tax_included=tax_included,
         subtotal=effective_subtotal,
@@ -1788,10 +1697,6 @@ async def update_bill(bill_id: str, request: Request):
     # filter, so a partial-update client quietly moved the bill to another
     # month (bug: v66 audit). An explicit null/"" still nulls the column.
     merchant = db.UNCHANGED
-    if "tax_mode" in data:
-        tax_mode = _tax_mode(data.get("tax_mode"))
-    else:
-        tax_mode = db.UNCHANGED
     if "merchant" in data:
         merchant = _to_str(data.get("merchant"), "Nama tempat", maxlen=120) or None
     transacted_at = db.UNCHANGED
@@ -1823,7 +1728,6 @@ async def update_bill(bill_id: str, request: Request):
         title=_to_str(data.get("title"), "Judul bill", maxlen=120) or bill_data["bill"]["title"],
         merchant=merchant,
         transacted_at=transacted_at,
-        tax_mode=tax_mode,
         participants=participants,
         participant_count=participant_count,
         items=normalized_items,
@@ -2012,11 +1916,6 @@ def accept_invite(bill_id: str, invite_id: int, request: Request):
 @limiter.limit("20/minute")
 def decline_invite(bill_id: str, invite_id: int, request: Request):
     ident = _identity_from_request(request)
-    bill_data = _bill_or_404(bill_id)
-    if bill_data["bill"]["status"] != "open":
-        raise HTTPException(403, "Bill sudah ditutup")
-    if _compute_response(bill_data, ident["id"]).get("settled"):
-        raise HTTPException(409, "Bill udah lunas semua")
     inv = db.get_invite(invite_id)
     if not inv or inv["bill_id"] != bill_id or inv["identity_id"] != ident["id"]:
         raise HTTPException(404, "Undangan tidak ditemukan")
@@ -2031,12 +1930,7 @@ def list_pending_invites(identity_id: str, request: Request):
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
         raise HTTPException(403, "Identitas tidak cocok")
-    invites = db.get_pending_invites(identity_id)
-    return [
-        invite for invite in invites
-        if (bill_data := db.get_bill(invite["bill_id"]))
-        and not _compute_response(bill_data, ident["id"]).get("settled")
-    ]
+    return db.get_pending_invites(identity_id)
 
 
 @app.delete("/api/bills/{bill_id}/invites/{invite_id}")
@@ -2051,10 +1945,6 @@ def cancel_bill_invite(bill_id: str, invite_id: int, request: Request):
     ident = _identity_from_request(request)
     if not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
-    if bill_data["bill"]["status"] != "open":
-        raise HTTPException(403, "Bill sudah ditutup")
-    if _compute_response(bill_data, ident["id"]).get("settled"):
-        raise HTTPException(409, "Bill udah lunas semua")
     if not db.cancel_invite(bill_id, invite_id):
         raise HTTPException(404, "Undangan tidak ditemukan")
     return _compute_response(db.get_bill(bill_id), ident["id"])
@@ -2071,13 +1961,6 @@ def remove_person(bill_id: str, identity_id: str, request: Request):
     _ensure_editable(bill_data)
     if identity_id == ident["id"]:
         raise HTTPException(400, "Tidak dapat menghapus diri sendiri (owner bill)")
-    # v89: removing someone who isn't on the bill used to be a silent 200 no-op,
-    # so the client couldn't tell "removed" from "never there" (double-tap on a
-    # roster row looked like it worked twice). Same membership predicate the
-    # invite endpoint uses. Ordered after the self-removal 400 so the owner
-    # still gets the more specific message.
-    if not db.identity_on_bill(bill_id, identity_id):
-        raise HTTPException(404, "Orang ini tidak ada di bill")
     # the creator used to be unremovable. Since v57 they're a regular
     # participant once a confirmed payer holds the bill, and v58 lets them
     # leave — so the manager can drop them too, same as anyone else. While no
@@ -2132,22 +2015,7 @@ def leave_bill(bill_id: str, request: Request):
 
 @app.post("/api/bills/{bill_id}/selections")
 async def set_selections(bill_id: str, request: Request):
-    """Replace the caller's picks on an open bill.
-
-    Clearing is explicit, never implied (v89): the body must name at least one
-    of the two accepted keys. `{"picks": []}` and the legacy `{"item_ids": []}`
-    clear the caller's picks and answer 200; a body with NEITHER key is a 400,
-    because it used to fall through to "no picks" and silently wipe everything
-    the person had tapped (a client typo, or version skew between the React
-    client and the preserved vanilla one, wiped picks and returned 200).
-
-    The guard keys on KEY PRESENCE, not on usefulness: `{"picks": null}` still
-    means "clear" (the value is coerced to []), exactly as before, because the
-    key is present and the caller meant to write the picks field.
-    """
     data = await _read_json(request)
-    if "picks" not in data and "item_ids" not in data:
-        raise HTTPException(400, "Daftar pilihan wajib diisi")
     bill_data = _bill_or_404(bill_id)
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
@@ -2190,10 +2058,6 @@ async def set_selections(bill_id: str, request: Request):
     merged: dict[int, int] = {}
     for p in picks:
         merged[p["item_id"]] = merged.get(p["item_id"], 0) + p["qty"]
-    for item_id, qty in merged.items():
-        if qty > _MAX_ITEM_QUANTITY:
-            item_name = valid[item_id]["name"]
-            raise HTTPException(400, f"{item_name} maksimal {_MAX_ITEM_QUANTITY} porsi")
     picks = [{"item_id": k, "qty": v} for k, v in merged.items()]
     # slot capacity check: per item, sum of other people's qty + mine <= slot_count
     others: dict[int, int] = {}
@@ -2336,7 +2200,6 @@ def settle_bill(bill_id: str, request: Request):
     if not _can_manage(bill_data, ident["id"]):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
     db.set_settled_manual(bill_id, True)
-    db.cancel_pending_invites(bill_id)
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
@@ -2567,16 +2430,14 @@ def serve_photo(filename: str):
 # ---------- static frontend ----------
 #
 # Cache strategy (industry-standard content hashing):
-#   * A Vite build serves dist/index.html and hashed files under /assets.
-#     The document is served no-cache + ETag so browsers/CF revalidate it.
-#   * Legacy static files remain available only for non-runtime assets such as
-#     the favicon and manifest; the frozen legacy document is never a fallback.
-#   * Every hashed file under /static or /assets is immutable, max-age=1y.
-#     Content changes -> a new hash -> cache never goes stale.
+#   * index.html & manifest.json are rendered dynamically with asset URLs
+#     like /static/app.js?v=<sha256[:12]>. The HTML itself is served
+#     no-cache + ETag so browsers/CF revalidate it every load.
+#   * Every other file under /static/ is served immutable, max-age=1y.
+#     Content changes -> new hash -> new URL -> cache never goes stale.
+#   * No more manual version bumps (v57 etc.) - the hash IS the version.
 
 STATIC_DIR = FRONTEND_DIR / "static"
-DIST_DIR = FRONTEND_DIR / "dist"
-DIST_ASSETS_DIR = DIST_DIR / "assets"
 _HASH_RE = re.compile(rb"@HASH:([a-zA-Z0-9._-]+)@")
 
 
@@ -2598,13 +2459,12 @@ def _render_template(path: Path) -> bytes:
 def _no_cache_response(content: bytes, media_type: str, request: Request) -> Response:
     """Serve rendered HTML/manifest with revalidation semantics (ETag/304)."""
     etag = '"' + hashlib.sha256(content).hexdigest() + '"'
-    headers = {
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304)
+    return Response(content, media_type=media_type, headers={
         "Cache-Control": "no-cache, must-revalidate",
         "ETag": etag,
-    }
-    if request.headers.get("if-none-match") == etag:
-        return Response(status_code=304, headers=headers)
-    return Response(content, media_type=media_type, headers=headers)
+    })
 
 
 @app.api_route("/static/manifest.json", methods=["GET", "HEAD"])
@@ -2617,26 +2477,10 @@ def manifest(request: Request):
 
 @app.api_route("/", methods=["GET", "HEAD"])
 def index(request: Request):
-    # Vite owns the document and emits hashed /assets files. Never silently
-    # switch to the frozen legacy document: a restart without a build must be
-    # visible to the operator rather than serving a second frontend runtime.
-    index_path = DIST_DIR / "index.html"
-    if not index_path.is_file():
-        raise HTTPException(
-            503,
-            "Frontend belum dibuild. Jalankan npm run build sebelum menjalankan service.",
-        )
-    content = index_path.read_bytes()
     return _no_cache_response(
-        content,
+        _render_template(FRONTEND_DIR / "index.html"),
         "text/html; charset=utf-8", request,
     )
 
 
 app.mount("/static", ImmutableStaticFiles(directory=str(STATIC_DIR)), name="static")
-if DIST_ASSETS_DIR.is_dir():
-    app.mount(
-        "/assets",
-        ImmutableStaticFiles(directory=str(DIST_ASSETS_DIR)),
-        name="assets",
-    )
