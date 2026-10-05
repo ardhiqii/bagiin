@@ -5,6 +5,19 @@ gateway, just a link.
 
 **Live:** https://bagiin.ardhiqi.com
 
+## Version lines
+
+`main` is the vanilla JavaScript release line served from `/opt/projects/bagiin`.
+The React rebuild belongs on `next/react-v2` in a separate worktree at
+`/opt/projects/bagiin-react`. Work on React never changes the live checkout.
+Short-lived feature branches target the appropriate line through a pull request.
+Tag each deployed commit so the live version and rollback point are unambiguous.
+
+The running service reads files from `/opt/projects/bagiin`; a GitHub push alone
+does not deploy anything. Update that checkout from `main` only after reviewing
+and testing the release. Frontend files are served directly from disk, so do not
+edit them in the live checkout while users are loading the site.
+
 ## How it works
 
 1. **Creator** takes a photo of the receipt → OCR reads the items, total, and even
@@ -70,9 +83,9 @@ uvicorn main:app --reload --port 8082
 
 Open http://localhost:8082
 
-> Static frontend is served from `frontend/static/`; `index.html` references
-> `static/vNN/` versioned folders (bump the folder when changing frontend code —
-> Cloudflare caches by path).
+> Static frontend is served from `frontend/static/`. The backend inserts a
+> content hash into each script URL and revalidates `index.html`; no version
+> folder or manual cache-busting step is needed.
 
 ## Tests
 
