@@ -115,30 +115,27 @@ def test_owner_with_secret_still_works():
 
 
 def test_legacy_identity_binds_secret_once():
-    """Legacy migration now requires recovery proof before the one-time bind."""
+    """Identities created before v51 have no secret; the first caller mints one
+    and every later request must present it."""
     legacy = db.new_identity("Legacy51")
-    recovery_code = "LEGACY-51-CODE"
-    db.set_identity_code(legacy["id"], recovery_code)
     conn = db.get_db()
     conn.execute("UPDATE identity SET secret = NULL WHERE id = ?", (legacy["id"],))
     conn.commit()
     conn.close()
 
-    # v85 security contract: a public legacy id no longer grants trust-on-first
-    # use; the old browser must restore or prove the recovery code first.
+    # works without a secret while unbound (old browsers keep running)
     assert c.post("/api/bills", json={
         "title": "L", "items": [{"name": "A", "price": 1000}],
         "subtotal": 1000, "tax": 0, "service": 0, "total": 1000,
-    }, headers={"X-Identity-Id": legacy["id"]}).status_code == 403
+    }, headers={"X-Identity-Id": legacy["id"]}).status_code == 200
 
-    r = c.post(f"/api/identities/{legacy['id']}/bind", json={"code": recovery_code})
+    r = c.post(f"/api/identities/{legacy['id']}/bind", json={})
     assert r.status_code == 200, r.text
     secret = r.json()["secret"]
     assert secret
 
     # a second bind must not hand the secret to anyone else
-    assert c.post(f"/api/identities/{legacy['id']}/bind",
-                  json={"code": recovery_code}).status_code == 403
+    assert c.post(f"/api/identities/{legacy['id']}/bind", json={}).status_code == 403
     # and the bare id no longer authenticates
     assert c.post(f"/api/identities/{legacy['id']}/name", json={"name": "x"},
                   headers={"X-Identity-Id": legacy["id"]}).status_code == 403

@@ -285,8 +285,10 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .item-row.selected .item-check { background:var(--accent); border-color:var(--accent); }
 .item-row.selected .item-check svg { opacity:1; transform:scale(1); }
 .item-row.selected { background:var(--accent-soft); }
-/* full slot item: non-tappable, muted — nothing left to claim */
-.item-full { opacity:.55; cursor:not-allowed; }
+/* full slot item: non-tappable; mute only supporting copy so the status stays
+   readable — nothing left to claim */
+.item-full { cursor:not-allowed; }
+.item-full .item-name, .item-full .item-price, .item-full .picker-share-detail { opacity:.55; }
 .item-check-full { border-style:dashed; opacity:.5; }
 /* inline qty stepper — tap row = ambil/lepas, +/- = atur porsi/slot.
    Only visible once the row is selected so the default state stays a
@@ -306,6 +308,18 @@ svg.ico { width:18px; height:18px; flex-shrink:0; vertical-align:-3px; }
 .item-info { flex:1; min-width:0; }
 .item-name { font-size:15px; font-weight:600; letter-spacing:-.01em; }
 .item-share { font-size:12.5px; color:var(--text-3); margin-top:2px; }
+.picker-status { display:inline-flex; align-items:center; min-height:21px; padding:1px 7px;
+                 border:1px solid var(--border); border-radius:var(--r-full); font-size:11px;
+                 line-height:1.35; font-weight:750; letter-spacing:.005em; white-space:nowrap;
+                 vertical-align:1px; }
+.picker-status-empty { color:var(--text-2); background:var(--surface-2); }
+.picker-status-taken, .picker-status-shared { color:var(--accent); background:var(--accent-soft);
+                                              border-color:var(--accent-line); }
+.picker-status-mine { color:var(--green); background:var(--green-soft);
+                      border-color:color-mix(in srgb, var(--green) 28%, transparent); }
+.picker-status-full { color:var(--red); background:var(--red-soft);
+                      border-color:color-mix(in srgb, var(--red) 28%, transparent); }
+.picker-share-detail { margin-left:2px; }
 /* manager's item-share line renders BOTH a full names list and a compact
    "N orang" count; only one shows at a time (see the max-width:430px block
    below) so the row never depends on JS re-rendering on resize. */
