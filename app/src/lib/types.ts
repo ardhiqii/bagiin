@@ -90,7 +90,7 @@ export type BillResponse = {
   remaining_to_creator: number
   uncovered_idr: number
   unassigned_items: BillItem[]
-  uncovered_slots: unknown[]
+  uncovered_slots: { item_id: number; name: string; per_slot: number; empty: number; amount_idr: number }[]
 }
 
 export type BillRow = {

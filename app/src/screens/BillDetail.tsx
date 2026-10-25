@@ -8,15 +8,24 @@ import { useToast } from '../components/Toast'
 import { Alert, Avatar, Button, Money, Sheet, StatusBadge } from '../ds/primitives'
 import { Check, UsersThree } from '@phosphor-icons/react'
 
-/** Backend mengirim kalimat panjang per item; UI cuma butuh jumlah dan nama. */
-function summarizeWarnings(warnings: string[]) {
-  const names = warnings
-    .map((line) => {
-      const afterColon = line.split(':').slice(1).join(':').trim()
-      return afterColon.split('->')[0].trim()
-    })
-    .filter(Boolean)
-  return { count: warnings.length, names }
+/**
+ * Backend mengirim kalimat siap-tampil per kasus ("7 bagian belum terisi (total
+ * Rp 140,000)") dengan angka bergaya Inggris. UI menghitung sendiri dari state
+ * yang sudah terstruktur supaya angkanya konsisten dengan sisa layar.
+ */
+function summarizeUncovered(data: BillResponse) {
+  const freeNames = data.unassigned_items.map((item) => item.name)
+  const slotNames = data.uncovered_slots.map((slot) => slot.name)
+  const slotCount = data.uncovered_slots.reduce((sum, slot) => sum + slot.empty, 0)
+  const parts: string[] = []
+  if (freeNames.length > 0) parts.push(freeNames.length + ' item belum dipilih')
+  if (slotCount > 0) parts.push(slotCount + ' slot belum terisi')
+  return {
+    has: parts.length > 0,
+    title: parts.join(' · '),
+    names: [...freeNames, ...slotNames].slice(0, 3).join(', '),
+    money: data.uncovered_idr,
+  }
 }
 
 function initials(name: string) {
@@ -34,16 +43,19 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
   const [busyItem, setBusyItem] = useState<number | null>(null)
   const [payerOpen, setPayerOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
+  const [slotOpen, setSlotOpen] = useState(false)
   const contacts = useContacts(identityId, inviteOpen)
 
   const data: BillResponse | undefined = bill.data
   const me = useMemo(() => data?.people.find((p) => p.identity_id === identityId), [data, identityId])
+  /** item_id -> berapa slot/porsi yang saya ambil. */
   const myPicks = useMemo(() => {
-    if (!data || !identityId) return new Set<number>()
-    const picked = new Set<number>()
+    const picked = new Map<number, number>()
+    if (!data || !identityId) return picked
     for (const item of data.items) {
       const selectors = data.sel_by_item[String(item.id)] ?? []
-      if (selectors.some((s) => s.id === identityId)) picked.add(item.id)
+      const mine = selectors.find((s) => s.id === identityId)
+      if (mine && mine.qty > 0) picked.set(item.id, mine.qty)
     }
     return picked
   }, [data, identityId])
@@ -60,19 +72,53 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
     }
   }
 
-  async function toggleItem(itemId: number) {
-    if (!identityId) return
-    setBusyItem(itemId)
-    const next = new Set(myPicks)
-    if (next.has(itemId)) next.delete(itemId)
-    else next.add(itemId)
+  /**
+   * Backend menyimpan satu set pilihan utuh, jadi setiap ketukan mengirim ulang
+   * seluruh pilihan saya dengan qty terbaru — bukan tambah/kurang satu per satu.
+   */
+  async function savePicks(next: Map<number, number>, clicked: number) {
+    if (!identityId || !data) return
+    const picks = data.items
+      .map((item) => ({ item_id: item.id, qty: next.get(item.id) ?? 0 }))
+      .filter((pick) => pick.qty > 0)
+    setBusyItem(clicked)
     try {
-      await action.mutateAsync(billActions.setPicks(billId, [...next]))
+      await action.mutateAsync(billActions.setPicks(billId, picks))
     } catch (err) {
       toast((err as Error).message)
     } finally {
       setBusyItem(null)
     }
+  }
+
+  async function toggleItem(itemId: number) {
+    const item = data?.items.find((it) => it.id === itemId)
+    if (!item) return
+    const mine = myPicks.get(itemId) ?? 0
+    const next = new Map(myPicks)
+
+    if (item.mode === 'slot') {
+      const taken = (data?.sel_by_item[String(itemId)] ?? [])
+        .filter((s) => s.id !== identityId)
+        .reduce((sum, s) => sum + s.qty, 0)
+      const room = (item.slot_count ?? 1) - taken
+      // ketuk menambah satu slot; kalau sudah penuh dari sisi saya, ketuk lagi mengosongkan
+      if (mine >= room) next.delete(itemId)
+      else next.set(itemId, mine + 1)
+    } else {
+      if (mine > 0) next.delete(itemId)
+      else next.set(itemId, 1)
+    }
+    await savePicks(next, itemId)
+  }
+
+  async function stepSlots(itemId: number, delta: number) {
+    const mine = myPicks.get(itemId) ?? 0
+    const nextQty = mine + delta
+    const next = new Map(myPicks)
+    if (nextQty <= 0) next.delete(itemId)
+    else next.set(itemId, nextQty)
+    await savePicks(next, itemId)
   }
 
   async function join() {
@@ -116,6 +162,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             <small className="ds-balance-note">
               {data.people.length} orang · {data.items.length} item
               {me ? ' · bagian kamu ' + formatRp(me.total_idr) : ''}
+              {me && data.uncovered_idr > 0 ? ' + ' + formatRp(data.uncovered_idr) + ' yang belum ada pemiliknya' : ''}
             </small>
           </div>
 
@@ -135,13 +182,9 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             </div>
           ) : null}
 
-          {data.warnings.length > 0 && canManage ? (
-            <Alert
-              tone="pending"
-              title={summarizeWarnings(data.warnings).count + ' item belum dipilih siapa pun'}
-            >
-              {summarizeWarnings(data.warnings).names.slice(0, 2).join(', ')}
-              {summarizeWarnings(data.warnings).count > 2 ? ' dan lainnya' : ''} — sementara dibebankan ke yang menalangi.
+          {canManage && summarizeUncovered(data).has ? (
+            <Alert tone="pending" title={summarizeUncovered(data).title}>
+              {summarizeUncovered(data).names} — sementara dibebankan ke yang menalangi ({formatRp(summarizeUncovered(data).money)}).
             </Alert>
           ) : null}
 
@@ -154,31 +197,61 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
             {data.items.map((item) => {
               const selectors = data.sel_by_item[String(item.id)] ?? []
-              const mine = myPicks.has(item.id)
-              const state = mine ? (selectors.length > 1 ? 'shared' : 'picked') : 'idle'
+              const mine = myPicks.get(item.id) ?? 0
+              const state = mine > 0 ? (selectors.length > 1 ? 'shared' : 'picked') : 'idle'
               const label = selectors.map((s) => s.name).join(', ')
+              const slotTotal = item.slot_count ?? 0
+              const taken = selectors.reduce((sum, s) => sum + s.qty, 0)
+              const isSlot = item.mode === 'slot'
+              const lineTotal = item.price_idr * item.quantity - item.discount_idr
+              const perSlot = isSlot && slotTotal > 0 ? Math.floor(lineTotal / slotTotal) : 0
+              const editable = joined && data.bill.status === 'open'
               return (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={'ds-item is-' + state}
-                  onClick={() => (joined ? toggleItem(item.id) : undefined)}
-                  disabled={!joined || busyItem === item.id || data.bill.status !== 'open'}
-                  aria-pressed={mine}
-                  aria-label={item.name + ', ketuk untuk ' + (mine ? 'membatalkan' : 'memilih')}
-                >
-                  <span className="ds-item-check" aria-hidden="true">{mine ? <Check size={13} weight="bold" /> : null}</span>
-                  <span className="ds-item-copy">
-                    <b>{item.name}</b>
-                    <small>
-                      {item.quantity > 1 ? item.quantity + '× ' + formatRp(item.price_idr) : formatRp(item.price_idr)}
-                      {label ? ' · ' + label : ' · belum ada yang ambil'}
-                    </small>
-                  </span>
-                  <span className="ds-item-price">
-                    <Money value={item.price_idr * item.quantity - item.discount_idr} size="small" />
-                  </span>
-                </button>
+                <div className="item-line" key={item.id}>
+                  <button
+                    type="button"
+                    className={'ds-item is-' + state}
+                    onClick={() => (editable ? toggleItem(item.id) : undefined)}
+                    disabled={!editable || busyItem === item.id}
+                    aria-pressed={mine > 0}
+                    aria-label={item.name + ', ketuk untuk ' + (mine > 0 ? 'membatalkan' : 'memilih')}
+                  >
+                    <span className="ds-item-check" aria-hidden="true">
+                      {mine > 0 ? <span>{mine > 1 ? mine : <Check size={13} weight="bold" />}</span> : null}
+                    </span>
+                    <span className="ds-item-copy">
+                      <b>{item.name}</b>
+                      <small>
+                        {isSlot
+                          ? slotTotal + ' slot · ' + formatRp(perSlot) + '/slot · sisa ' + (slotTotal - taken)
+                          : item.quantity > 1
+                            ? item.quantity + '× ' + formatRp(item.price_idr)
+                            : formatRp(item.price_idr)}
+                        {label ? ' · ' + label : ' · belum ada yang ambil'}
+                      </small>
+                    </span>
+                    <span className="ds-item-price">
+                      <Money value={lineTotal} size="small" />
+                    </span>
+                  </button>
+
+                  {isSlot && editable ? (
+                    <div className="slot-ctl">
+                      <button type="button" onClick={() => stepSlots(item.id, -1)} disabled={mine === 0 || busyItem === item.id} aria-label={'Kurangi slot ' + item.name}>
+                        −
+                      </button>
+                      <span aria-live="polite">{mine}/{slotTotal}</span>
+                      <button
+                        type="button"
+                        onClick={() => stepSlots(item.id, 1)}
+                        disabled={mine >= slotTotal - (taken - mine) || busyItem === item.id}
+                        aria-label={'Tambah slot ' + item.name}
+                      >
+                        +
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               )
             })}
           </section>
@@ -275,6 +348,12 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               </Button>
             ) : null}
 
+            {canManage && data.bill.status === 'open' && data.items.some((item) => item.mode === 'slot') ? (
+              <Button variant="quiet" block onClick={() => setSlotOpen(true)}>
+                Atur jumlah slot
+              </Button>
+            ) : null}
+
             {canManage && data.bill.status === 'open' ? (
               <Button variant="quiet" block onClick={() => setPayerOpen(true)}>
                 Ganti yang bayar duluan
@@ -320,6 +399,46 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               </span>
             </button>
           ))}
+        </div>
+      </Sheet>
+
+      <Sheet open={slotOpen} title="Atur jumlah slot" onClose={() => setSlotOpen(false)}>
+        <p className="app-note">
+          Slot menentukan berapa orang yang bisa ambil bagian item ini. Menambah slot membuat porsi tiap orang lebih kecil;
+          menguranginya tidak bisa di bawah jumlah yang sudah diambil.
+        </p>
+        <div>
+          {data?.items.filter((item) => item.mode === 'slot').map((item) => {
+            const taken = (data.sel_by_item[String(item.id)] ?? []).reduce((sum, s) => sum + s.qty, 0)
+            const count = item.slot_count ?? 1
+            return (
+              <div className="app-row" key={item.id}>
+                <span className="grow">
+                  <b>{item.name}</b>
+                  <small>{count} slot · {taken} sudah diambil</small>
+                </span>
+                <div className="slot-ctl">
+                  <button
+                    type="button"
+                    aria-label={'Kurangi jumlah slot ' + item.name}
+                    disabled={count <= Math.max(1, taken)}
+                    onClick={() => run(billActions.setSlots(billId, item.id, count - 1), 'Slot ' + item.name + ' jadi ' + (count - 1))}
+                  >
+                    −
+                  </button>
+                  <span>{count}</span>
+                  <button
+                    type="button"
+                    aria-label={'Tambah jumlah slot ' + item.name}
+                    disabled={count >= 24}
+                    onClick={() => run(billActions.setSlots(billId, item.id, count + 1), 'Slot ' + item.name + ' jadi ' + (count + 1))}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </Sheet>
 

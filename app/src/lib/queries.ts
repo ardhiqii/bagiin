@@ -78,9 +78,18 @@ export const billActions = {
    * picks. Tidak ada endpoint PUT per item (yang ada hanya DELETE untuk melepas),
    * jadi UI selalu mengirim set lengkap.
    */
-  setPicks: (billId: string, itemIds: number[]) => ({
+  setPicks: (billId: string, picks: { item_id: number; qty: number }[]) => ({
     path: '/api/bills/' + billId + '/selections',
-    body: { picks: itemIds.map((id) => ({ item_id: id, qty: 1 })) },
+    body: { picks },
+  }),
+  setSlots: (billId: string, itemId: number, slotCount: number) => ({
+    path: '/api/bills/' + billId + '/items/' + itemId + '/slots',
+    method: 'PUT' as const,
+    body: { slot_count: slotCount },
+  }),
+  releaseSlots: (billId: string, itemId: number, identityId: string) => ({
+    path: '/api/bills/' + billId + '/items/' + itemId + '/selections/' + identityId,
+    method: 'DELETE' as const,
   }),
   markPaid: (billId: string, identityId: string) => ({
     path: '/api/bills/' + billId + '/payments/' + identityId + '/paid',

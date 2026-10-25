@@ -230,6 +230,39 @@
 .app-body.has-dock { padding-bottom: 190px; }
 .create-dock .tot b { font-family: var(--ds-font-display); font-size: 20px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 
+/* Baris item di layar bill: tombol pilih + kontrol slot di kanan. */
+.item-line {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  background: var(--ds-surface);
+  border-radius: 18px;
+  overflow: hidden;
+}
+.item-line + .item-line { margin-top: 8px; }
+.item-line .ds-item { border-radius: 0; background: transparent; }
+
+.slot-ctl {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 10px;
+}
+.slot-ctl button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ds-teal) 10%, #fff);
+  color: var(--ds-teal);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+.slot-ctl button:disabled { opacity: .35; cursor: not-allowed; }
+.slot-ctl span { min-width: 34px; text-align: center; font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
 /* Baris item: satu baris ringkas, bukan kartu di dalam kartu. */
 .item-row {
   display: grid;
@@ -246,6 +279,26 @@
 .item-row .ds-field { gap: 4px; }
 .item-row .ds-field label { font-size: 10.5px; letter-spacing: .02em; text-transform: uppercase; color: var(--ds-muted); }
 .item-row .ds-field input { padding: 9px 10px; font-size: 14px; }
+.item-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--ds-muted);
+}
+.item-slot label { font-weight: 600; white-space: nowrap; }
+.item-slot input {
+  width: 56px;
+  padding: 7px 9px;
+  border: 1px solid var(--ds-border);
+  border-radius: 9px;
+  background: var(--ds-surface);
+  color: var(--ds-navy);
+  font: 700 13px var(--ds-font-body);
+  text-align: center;
+}
+.item-slot span { font-size: 11px; }
+
 .item-row .kill {
   width: 34px; height: 38px; border: 0; border-radius: 10px;
   background: color-mix(in srgb, var(--ds-danger) 10%, #fff);

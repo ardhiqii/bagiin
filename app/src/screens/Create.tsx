@@ -10,9 +10,9 @@ import { X } from '@phosphor-icons/react'
 import manualArt from '../assets/manual.webp'
 import { keys } from '../lib/queries'
 
-type DraftItem = { key: string; name: string; qty: string; price: string }
+type DraftItem = { key: string; name: string; qty: string; price: string; slots: string }
 
-const newItem = (): DraftItem => ({ key: Math.random().toString(36).slice(2), name: '', qty: '1', price: '' })
+const newItem = (): DraftItem => ({ key: Math.random().toString(36).slice(2), name: '', qty: '1', price: '', slots: '' })
 
 /** Angka -> teks ribuan tanpa prefix, untuk isi input. */
 const formatRd = (value: number): string => formatRp(value).replace('Rp', '')
@@ -60,6 +60,7 @@ export function Create({ identityId }: { identityId: string | null }) {
             name: it.name ?? '',
             qty: String(it.quantity ?? 1),
             price: formatRd(it.price ?? 0),
+            slots: '',
           })),
         )
       }
@@ -74,6 +75,7 @@ export function Create({ identityId }: { identityId: string | null }) {
   }
 
   const parsed = items.map((i) => ({
+    slots: i.slots,
     name: i.name.trim(),
     qty: Math.max(0, Number.parseInt(i.qty || '1', 10) || 0),
     price: parseRupiah(i.price),
@@ -106,7 +108,15 @@ export function Create({ identityId }: { identityId: string | null }) {
           total,
           items: parsed
             .filter((i) => i.name && i.price > 0)
-            .map((i) => ({ name: i.name, price: i.price, discount: 0, quantity: i.qty || 1, mode: 'free', slot_count: null })),
+            .map((i) => ({
+              name: i.name,
+              price: i.price,
+              discount: 0,
+              quantity: i.qty || 1,
+              // satu item bisa dibagi rata jadi N slot (mis. pizza 4 potong)
+              mode: Number(i.slots) > 1 ? 'slot' : 'free',
+              slot_count: Number(i.slots) > 1 ? Number(i.slots) : null,
+            })),
           photo_path: null,
           photos: [],
           paid_by_name: payerName.trim() || null,
@@ -199,6 +209,22 @@ export function Create({ identityId }: { identityId: string | null }) {
                 >
                   <X size={15} weight="bold" />
                 </button>
+              </div>
+              <div className="item-slot">
+                <label htmlFor={'item-slots-' + index}>Dibagi rata jadi</label>
+                <input
+                  id={'item-slots-' + index}
+                  aria-label={'Jumlah slot baris ' + (index + 1)}
+                  inputMode="numeric"
+                  placeholder="mis. 4"
+                  value={item.slots}
+                  onChange={(event) =>
+                    setItems((prev) =>
+                      prev.map((it) => (it.key === item.key ? { ...it, slots: event.target.value.replace(/[^0-9]/g, '') } : it)),
+                    )
+                  }
+                />
+                <span>slot — kosongkan kalau tidak dibagi</span>
               </div>
             </div>
           </div>
