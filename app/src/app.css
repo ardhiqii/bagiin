@@ -230,6 +230,16 @@
 .app-body.has-dock { padding-bottom: 190px; }
 .create-dock .tot b { font-family: var(--ds-font-display); font-size: 20px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 
+/* Foto struk: kecil, bisa diketuk untuk melihat ukuran penuh. */
+.receipt-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.receipt-preview img { width: 56px; height: 56px; object-fit: cover; border-radius: 12px; }
+.receipt-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+.receipt-strip img { width: 76px; height: 76px; object-fit: cover; border-radius: 14px; display: block; }
+
 /* Kartu rekening: info di atas, aksi di baris sendiri supaya tidak berdesakan. */
 .account-card {
   padding: 14px 16px;

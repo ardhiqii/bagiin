@@ -311,6 +311,19 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             </section>
           ) : null}
 
+          {data.photos.length > 0 ? (
+            <section className="app-stack">
+              <strong style={{ fontSize: 14, fontWeight: 800 }}>Foto struk</strong>
+              <div className="receipt-strip">
+                {data.photos.map((photo) => (
+                  <a key={photo.id} href={'/uploads/' + photo.path.split('/').pop()} target="_blank" rel="noreferrer">
+                    <img src={'/uploads/' + photo.path.split('/').pop()} alt="Foto struk bill" />
+                  </a>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
           {transferAccounts.length > 0 ? (
             <section className="app-stack">
               <strong style={{ fontSize: 14, fontWeight: 800 }}>Transfer ke {data.paid_by_name}</strong>

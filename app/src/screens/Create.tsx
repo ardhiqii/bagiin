@@ -33,6 +33,7 @@ export function Create({ identityId }: { identityId: string | null }) {
   const [error, setError] = useState('')
   const [ocrBusy, setOcrBusy] = useState(false)
   const [ocrNote, setOcrNote] = useState('')
+  const [photoPath, setPhotoPath] = useState<string | null>(null)
 
   async function readPhoto(file: File) {
     setOcrBusy(true)
@@ -45,6 +46,8 @@ export function Create({ identityId }: { identityId: string | null }) {
         title?: string
         merchant?: string
         items?: { name?: string; price?: number; quantity?: number }[]
+        photos?: string[]
+        photo_path?: string
         tax?: number
         service?: number
         discount?: number
@@ -53,6 +56,7 @@ export function Create({ identityId }: { identityId: string | null }) {
       if (draft.merchant) setMerchant(draft.merchant)
       if (draft.tax) setTax(formatRd(draft.tax))
       if (draft.service) setService(formatRd(draft.service))
+      if (draft.photos?.[0]) setPhotoPath(draft.photos[0])
       if (draft.items?.length) {
         setItems(
           draft.items.map((it) => ({
@@ -117,8 +121,8 @@ export function Create({ identityId }: { identityId: string | null }) {
               mode: Number(i.slots) > 1 ? 'slot' : 'free',
               slot_count: Number(i.slots) > 1 ? Number(i.slots) : null,
             })),
-          photo_path: null,
-          photos: [],
+          photo_path: photoPath,
+          photos: photoPath ? [photoPath] : [],
           paid_by_name: payerName.trim() || null,
           tax_included: 0,
           participants: [],
@@ -160,6 +164,12 @@ export function Create({ identityId }: { identityId: string | null }) {
         />
       </label>
       {ocrNote ? <div className="app-note">{ocrNote}</div> : null}
+      {photoPath ? (
+        <div className="receipt-preview">
+          <img src={'/uploads/' + photoPath.split('/').pop()} alt="Foto struk yang dibaca" />
+          <span className="app-note">Foto ini ikut tersimpan di bill.</span>
+        </div>
+      ) : null}
 
       {error ? <Alert tone="danger" title="Bill gagal dibuat">{error}</Alert> : null}
 
