@@ -137,8 +137,8 @@ def test_a4_create_bill_photos_list_is_capped():
 def test_a5_my_bills_fallback_respects_paid_by_confirmed():
     """The `db.get_bill() -> None` defensive branch in my_bills derived
     can_manage from paid_by_identity_id alone, without paid_by_confirmed --
-    a payer resolved only by matching paid_by_name (display-only, per
-    CLAUDE.md) got management powers here even though the real _owner_id
+    a payer resolved only by matching paid_by_name (display-only until
+    confirmed) got management powers here even though the real _owner_id
     path never grants them that. Forces the branch by monkeypatching
     db.get_bill to return None for this one bill, same as the defensive
     comment describes ("bill row exists but get_bill failed")."""

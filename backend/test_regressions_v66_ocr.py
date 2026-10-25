@@ -18,7 +18,7 @@ Covers:
   and total/subtotal reconciliation.
 
 No TestClient needed - this file never imports main/db, only ocr directly.
-Sets BAGIIN_DB anyway (CLAUDE.md rule: any new test file must do this before
+Sets BAGIIN_DB anyway (each test file must do this before
 anything in the suite could import db) because conftest.py's autouse session
 fixture imports main, which imports db, before the first test body runs.
 

@@ -1487,7 +1487,7 @@ def my_bills(identity_id: str, request: Request):
             # _owner_id exactly -- confirmed payer, else creator. This branch
             # used to grant can_manage off paid_by_identity_id alone, without
             # paid_by_confirmed: a payer resolved only by matching
-            # `paid_by_name` (display-only, per CLAUDE.md) got management
+            # `paid_by_name` (display-only until explicit confirmation) got management
             # powers here even though the real _owner_id path never grants
             # them that (bug: v66 audit, `get_bills_for_identity` didn't even
             # select paid_by_confirmed, now added).

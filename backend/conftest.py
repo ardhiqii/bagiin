@@ -4,7 +4,7 @@ pytest imports conftest before any test module, which is the only point early
 enough to keep the suite off the PRODUCTION upload directory: main.py resolves
 BAGIIN_UPLOAD_DIR at import time and mkdir()s it, so whichever test file
 imports main first binds that path for the whole session. Every test file sets
-BAGIIN_DB itself (CLAUDE.md rule) but uploads were missed, so `pytest -q`
+BAGIIN_DB itself before importing db, but uploads were missed, so `pytest -q`
 pointed at /var/www/bagiin-uploads — a PermissionError here, and test JPEGs
 written into the live directory on the VPS.
 """

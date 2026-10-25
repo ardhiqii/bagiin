@@ -1085,7 +1085,8 @@ Kode sama persis dengan v51. Folder `static/v51` di-serve ulang sebagai `static/
 karena Cloudflare nyimpen draft partial yang sempat ke-request lewat domain live pas
 pengembangan (app.js cuma 3,5KB, screens/bill.js juga versi lama). File bener ada di
 git; CF tetap nyajian versi rusak sampai path-nya ganti. Bump versi folder = mekanisme
-cache-busting resmi project (lihat CLAUDE.md).
+cache-busting resmi project saat itu. Mekanisme saat ini memakai content hash
+di `backend/main.py`.
 
 ### v53 (2026-08-12) — polish copy: kapitalisasi konsisten
 
