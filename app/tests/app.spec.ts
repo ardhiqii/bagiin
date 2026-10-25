@@ -114,7 +114,7 @@ test.describe('Bagiin — perilaku user', () => {
     await expect(page.getByText(title)).toBeVisible()
 
     await page.goto('/recap')
-    await expect(page.getByText('Masih berjalan')).toBeVisible()
+    await expect(page.getByText('Masih berjalan', { exact: true })).toBeVisible()
     await expect(page.getByText(title)).toBeVisible()
   })
 

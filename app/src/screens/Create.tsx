@@ -6,6 +6,7 @@ import { formatRp, parseRupiah } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
 import { Alert, Button, Field } from '../ds/primitives'
+import { X } from '@phosphor-icons/react'
 import manualArt from '../assets/manual.webp'
 import { keys } from '../lib/queries'
 
@@ -124,7 +125,7 @@ export function Create({ identityId }: { identityId: string | null }) {
   }
 
   return (
-    <AppShell title="Bill baru" subtitle="Isi item, pajak, lalu simpan" back active="create">
+    <AppShell title="Bill baru" subtitle="Isi item, pajak, lalu simpan" back active="create" dock>
       <div className="ds-create-hero">
         <img src={manualArt} alt="" width={104} height={104} />
         <div>
@@ -165,39 +166,41 @@ export function Create({ identityId }: { identityId: string | null }) {
         </div>
 
         {items.map((item, index) => (
-          <div key={item.key} className="ds-card ds-card-surface ds-pad-sm" style={{ display: 'grid', gap: 10 }}>
-            <Field
-              id={'item-name-' + index}
-              label={'Item ' + (index + 1)}
-              value={item.name}
-              onChange={(v) => setItems((prev) => prev.map((it) => (it.key === item.key ? { ...it, name: v } : it)))}
-              hint="Nama di struk"
-            />
-            <div style={{ display: 'grid', gridTemplateColumns: '84px 1fr', gap: 10 }}>
+          <div key={item.key} className="ds-group" style={{ border: '1px solid var(--ds-border)', background: 'var(--ds-surface)', borderRadius: 18, overflow: 'hidden' }}>
+            <div className="item-row">
               <Field
-                id={'item-qty-' + index}
-                label="Qty"
-                value={item.qty}
-                inputMode="numeric"
-                onChange={(v) => setItems((prev) => prev.map((it) => (it.key === item.key ? { ...it, qty: v.replace(/[^0-9]/g, '') } : it)))}
+                id={'item-name-' + index}
+                label={'Item ' + (index + 1)}
+                value={item.name}
+                onChange={(v) => setItems((prev) => prev.map((it) => (it.key === item.key ? { ...it, name: v } : it)))}
               />
-              <Field
-                id={'item-price-' + index}
-                label="Harga satuan"
-                value={item.price}
-                inputMode="numeric"
-                onChange={(v) => setItems((prev) => prev.map((it) => (it.key === item.key ? { ...it, price: formatRp(parseRupiah(v)).replace('Rp', '') } : it)))}
-              />
+              <div className="item-meta">
+                <Field
+                  id={'item-qty-' + index}
+                  label="Qty"
+                  value={item.qty}
+                  inputMode="numeric"
+                  onChange={(v) => setItems((prev) => prev.map((it) => (it.key === item.key ? { ...it, qty: v.replace(/[^0-9]/g, '') } : it)))}
+                />
+                <Field
+                  id={'item-price-' + index}
+                  label="Harga satuan"
+                  value={item.price}
+                  inputMode="numeric"
+                  onChange={(v) => setItems((prev) => prev.map((it) => (it.key === item.key ? { ...it, price: formatRd(parseRupiah(v)) } : it)))}
+                />
+                <button
+                  type="button"
+                  className="kill"
+                  aria-label={'Hapus ' + (item.name.trim() || 'baris ' + (index + 1))}
+                  disabled={items.length === 1}
+                  style={items.length === 1 ? { opacity: .35, cursor: 'not-allowed' } : undefined}
+                  onClick={() => setItems((prev) => prev.filter((it) => it.key !== item.key))}
+                >
+                  <X size={15} weight="bold" />
+                </button>
+              </div>
             </div>
-            {items.length > 1 ? (
-              <button
-                type="button"
-                className="ds-button ds-button-quiet"
-                onClick={() => setItems((prev) => prev.filter((it) => it.key !== item.key))}
-              >
-                Hapus item ini
-              </button>
-            ) : null}
           </div>
         ))}
       </section>
@@ -236,16 +239,17 @@ export function Create({ identityId }: { identityId: string | null }) {
             <span>−{formatRp(discountIdr)}</span>
           </div>
         ) : null}
-        <div className="app-inline" style={{ marginTop: 10 }}>
-          <strong style={{ fontSize: 15 }}>Total</strong>
-          <span className="app-spacer" />
-          <strong style={{ fontSize: 17 }}>{formatRp(total)}</strong>
-        </div>
       </div>
 
-      <Button block loading={busy} disabled={!canSubmit} onClick={submit}>
-        Buat bill
-      </Button>
+      <div className="create-dock">
+        <div className="tot">
+          <small>Total</small>
+          <b>{formatRp(total)}</b>
+        </div>
+        <Button loading={busy} disabled={!canSubmit} onClick={submit}>
+          Buat bill
+        </Button>
+      </div>
     </AppShell>
   )
 }

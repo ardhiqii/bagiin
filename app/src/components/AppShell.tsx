@@ -1,4 +1,5 @@
 import { Link, useRouter } from '@tanstack/react-router'
+import { useIdentity } from '../lib/identity'
 import { ArrowLeft } from '@phosphor-icons/react'
 import type { ReactNode } from 'react'
 import { NavBill, NavCreate, NavHome, NavRecap } from '../ds/icons'
@@ -17,15 +18,19 @@ export function AppShell({
   subtitle,
   back = false,
   active,
+  dock = false,
   children,
 }: {
   title: string
   subtitle?: string
   back?: boolean
   active?: Tab
+  dock?: boolean
   children: ReactNode
 }) {
   const router = useRouter()
+  const me = useIdentity()
+  const initial = (me?.name ?? 'T').trim().charAt(0).toUpperCase()
   return (
     <div className="app-shell">
       <div className="app-frame">
@@ -39,11 +44,11 @@ export function AppShell({
             {title}
             {subtitle ? <span className="app-top-sub">{subtitle}</span> : null}
           </h1>
-          <Link to="/settings" className="app-back" aria-label="Pengaturan">
-            <span aria-hidden="true" style={{ fontWeight: 800, fontSize: 13 }}>A</span>
+          <Link to="/settings" className="app-back" aria-label="Pengaturan" title={'Pengaturan · ' + (me?.name ?? '')}>
+            <span aria-hidden="true" style={{ fontWeight: 800, fontSize: 13, letterSpacing: 0 }}>{initial}</span>
           </Link>
         </header>
-        <main className="app-body">{children}</main>
+        <main className={'app-body' + (dock ? ' has-dock' : '')}>{children}</main>
         {active ? (
           <nav className="app-nav" aria-label="Navigasi utama">
             {TABS.map(({ id, label, to, Icon }) => (

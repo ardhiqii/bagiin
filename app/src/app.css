@@ -1,12 +1,23 @@
 /* Layout aplikasi nyata. Design system (ds-*) tetap sumber komponen;
    file ini cuma mengatur chrome: header, area scroll, nav bawah. */
 
+.app-shell, .app-shell *, .app-shell *::before, .app-shell *::after { box-sizing: border-box; }
+
 .app-shell {
   min-height: 100dvh;
   background: var(--ds-bg);
+  color: var(--ds-navy);
+  font-family: var(--ds-font-body);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   display: flex;
   justify-content: center;
 }
+
+/* Angka selalu rata kolom supaya Rp tidak menari antar baris. */
+.app-shell, .app-row .amt, .ds-balance-value, .ds-money { font-variant-numeric: tabular-nums; }
 
 .app-frame {
   width: 100%;
@@ -42,7 +53,7 @@
 }
 
 .app-top h1 {
-  font-family: var(--ds-font-display, inherit);
+  font-family: var(--ds-font-display);
   font-size: 17px;
   font-weight: 800;
   letter-spacing: -.02em;
@@ -80,6 +91,7 @@
 .app-body {
   flex: 1;
   padding: 18px 18px 108px;
+  scroll-padding-bottom: 108px;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -145,7 +157,8 @@
 .app-row:only-child { border-radius: 20px; }
 
 .app-row .grow { flex: 1; min-width: 0; }
-.app-row b { display: block; font-size: 14.5px; font-weight: 750; letter-spacing: -.01em; }
+.app-row b { display: block; font-size: 14.5px; font-weight: 700; letter-spacing: -.01em; }
+.app-stack > strong { font-family: var(--ds-font-display); }
 .app-row small { display: block; font-size: 11.5px; color: var(--ds-muted); margin-top: 2px; }
 .app-row .amt { text-align: right; font-variant-numeric: tabular-nums; font-weight: 800; font-size: 14.5px; }
 
@@ -176,8 +189,8 @@
 .app-toast {
   position: fixed;
   left: 50%;
-  bottom: 96px;
-  transform: translate(-50%, 12px);
+  top: 72px;
+  transform: translate(-50%, -12px);
   background: var(--ds-navy);
   color: #fff;
   font-size: 12.5px;
@@ -193,3 +206,48 @@
   text-align: center;
 }
 .app-toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* Bar ringkasan di layar buat bill: total selalu kelihatan, tombol simpan
+   tidak pernah tenggelam di bawah lipatan. */
+.create-dock {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(62px + env(safe-area-inset-bottom));
+  width: 100%;
+  max-width: 480px;
+  z-index: 28;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  background: color-mix(in srgb, var(--ds-bg) 92%, transparent);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid color-mix(in srgb, var(--ds-border) 70%, transparent);
+}
+.create-dock .tot { flex: 1; min-width: 0; }
+.create-dock .tot small { display: block; font-size: 11px; font-weight: 700; color: var(--ds-muted); letter-spacing: .02em; text-transform: uppercase; }
+.app-body.has-dock { padding-bottom: 190px; }
+.create-dock .tot b { font-family: var(--ds-font-display); font-size: 20px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+
+/* Baris item: satu baris ringkas, bukan kartu di dalam kartu. */
+.item-row {
+  display: grid;
+  gap: 9px;
+  padding: 12px 14px;
+}
+.item-row + .item-row { border-top: 1px solid var(--ds-border); }
+.item-meta {
+  display: grid;
+  grid-template-columns: 60px 1fr 34px;
+  gap: 9px;
+  align-items: end;
+}
+.item-row .ds-field { gap: 4px; }
+.item-row .ds-field label { font-size: 10.5px; letter-spacing: .02em; text-transform: uppercase; color: var(--ds-muted); }
+.item-row .ds-field input { padding: 9px 10px; font-size: 14px; }
+.item-row .kill {
+  width: 34px; height: 38px; border: 0; border-radius: 10px;
+  background: color-mix(in srgb, var(--ds-danger) 10%, #fff);
+  color: var(--ds-danger); cursor: pointer; display: grid; place-items: center;
+}

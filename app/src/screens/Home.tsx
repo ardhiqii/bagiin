@@ -1,10 +1,10 @@
+import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useBills, useRecap } from '../lib/queries'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
-import { Alert, BalanceCard, Button, EmptyState, Field, StatusBadge } from '../ds/primitives'
+import { Alert, BalanceCard, Button, EmptyState, Field } from '../ds/primitives'
 import emptyArt from '../assets/empty-bill.webp'
-import { useState } from 'react'
 
 function NamePrompt({ onRenamed }: { onRenamed: (next: string) => Promise<void> }) {
   const [name, setName] = useState('')
@@ -27,18 +27,59 @@ function NamePrompt({ onRenamed }: { onRenamed: (next: string) => Promise<void> 
   return (
     <div className="ds-card ds-card-mint ds-pad-md" style={{ display: 'grid', gap: 10 }}>
       <b style={{ fontSize: 14 }}>Kenalan dulu</b>
-      <p className="app-note" style={{ margin: 0 }}>Nama ini yang muncul ke teman waktu kamu ikut bill. Tanpa akun, tanpa password.</p>
+      <p className="app-note" style={{ margin: 0 }}>
+        Nama ini yang muncul ke teman waktu kamu ikut bill. Tanpa akun, tanpa password.
+      </p>
       <Field id="onboard-name" label="Nama kamu" value={name} onChange={setName} error={error || undefined} />
-      <Button loading={busy} disabled={!name.trim()} onClick={save}>Simpan nama</Button>
+      <Button loading={busy} disabled={!name.trim()} onClick={save}>
+        Simpan nama
+      </Button>
     </div>
   )
 }
 
-export function Home({ identityId, name, onRenamed }: { identityId: string | null; name: string; onRenamed: (next: string) => Promise<void> }) {
+function shortDate(value: string) {
+  const parsed = new Date(value.replace(' ', 'T'))
+  if (Number.isNaN(parsed.getTime())) return ''
+  return parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+}
+
+/**
+ * Satu pola baris untuk semua daftar. Angka di kanan selalu BAGIAN SAYA —
+ * bukan total bill — supaya tidak ada dua angka berbeda arti yang terlihat sama.
+ */
+function BillRow({ id, title, meta, share, label }: { id: string; title: string; meta: string; share: number; label: string }) {
+  return (
+    <Link to="/b/$billId" params={{ billId: id }} style={{ textDecoration: 'none', color: 'inherit' }}>
+      <span className="app-row">
+        <span className="grow">
+          <b>{title}</b>
+          <small>{meta}</small>
+        </span>
+        <span className="amt">
+          {share > 0 ? formatRp(share) : '—'}
+          <small style={{ display: 'block', fontWeight: 600, color: 'var(--ds-muted)' }}>{label}</small>
+        </span>
+      </span>
+    </Link>
+  )
+}
+
+export function Home({
+  identityId,
+  name,
+  onRenamed,
+}: {
+  identityId: string | null
+  name: string
+  onRenamed: (next: string) => Promise<void>
+}) {
   const bills = useBills(identityId)
   const recap = useRecap(identityId)
 
-  const open = (bills.data ?? []).filter((b) => b.status === 'open')
+  const rows = bills.data ?? []
+  const open = rows.filter((b) => b.status === 'open' && !b.settled)
+  const settled = rows.filter((b) => b.settled)
   const unpaid = open.filter((b) => !b.my_paid && b.my_total_idr > 0)
   const net = recap.data?.final.net_idr ?? 0
   const provisional = recap.data?.provisional
@@ -58,8 +99,8 @@ export function Home({ identityId, name, onRenamed }: { identityId: string | nul
         value={Math.abs(net)}
         note={
           provisional && provisional.bill_count > 0
-            ? 'Termasuk ' + provisional.bill_count + ' bill yang masih berjalan'
-            : 'Belum ada tagihan berjalan'
+            ? 'Belum termasuk ' + provisional.bill_count + ' bill yang masih berjalan'
+            : 'Semua bill sudah selesai'
         }
       />
 
@@ -71,7 +112,7 @@ export function Home({ identityId, name, onRenamed }: { identityId: string | nul
 
       <section className="app-stack">
         <div className="app-inline">
-          <strong style={{ fontSize: 14, fontWeight: 800, letterSpacing: '-.01em' }}>Bill berjalan</strong>
+          <strong style={{ fontSize: 14, fontWeight: 800 }}>Bill berjalan</strong>
           <span className="app-spacer" />
           <Link to="/bills" style={{ fontSize: 12, color: 'var(--ds-teal)', fontWeight: 700, textDecoration: 'none' }}>
             Lihat semua
@@ -95,24 +136,41 @@ export function Home({ identityId, name, onRenamed }: { identityId: string | nul
         ) : (
           <div>
             {open.map((bill) => (
-              <Link key={bill.id} to="/b/$billId" params={{ billId: bill.id }} style={{ textDecoration: 'none', color: 'inherit' }}>
-                <span className="app-row">
-                  <span className="grow">
-                    <b>{bill.title}</b>
-                    <small>{bill.my_total_idr > 0 ? 'Bagian kamu ' + formatRp(bill.my_total_idr) : 'Belum memilih item'}</small>
-                  </span>
-                  <span className="amt">
-                    {formatRp(bill.total_idr)}
-                    <small style={{ display: 'block', fontWeight: 600 }}>
-                      {bill.settled ? 'Lunas' : bill.my_paid ? 'Kamu lunas' : 'Belum lunas'}
-                    </small>
-                  </span>
-                </span>
-              </Link>
+              <BillRow
+                key={bill.id}
+                id={bill.id}
+                title={bill.title}
+                meta={
+                  shortDate(bill.created_at) +
+                  ' · ' +
+                  (bill.my_total_idr === 0 ? 'belum pilih item' : bill.my_paid ? 'bagianmu lunas' : 'belum lunas') +
+                  (bill.pending_names.length > 0 ? ' · ' + bill.pending_names.length + ' orang belum bayar' : '')
+                }
+                share={bill.my_total_idr}
+                label={bill.my_total_idr === bill.total_idr ? 'seluruh bill' : 'dari ' + formatRp(bill.total_idr)}
+              />
             ))}
           </div>
         )}
       </section>
+
+      {settled.length > 0 ? (
+        <section className="app-stack">
+          <strong style={{ fontSize: 14, fontWeight: 800 }}>Sudah lunas</strong>
+          <div>
+            {settled.slice(0, 5).map((bill) => (
+              <BillRow
+                key={bill.id}
+                id={bill.id}
+                title={bill.title}
+                meta={shortDate(bill.created_at) + ' · lunas'}
+                share={bill.my_total_idr}
+                label={bill.my_total_idr === bill.total_idr ? 'seluruh bill' : 'dari ' + formatRp(bill.total_idr)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {recap.data && recap.data.final.counterparties.length > 0 ? (
         <section className="app-stack">
@@ -126,29 +184,6 @@ export function Home({ identityId, name, onRenamed }: { identityId: string | nul
                 </span>
                 <span className="amt">{formatRp(Math.abs(c.net_idr))}</span>
               </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {recap.data && recap.data.provisional.bills.length > 0 ? (
-        <section className="app-stack">
-          <div className="app-inline">
-            <strong style={{ fontSize: 14, fontWeight: 800 }}>Masih berjalan</strong>
-            <span className="app-spacer" />
-            <StatusBadge tone="info">belum final</StatusBadge>
-          </div>
-          <div>
-            {recap.data.provisional.bills.map((b) => (
-              <Link key={b.bill_id} to="/b/$billId" params={{ billId: b.bill_id }} style={{ textDecoration: 'none', color: 'inherit' }}>
-                <span className="app-row">
-                  <span className="grow">
-                    <b>{b.title}</b>
-                    <small>{b.reason_codes.join(' · ').replaceAll('_', ' ')}</small>
-                  </span>
-                  <span className="amt">{formatRp(b.current_user.total_idr)}</span>
-                </span>
-              </Link>
             ))}
           </div>
         </section>

@@ -1,12 +1,23 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import type { BillResponse } from '../lib/types'
-import { billActions, useBill, useBillAction } from '../lib/queries'
+import { billActions, useBill, useBillAction, useContacts } from '../lib/queries'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { Alert, Avatar, Button, Money, StatusBadge } from '../ds/primitives'
+import { Alert, Avatar, Button, Money, Sheet, StatusBadge } from '../ds/primitives'
 import { Check, UsersThree } from '@phosphor-icons/react'
+
+/** Backend mengirim kalimat panjang per item; UI cuma butuh jumlah dan nama. */
+function summarizeWarnings(warnings: string[]) {
+  const names = warnings
+    .map((line) => {
+      const afterColon = line.split(':').slice(1).join(':').trim()
+      return afterColon.split('->')[0].trim()
+    })
+    .filter(Boolean)
+  return { count: warnings.length, names }
+}
 
 function initials(name: string) {
   const clean = name.trim()
@@ -21,6 +32,9 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
   const toast = useToast()
   const navigate = useNavigate()
   const [busyItem, setBusyItem] = useState<number | null>(null)
+  const [payerOpen, setPayerOpen] = useState(false)
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const contacts = useContacts(identityId, inviteOpen)
 
   const data: BillResponse | undefined = bill.data
   const me = useMemo(() => data?.people.find((p) => p.identity_id === identityId), [data, identityId])
@@ -122,8 +136,12 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
           ) : null}
 
           {data.warnings.length > 0 && canManage ? (
-            <Alert tone="pending" title="Ada item yang belum dipilih">
-              {data.warnings.slice(0, 2).join(' · ')}
+            <Alert
+              tone="pending"
+              title={summarizeWarnings(data.warnings).count + ' item belum dipilih siapa pun'}
+            >
+              {summarizeWarnings(data.warnings).names.slice(0, 2).join(', ')}
+              {summarizeWarnings(data.warnings).count > 2 ? ' dan lainnya' : ''} — sementara dibebankan ke yang menalangi.
             </Alert>
           ) : null}
 
@@ -190,13 +208,44 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             </div>
           </section>
 
+          {canManage && data.pending_invites.length > 0 ? (
+            <section className="app-stack">
+              <strong style={{ fontSize: 14, fontWeight: 800 }}>Undangan menunggu</strong>
+              <div>
+                {data.pending_invites.map((invite) => (
+                  <div className="app-row" key={invite.id}>
+                    <Avatar label={initials(invite.name)} tone="muted" />
+                    <span className="grow">
+                      <b>{invite.name}</b>
+                      <small>Belum menerima undangan</small>
+                    </span>
+                    <button
+                      type="button"
+                      className="ds-button ds-button-quiet"
+                      onClick={() => run(billActions.cancelInvite(billId, invite.id), 'Undangan dibatalkan')}
+                    >
+                      Batalkan
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
           <section className="app-stack">
             <strong style={{ fontSize: 14, fontWeight: 800 }}>Aksi</strong>
             <Button variant="secondary" block onClick={share}>
               Bagikan link bill
             </Button>
 
-            {me && me.total_idr > 0 ? (
+            {me && me.identity_id === data.paid_by_id ? (
+              <div className="ds-card ds-card-mint ds-pad-sm">
+                <b style={{ fontSize: 13 }}>Kamu yang menalangi bill ini</b>
+                <p className="app-note" style={{ margin: '4px 0 0' }}>
+                  Bagian kamu otomatis lunas. Yang perlu ditandai lunas adalah orang lain.
+                </p>
+              </div>
+            ) : me && me.total_idr > 0 ? (
               me.paid === 'paid' ? (
                 <Button variant="quiet" block onClick={() => run(billActions.markUnpaid(billId, me.identity_id), 'Status lunas dibatalkan')}>
                   Batalkan status lunas
@@ -220,12 +269,94 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               )
             ) : null}
 
+            {canManage && data.bill.status === 'open' ? (
+              <Button variant="secondary" block onClick={() => setInviteOpen(true)}>
+                Undang teman
+              </Button>
+            ) : null}
+
+            {canManage && data.bill.status === 'open' ? (
+              <Button variant="quiet" block onClick={() => setPayerOpen(true)}>
+                Ganti yang bayar duluan
+              </Button>
+            ) : null}
+
+            {me && !canManage ? (
+              <Button
+                variant="danger"
+                block
+                onClick={() => {
+                  void run(billActions.leave(billId), 'Kamu keluar dari bill ini').then(() => navigate({ to: '/' }))
+                }}
+              >
+                Keluar dari bill ini
+              </Button>
+            ) : null}
+
             <Button variant="quiet" block onClick={() => navigate({ to: '/' })}>
               Kembali ke beranda
             </Button>
           </section>
         </>
       ) : null}
+
+      <Sheet open={payerOpen} title="Siapa yang bayar duluan" onClose={() => setPayerOpen(false)}>
+        <p className="app-note">Orang ini yang menalangi bill. Setelah dipilih, dia yang jadi pemilik bill dan bisa menutup atau mengubahnya.</p>
+        <div>
+          {data?.people.map((person) => (
+            <button
+              key={person.identity_id}
+              type="button"
+              className="app-row"
+              onClick={() => {
+                void run(billActions.setPayer(billId, person.identity_id), 'Pembayar diganti ke ' + person.name)
+                setPayerOpen(false)
+              }}
+            >
+              <Avatar label={initials(person.name)} tone={person.identity_id === data.paid_by_id ? 'teal' : 'navy'} />
+              <span className="grow">
+                <b>{person.name}</b>
+                <small>{person.identity_id === data.paid_by_id ? 'Sedang tercatat sebagai pembayar' : 'Jadikan pembayar'}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      </Sheet>
+
+      <Sheet open={inviteOpen} title="Undang teman" onClose={() => setInviteOpen(false)}>
+        <p className="app-note">Yang bisa diundang cuma orang yang pernah berbagi bill dengan kamu.</p>
+        {contacts.isPending ? <div className="app-note">Memuat kontak…</div> : null}
+        {contacts.isError ? <Alert tone="danger" title="Kontak gagal dimuat">{(contacts.error as Error).message}</Alert> : null}
+        {contacts.data && contacts.data.length === 0 ? (
+          <div className="app-note">Belum ada kontak. Buat bill bareng dulu, nanti mereka muncul di sini.</div>
+        ) : null}
+        <div>
+          {contacts.data?.map((contact) => (
+            <div className="app-row" key={contact.id}>
+              <Avatar label={initials(contact.name)} tone="navy" />
+              <span className="grow">
+                <b>{contact.name}</b>
+                <small>Terakhir bareng {contact.last_shared.slice(0, 10)}</small>
+              </span>
+              <button
+                type="button"
+                className="ds-button ds-button-quiet"
+                onClick={async () => {
+                  try {
+                    const result = await action.mutateAsync(billActions.invite(billId, contact.id))
+                    const status = (result as { status?: string })?.status
+                    toast(status === 'joined' ? contact.name + ' langsung masuk' : 'Undangan dikirim ke ' + contact.name)
+                  } catch (err) {
+                    toast((err as Error).message)
+                  }
+                }}
+              >
+                Undang
+              </button>
+            </div>
+          ))}
+        </div>
+      </Sheet>
     </AppShell>
   )
 }

@@ -4,6 +4,25 @@ import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { Alert, BalanceCard, StatusBadge } from '../ds/primitives'
 
+/** Kode alasan dari backend diterjemahkan ke kalimat yang bisa dibaca. */
+const REASON: Record<string, string> = {
+  open_bill: 'masih berjalan',
+  unpaid: 'ada yang belum bayar',
+  uncovered: 'ada item belum dipilih',
+  pending_invite: 'undangan belum diterima',
+  no_selection: 'belum ada yang memilih',
+  payer_unresolved: 'pembayar belum pasti',
+}
+
+function readableReasons(codes: string[]) {
+  const onlyOpen = codes.every((code) => code === 'open_bill')
+  if (onlyOpen) return 'menunggu semua orang lunas'
+  return codes
+    .filter((code) => code !== 'open_bill')
+    .map((code) => REASON[code] ?? code.replaceAll('_', ' '))
+    .join(' · ')
+}
+
 export function Recap({ identityId }: { identityId: string | null }) {
   const recap = useRecap(identityId)
   const bills = useBills(identityId)
@@ -11,16 +30,16 @@ export function Recap({ identityId }: { identityId: string | null }) {
   const settledBills = (bills.data ?? []).filter((b) => b.settled)
 
   return (
-    <AppShell title="Rekap" subtitle="Yang sudah final, dan yang masih jalan" active="recap">
+    <AppShell title="Rekap" subtitle="Yang sudah final dan yang masih berjalan" active="recap">
       {recap.isError ? <Alert tone="danger" title="Gagal memuat rekap">{(recap.error as Error).message}</Alert> : null}
       {recap.isPending ? <div className="app-note">Memuat…</div> : null}
 
       {data ? (
         <>
           <BalanceCard
-            label={data.final.net_idr >= 0 ? 'Bersih harus diterima' : 'Bersih harus dibayar'}
+            label={data.final.net_idr >= 0 ? 'Total bersih diterima' : 'Total bersih dibayar'}
             value={Math.abs(data.final.net_idr)}
-            note={data.final.bill_count + ' bill sudah final'}
+            note={data.final.bill_count + ' bill final'}
           />
 
           <section className="app-stack">
@@ -41,7 +60,7 @@ export function Recap({ identityId }: { identityId: string | null }) {
               </div>
             ) : null}
             {data.final.counterparties.length === 0 ? (
-              <div className="app-note">Belum ada bill final. Tandai bill lunas dulu supaya masuk ke sini.</div>
+              <div className="app-note">Belum ada bill final. Tandai bill lunas supaya masuk ke sini.</div>
             ) : (
               data.final.counterparties.map((c) => (
                 <div className="app-row" key={c.identity_id}>
@@ -69,7 +88,7 @@ export function Recap({ identityId }: { identityId: string | null }) {
                   <span className="app-row">
                     <span className="grow">
                       <b>{b.title}</b>
-                      <small>{b.current_user.paid ? 'Kamu sudah lunas' : 'Kamu belum lunas'}</small>
+                      <small>{readableReasons(b.reason_codes)}</small>
                     </span>
                     <span className="amt">{formatRp(b.current_user.total_idr)}</span>
                   </span>

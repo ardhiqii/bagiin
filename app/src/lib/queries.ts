@@ -29,6 +29,16 @@ export function useBill(billId: string | null) {
   })
 }
 
+export type Contact = { id: string; name: string; last_shared: string }
+
+export function useContacts(identityId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['contacts', identityId ?? ''],
+    queryFn: () => api<Contact[]>('/api/identities/' + identityId + '/contacts'),
+    enabled: Boolean(identityId) && enabled,
+  })
+}
+
 export function useRecap(identityId: string | null) {
   return useQuery({
     queryKey: keys.recap(identityId ?? ''),
@@ -86,8 +96,13 @@ export const billActions = {
     path: '/api/bills/' + billId + '/invite',
     body: { identity_id: identityId },
   }),
-  setPayer: (billId: string, identityId: string | null) => ({
+  setPayer: (billId: string, identityId: string) => ({
     path: '/api/bills/' + billId + '/paid_by',
+    method: 'PUT' as const,
     body: { identity_id: identityId },
+  }),
+  cancelInvite: (billId: string, inviteId: string) => ({
+    path: '/api/bills/' + billId + '/invites/' + inviteId,
+    method: 'DELETE' as const,
   }),
 }
