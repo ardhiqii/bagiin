@@ -5,6 +5,7 @@ import {
 } from './ds/primitives'
 import type { ItemState } from './ds/primitives'
 import emptyBillArt from './assets/empty-bill.png'
+import splitReceiptArt from './assets/split-receipt.png'
 import {
   BRAND_TOKENS, COMPONENT_INVENTORY, ELEVATIONS, RADII, RULES, SHADCN_MAP, SPACING, STATUS_GRAMMAR, STATUS_TOKENS, TYPE_SCALE,
 } from './ds/spec'
@@ -47,6 +48,7 @@ export function DesignSystemShowcase() {
         <div className="ds-hero-actions">
           <a href="/?v=seimbang">Lihat prototype utama <ArrowRight size={17} /></a>
           <a href="#komponen">Langsung ke komponen</a>
+          <a href="#aset">Lihat aset ilustrasi</a>
         </div>
       </section>
 
@@ -196,7 +198,33 @@ export function DesignSystemShowcase() {
         </div>
       </Section>
 
-      <Section id="pola" index="06 / Pola layar" title="Komposisi halaman bill." lead="Susunan yang dipakai halaman bill: kepala navy berisi merchant dan total, lalu item sebagai isi utama, rincian biaya, progres, dan aksi di dekat konteksnya. Struktur rinci per kasus masih diuji; komposisinya sudah tetap.">
+      <Section id="aset" index="06 / Aset ilustrasi" title="Digambar, bukan ditempel." lead="Dua ilustrasi dibuat dengan model gambar memakai brief yang mengunci palet dan ukuran tampil, lalu background datarnya dibuang dan paletnya dikuantisasi. Yang di bawah ini file asli yang dipakai aplikasi, bukan mockup.">
+        <div className="ds-assets">
+          <figure className="ds-asset">
+            <div className="ds-asset-plate"><img src={emptyBillArt} alt="Ilustrasi struk kosong" width={216} height={216} /></div>
+            <figcaption>
+              <b>Struk kosong</b>
+              <span>empty-bill.png · 512 px · 7,5 KB</span>
+              <p>Empty state “Belum ada bill”. Tampil 216 px di dalam kartu putih, tanpa kotak background karena transparan.</p>
+            </figcaption>
+          </figure>
+          <figure className="ds-asset">
+            <div className="ds-asset-plate"><img src={splitReceiptArt} alt="Ilustrasi struk terbagi tiga" width={150} height={150} /></div>
+            <figcaption>
+              <b>Struk terbagi</b>
+              <span>split-receipt.png · 512 px · 8,9 KB</span>
+              <p>Sampul layar “Buat bill”. Tampil 68 px di samping judul; ukuran besar di atas hanya untuk memperlihatkan detail.</p>
+            </figcaption>
+          </figure>
+        </div>
+        <div className="ds-asset-rules">
+          <div><b>Palet</b><span>Enam hex saja: navy, teal, mint, off-white, putih, satu amber. Tidak ada warna di luar token.</span></div>
+          <div><b>Bentuk</b><span>Flat, sudut keras, tanpa outline, gradasi, bayangan, atau tekstur. Aman di layar 1x maupun 3x.</span></div>
+          <div><b>Larangan</b><span>Tidak ada teks, angka, logo, atau orang di dalam gambar. Semua makna tetap dibawa oleh teks di UI.</span></div>
+        </div>
+      </Section>
+
+      <Section id="pola" index="07 / Pola layar" title="Komposisi halaman bill." lead="Susunan yang dipakai halaman bill: kepala navy berisi merchant dan total, lalu item sebagai isi utama, rincian biaya, progres, dan aksi di dekat konteksnya. Struktur rinci per kasus masih diuji; komposisinya sudah tetap.">
         <div className="ds-phone-demo">
           <div className="ds-phone">
             <div className="ds-phone-head">
@@ -236,7 +264,7 @@ export function DesignSystemShowcase() {
         </div>
       </Section>
 
-      <Section id="aturan" index="07 / Aturan mahal" title="Empat kesalahan yang pernah menagih." lead="Bukan preferensi visual. Ini empat hal yang kalau dilanggar, orang mentransfer nominal yang salah atau tidak bisa memakai aplikasinya.">
+      <Section id="aturan" index="08 / Aturan mahal" title="Empat kesalahan yang pernah menagih." lead="Bukan preferensi visual. Ini empat hal yang kalau dilanggar, orang mentransfer nominal yang salah atau tidak bisa memakai aplikasinya.">
         <div className="ds-rules">
           {RULES.map((rule) => <article className="ds-rule" key={rule.title}>
             <h3>{rule.title}</h3>
@@ -249,7 +277,7 @@ export function DesignSystemShowcase() {
         </div>
       </Section>
 
-      <Section id="shadcn" index="08 / Inventaris & pemetaan" title="Siap dipindah ke shadcn." lead="Saat migrasi produksi, token di bawah pindah ke theme aplikasi; komponennya memakai shadcn/ui dengan struktur dan copy Bagiin, bukan default library.">
+      <Section id="shadcn" index="09 / Inventaris & pemetaan" title="Siap dipindah ke shadcn." lead="Saat migrasi produksi, token di bawah pindah ke theme aplikasi; komponennya memakai shadcn/ui dengan struktur dan copy Bagiin, bukan default library.">
         <div className="ds-grid-2">
           <Specimen label="Komponen & varian" note="Daftar ini yang harus ada sebelum React dianggap siap menggantikan vanilla.">
             <div className="ds-table">

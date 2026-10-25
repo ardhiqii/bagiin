@@ -781,6 +781,23 @@
 .ds-grammar-step small { color: var(--ds-muted); font: 400 11.5px/1.4 var(--ds-font-body); }
 .ds-grammar-col > p { margin: 16px 0 0; padding-top: 14px; box-shadow: inset 0 1px 0 var(--ds-hairline); color: var(--ds-navy); font: 700 11.5px/1.5 var(--ds-font-body); }
 
+/* ---------- 06: aset ilustrasi ---------- */
+.ds-assets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.ds-asset { margin: 0; display: flex; flex-direction: column; }
+.ds-asset-plate { display: grid; place-items: center; background: var(--ds-surface); border-radius: var(--ds-radius-lg); box-shadow: var(--ds-shadow-content); padding: 26px 18px; min-height: 250px; }
+.ds-asset-plate img { display: block; width: auto; height: auto; max-width: 100%; }
+.ds-asset figcaption { padding: 14px 2px 0; display: flex; flex-direction: column; gap: 4px; }
+.ds-asset figcaption b { font: 700 15px/1.25 var(--ds-font-display); letter-spacing: -.02em; }
+.ds-asset figcaption span { font: 500 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ds-muted-soft); }
+.ds-asset figcaption p { margin: 2px 0 0; font: 400 12.5px/1.55 var(--ds-font-body); color: var(--ds-muted); }
+.ds-asset-rules { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 24px; padding-top: 20px; box-shadow: inset 0 1px 0 var(--ds-hairline); }
+.ds-asset-rules b { display: block; margin-bottom: 5px; color: var(--ds-navy); font: 700 11.5px/1.4 var(--ds-font-display); letter-spacing: .05em; text-transform: uppercase; }
+.ds-asset-rules span { font: 400 12.5px/1.55 var(--ds-font-body); color: var(--ds-muted); }
+@media (max-width: 720px) {
+  .ds-assets { grid-template-columns: 1fr; }
+  .ds-asset-rules { grid-template-columns: 1fr; }
+}
+
 .ds-phone-demo { display: grid; grid-template-columns: 372px 1fr; gap: 32px; align-items: start; }
 .ds-phone { display: flex; flex-direction: column; background: var(--ds-bg); border-radius: 34px; overflow: hidden; box-shadow: var(--ds-shadow-raise); }
 .ds-phone-head { position: relative; overflow: hidden; padding: 16px 18px 20px; background: var(--ds-navy); color: #fff; }
