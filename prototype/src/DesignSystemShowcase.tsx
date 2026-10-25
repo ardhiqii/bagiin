@@ -226,7 +226,7 @@ export function DesignSystemShowcase() {
             <figcaption>
               <b>Dua cangkir</b>
               <span>invite.webp · 320 px · 13 KB</span>
-              <p>Sheet “Undang teman”. Dua cangkir bersulang, tampil 88 px di atas judul sheet.</p>
+              <p>Sheet “Undang teman”. Dua cangkir bersulang, tampil 108 px di atas judul sheet.</p>
             </figcaption>
           </figure>
           <figure className="ds-asset">
