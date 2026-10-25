@@ -78,6 +78,28 @@ test.describe('Bagiin — mengubah bill', () => {
     await ctx.close()
   })
 
+  test('36. hapus bill butuh konfirmasi dan bill hilang dari daftar', async ({ page }) => {
+    await freshUser(page, 'Aufa')
+    const title = 'Hapus ' + stamp
+    await createTwoItemBill(page, title)
+
+    await page.getByRole('button', { name: 'Ubah bill' }).click()
+    await page.getByRole('button', { name: 'Hapus bill ini' }).click()
+    await expect(page.getByText('Yakin menghapus bill ini?')).toBeVisible()
+
+    // batal dulu: bill tetap ada
+    await page.getByRole('button', { name: 'Batal' }).click()
+    await expect(page.getByText('Yakin menghapus bill ini?')).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Hapus bill ini' }).click()
+    await page.getByRole('button', { name: 'Ya, hapus permanen' }).click()
+    await expect(page.getByText('Bill dihapus')).toBeVisible()
+
+    await expect(page).toHaveURL(/\/$/)
+    await page.goto('/bills')
+    await expect(page.getByText(title)).toHaveCount(0)
+  })
+
   test('35. tambah dan hapus item saat mengubah bill', async ({ page }) => {
     await freshUser(page, 'Aufa')
     await createTwoItemBill(page, 'Item ubah ' + stamp)

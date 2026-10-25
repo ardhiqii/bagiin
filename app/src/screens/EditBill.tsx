@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { useBill, useBillAction, keys } from '../lib/queries'
+import { billActions, keys, useBill, useBillAction } from '../lib/queries'
 import { formatRp, parseRupiah } from '../lib/money'
 import { Alert, Button, Field } from '../ds/primitives'
 import type { BillItem } from '../lib/types'
@@ -36,6 +36,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
   const [discount, setDiscount] = useState<string | null>(null)
   const [items, setItems] = useState<Draft[] | null>(null)
   const [error, setError] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   // Nilai awal diambil sekali dari server, sesudah itu state lokal yang menang.
   const titleValue = title ?? data?.bill.title ?? ''
@@ -235,6 +236,45 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
               </div>
             ) : null}
           </div>
+
+          <section className="app-stack">
+            <strong style={{ fontSize: 14, fontWeight: 800 }}>Hapus bill</strong>
+            <p className="app-note">
+              Bill beserta semua item, pilihan, dan status lunasnya dihapus permanen. Tautan yang sudah kamu bagikan tidak akan bisa dibuka lagi.
+            </p>
+            {confirmDelete ? (
+              <Alert tone="danger" title="Yakin menghapus bill ini?">
+                Tidak ada cara mengembalikannya. Kalau cuma ingin menghentikan perubahan, tutup bill saja.
+              </Alert>
+            ) : null}
+            {confirmDelete ? (
+              <div className="app-inline">
+                <Button
+                  variant="danger"
+                  loading={action.isPending}
+                  onClick={async () => {
+                    try {
+                      await action.mutateAsync(billActions.removeBill(billId))
+                      await queryClient.invalidateQueries({ queryKey: keys.bills(identityId ?? '') })
+                      toast('Bill dihapus')
+                      navigate({ to: '/' })
+                    } catch (err) {
+                      setError((err as Error).message)
+                    }
+                  }}
+                >
+                  Ya, hapus permanen
+                </Button>
+                <Button variant="quiet" onClick={() => setConfirmDelete(false)}>
+                  Batal
+                </Button>
+              </div>
+            ) : (
+              <Button variant="danger" block onClick={() => setConfirmDelete(true)}>
+                Hapus bill ini
+              </Button>
+            )}
+          </section>
 
           <div className="create-dock">
             <div className="tot">

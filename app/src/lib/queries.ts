@@ -147,6 +147,10 @@ export const billActions = {
     method: 'PUT' as const,
     body: { identity_id: identityId },
   }),
+  removeBill: (billId: string) => ({
+    path: '/api/bills/' + billId,
+    method: 'DELETE' as const,
+  }),
   cancelInvite: (billId: string, inviteId: string) => ({
     path: '/api/bills/' + billId + '/invites/' + inviteId,
     method: 'DELETE' as const,
