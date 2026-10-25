@@ -29,6 +29,43 @@ export function useBill(billId: string | null) {
   })
 }
 
+export type PaymentAccount = {
+  id: number
+  identity_id: string
+  brand: string
+  account_no: string
+  holder_name: string | null
+  sort_order: number
+}
+
+export function useAccounts(identityId: string | null) {
+  return useQuery({
+    queryKey: ['accounts', identityId ?? ''],
+    queryFn: () => api<PaymentAccount[]>('/api/identities/' + identityId + '/accounts'),
+    enabled: Boolean(identityId),
+  })
+}
+
+export const accountActions = {
+  add: (identityId: string, body: { brand: string; account_no: string; holder_name?: string | null }) => ({
+    path: '/api/identities/' + identityId + '/accounts',
+    body,
+  }),
+  update: (accountId: number, body: { brand: string; account_no: string; holder_name?: string | null }) => ({
+    path: '/api/accounts/' + accountId,
+    method: 'PUT' as const,
+    body,
+  }),
+  remove: (accountId: number) => ({
+    path: '/api/accounts/' + accountId,
+    method: 'DELETE' as const,
+  }),
+  autoAccept: (identityId: string, on: boolean) => ({
+    path: '/api/identities/' + identityId + '/auto_accept',
+    body: { auto_accept: on ? 1 : 0 },
+  }),
+}
+
 export type Contact = { id: string; name: string; last_shared: string }
 
 export function useContacts(identityId: string | null, enabled: boolean) {

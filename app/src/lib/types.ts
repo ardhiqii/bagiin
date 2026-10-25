@@ -86,6 +86,8 @@ export type BillResponse = {
   paid_by_name: string | null
   paid_by_confirmed: boolean
   pending_invites: PendingInvite[]
+  creator_accounts: { id: number; identity_id: string; brand: string; account_no: string; holder_name: string | null; sort_order: number }[]
+  paid_by_accounts: { id: number; identity_id: string; brand: string; account_no: string; holder_name: string | null; sort_order: number }[]
   total_ok: boolean
   remaining_to_creator: number
   uncovered_idr: number

@@ -73,7 +73,7 @@ const settingsRoute = createRoute({
   path: '/settings',
   component: function SettingsRoute() {
     const me = useMe()
-    return <Settings identity={me} onIdentity={() => {}} />
+    return <Settings identity={me} />
   },
 })
 

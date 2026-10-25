@@ -62,6 +62,12 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
   const joined = Boolean(me)
   const canManage = data?.can_manage ?? false
+  // rekening milik penerima uang; kalau pembayar belum jelas, pakai milik pembuat
+  const transferAccounts = data
+    ? data.paid_by_id
+      ? data.paid_by_accounts
+      : data.creator_accounts
+    : []
 
   async function run(todo: { path: string; method?: 'POST' | 'PUT' | 'DELETE'; body?: unknown }, message: string) {
     try {
@@ -298,6 +304,39 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                       onClick={() => run(billActions.cancelInvite(billId, invite.id), 'Undangan dibatalkan')}
                     >
                       Batalkan
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {transferAccounts.length > 0 ? (
+            <section className="app-stack">
+              <strong style={{ fontSize: 14, fontWeight: 800 }}>Transfer ke {data.paid_by_name}</strong>
+              <div>
+                {transferAccounts.map((account) => (
+                  <div className="app-row" key={account.id}>
+                    <span className="grow">
+                      <b>{account.brand}</b>
+                      <small>
+                        {account.account_no}
+                        {account.holder_name ? ' · ' + account.holder_name : ''}
+                      </small>
+                    </span>
+                    <button
+                      type="button"
+                      className="ds-button ds-button-quiet"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(account.account_no)
+                          toast('Nomor rekening disalin')
+                        } catch {
+                          toast(account.account_no)
+                        }
+                      }}
+                    >
+                      Salin
                     </button>
                   </div>
                 ))}

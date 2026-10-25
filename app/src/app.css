@@ -189,7 +189,7 @@
 .app-toast {
   position: fixed;
   left: 50%;
-  top: 72px;
+  top: 10px;
   transform: translate(-50%, -12px);
   background: var(--ds-navy);
   color: #fff;
@@ -229,6 +229,30 @@
 .create-dock .tot small { display: block; font-size: 11px; font-weight: 700; color: var(--ds-muted); letter-spacing: .02em; text-transform: uppercase; }
 .app-body.has-dock { padding-bottom: 190px; }
 .create-dock .tot b { font-family: var(--ds-font-display); font-size: 20px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+
+/* Kartu rekening: info di atas, aksi di baris sendiri supaya tidak berdesakan. */
+.account-card {
+  padding: 14px 16px;
+  background: var(--ds-surface);
+  border-radius: 18px;
+}
+.account-card + .account-card { margin-top: 8px; }
+.account-no {
+  margin-top: 4px;
+  font: 700 15px/1.3 var(--ds-font-body);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+}
+.account-actions { display: flex; gap: 14px; margin-top: 10px; }
+.link-action {
+  border: 0;
+  background: none;
+  padding: 6px 0;
+  font: 700 12.5px var(--ds-font-body);
+  color: var(--ds-teal);
+  cursor: pointer;
+}
+.link-action.is-danger { color: var(--ds-danger); }
 
 /* Baris item di layar bill: tombol pilih + kontrol slot di kanan. */
 .item-line {
