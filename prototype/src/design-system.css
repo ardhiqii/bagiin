@@ -252,8 +252,16 @@
   box-shadow: 0 -1px 0 var(--ds-hairline);
   padding: 6px 8px max(8px, env(safe-area-inset-bottom));
 }
-.v-seimbang .app-nav-item { font-size: 10.5px; min-height: 48px; gap: 4px; }
+.v-seimbang .app-nav { padding: 8px 18px max(10px, env(safe-area-inset-bottom)); }
+.v-seimbang .app-nav-item { font-size: 10.5px; min-height: 46px; gap: 5px; color: var(--ds-muted); }
+.v-seimbang .app-nav-item svg { transition: transform .16s ease; }
 .v-seimbang .app-nav-item.active { color: var(--ds-teal); }
+.v-seimbang .app-nav-item.active span { font-weight: 800; letter-spacing: -.01em; }
+.v-seimbang .app-nav-item:active svg { transform: scale(.92); }
+
+/* four equal destinations; emphasis comes from weight, not from a raised tile */
+.v-seimbang .app-nav-item span { transition: color .16s ease; }
+.v-seimbang .app-nav-item.active span { font-weight: 800; }
 .v-seimbang .bill-actions {
   position: sticky;
   bottom: 62px;
@@ -557,12 +565,20 @@
 .ds-empty-action { margin-top: 4px; }
 
 /* create screen: heading + spot illustration sharing one block */
+.recap-hero { display: flex; align-items: flex-start; gap: 14px; }
+.recap-hero > div { flex: 1; min-width: 0; }
+.recap-hero img { flex: none; width: 104px; height: 104px; object-fit: cover; border-radius: 18px; box-shadow: var(--ds-shadow-content); margin-top: 2px; }
+.invite-chip { border: 1px dashed #bac8b9; background: transparent; color: var(--ds-teal); font-size: 15px; line-height: 1; font-weight: 700; padding: 0; }
+.invite-chip:hover { background: var(--ds-mint); border-style: solid; }
+.sheet-art { display: block; width: 88px; height: 88px; object-fit: cover; border-radius: 20px; margin: 0 auto 14px; box-shadow: var(--ds-shadow-content); }
+
 .create-hero { display: flex; align-items: flex-start; gap: 16px; margin: 24px 0 16px; }
 .create-hero .create-copy { flex: 1; min-width: 0; }
 .create-hero h1 { margin: 0 0 6px; font: 800 24px/1.12 var(--ds-font-display); letter-spacing: -.045em; }
 .create-hero p { margin: 0; color: var(--ds-muted); font: 400 12.5px/1.5 var(--ds-font-body); }
 .create-hero img { flex: none; width: 120px; height: 120px; object-fit: cover; border-radius: 18px; margin-top: 0; box-shadow: var(--ds-shadow-content); }
 .v-seimbang .screen-create { padding-bottom: 28px; }
+.v-seimbang .screen-bill, .v-seimbang .screen-recap { padding-bottom: 34px; }
 .ds-empty b { font: 800 15px/1.3 var(--ds-font-body); }
 .ds-empty p { margin: 0; max-width: 270px; color: var(--ds-muted); font: 400 12.5px/1.5 var(--ds-font-body); }
 

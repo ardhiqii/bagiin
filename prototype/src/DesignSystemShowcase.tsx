@@ -6,6 +6,8 @@ import {
 import type { ItemState } from './ds/primitives'
 import emptyBillArt from './assets/empty-bill.webp'
 import splitReceiptArt from './assets/create-hero.webp'
+import inviteArt from './assets/invite.webp'
+import recapArt from './assets/recap.webp'
 import {
   BRAND_TOKENS, COMPONENT_INVENTORY, ELEVATIONS, RADII, RULES, SHADCN_MAP, SPACING, STATUS_GRAMMAR, STATUS_TOKENS, TYPE_SCALE,
 } from './ds/spec'
@@ -214,6 +216,22 @@ export function DesignSystemShowcase() {
               <b>Struk terbagi tiga</b>
               <span>create-hero.webp · 576 px · 10 KB</span>
               <p>Layar “Buat bill”. Tiga strip struk sebagai metafora pembagian, tampil 120 px di samping judul.</p>
+            </figcaption>
+          </figure>
+          <figure className="ds-asset">
+            <div className="ds-asset-plate"><img className="ds-asset-img" src={inviteArt} alt="Ilustrasi dua cangkir bersulang" width={216} height={216} /></div>
+            <figcaption>
+              <b>Dua cangkir</b>
+              <span>invite.webp · 320 px · 13 KB</span>
+              <p>Sheet “Undang teman”. Dua cangkir bersulang, tampil 88 px di atas judul sheet.</p>
+            </figcaption>
+          </figure>
+          <figure className="ds-asset">
+            <div className="ds-asset-plate"><img className="ds-asset-img" src={recapArt} alt="Ilustrasi koin dan catatan" width={216} height={216} /></div>
+            <figcaption>
+              <b>Koin dan catatan</b>
+              <span>recap.webp · 320 px · 6 KB</span>
+              <p>Layar “Rekap”. Ringkasan uang, tampil 104 px di samping judul.</p>
             </figcaption>
           </figure>
         </div>
