@@ -1,69 +1,272 @@
 import { useState } from 'react'
+import { ArrowLeft, ArrowRight, Check, CheckCircle, Copy, Info, WarningCircle } from '@phosphor-icons/react'
 import {
-  ArrowLeft, ArrowRight, Check, CheckCircle, Clock,
-  House, Info, Plus, Receipt, WarningCircle, Wallet, X,
-} from '@phosphor-icons/react'
+  Alert, Avatar, BalanceCard, BottomNav, Button, EmptyState, Field, ItemRow, Money, Sheet, StatusBadge,
+} from './ds/primitives'
+import type { ItemState } from './ds/primitives'
+import {
+  BRAND_TOKENS, COMPONENT_INVENTORY, ELEVATIONS, RADII, RULES, SHADCN_MAP, SPACING, STATUS_GRAMMAR, STATUS_TOKENS, TYPE_SCALE,
+} from './ds/spec'
 
-const swatches = [
-  { name: 'Navy 900', token: '--ds-navy', value: '#142F3A', role: 'Teks utama, kartu saldo, header bill' },
-  { name: 'Teal 700', token: '--ds-teal', value: '#087665', role: 'Aksi utama, item terpilih, fokus' },
-  { name: 'Fog 50', token: '--ds-bg', value: '#F5F8F8', role: 'Latar layar' },
-  { name: 'White', token: '--ds-surface', value: '#FFFFFF', role: 'Kartu, sheet, navigasi' },
-  { name: 'Mint 100', token: '--ds-mint', value: '#E2F5EF', role: 'Aksi sekunder, sorotan halus' },
-  { name: 'Slate 600', token: '--ds-muted', value: '#536D78', role: 'Teks pendukung' },
-]
+function Section({ id, index, title, lead, children }: { id: string; index: string; title: string; lead: string; children: React.ReactNode }) {
+  return <section className="ds-section" id={id}>
+    <div className="ds-heading"><span>{index}</span><h2>{title}</h2><p>{lead}</p></div>
+    {children}
+  </section>
+}
 
-const semantic = [
-  { label: 'Sementara', detail: 'Ada bagian yang menunggu', className: 'ds-status-pending', icon: Clock },
-  { label: 'Pembagian lengkap', detail: 'Nominal sudah final', className: 'ds-status-info', icon: CheckCircle },
-  { label: 'Lunas', detail: 'Pembayaran ditandai', className: 'ds-status-success', icon: Check },
-  { label: 'Kurang bayar', detail: 'Ada selisih setelah revisi', className: 'ds-status-danger', icon: WarningCircle },
-]
+function Specimen({ label, note, children }: { label: string; note?: string; children: React.ReactNode }) {
+  return <article className="ds-specimen">
+    <span className="ds-specimen-label">{label}</span>
+    <div className="ds-specimen-body">{children}</div>
+    {note && <p className="ds-specimen-note">{note}</p>}
+  </article>
+}
 
 export function DesignSystemShowcase() {
-  const [picked, setPicked] = useState(true)
+  const [itemState, setItemState] = useState<ItemState>('shared')
+  const [plainPicked, setPlainPicked] = useState(true)
+  const [amount, setAmount] = useState('54.000')
+  const [name, setName] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
+
+  const cycle = (state: ItemState): ItemState => state === 'idle' ? 'picked' : state === 'picked' ? 'shared' : 'idle'
 
   return <div className="ds-page">
     <header className="ds-topbar">
       <a href="/" aria-label="Kembali ke design lab"><ArrowLeft size={18} /> Design Lab</a>
-      <span>Design system / v0.1</span>
+      <span>Design system · v0.2 · hybrid</span>
     </header>
+
     <main className="ds-main">
       <section className="ds-hero">
-        <div className="ds-eyebrow">Bagiin / Arah terpilih</div>
-        <h1>Jelas angkanya.<br /><span>Ringan patungannya.</span></h1>
-        <p>Struktur halaman Seimbang, warna Saldo. Komponen di bawah menjadi bahasa visual bersama untuk beranda, bill, rekap, dan editor.</p>
-        <div className="ds-hero-actions"><a href="/?v=seimbang">Lihat prototype utama <ArrowRight size={17} /></a><a href="#fondasi">Lihat token</a></div>
-      </section>
-
-      <section className="ds-section" id="fondasi">
-        <div className="ds-section-heading"><span>01 / Fondasi</span><h2>Warna punya peran.</h2><p>Navy untuk orientasi dan angka utama. Teal untuk hal yang bisa dilakukan. Warna status hanya dipakai saat maknanya memang berbeda.</p></div>
-        <div className="ds-swatches">{swatches.map((swatch) => <div className="ds-swatch" key={swatch.token}><div className="ds-swatch-color" style={{ background: `var(${swatch.token})` }} /><div><b>{swatch.name}</b><code>{swatch.value}</code><small>{swatch.role}</small></div></div>)}</div>
-      </section>
-
-      <section className="ds-section ds-type-section">
-        <div className="ds-section-heading"><span>02 / Tipografi</span><h2>Angka gampang dipindai.</h2><p>Manrope untuk judul. DM Sans untuk isi. Nominal memakai tabular numbers agar angka tidak bergeser saat berubah.</p></div>
-        <div className="ds-type-grid"><div><span>Display / 32 · 700</span><strong className="ds-type-display">Rp163.000</strong></div><div><span>Heading / 24 · 700</span><strong className="ds-type-heading">Makan siang bareng</strong></div><div><span>Body / 14 · 400</span><p>Bagianmu dihitung dari item yang dipilih, diskon, service, dan ongkir.</p></div><div><span>Label / 12 · 700</span><b className="ds-type-label">1 BAGIAN MENUNGGU</b></div></div>
-      </section>
-
-      <section className="ds-section">
-        <div className="ds-section-heading"><span>03 / Komponen</span><h2>Satu bentuk, satu fungsi.</h2><p>Kontrol utama konsisten di semua layar; status tetap menjelaskan sebabnya lewat teks.</p></div>
-        <div className="ds-component-grid">
-          <article className="ds-specimen"><span className="ds-specimen-label">Saldo & rincian</span><div className="ds-balance-card"><span>Perlu kamu bayar</span><strong>Rp62.120</strong><small>Dari 1 bill, angka masih sementara</small></div><div className="ds-mini-detail"><span>Aufa · Dapur Tiga</span><b>Rp62.120</b></div></article>
-          <article className="ds-specimen"><span className="ds-specimen-label">Aksi & input</span><div className="ds-button-stack"><button type="button" className="ds-button ds-button-primary" onClick={() => setSheetOpen(true)}>Tandai lunas <ArrowRight size={17} /></button><button type="button" className="ds-button ds-button-secondary" onClick={() => setSheetOpen(true)}>Lihat rincian</button><button type="button" className="ds-button ds-button-quiet" onClick={() => setPicked((old) => !old)}>Edit pilihan</button></div><label className="ds-input-label" htmlFor="ds-item-name">Nama item</label><input id="ds-item-name" defaultValue="Dimsum platter" /></article>
-          <article className="ds-specimen"><span className="ds-specimen-label">Item yang bisa dipilih</span><button type="button" className={`ds-item ${picked ? 'is-picked' : ''}`} onClick={() => setPicked((old) => !old)} aria-pressed={picked}><span className="ds-item-check">{picked && <Check size={15} weight="bold" />}</span><span><b>Dimsum platter</b><small>Dibagi 3 orang · 1 bagian menunggu</small></span><strong>Rp54.000</strong></button><div className="ds-item-note"><Info size={16} /> Ketuk seluruh baris. Warna dan tanda centang menunjukkan pilihan.</div></article>
-          <article className="ds-specimen"><span className="ds-specimen-label">Navigasi bawah</span><div className="ds-nav-example"><div className="active"><House size={20} weight="fill" />Beranda</div><div><Receipt size={20} />Bill</div><div><Plus size={20} />Buat</div><div><Wallet size={20} />Rekap</div></div><p className="ds-specimen-foot">Navigasi berada di luar area scroll. Konten dan tombol akhir tidak tertutup.</p></article>
+        <div className="ds-eyebrow">Bagiin / arah terpilih</div>
+        <h1>Struktur Seimbang.<br /><span>Warna Saldo.</span></h1>
+        <p>Susunan informasi mengikuti Seimbang: ringkasan di atas, item sebagai isi utama, satu aksi dekat konteksnya, navigasi tetap di bawah. Warnanya dari Saldo: navy untuk orientasi dan angka, teal untuk yang bisa dikerjakan. Halaman ini adalah acuan komponen, bukan sekadar galeri.</p>
+        <div className="ds-hero-actions">
+          <a href="/?v=seimbang">Lihat prototype utama <ArrowRight size={17} /></a>
+          <a href="#komponen">Langsung ke komponen</a>
         </div>
       </section>
 
-      <section className="ds-section">
-        <div className="ds-section-heading"><span>04 / Status bisnis</span><h2>Jangan campur status.</h2><p>Pembagian, pembayaran, dan keadaan bill adalah tiga hal berbeda. Labelnya harus terbaca tanpa mengandalkan warna.</p></div>
-        <div className="ds-status-grid">{semantic.map(({ label, detail, className, icon: Icon }) => <div className={`ds-status-card ${className}`} key={label}><Icon size={20} /><div><b>{label}</b><small>{detail}</small></div></div>)}</div>
-      </section>
+      <Section id="fondasi" index="01 / Fondasi" title="Warna punya peran." lead="Navy mengarahkan, teal mengajak bertindak, warna status hanya muncul saat maknanya memang berbeda. Semua pasangan teks–latar di bawah lolos kontras minimal 4,5:1.">
+        <div className="ds-swatches">
+          {BRAND_TOKENS.map((token) => <div className="ds-swatch" key={token.token}>
+            <span className="ds-swatch-color" style={{ background: `var(${token.token})` }} aria-hidden="true" />
+            <div><b>{token.name}</b><code>{token.value}</code><small>{token.role}</small></div>
+          </div>)}
+        </div>
+        <h3 className="ds-subheading">Token status</h3>
+        <div className="ds-token-list">
+          {STATUS_TOKENS.map((status) => <div className="ds-token-row" key={status.name}>
+            <span className={`ds-token-chip ds-tone-${status.tone}`}>{status.name}</span>
+            <code>{status.ink} di {status.bg}</code>
+            <span className="ds-token-ratio">{status.ratio}</span>
+            <small>{status.use}</small>
+          </div>)}
+        </div>
+      </Section>
 
-      <section className="ds-section ds-mobile-principles"><div className="ds-section-heading"><span>05 / Mobile</span><h2>Nyaman dipakai satu tangan.</h2></div><div className="ds-principle-grid"><div><b>20 px</b><span>Jarak sisi layar</span></div><div><b>44 px</b><span>Tinggi minimum target sentuh</span></div><div><b>4 px</b><span>Dasar skala jarak</span></div><div><b>1 aksi</b><span>Prioritas utama per area</span></div></div></section>
+      <Section id="tipografi" index="02 / Tipografi & angka" title="Angka gampang dipindai." lead="Manrope untuk judul, DM Sans untuk isi. Semua nominal memakai tabular numbers dan pemisah ribuan Indonesia — jangan disingkat jadi “62rb” untuk angka yang harus dibayar.">
+        <div className="ds-type-grid">
+          {TYPE_SCALE.map((type) => <div className="ds-type-cell" key={type.name}>
+            <span>{type.name}</span>
+            <strong className={type.className}>{type.sample}</strong>
+            <code>{type.spec}</code>
+          </div>)}
+        </div>
+      </Section>
+
+      <Section id="ruang" index="03 / Ruang, radius, elevasi" title="Delapan angka, tiga lapisan." lead="Skala jarak kelipatan 4 px dengan sisi layar 20 px. Radius hanya empat ukuran. Bayangan dipakai kalau memang ada lapisan yang menutup konten; kartu biasa pakai garis.">
+        <div className="ds-grid-3">
+          <Specimen label="Skala jarak" note="Sisi layar mobile 20 px; jarak antar-kartu 12 px; dalam kartu 16 px.">
+            <div className="ds-spacing-scale">
+              {SPACING.map((step) => <div key={step}><span>{step}</span><i style={{ width: `${step * 2}px` }} /></div>)}
+            </div>
+          </Specimen>
+          <Specimen label="Radius" note="Radius berbeda hanya kalau komponennya memang beda peran.">
+            <div className="ds-radius-scale">
+              {RADII.map((radius) => <div key={radius.token}><i style={{ borderRadius: `var(${radius.token})` }} /><span><b>{radius.value}</b><small>{radius.use}</small></span></div>)}
+            </div>
+          </Specimen>
+          <Specimen label="Elevasi" note="Kalau ragu, pakai garis border. Bayangan bukan dekorasi.">
+            <div className="ds-elevation-scale">
+              {ELEVATIONS.map((elevation) => <div key={elevation.name} className={elevation.name === 'Sheet' ? 'is-sheet' : elevation.name === 'Fokus' ? 'is-focus' : ''}>
+                <b>{elevation.name}</b><small>{elevation.use}</small>
+              </div>)}
+            </div>
+          </Specimen>
+        </div>
+      </Section>
+
+      <Section id="komponen" index="04 / Komponen" title="Satu bentuk, satu fungsi." lead="Kontrol yang sama dipakai di beranda, bill, rekap, dan editor. Semua contoh di bawah bisa dicoba;">
+        <div className="ds-grid-2">
+          <Specimen label="Button" note="Satu aksi utama per area. Label menyebut hasil, bukan proses. Loading mengunci tombol.">
+            <div className="ds-stack">
+              <Button onClick={() => setSheetOpen(true)}>Selesai pilih <ArrowRight size={17} /></Button>
+              <Button variant="secondary" onClick={() => setSheetOpen(true)}>Bagikan bill</Button>
+              <Button variant="quiet" onClick={() => setSheetOpen(true)}>Edit pilihan</Button>
+              <Button variant="danger" onClick={() => setSheetOpen(true)}>Batalkan tanda lunas</Button>
+              <Button disabled>Tandai lunas</Button>
+              <Button loading>Tandai lunas</Button>
+            </div>
+          </Specimen>
+
+          <Specimen label="Status badge" note="Ikon + teks + latar. Warna tidak pernah jadi satu-satunya penanda.">
+            <div className="ds-wrap">
+              <StatusBadge tone="pending">Sementara · Citra belum pilih</StatusBadge>
+              <StatusBadge tone="info">Pembagian lengkap</StatusBadge>
+              <StatusBadge tone="success">Lunas</StatusBadge>
+              <StatusBadge tone="danger">Kurang bayar Rp5.000</StatusBadge>
+            </div>
+            <div className="ds-divider" />
+            <div className="ds-stack-sm">
+              <Alert tone="danger" title="Nominal naik setelah kamu tandai lunas">Tagihanmu sekarang Rp67.120, sebelumnya Rp62.120. Kurang Rp5.000.</Alert>
+              <Alert tone="pending" title="1 bagian menunggu">Dimsum platter baru terisi 2 dari 3 orang. Nominal bisa turun.</Alert>
+            </div>
+          </Specimen>
+
+          <Specimen label="ItemRow" note="Seluruh baris bisa diketuk; kotak centang hanya penanda. Klik untuk mencoba ketiga state.">
+            <div className="ds-stack-sm">
+              <ItemRow name="Nasi goreng kampung" note="1 porsi" price={42000} state={plainPicked ? 'picked' : 'idle'} onToggle={() => setPlainPicked((old) => !old)} />
+              <ItemRow name="Dimsum platter" note="Dibagi 3 orang" price={54000} state={itemState} onToggle={() => setItemState((old) => cycle(old))} />
+              <ItemRow name="Mie ayam bakso" note="Diskon item" price={36000} discount={6000} state="idle" onToggle={() => undefined} />
+            </div>
+          </Specimen>
+
+          <Specimen label="Input nominal" note="Input menampilkan angka bertitik. Jangan parseInt nilainya; pakai parser rupiah.">
+            <div className="ds-stack">
+              <Field id="ds-amount" label="Harga item" value={amount} onChange={setAmount} inputMode="numeric" hint="Tanpa “Rp”, titik ribuan otomatis." />
+              <Field id="ds-name" label="Nama item" value={name} onChange={setName} error={name.length === 0 ? 'Nama item tidak boleh kosong.' : undefined} />
+            </div>
+          </Specimen>
+
+          <Specimen label="Saldo & rincian" note="Kartu navy hanya untuk kewajiban utama. Rincian tetap di permukaan putih.">
+            <BalanceCard label="Perlu kamu bayar" value={62120} note="Dari 1 bill · angka masih sementara" />
+            <div className="ds-detail-row"><span>Aufa · Dapur Tiga</span><Money value={62120} /></div>
+            <div className="ds-detail-row"><span>Nadia · Kopi Jumat</span><Money value={28000} /></div>
+          </Specimen>
+
+          <Specimen label="Navigasi & avatar" note="Navigasi di luar area scroll. Avatar memakai inisial; jangan mengandalkan warna saja.">
+            <BottomNav active="bill" />
+            <div className="ds-avatars">
+              <Avatar label="A" tone="navy" />
+              <Avatar label="K" tone="teal" />
+              <Avatar label="C" tone="mint" />
+              <Avatar label="+" tone="muted" filled={false} />
+              <small>Hadir, kamu, teman, belum bergabung</small>
+            </div>
+          </Specimen>
+
+          <Specimen label="Empty state" note="Kosong bukan kesalahan; sebutkan langkah berikutnya.">
+            <EmptyState title="Belum ada bill">Foto struk atau ketik manual. Pembagian dilakukan setelah bill dibuat.</EmptyState>
+          </Specimen>
+
+          <Specimen label="Bottom sheet" note="Untuk konfirmasi, rincian, dan tujuan bayar. Nominal selalu terlihat sebelum aksi.">
+            <Button variant="secondary" onClick={() => setSheetOpen(true)}>Buka contoh sheet</Button>
+          </Specimen>
+        </div>
+      </Section>
+
+      <Section id="status" index="05 / Tata bahasa status" title="Jangan campur tiga status." lead="Pembagian, pembayaran peserta, dan keadaan bill adalah tiga dimensi berbeda. Menggabungkannya jadi satu kata “Selesai” adalah cara tercepat membuat orang salah paham.">
+        <div className="ds-grammar">
+          {STATUS_GRAMMAR.map((group) => <article className="ds-grammar-col" key={group.dimension}>
+            <h3>{group.dimension}</h3>
+            <div className="ds-stack-sm">
+              {group.steps.map((step) => <div className="ds-grammar-step" key={step.label}>
+                <StatusBadge tone={step.tone}>{step.label}</StatusBadge>
+                <small>{step.detail}</small>
+              </div>)}
+            </div>
+            <p>{group.rule}</p>
+          </article>)}
+        </div>
+      </Section>
+
+      <Section id="pola" index="06 / Pola layar" title="Komposisi halaman bill." lead="Susunan yang dipakai halaman bill: kepala navy berisi merchant dan total, lalu item sebagai isi utama, rincian biaya, progres, dan aksi di dekat konteksnya. Struktur rinci per kasus masih diuji; komposisinya sudah tetap.">
+        <div className="ds-phone-demo">
+          <div className="ds-phone">
+            <div className="ds-phone-head">
+              <span className="ds-phone-back"><ArrowLeft size={17} /> Beranda</span>
+              <div className="ds-phone-title"><small>12 Oktober 2026 · Dapur Tiga</small><h4>Makan siang bareng</h4></div>
+              <div className="ds-phone-total"><span>Total struk</span><strong>Rp163.000</strong></div>
+              <div className="ds-phone-people"><Avatar label="A" tone="mint" /><Avatar label="K" tone="teal" /><Avatar label="+" tone="muted" filled={false} /><span>2 orang · 1 bagian menunggu</span></div>
+            </div>
+            <div className="ds-phone-body">
+              <div className="ds-phone-row"><h5>Siapa ambil apa?</h5><StatusBadge tone="pending">Sementara</StatusBadge></div>
+              <p className="ds-phone-sub">Ketuk item untuk memilih. Item bersama terbagi rata.</p>
+              <ItemRow name="Nasi goreng kampung" note="1 porsi" price={42000} state="picked" />
+              <ItemRow name="Mie ayam bakso" note="Diskon item" price={36000} discount={6000} state="picked" />
+              <ItemRow name="Es teh manis" note="3 gelas · Aufa ambil 2" price={24000} state="picked" />
+              <ItemRow name="Dimsum platter" note="Dibagi 3 orang" price={54000} state="shared" />
+              <div className="ds-phone-cost"><span>Voucher, service &amp; ongkir</span><b>Periksa rincian</b></div>
+              <div className="ds-phone-progress">
+                <span className="is-done" /><i /><span className="is-done" /><i /><span />
+                <div className="ds-phone-labels"><em>Bill dibuat</em><em>Semua pilih</em><em>Lunas</em></div>
+              </div>
+            </div>
+            <div className="ds-phone-action">
+              <div><span>Perkiraan bagianmu</span><strong>Rp62.120</strong></div>
+              <Button>Selesai pilih <ArrowRight size={17} /></Button>
+            </div>
+            <BottomNav active="bill" />
+          </div>
+          <ul className="ds-phone-notes">
+            <li><b>Kepala navy</b> menjawab “ini bill apa dan totalnya berapa” sebelum orang scroll.</li>
+            <li><b>Item jadi isi utama</b> karena di situlah satu-satunya keputusan peserta.</li>
+            <li><b>Aksi dekat konteks:</b> tombol berubah mengikuti tahap — selesai pilih, lalu tandai lunas.</li>
+            <li><b>Status sementara terlihat</b> di dua tempat: badge bagian dan angka aksi.</li>
+            <li><b>Yang belum diputuskan:</b> kontrol “siapa ikut makan” (sheet per item vs stepper jumlah pemakan) dan tampilan unit barang.</li>
+          </ul>
+        </div>
+      </Section>
+
+      <Section id="aturan" index="07 / Aturan mahal" title="Empat kesalahan yang pernah menagih." lead="Bukan preferensi visual. Ini empat hal yang kalau dilanggar, orang mentransfer nominal yang salah atau tidak bisa memakai aplikasinya.">
+        <div className="ds-rules">
+          {RULES.map((rule) => <article className="ds-rule" key={rule.title}>
+            <h3>{rule.title}</h3>
+            <div className="ds-rule-pair">
+              <div className="is-wrong"><span><WarningCircle size={16} weight="bold" /> Jangan</span><p>{rule.wrong}</p></div>
+              <div className="is-right"><span><Check size={16} weight="bold" /> Lakukan</span><p>{rule.right}</p></div>
+            </div>
+            <small>{rule.why}</small>
+          </article>)}
+        </div>
+      </Section>
+
+      <Section id="shadcn" index="08 / Inventaris & pemetaan" title="Siap dipindah ke shadcn." lead="Saat migrasi produksi, token di bawah pindah ke theme aplikasi; komponennya memakai shadcn/ui dengan struktur dan copy Bagiin, bukan default library.">
+        <div className="ds-grid-2">
+          <Specimen label="Komponen & varian" note="Daftar ini yang harus ada sebelum React dianggap siap menggantikan vanilla.">
+            <div className="ds-table">
+              {COMPONENT_INVENTORY.map((row) => <div className="ds-table-row" key={row.component}>
+                <b>{row.component}</b><code>{row.shadcn}</code><small>{row.variants}</small>
+              </div>)}
+            </div>
+          </Specimen>
+          <Specimen label="Token → variabel shadcn" note="Jangan membuat hex baru di komponen; semua lewat token.">
+            <div className="ds-table">
+              {SHADCN_MAP.map((row) => <div className="ds-table-row is-token" key={row.token}>
+                <code>{row.token}</code><span>{row.note}</span>
+              </div>)}
+            </div>
+          </Specimen>
+        </div>
+        <div className="ds-a11y">
+          <Info size={18} weight="duotone" />
+          <div>
+            <b>Aksesibilitas yang sudah dipegang</b>
+            <p>Target sentuh minimal 44×44 px, cincin fokus 3 px terlihat di semua kontrol, tabrakan status selalu disertai teks, nominal memakai tabular numbers, dan tidak ada status yang bergantung pada warna saja.</p>
+          </div>
+        </div>
+      </Section>
     </main>
-    {sheetOpen && <div className="ds-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setSheetOpen(false) }}><section className="ds-sheet" role="dialog" aria-modal="true" aria-label="Contoh bottom sheet"><span className="ds-sheet-handle" /><button type="button" className="ds-sheet-close" onClick={() => setSheetOpen(false)} aria-label="Tutup"><X size={20} /></button><span className="ds-sheet-icon"><CheckCircle size={24} /></span><h2>Periksa sebelum bayar</h2><p>Sheet menjelaskan akibat aksi. Nominal, tujuan bayar, dan status selalu terlihat sebelum konfirmasi.</p><div><span>Tagihan sementara</span><b>Rp62.120</b></div><button type="button" className="ds-button ds-button-primary" onClick={() => setSheetOpen(false)}>Mengerti <Check size={17} /></button></section></div>}
+
+    <Sheet open={sheetOpen} title="Periksa sebelum bayar" onClose={() => setSheetOpen(false)}>
+      <p className="ds-sheet-copy">Sheet menjelaskan akibat aksi. Nominal, tujuan bayar, dan status terlihat sebelum konfirmasi.</p>
+      <div className="ds-sheet-row"><span>Tagihan sementara</span><Money value={62120} /></div>
+      <div className="ds-sheet-row"><span>Tujuan bayar</span><b>BCA · Aufa Fauqi</b></div>
+      <Button block onClick={() => setSheetOpen(false)}><CheckCircle size={18} /> Mengerti</Button>
+      <p className="ds-sheet-foot"><Copy size={14} /> Bayar di Bagiin berarti mencatat status, bukan memindahkan uang.</p>
+    </Sheet>
   </div>
 }

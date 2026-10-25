@@ -1,6 +1,8 @@
-# Bagiin Design System — arah v0.1
+# Bagiin Design System — arah v0.2 (hybrid)
 
-**Keputusan pemilik produk:** struktur/layout konsep **Seimbang**, palet konsep **Saldo**. Dokumen ini adalah acuan visual dan interaksi untuk migrasi React + TypeScript + shadcn/ui. Alur bisnis tetap mengikuti [PRODUCT.md](PRODUCT.md). Lihat komponen hidup di [Design Lab](prototype/README.md) melalui `?view=system`.
+**Keputusan pemilik produk:** struktur/layout konsep **Seimbang**, palet konsep **Saldo**. Dokumen ini adalah acuan visual dan interaksi untuk migrasi React + TypeScript + shadcn/ui. Alur bisnis tetap mengikuti [PRODUCT.md](PRODUCT.md). Komponen hidup dan seluruh state-nya ada di [Design Lab](prototype/README.md) melalui `?view=system`.
+
+Istilah "hybrid" di sini berarti satu hal yang spesifik: **urutan informasi dan bentuk layar dari Seimbang, warna dari Saldo.** Bukan gabungan dua konsep, dan bukan varian Saldo utuh — pada Saldo, angka kewajiban menjadi pintu masuk utama; di sini item tetap menjadi isi utama dan angka mengikuti konteksnya.
 
 ## Karakter dan hierarki
 
@@ -75,10 +77,42 @@ Untuk rekap, angka utama adalah **sisa** utang dan uang masuk. Pecah `Sudah past
 - **Rekap:** total terutang dan akan diterima, dipisah final/sementara, lalu daftar per orang yang menunjukkan bill sumber.
 - **Scroll:** isi layar bergerak sendiri; navigasi bawah tetap terlihat. Tombol akhir bill/editor harus bisa digulir sampai seluruhnya terlihat di atas navigasi pada tinggi layar 568 px.
 
+## Komponen dan state yang wajib ada
+
+Setiap komponen di bawah harus punya seluruh state-nya sebelum React dianggap siap menggantikan vanilla. Yang berjalan ada di `?view=system`.
+
+| Komponen | Padanan shadcn/ui | State/varian |
+| --- | --- | --- |
+| Button | Button | primary, secondary, quiet, danger, loading, disabled, block |
+| StatusBadge | Badge | menunggu, final, sukses, butuh tindakan |
+| Card / BalanceCard | Card | permukaan, mint, navy |
+| ItemRow | Card + Checkbox | belum dipilih, dipilih, dibagi bersama, dengan diskon item |
+| Field | Input + Label | default, fokus, error, nominal rupiah |
+| Sheet | Drawer/Dialog | konfirmasi, rincian biaya, tujuan bayar |
+| BottomNav | NavigationMenu | beranda, bill, buat, rekap |
+| Alert | Alert | menunggu, final, sukses, butuh tindakan |
+| EmptyState | custom | belum ada bill, belum ada utang |
+| Avatar | Avatar | empat nada + placeholder "belum bergabung" |
+
+Aturan yang mengikat semua komponen: target sentuh minimal 44×44 px, cincin fokus 3 px terlihat, radius hanya empat ukuran (8/12/16/24), dan bayangan hanya untuk lapisan yang menutup konten — kartu biasa memakai garis border.
+
+## Empat larangan mahal
+
+Bukan preferensi visual. Ini empat hal yang kalau dilanggar membuat orang mentransfer nominal salah atau tidak bisa memakai aplikasi.
+
+1. **Status tidak boleh hanya warna.** Selalu ikon + teks + latar. Sekitar 8% pria kesulitan membedakan hijau–merah.
+2. **Uang tidak boleh dihitung di klien.** Klien merender payload server apa adanya. Ini bug termahal Bagiin: tamu disuruh transfer nominal yang salah karena klien punya mesin hitung kedua.
+3. **Nominal wajib tabular numbers.** Angka yang bergeser lebar saat nilainya berubah membuat orang salah baca.
+4. **Target sentuh minimal 44 px.** Dipakai satu tangan sambil makan; meleset tap di layar bill berarti salah tagihan.
+
 ## Pemetaan ke shadcn/ui
 
 `prototype/src/design-system.css` adalah sumber token visual prototype. Variabel `--background`, `--foreground`, `--card`, `--primary`, `--secondary`, `--muted`, `--border`, `--input`, `--ring`, `--destructive`, dan `--radius` sudah dipetakan sebagai titik awal theme shadcn/ui. Saat migrasi produksi, pindahkan token ini ke theme aplikasi; jangan membuat warna hex baru di komponen. Komponen shadcn/ui yang paling relevan: Button, Card, Badge, Input, Dialog/Drawer, Tabs, dan NavigationMenu. Struktur dan copy tetap mengikuti aturan Bagiin di atas, bukan default library.
 
 ## Status pekerjaan
 
-Prototype utama (`?v=seimbang`) sudah memakai palet ini pada beranda, bill, rekap, editor, kontrol varian, dan navigasi. Halaman `?view=system` menunjukkan token dan contoh komponen hidup. Varian Saldo/Teman/Struk tetap menjadi pembanding visual. Iterasi berikutnya adalah **merancang ulang halaman bill**, terutama kasus yang belum terwakili jelas di prototype; dokumen ini menetapkan bahasa visualnya dulu.
+Design Lab v0.2 (`?view=system`) sekarang memuat delapan bagian: fondasi warna + token status, tipografi dan angka, ruang/radius/elevasi, komponen lengkap dengan state-nya, tata bahasa tiga status, komposisi halaman bill, empat larangan mahal, serta inventaris komponen + pemetaan token ke shadcn/ui. Semua contoh interaktif.
+
+Prototype utama (`?v=seimbang`) memakai palet ini pada beranda, bill, rekap, editor, kontrol varian, dan navigasi. Varian Saldo/Teman/Struk tetap menjadi pembanding visual.
+
+Iterasi berikutnya tetap **merancang ulang halaman bill**. Dua keputusan yang masih terbuka: kontrol "siapa ikut makan" (sheet per item dengan tombol "Tambah yang ikut makan" versus kontrol jumlah pemakan), dan cara menampilkan unit barang pada satu baris struk.
