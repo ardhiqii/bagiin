@@ -54,33 +54,3 @@ export function NavCreate() {
     </svg>
   );
 }
-
-/**
- * Tanda merek: huruf b yang batangnya struk, ujung bawahnya bergerigi.
- *
- * Digambar sebagai path, bukan raster: dipakai dari 20 px di sidebar sampai
- * 180 px sebagai ikon PWA. Proporsinya harus huruf b sungguhan — ascender naik
- * di atas bowl, batang berhenti di baseline yang sama dengan dasar bowl. Versi
- * pertama salah di sini dan kebaca seperti huruf p.
- *
- * Di bawah 44 px gerigi dibuang: di 34 px notch-nya cuma kebaca sebagai tepi rusak.
- */
-export function BrandMark({ size = 34 }: { size?: number }) {
-  const detail = size >= 44
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
-      <rect width="32" height="32" rx={size >= 28 ? 9 : 8} fill="var(--ds-navy)" />
-      <g fill="var(--ds-mint)">
-        {detail ? (
-          <path d="M8.6 5.2h4.9v21.4l-1.22-2.1-1.23 2.1-1.22-2.1-1.23 2.1z" />
-        ) : (
-          <path d="M8.6 5.2h4.9v20.9H8.6z" />
-        )}
-        <path
-          fillRule="evenodd"
-          d="M11 19.4A7 7 0 1 0 25 19.4A7 7 0 1 0 11 19.4ZM14.6 19.4A3.4 3.4 0 1 1 21.4 19.4A3.4 3.4 0 1 1 14.6 19.4Z"
-        />
-      </g>
-    </svg>
-  )
-}

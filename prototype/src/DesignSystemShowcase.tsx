@@ -4,7 +4,6 @@ import {
   Alert, Avatar, BalanceCard, BottomNav, Button, EmptyState, Field, Group, ItemRow, Money, Sheet, StatusBadge,
 } from './ds/primitives'
 import type { ItemState } from './ds/primitives'
-import { BrandMark } from './ds/icons'
 import emptyBillArt from './assets/empty-bill.webp'
 import splitReceiptArt from './assets/create-hero.webp'
 import inviteArt from './assets/invite.webp'
@@ -57,30 +56,6 @@ export function DesignSystemShowcase() {
           <a href="#aset">Lihat aset ilustrasi</a>
         </div>
       </section>
-
-      <Section id="merek" index="00 / Merek" title="Huruf b yang batangnya struk." lead="Satu huruf saja. Batangnya struk dengan ujung bergerigi, bowl-nya bulat penuh, di dalam kotak navy. Dibuat sebagai path, bukan raster: tanda merek harus tajam dari 20 px di sidebar sampai 180 px sebagai ikon PWA.">
-        <div className="ds-brand-row">
-          {[128, 64, 34, 20].map((size) => (
-            <div className="ds-brand-cell" key={size}>
-              <div className="ds-brand-plate"><BrandMark size={size} /></div>
-              <span>{size} px</span>
-            </div>
-          ))}
-          <div className="ds-brand-cell">
-            <div className="ds-brand-plate"><img src="/favicon.svg" alt="Favicon Bagiin" width={32} height={32} /></div>
-            <span>favicon 32</span>
-          </div>
-          <div className="ds-brand-cell">
-            <div className="ds-brand-plate"><img src="/apple-touch-icon.png" alt="Ikon PWA Bagiin" width={96} height={96} /></div>
-            <span>PWA 180</span>
-          </div>
-        </div>
-        <div className="ds-asset-rules">
-          <div><b>Bentuk</b><p>Huruf b sungguhan: ascender naik di atas bowl, batang berhenti di baseline yang sama dengan dasar bowl. Versi pertama meleset di sini dan kebaca seperti huruf p.</p></div>
-          <div><b>Skala</b><p>Di bawah 44 px gerigi dibuang, sudut kotak 8 px, bukan 9 px. Di 34 px notch gerigi cuma kebaca sebagai tepi yang rusak.</p></div>
-          <div><b>Warna</b><p>Kotak navy #142F3A, huruf mint #E2F5EF. Nggak ada gradasi, bayangan, atau outline. Ikon PWA memakai kotak penuh tanpa sudut.</p></div>
-        </div>
-      </Section>
 
       <Section id="fondasi" index="01 / Fondasi" title="Warna punya peran." lead="Navy mengarahkan, teal mengajak bertindak, warna status hanya muncul saat maknanya memang berbeda. Semua pasangan teks–latar di bawah lolos kontras minimal 4,5:1.">
         <div className="ds-swatches">
