@@ -147,6 +147,10 @@ export const billActions = {
     method: 'PUT' as const,
     body: { identity_id: identityId },
   }),
+  removePhoto: (billId: string, photoId: number) => ({
+    path: '/api/bills/' + billId + '/photos/' + photoId,
+    method: 'DELETE' as const,
+  }),
   settle: (billId: string) => ({ path: '/api/bills/' + billId + '/settle' }),
   unsettle: (billId: string) => ({ path: '/api/bills/' + billId + '/unsettle' }),
   removePerson: (billId: string, identityId: string) => ({

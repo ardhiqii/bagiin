@@ -319,6 +319,22 @@
 }
 .receipt-preview img { width: 56px; height: 56px; object-fit: cover; border-radius: 12px; }
 .receipt-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+.receipt-item { position: relative; flex: none; }
+.receipt-kill {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--ds-surface);
+  background: var(--ds-danger);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
 .receipt-strip img { width: 76px; height: 76px; object-fit: cover; border-radius: 14px; display: block; }
 
 /* Kartu rekening: info di atas, aksi di baris sendiri supaya tidak berdesakan. */

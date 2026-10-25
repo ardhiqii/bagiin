@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import type { BillResponse } from '../lib/types'
-import { billActions, useBill, useBillAction, useContacts } from '../lib/queries'
+import { billActions, keys, useBill, useBillAction, useContacts } from '../lib/queries'
+import { api } from '../lib/api'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
@@ -40,6 +42,7 @@ function initials(name: string) {
 export function BillDetail({ billId, identityId }: { billId: string; identityId: string | null }) {
   const bill = useBill(billId)
   const action = useBillAction(billId, identityId)
+  const queryClient = useQueryClient()
   const toast = useToast()
   const navigate = useNavigate()
   const [busyItem, setBusyItem] = useState<number | null>(null)
@@ -70,6 +73,24 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
       ? data.paid_by_accounts
       : data.creator_accounts
     : []
+
+  const [photoBusy, setPhotoBusy] = useState(false)
+
+  async function addPhoto(file: File) {
+    if (!billId) return
+    setPhotoBusy(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      await api('/api/bills/' + billId + '/photo', { method: 'POST', body: form })
+      await queryClient.invalidateQueries({ queryKey: keys.bill(billId) })
+      toast('Foto ditambahkan')
+    } catch (err) {
+      toast((err as Error).message)
+    } finally {
+      setPhotoBusy(false)
+    }
+  }
 
   async function run(todo: { path: string; method?: 'POST' | 'PUT' | 'DELETE'; body?: unknown }, message: string) {
     try {
@@ -344,16 +365,51 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             </section>
           ) : null}
 
-          {data.photos.length > 0 ? (
+          {data.photos.length > 0 || (canManage && data.bill.status === 'open') ? (
             <section className="app-stack">
-              <strong style={{ fontSize: 14, fontWeight: 800 }}>Foto struk</strong>
-              <div className="receipt-strip">
-                {data.photos.map((photo) => (
-                  <a key={photo.id} href={'/uploads/' + photo.path.split('/').pop()} target="_blank" rel="noreferrer">
-                    <img src={'/uploads/' + photo.path.split('/').pop()} alt="Foto struk bill" />
-                  </a>
-                ))}
+              <div className="app-inline">
+                <strong style={{ fontSize: 14, fontWeight: 800 }}>Foto struk</strong>
+                <span className="app-spacer" />
+                {canManage && data.bill.status === 'open' ? (
+                  <label className="link-action" style={{ cursor: 'pointer' }}>
+                    {photoBusy ? 'Mengunggah…' : '+ Tambah foto'}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      style={{ display: 'none' }}
+                      disabled={photoBusy}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0]
+                        if (file) void addPhoto(file)
+                        event.target.value = ''
+                      }}
+                    />
+                  </label>
+                ) : null}
               </div>
+              {data.photos.length === 0 ? (
+                <div className="app-note">Belum ada foto. Struk bisa kamu simpan di sini supaya bisa dicek lagi nanti.</div>
+              ) : (
+                <div className="receipt-strip">
+                  {data.photos.map((photo) => (
+                    <div className="receipt-item" key={photo.id}>
+                      <a href={'/uploads/' + photo.path.split('/').pop()} target="_blank" rel="noreferrer">
+                        <img src={'/uploads/' + photo.path.split('/').pop()} alt="Foto struk bill" />
+                      </a>
+                      {canManage && data.bill.status === 'open' ? (
+                        <button
+                          type="button"
+                          className="receipt-kill"
+                          aria-label={'Hapus foto ' + photo.id}
+                          onClick={() => run(billActions.removePhoto(billId, photo.id), 'Foto dihapus')}
+                        >
+                          ×
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           ) : null}
 
