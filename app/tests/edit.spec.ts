@@ -78,6 +78,51 @@ test.describe('Bagiin — mengubah bill', () => {
     await ctx.close()
   })
 
+  test('49. ubah daftar nama: ganti yang belum bergabung, kunci yang sudah', async ({ page, browser }) => {
+    await freshUser(page, 'Aufa')
+    await page.goto('/create')
+    await page.getByLabel('Nama bill').fill('Roster edit ' + stamp)
+    await page.getByLabel('Item 1').fill('Sate')
+    await page.getByLabel('Harga satuan').first().fill('30000')
+    for (const person of ['Citra', 'Bima']) {
+      await page.getByLabel('Nama teman').fill(person)
+      await page.getByRole('button', { name: 'Tambah', exact: true }).click()
+    }
+    await page.getByRole('button', { name: 'Buat bill' }).click()
+    await expect(page).toHaveURL(/\/b\//)
+    const url = page.url()
+
+    // Bima bergabung dan memilih, jadi ada nama yang sudah diklaim
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const guest = await ctx.newPage()
+    await freshUser(guest, 'Bima')
+    await guest.goto(url)
+    await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
+    await guest.getByRole('button', { name: /Sate, ketuk/ }).click()
+    await expect(guest.getByText(/bagian kamu Rp30\.000/)).toBeVisible()
+
+    await page.reload()
+    await page.getByRole('button', { name: 'Ubah bill' }).click()
+
+    // nama yang sudah bergabung tidak punya tombol hapus
+    await expect(page.getByText('· bergabung')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Hapus nama Bima' })).toHaveCount(0)
+
+    // Citra belum bergabung: bisa dihapus dan diganti
+    await page.getByRole('button', { name: 'Hapus nama Citra' }).click()
+    await page.getByLabel('Tambah nama').fill('Dodi')
+    await page.getByRole('button', { name: 'Tambah', exact: true }).click()
+    await page.getByRole('button', { name: 'Simpan perubahan' }).click()
+    await expect(page.getByText('Perubahan bill disimpan')).toBeVisible()
+
+    await expect(page.getByText('Dodi')).toBeVisible()
+    await expect(page.getByText('Citra')).toHaveCount(0)
+    await expect(page.getByText('Diundang, belum bergabung').first()).toBeVisible()
+    // pilihan Bima tidak ikut hilang gara-gara roster diganti
+    await expect(page.getByText('Bagian Rp30.000').first()).toBeVisible()
+    await ctx.close()
+  })
+
   test('36. hapus bill butuh konfirmasi dan bill hilang dari daftar', async ({ page }) => {
     await freshUser(page, 'Aufa')
     const title = 'Hapus ' + stamp

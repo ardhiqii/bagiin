@@ -38,6 +38,8 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
   const [items, setItems] = useState<Draft[] | null>(null)
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [roster, setRoster] = useState<string[] | null>(null)
+  const [rosterName, setRosterName] = useState('')
 
   // Nilai awal diambil sekali dari server, sesudah itu state lokal yang menang.
   const titleValue = title ?? data?.bill.title ?? ''
@@ -46,6 +48,10 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
   const serviceValue = service ?? (data ? formatRd(data.bill.service_idr) : '')
   const discountValue = discount ?? (data ? formatRd(data.bill.order_discount_idr) : '')
   const drafts = items ?? (data ? data.items.map(draftFrom) : [])
+  const rosterDraft = roster ?? (data ? data.participants.map((participant) => participant.name) : [])
+  // nama yang sudah diklaim orangnya dikunci: mengeluarkan orang pakai tombol
+  // "Keluarkan" di layar bill, bukan dengan menghapus namanya di sini
+  const claimed = new Set((data?.participants ?? []).filter((p) => p.identity_id).map((p) => p.name))
 
   const parsed = drafts.map((draft) => ({
     id: draft.id,
@@ -77,6 +83,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
           cashback: data.bill.cashback_idr,
           subtotal,
           total,
+          participants: rosterDraft,
           tax_mode: data.bill.tax_mode,
           tax_included: Boolean(data.bill.tax_included),
           // daftar item harus lengkap: id yang tidak dikirim akan dihapus
@@ -209,6 +216,54 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
                 </div>
               </div>
             ))}
+          </section>
+
+          <section className="app-stack">
+            <strong style={{ fontSize: 14, fontWeight: 800 }}>Siapa saja yang ikut</strong>
+            <p className="app-note">
+              Nama yang belum diklaim bisa diganti atau dihapus di sini. Nama yang sudah bergabung dikunci — kalau mau
+              mengeluarkan orangnya, pakai tombol Keluarkan di layar bill.
+            </p>
+            {rosterDraft.length > 0 ? (
+              <div className="chip-row">
+                {rosterDraft.map((person) => (
+                  <span className="chip" key={person}>
+                    {person}
+                    {claimed.has(person) ? (
+                      <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.7 }}>· bergabung</span>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label={'Hapus nama ' + person}
+                        onClick={() => setRoster(rosterDraft.filter((name) => name !== person))}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="app-note">Belum ada nama yang disiapkan.</div>
+            )}
+            <div className="app-inline">
+              <div className="grow">
+                <Field id="edit-roster-name" label="Tambah nama" value={rosterName} onChange={setRosterName} />
+              </div>
+              <Button
+                variant="quiet"
+                disabled={
+                  !rosterName.trim() ||
+                  rosterDraft.some((name) => name.toLowerCase() === rosterName.trim().toLowerCase())
+                }
+                onClick={() => {
+                  setRoster([...rosterDraft, rosterName.trim()])
+                  setRosterName('')
+                }}
+              >
+                Tambah
+              </Button>
+            </div>
           </section>
 
           <section className="app-stack">
