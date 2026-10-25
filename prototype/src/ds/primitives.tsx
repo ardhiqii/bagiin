@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Check, CheckCircle, Clock, Info, WarningCircle, X } from '@phosphor-icons/react'
+import { Check, CheckCircle, Clock, House, Info, Plus, Receipt, UsersThree, Wallet, WarningCircle, X } from '@phosphor-icons/react'
 
 /* ---------- money ---------- */
 
@@ -8,12 +8,14 @@ export function idr(value: number): string {
 }
 
 export function Money({ value, size = 'body' }: { value: number; size?: 'display' | 'heading' | 'body' | 'small' }) {
-  return <span className={`ds-money ds-money-${size}`}>{idr(value)}</span>
+  return <span className={`ds-money ds-money-${size}`}>
+    <span className="ds-money-cur" aria-hidden="true">Rp</span>{Math.round(value).toLocaleString('id-ID')}
+  </span>
 }
 
 /* ---------- buttons ---------- */
 
-type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger'
+type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger' | 'ink'
 
 export function Button({
   children, variant = 'primary', onClick, disabled = false, loading = false, type = 'button', block = false,
@@ -71,13 +73,28 @@ export function Card({ children, tone = 'surface', pad = 'md' }: { children: Rea
 export function BalanceCard({ label, value, note }: { label: string; value: number; note: string }) {
   return <div className="ds-balance">
     <span className="ds-balance-label">{label}</span>
-    <strong className="ds-balance-value">{idr(value)}</strong>
+    <strong className="ds-balance-value"><span className="ds-balance-cur">Rp</span>{Math.round(value).toLocaleString('id-ID')}</strong>
     <small className="ds-balance-note">{note}</small>
   </div>
 }
 
 export function Avatar({ label, tone = 'navy', filled = true }: { label: string; tone?: 'navy' | 'teal' | 'mint' | 'muted'; filled?: boolean }) {
   return <span className={`ds-avatar ds-avatar-${tone}${filled ? '' : ' is-outline'}`} aria-hidden="true">{label}</span>
+}
+
+/* ---------- grouped inset list ---------- */
+
+/**
+ * Rows live inside one surface with hairline separators inset from the text,
+ * which is how a grouped list reads as a single object instead of a pile of
+ * outlined boxes. Depth comes from the surface, not from a 1px border on each
+ * row.
+ */
+export function Group({ children, label }: { children: ReactNode; label?: string }) {
+  return <div className="ds-group-wrap">
+    {label && <span className="ds-group-label">{label}</span>}
+    <div className="ds-group">{children}</div>
+  </div>
 }
 
 /* ---------- item row ---------- */
@@ -97,11 +114,11 @@ export function ItemRow({
   const picked = state === 'picked' || state === 'shared'
   const label = state === 'shared' ? `${name}, dibagi beberapa orang, ketuk untuk mengubah` : `${name}, ketuk untuk ${picked ? 'membatalkan' : 'memilih'}`
   return <button type="button" className={`ds-item is-${state}`} onClick={onToggle} aria-pressed={picked} aria-label={label}>
-    <span className="ds-item-check" aria-hidden="true">{picked ? <Check size={15} weight="bold" /> : null}</span>
+    <span className="ds-item-check" aria-hidden="true">{picked ? <Check size={13} weight="bold" /> : null}</span>
     <span className="ds-item-copy">
       <b>{name}</b>
       <small>{note}</small>
-      {state === 'shared' && <span className="ds-item-shared">Dibagi 3 orang · 1 bagian menunggu</span>}
+      {state === 'shared' && <span className="ds-item-shared"><UsersThree size={11} weight="fill" /> Dibagi 3 · 1 bagian menunggu</span>}
     </span>
     <span className="ds-item-price">
       <Money value={price - discount} size="small" />
@@ -142,24 +159,24 @@ export function Field({
 /* ---------- navigation ---------- */
 
 export function BottomNav({ active = 'bill' }: { active?: 'home' | 'bill' | 'create' | 'recap' }) {
-  const entries: Array<{ id: 'home' | 'bill' | 'create' | 'recap'; label: string }> = [
-    { id: 'home', label: 'Beranda' },
-    { id: 'bill', label: 'Bill' },
-    { id: 'create', label: 'Buat' },
-    { id: 'recap', label: 'Rekap' },
+  const entries = [
+    { id: 'home' as const, label: 'Beranda', Icon: House },
+    { id: 'bill' as const, label: 'Bill', Icon: Receipt },
+    { id: 'create' as const, label: 'Buat', Icon: Plus },
+    { id: 'recap' as const, label: 'Rekap', Icon: Wallet },
   ]
   return <nav className="ds-nav" aria-label="Contoh navigasi bawah">
-    {entries.map((entry) => <span key={entry.id} className={entry.id === active ? 'is-active' : ''} aria-current={entry.id === active ? 'page' : undefined}>
-      <span className="ds-nav-dot" aria-hidden="true" />{entry.label}
+    {entries.map(({ id, label, Icon }) => <span key={id} className={id === active ? 'is-active' : ''} aria-current={id === active ? 'page' : undefined}>
+      <Icon size={21} weight={id === active ? 'fill' : 'regular'} aria-hidden="true" />{label}
     </span>)}
   </nav>
 }
 
 /* ---------- empty state ---------- */
 
-export function EmptyState({ title, children }: { title: string; children: ReactNode }) {
-  return <div className="ds-empty">
-    <span className="ds-empty-icon" aria-hidden="true"><Info size={22} weight="duotone" /></span>
+export function EmptyState({ title, children, art }: { title: string; children: ReactNode; art?: ReactNode }) {
+  return <div className={`ds-empty${art ? ' has-art' : ''}`}>
+    {art ?? <span className="ds-empty-icon" aria-hidden="true"><Info size={22} weight="duotone" /></span>}
     <b>{title}</b>
     <p>{children}</p>
   </div>

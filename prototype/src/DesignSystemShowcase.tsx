@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { ArrowLeft, ArrowRight, Check, CheckCircle, Copy, Info, WarningCircle } from '@phosphor-icons/react'
 import {
-  Alert, Avatar, BalanceCard, BottomNav, Button, EmptyState, Field, ItemRow, Money, Sheet, StatusBadge,
+  Alert, Avatar, BalanceCard, BottomNav, Button, EmptyState, Field, Group, ItemRow, Money, Sheet, StatusBadge,
 } from './ds/primitives'
 import type { ItemState } from './ds/primitives'
+import { EmptyBillArt } from './ds/EmptyBillArt'
 import {
   BRAND_TOKENS, COMPONENT_INVENTORY, ELEVATIONS, RADII, RULES, SHADCN_MAP, SPACING, STATUS_GRAMMAR, STATUS_TOKENS, TYPE_SCALE,
 } from './ds/spec'
@@ -42,7 +43,7 @@ export function DesignSystemShowcase() {
       <section className="ds-hero">
         <div className="ds-eyebrow">Bagiin / arah terpilih</div>
         <h1>Struktur Seimbang.<br /><span>Warna Saldo.</span></h1>
-        <p>Susunan informasi mengikuti Seimbang: ringkasan di atas, item sebagai isi utama, satu aksi dekat konteksnya, navigasi tetap di bawah. Warnanya dari Saldo: navy untuk orientasi dan angka, teal untuk yang bisa dikerjakan. Halaman ini adalah acuan komponen, bukan sekadar galeri.</p>
+        <p>Susunan informasi mengikuti Seimbang: ringkasan di atas, item sebagai isi utama, satu aksi dekat konteksnya. Warnanya dari Saldo. Kedalaman dibangun dari <b>lapisan, bukan garis</b> — satu prinsip yang sama dengan material di iOS: konten duduk di permukaannya sendiri, sementara navigasi dan sheet melayang di atasnya.</p>
         <div className="ds-hero-actions">
           <a href="/?v=seimbang">Lihat prototype utama <ArrowRight size={17} /></a>
           <a href="#komponen">Langsung ke komponen</a>
@@ -89,13 +90,25 @@ export function DesignSystemShowcase() {
               {RADII.map((radius) => <div key={radius.token}><i style={{ borderRadius: `var(${radius.token})` }} /><span><b>{radius.value}</b><small>{radius.use}</small></span></div>)}
             </div>
           </Specimen>
-          <Specimen label="Elevasi" note="Kalau ragu, pakai garis border. Bayangan bukan dekorasi.">
+          <Specimen label="Lapisan" note="Tidak ada garis keliling di lapisan konten. Pemisah hanya hairline di dalam grup.">
             <div className="ds-elevation-scale">
               {ELEVATIONS.map((elevation) => <div key={elevation.name} className={elevation.name === 'Sheet' ? 'is-sheet' : elevation.name === 'Fokus' ? 'is-focus' : ''}>
                 <b>{elevation.name}</b><small>{elevation.use}</small>
               </div>)}
             </div>
           </Specimen>
+        </div>
+        <div className="ds-material">
+          <div>
+            <span>Lapisan konten</span>
+            <b>Isi, kartu, daftar item</b>
+            <p>Permukaan solid di atas latar fog. Pemisah hanya hairline di dalam grup, bukan garis keliling tiap baris. Ini yang membuat daftar terasa satu benda, bukan tumpukan kotak.</p>
+          </div>
+          <div>
+            <span>Lapisan fungsi</span>
+            <b>Navigasi, aksi utama, sheet</b>
+            <p>Melayang di atas konten dengan blur dan bayangan lembut, jadi isi halaman masih terlihat lewat di bawahnya. Kontrol tidak pernah menutupi konten tanpa alasan.</p>
+          </div>
         </div>
       </Section>
 
@@ -127,11 +140,11 @@ export function DesignSystemShowcase() {
           </Specimen>
 
           <Specimen label="ItemRow" note="Seluruh baris bisa diketuk; kotak centang hanya penanda. Klik untuk mencoba ketiga state.">
-            <div className="ds-stack-sm">
+            <Group label="Item bill">
               <ItemRow name="Nasi goreng kampung" note="1 porsi" price={42000} state={plainPicked ? 'picked' : 'idle'} onToggle={() => setPlainPicked((old) => !old)} />
               <ItemRow name="Dimsum platter" note="Dibagi 3 orang" price={54000} state={itemState} onToggle={() => setItemState((old) => cycle(old))} />
               <ItemRow name="Mie ayam bakso" note="Diskon item" price={36000} discount={6000} state="idle" onToggle={() => undefined} />
-            </div>
+            </Group>
           </Specimen>
 
           <Specimen label="Input nominal" note="Input menampilkan angka bertitik. Jangan parseInt nilainya; pakai parser rupiah.">
@@ -159,7 +172,7 @@ export function DesignSystemShowcase() {
           </Specimen>
 
           <Specimen label="Empty state" note="Kosong bukan kesalahan; sebutkan langkah berikutnya.">
-            <EmptyState title="Belum ada bill">Foto struk atau ketik manual. Pembagian dilakukan setelah bill dibuat.</EmptyState>
+            <EmptyState art={<EmptyBillArt />} title="Belum ada bill">Foto struk atau ketik manual. Pembagian dilakukan setelah bill dibuat.</EmptyState>
           </Specimen>
 
           <Specimen label="Bottom sheet" note="Untuk konfirmasi, rincian, dan tujuan bayar. Nominal selalu terlihat sebelum aksi.">
@@ -189,16 +202,18 @@ export function DesignSystemShowcase() {
             <div className="ds-phone-head">
               <span className="ds-phone-back"><ArrowLeft size={17} /> Beranda</span>
               <div className="ds-phone-title"><small>12 Oktober 2026 · Dapur Tiga</small><h4>Makan siang bareng</h4></div>
-              <div className="ds-phone-total"><span>Total struk</span><strong>Rp163.000</strong></div>
+              <div className="ds-phone-total"><span>Total struk</span><strong><em>Rp</em>163.000</strong></div>
               <div className="ds-phone-people"><Avatar label="A" tone="mint" /><Avatar label="K" tone="teal" /><Avatar label="+" tone="muted" filled={false} /><span>2 orang · 1 bagian menunggu</span></div>
             </div>
             <div className="ds-phone-body">
               <div className="ds-phone-row"><h5>Siapa ambil apa?</h5><StatusBadge tone="pending">Sementara</StatusBadge></div>
               <p className="ds-phone-sub">Ketuk item untuk memilih. Item bersama terbagi rata.</p>
-              <ItemRow name="Nasi goreng kampung" note="1 porsi" price={42000} state="picked" />
-              <ItemRow name="Mie ayam bakso" note="Diskon item" price={36000} discount={6000} state="picked" />
-              <ItemRow name="Es teh manis" note="3 gelas · Aufa ambil 2" price={24000} state="picked" />
-              <ItemRow name="Dimsum platter" note="Dibagi 3 orang" price={54000} state="shared" />
+              <Group>
+                <ItemRow name="Nasi goreng kampung" note="1 porsi" price={42000} state="picked" />
+                <ItemRow name="Mie ayam bakso" note="Diskon item" price={36000} discount={6000} state="picked" />
+                <ItemRow name="Es teh manis" note="3 gelas · Aufa ambil 2" price={24000} state="idle" />
+                <ItemRow name="Dimsum platter" note="Platter isi 6" price={54000} state="shared" />
+              </Group>
               <div className="ds-phone-cost"><span>Voucher, service &amp; ongkir</span><b>Periksa rincian</b></div>
               <div className="ds-phone-progress">
                 <span className="is-done" /><i /><span className="is-done" /><i /><span />
@@ -206,7 +221,7 @@ export function DesignSystemShowcase() {
               </div>
             </div>
             <div className="ds-phone-action">
-              <div><span>Perkiraan bagianmu</span><strong>Rp62.120</strong></div>
+              <div><span>Perkiraan bagianmu</span><strong><em>Rp</em>62.120</strong></div>
               <Button>Selesai pilih <ArrowRight size={17} /></Button>
             </div>
             <BottomNav active="bill" />

@@ -1,4 +1,4 @@
-# Bagiin Design System — arah v0.2 (hybrid)
+# Bagiin Design System — arah v0.3 (hybrid, berlapis)
 
 **Keputusan pemilik produk:** struktur/layout konsep **Seimbang**, palet konsep **Saldo**. Dokumen ini adalah acuan visual dan interaksi untuk migrasi React + TypeScript + shadcn/ui. Alur bisnis tetap mengikuti [PRODUCT.md](PRODUCT.md). Komponen hidup dan seluruh state-nya ada di [Design Lab](prototype/README.md) melalui `?view=system`.
 
@@ -41,9 +41,18 @@ Semua pasangan teks/latar status di atas memiliki rasio kontras minimal 4,5:1. T
 - **Isi:** DM Sans. Teks utama 14–16 px; teks pendukung 12–14 px; label kecil minimal 12 px bila mengandung informasi penting.
 - **Nominal:** `font-variant-numeric: tabular-nums`. Gunakan pemisah ribuan Indonesia, `Rp62.120`; jangan singkat menjadi `62k` untuk tagihan yang perlu dibayar.
 - **Skala jarak:** kelipatan 4 px: 4, 8, 12, 16, 20, 24, 32. Jarak sisi layar mobile 20 px.
-- **Radius:** 8 px untuk kontrol kecil, 12 px untuk tombol/input/item, 16 px untuk kartu, 24 px untuk sheet/hero. Hindari radius berbeda tanpa alasan komponen.
-- **Bayangan:** tipis hanya bila menunjukkan lapisan seperti sheet atau navigasi. Kartu biasa memakai garis `--ds-border`.
-- **Target sentuh:** minimal 44×44 px untuk aksi utama, navigasi, ikon interaktif, dan kontrol jumlah. Seluruh baris item dapat diketuk; kotak centang hanya penanda.
+- **Radius:** 10 px kontrol kecil, 14 px input, 20 px kartu dan kelompok baris, 28 px sheet/hero, dan pil penuh (`999px`) hanya untuk tombol, badge, dan chip. Hindari dua radius berbeda pada elemen yang sederajat.
+- **Target sentuh:** minimal 44×44 px untuk aksi utama, navigasi, ikon interaktif, dan kontrol jumlah. Seluruh baris item dapat diketuk; penanda centang hanya indikator.
+
+## Lapisan, bukan garis
+
+Kedalaman di Bagiin dibangun dari lapisan, mengikuti cara Apple HIG memisahkan *content layer* dari *functional layer* (materials: Liquid Glass untuk kontrol dan navigasi yang melayang, material standar untuk isi). Tiga aturan turunannya:
+
+1. **Lapisan konten tidak punya garis keliling.** Kartu, panel, dan daftar memakai permukaan putih di atas latar fog dengan satu bayangan dua tingkat (`--ds-shadow-content`). Tidak ada `border: 1px` pada kartu atau baris.
+2. **Pemisah hanya hairline di dalam kelompok.** Daftar item adalah satu permukaan dengan garis rambut `rgba(20,47,58,.09)` yang menjorok dari teks, bukan tumpukan kotak berbingkai. Elemen terpilih ditandai isian mint, bukan garis tepi.
+3. **Lapisan fungsi boleh melayang.** Navigasi bawah, aksi utama, dan sheet memakai permukaan tembus pandang dengan blur (`--ds-glass`, `--ds-blur`) dan bayangan ke atas. Aksi yang melayang wajib berlatar solid bila menutupi teks padat — transparansi hanya untuk bar pendek.
+
+Turunan lain: tombol berbentuk pil dengan tinggi minimal 50 px untuk aksi utama, tekanan (`:active`) memakai penskalaan kecil, dan cincin fokus 3 px selalu terlihat. Bayangan tidak dipakai sebagai dekorasi.
 
 ## Komponen dasar
 
@@ -111,7 +120,9 @@ Bukan preferensi visual. Ini empat hal yang kalau dilanggar membuat orang mentra
 
 ## Status pekerjaan
 
-Design Lab v0.2 (`?view=system`) sekarang memuat delapan bagian: fondasi warna + token status, tipografi dan angka, ruang/radius/elevasi, komponen lengkap dengan state-nya, tata bahasa tiga status, komposisi halaman bill, empat larangan mahal, serta inventaris komponen + pemetaan token ke shadcn/ui. Semua contoh interaktif.
+Design Lab v0.3 (`?view=system`) memakai bahasa berlapis di atas: kartu tanpa garis, daftar sebagai satu permukaan ber-hairline, navigasi dan aksi melayang dengan blur, tombol pil, serta ilustrasi empty-state SVG yang digambar tangan (bukan aset hasil generator) agar skalanya tajam dan paletnya terkunci.
+
+Halaman ini memuat delapan bagian: fondasi warna + token status, tipografi dan angka, ruang/radius/elevasi, komponen lengkap dengan state-nya, tata bahasa tiga status, komposisi halaman bill, empat larangan mahal, serta inventaris komponen + pemetaan token ke shadcn/ui. Semua contoh interaktif.
 
 Prototype utama (`?v=seimbang`) memakai palet ini pada beranda, bill, rekap, editor, kontrol varian, dan navigasi. Varian Saldo/Teman/Struk tetap menjadi pembanding visual.
 
