@@ -44,3 +44,22 @@ Skenario bersama: Aufa nalangin bill Dapur Tiga Rp163.000; Bima memilih itemnya,
 - [Splitwise activity history](https://kb.splitwise.com/account-issues/where-can-i-view-a-history-of-recent-changes-to-my-account): jejak perubahan sebagai kebutuhan produk, belum sebagai layar prototype.
 
 Keempat tampilan adalah interpretasi desain Bagiin sendiri, bukan salinan UI referensi. Keputusan bisnis Bagiin tetap mengikuti `PRODUCT.md`, termasuk tanpa grup wajib dan tanpa netting otomatis.
+
+## Preview publik
+
+https://bagiin-react.ardhiqi.com — hasil `npm run build` yang dipasang di
+`/var/www/bagiin-react`, dilayani Nginx (`bagiin-react.ardhiqi.com.conf`) dengan
+sertifikat Let's Encrypt (DNS-01). Preview ini demo: state hanya di memori,
+tanpa backend, tanpa data asli.
+
+Deploy ulang:
+
+```bash
+cd prototype && npm run build
+sudo rsync -a --delete dist/ /var/www/bagiin-react/
+sudo systemctl reload nginx
+```
+
+Nama host harus satu level di bawah `ardhiqi.com` (mis. `bagiin-react.ardhiqi.com`).
+Nama dua level seperti `react.bagiin.ardhiqi.com` tidak tercakup sertifikat
+wildcard Cloudflare, jadi TLS di edge gagal walaupun origin sehat.
