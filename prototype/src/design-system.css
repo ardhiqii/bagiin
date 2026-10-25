@@ -570,7 +570,7 @@
 .recap-hero img { flex: none; width: 104px; height: 104px; object-fit: cover; border-radius: 18px; box-shadow: var(--ds-shadow-content); margin-top: 2px; }
 .invite-chip { border: 1px dashed #bac8b9; background: transparent; color: var(--ds-teal); font-size: 15px; line-height: 1; font-weight: 700; padding: 0; }
 .invite-chip:hover { background: var(--ds-mint); border-style: solid; }
-.sheet-art { display: block; width: 88px; height: 88px; object-fit: cover; border-radius: 20px; margin: 0 auto 14px; box-shadow: var(--ds-shadow-content); }
+.sheet-art { display: block; width: 108px; height: 108px; object-fit: cover; border-radius: 20px; margin: 0 auto 14px; box-shadow: var(--ds-shadow-content); }
 
 .create-hero { display: flex; align-items: flex-start; gap: 16px; margin: 24px 0 16px; }
 .create-hero .create-copy { flex: 1; min-width: 0; }

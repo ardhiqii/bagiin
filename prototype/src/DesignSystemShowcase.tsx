@@ -8,6 +8,9 @@ import emptyBillArt from './assets/empty-bill.webp'
 import splitReceiptArt from './assets/create-hero.webp'
 import inviteArt from './assets/invite.webp'
 import recapArt from './assets/recap.webp'
+import itemArt from './assets/item.webp'
+import personArt from './assets/person.webp'
+import manualArt from './assets/manual.webp'
 import {
   BRAND_TOKENS, COMPONENT_INVENTORY, ELEVATIONS, RADII, RULES, SHADCN_MAP, SPACING, STATUS_GRAMMAR, STATUS_TOKENS, TYPE_SCALE,
 } from './ds/spec'
@@ -232,6 +235,30 @@ export function DesignSystemShowcase() {
               <b>Koin dan catatan</b>
               <span>recap.webp · 320 px · 6 KB</span>
               <p>Layar “Rekap”. Ringkasan uang, tampil 104 px di samping judul.</p>
+            </figcaption>
+          </figure>
+          <figure className="ds-asset">
+            <div className="ds-asset-plate"><img className="ds-asset-img" src={itemArt} alt="Ilustrasi piring dengan sendok garpu" width={216} height={216} /></div>
+            <figcaption>
+              <b>Piring dan sendok garpu</b>
+              <span>item.webp · 320 px · 7 KB</span>
+              <p>Sheet rincian item. Tampil 108 px di atas judul.</p>
+            </figcaption>
+          </figure>
+          <figure className="ds-asset">
+            <div className="ds-asset-plate"><img className="ds-asset-img" src={personArt} alt="Ilustrasi koin dan setengah struk" width={216} height={216} /></div>
+            <figcaption>
+              <b>Koin dan setengah struk</b>
+              <span>person.webp · 320 px · 9 KB</span>
+              <p>Sheet rincian orang. Bagian satu orang, tampil 108 px.</p>
+            </figcaption>
+          </figure>
+          <figure className="ds-asset">
+            <div className="ds-asset-plate"><img className="ds-asset-img" src={manualArt} alt="Ilustrasi struk dan pensil" width={216} height={216} /></div>
+            <figcaption>
+              <b>Struk dan pensil</b>
+              <span>manual.webp · 320 px · 13 KB</span>
+              <p>Layar Buat saat mode “Ketik manual”. Berganti dari ilustrasi struk sobek, tampil 120 px.</p>
             </figcaption>
           </figure>
         </div>

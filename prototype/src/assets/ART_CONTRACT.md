@@ -37,7 +37,15 @@ Composition/framing: <porsi frame, penempatan, ruang kosong>
 | File | Subjek | Tampil | Berat |
 | --- | --- | --- | --- |
 | `empty-bill.webp` 648 px | meja dari atas, struk kosong, cangkir, koin | 216 px (empty state) | 30 KB |
-| `create-hero.webp` 576 px | struk sobek jadi tiga strip, cangkir, koin | 120 px (layar Buat) | 10 KB |
+| `create-hero.webp` 576 px | struk sobek jadi tiga strip, cangkir, koin | 120 px (Buat · Dari foto) | 10 KB |
+| `manual.webp` 320 px | struk dan pensil | 120 px (Buat · Ketik manual) | 13 KB |
+| `invite.webp` 320 px | dua cangkir bersulang | 108 px (sheet Undang teman) | 13 KB |
+| `item.webp` 320 px | piring, sendok, garpu | 108 px (sheet item) | 7 KB |
+| `person.webp` 320 px | koin dan setengah struk | 108 px (sheet orang) | 9 KB |
+| `recap.webp` 320 px | koin dan catatan | 104 px (layar Rekap) | 6 KB |
+
+Aset besar (648/576 px) untuk tempat yang tampil ≥200 px; aset kecil (320 px) untuk
+thumbnail dan sheet, cukup untuk layar 3× pada ukuran 104–120 px.
 
 ## Aturan produksi
 
