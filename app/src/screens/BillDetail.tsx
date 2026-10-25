@@ -382,6 +382,12 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             ) : null}
 
             {canManage && data.bill.status === 'open' ? (
+              <Button variant="secondary" block onClick={() => navigate({ to: '/b/$billId/edit', params: { billId } })}>
+                Ubah bill
+              </Button>
+            ) : null}
+
+            {canManage && data.bill.status === 'open' ? (
               <Button variant="secondary" block onClick={() => setInviteOpen(true)}>
                 Undang teman
               </Button>

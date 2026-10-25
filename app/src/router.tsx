@@ -3,6 +3,7 @@ import { Home } from './screens/Home'
 import { Bills } from './screens/Bills'
 import { Create } from './screens/Create'
 import { BillDetail } from './screens/BillDetail'
+import { EditBill } from './screens/EditBill'
 import { Recap } from './screens/Recap'
 import { Settings } from './screens/Settings'
 import { renameIdentity, useIdentity } from './lib/identity'
@@ -59,6 +60,16 @@ const billRoute = createRoute({
   },
 })
 
+const editBillRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/b/$billId/edit',
+  component: function EditBillRoute() {
+    const { billId } = editBillRoute.useParams()
+    const me = useMe()
+    return <EditBill billId={billId} identityId={me?.id ?? null} />
+  },
+})
+
 const recapRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/recap',
@@ -77,7 +88,7 @@ const settingsRoute = createRoute({
   },
 })
 
-const routeTree = rootRoute.addChildren([homeRoute, billsRoute, createBillRoute, billRoute, recapRoute, settingsRoute])
+const routeTree = rootRoute.addChildren([homeRoute, billsRoute, createBillRoute, billRoute, editBillRoute, recapRoute, settingsRoute])
 
 export const router = createRouter({ routeTree })
 
