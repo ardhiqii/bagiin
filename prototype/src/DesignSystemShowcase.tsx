@@ -4,8 +4,8 @@ import {
   Alert, Avatar, BalanceCard, BottomNav, Button, EmptyState, Field, Group, ItemRow, Money, Sheet, StatusBadge,
 } from './ds/primitives'
 import type { ItemState } from './ds/primitives'
-import emptyBillArt from './assets/empty-bill.png'
-import splitReceiptArt from './assets/split-receipt.png'
+import emptyBillArt from './assets/empty-bill.webp'
+import splitReceiptArt from './assets/create-hero.webp'
 import {
   BRAND_TOKENS, COMPONENT_INVENTORY, ELEVATIONS, RADII, RULES, SHADCN_MAP, SPACING, STATUS_GRAMMAR, STATUS_TOKENS, TYPE_SCALE,
 } from './ds/spec'
@@ -198,29 +198,29 @@ export function DesignSystemShowcase() {
         </div>
       </Section>
 
-      <Section id="aset" index="06 / Aset ilustrasi" title="Digambar, bukan ditempel." lead="Dua ilustrasi dibuat dengan model gambar memakai brief yang mengunci palet dan ukuran tampil, lalu background datarnya dibuang dan paletnya dikuantisasi. Yang di bawah ini file asli yang dipakai aplikasi, bukan mockup.">
+      <Section id="aset" index="06 / Aset ilustrasi" title="Flat, tapi bertekstur." lead="Satu bahasa gambar saja, sama dengan sistemnya: bentuk datar tanpa garis tepi, dengan grain cetak dan satu bayangan keras satu arah. Yang membedakan ilustrasi ini dari ikon vektor biasa bukan dimensi ketiga, tapi tekstur dan ketidaksempurnaannya. Semua dibuat dengan model gambar GPT Image lewat Codex, lalu dipotong dan dikompres jadi WebP.">
         <div className="ds-assets">
           <figure className="ds-asset">
-            <div className="ds-asset-plate"><img src={emptyBillArt} alt="Ilustrasi struk kosong" width={216} height={216} /></div>
+            <div className="ds-asset-plate"><img className="ds-asset-img" src={emptyBillArt} alt="Ilustrasi meja kafe dengan struk kosong" width={216} height={216} /></div>
             <figcaption>
               <b>Struk kosong</b>
-              <span>empty-bill.png · 512 px · 7,5 KB</span>
-              <p>Empty state “Belum ada bill”. Tampil 216 px di dalam kartu putih, tanpa kotak background karena transparan.</p>
+              <span>empty-bill.webp · 648 px · 30 KB</span>
+              <p>Empty state “Belum ada bill”. Meja dari atas, struk kosong sebagai fokus, tampil 216 px di kartu putih.</p>
             </figcaption>
           </figure>
           <figure className="ds-asset">
-            <div className="ds-asset-plate"><img src={splitReceiptArt} alt="Ilustrasi struk terbagi tiga" width={150} height={150} /></div>
+            <div className="ds-asset-plate"><img className="ds-asset-img" src={splitReceiptArt} alt="Ilustrasi struk terbagi tiga" width={216} height={216} /></div>
             <figcaption>
-              <b>Struk terbagi</b>
-              <span>split-receipt.png · 512 px · 8,9 KB</span>
-              <p>Sampul layar “Buat bill”. Tampil 68 px di samping judul; ukuran besar di atas hanya untuk memperlihatkan detail.</p>
+              <b>Struk terbagi tiga</b>
+              <span>create-hero.webp · 576 px · 10 KB</span>
+              <p>Layar “Buat bill”. Tiga strip struk sebagai metafora pembagian, tampil 120 px di samping judul.</p>
             </figcaption>
           </figure>
         </div>
         <div className="ds-asset-rules">
-          <div><b>Palet</b><span>Enam hex saja: navy, teal, mint, off-white, putih, satu amber. Tidak ada warna di luar token.</span></div>
-          <div><b>Bentuk</b><span>Flat, sudut keras, tanpa outline, gradasi, bayangan, atau tekstur. Aman di layar 1x maupun 3x.</span></div>
-          <div><b>Larangan</b><span>Tidak ada teks, angka, logo, atau orang di dalam gambar. Semua makna tetap dibawa oleh teks di UI.</span></div>
+          <div><b>Bentuk</b><span>Bidang datar, tanpa outline, tanpa gradasi, tanpa 3D. Kedalaman hanya dari satu bayangan keras satu arah.</span></div>
+          <div><b>Tekstur</b><span>Grain cetak menyeluruh, tepi sedikit tidak rata. Ini yang membuatnya terasa digambar, bukan digenerate dari kode.</span></div>
+          <div><b>Batasan</b><span>Enam warna dari token, tanpa teks atau angka terbaca, tanpa logo, orang, atau elemen UI di dalam gambar.</span></div>
         </div>
       </Section>
 

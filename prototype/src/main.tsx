@@ -9,7 +9,7 @@ import {
 import { calculate, idr, INITIAL_DEMO, ITEMS, PERSON } from './model'
 import type { DemoState, PersonId, Screen, Totals, VariantId } from './model'
 import { DesignSystemShowcase } from './DesignSystemShowcase'
-import splitReceiptArt from './assets/split-receipt.png'
+import splitReceiptArt from './assets/create-hero.webp'
 import './styles.css'
 import './design-system.css'
 
