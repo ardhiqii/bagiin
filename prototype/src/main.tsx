@@ -10,7 +10,7 @@ import { calculate, idr, INITIAL_DEMO, ITEMS, PERSON } from './model'
 import type { DemoState, PersonId, Screen, Totals, VariantId } from './model'
 import { DesignSystemShowcase } from './DesignSystemShowcase'
 import splitReceiptArt from './assets/create-hero.webp'
-import { NavBill, NavCreate, NavHome, NavRecap } from './ds/icons'
+import { BrandMark, NavBill, NavCreate, NavHome, NavRecap } from './ds/icons'
 import inviteArt from './assets/invite.webp'
 import recapArt from './assets/recap.webp'
 import itemArt from './assets/item.webp'
@@ -164,7 +164,7 @@ function LabApp() {
 
   return <div className="lab-workspace workspace-seimbang">
     <aside className="lab-sidebar">
-      <div className="sidebar-title"><span className="brand-logo">b.</span><span>Bagiin<br /><small>Design Lab</small></span></div>
+      <div className="sidebar-title"><BrandMark /><span>Bagiin<br /><small>Design Lab</small></span></div>
       <h1>Satu arah.</h1>
       <p>Prototype mobile-first untuk pengalaman patungan Bagiin. Struktur Seimbang, palet Saldo, tanpa varian pembanding.</p>
       <div className="sidebar-callout"><b>Yang dijaga</b><span>Angka dari server, status tidak boleh hanya warna, target sentuh 44 px.</span></div>
@@ -176,7 +176,7 @@ function LabApp() {
 
     <main className="lab-main">
       <div className="lab-mobile-header">
-        <div><b>Bagiin</b><span>Design Lab</span></div>
+        <div className="mobile-brand"><BrandMark size={28} /><span className="mobile-brand-text"><b>Bagiin</b><small>Design Lab</small></span></div>
         <button type="button" className="lab-reset" onClick={() => { setState(INITIAL_DEMO); setScreen('home'); setToast('Skenario demo direset.') }} title="Reset skenario"><List size={19} /></button>
       </div>
       <div className="lab-controls">
@@ -200,7 +200,7 @@ function LabApp() {
 }
 
 function QuickHeader({ ctx, title, sub }: { ctx: LabContext; title: string; sub?: string }) {
-  return <header className="app-header"><div><span className="app-wordmark">bagiin<span>.</span></span><h1>{title}</h1>{sub && <p>{sub}</p>}</div><button type="button" className="header-icon" onClick={() => { ctx.setScreen('recap'); ctx.notify('Perubahan penting muncul di rekap.') }} aria-label="Lihat pemberitahuan"><Bell size={21} /></button></header>
+  return <header className="app-header"><div><span className="app-wordmark"><BrandMark size={22} />bagiin</span><h1>{title}</h1>{sub && <p>{sub}</p>}</div><button type="button" className="header-icon" onClick={() => { ctx.setScreen('recap'); ctx.notify('Perubahan penting muncul di rekap.') }} aria-label="Lihat pemberitahuan"><Bell size={21} /></button></header>
 }
 
 function VariantHome({ ctx }: { ctx: LabContext }) {
