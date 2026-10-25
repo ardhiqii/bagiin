@@ -55,6 +55,12 @@ thumbnail dan sheet, cukup untuk layar 3× pada ukuran 104–120 px.
   benar-benar satu warna datar dan perlu transparan.
 - Ukuran tampil minimum: **110 px**. Di bawah itu grain jadi noise; naikkan ukuran
   tampil atau sederhanakan gambar.
+- **Jangan memotong subjek saat crop.** Ukur dulu kotak subjek (paling luar dari
+  objek, bayangan ikut), lalu sisakan paling sedikit **4% sisi pendek** di sisi
+  terketat. Crop tengah dengan fraksi tetap (0.78, 0.80) adalah cara paling gampang
+  memotong pisau — pernah kejadian di `item.webp`.
+- Kalau subjek terpotong, **perbaiki crop dari PNG asli 1254 px**, jangan generate
+  ulang. Generatornya benar; pemotongnya yang salah.
 - Jangan menaruh teks, angka, atau logo di dalam gambar. Semua makna dibawa teks UI.
 
 ## Cara menilai hasil
