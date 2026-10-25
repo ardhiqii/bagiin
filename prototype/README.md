@@ -2,7 +2,7 @@
 
 Prototype **mobile focused** untuk memilih arah UI/UX. Fondasi bisnis tetap di [`PRODUCT.md`](../PRODUCT.md); riset terdahulu ada di [`UX_RESEARCH.md`](../UX_RESEARCH.md). Prototype ini terpisah dari frontend lama dan tidak membaca/menulis data produksi.
 
-**Arah terpilih:** layout Seimbang dengan palet Saldo. Aturannya ada di [`DESIGN_SYSTEM.md`](../DESIGN_SYSTEM.md); halaman visual dapat dibuka dengan `?view=system`. Konsep Seimbang (`?v=seimbang`) sekarang memakai token tersebut. Halaman bill masih perlu iterasi UX berikutnya.
+**Arah terpilih:** layout Seimbang dengan palet Saldo. Ini satu-satunya arah yang dibangun; tiga konsep pembanding (Saldo, Teman, Struk) sudah dihapus dari kode pada v0.4. Aturannya ada di [`DESIGN_SYSTEM.md`](../DESIGN_SYSTEM.md); halaman visual dapat dibuka dengan `?view=system`. Konsep Seimbang (`?v=seimbang`) sekarang memakai token tersebut. Halaman bill masih perlu iterasi UX berikutnya.
 
 ## Jalankan
 

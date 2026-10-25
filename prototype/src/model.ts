@@ -1,6 +1,6 @@
 export type PersonId = 'A' | 'B' | 'C'
 export type Screen = 'home' | 'bill' | 'recap' | 'create'
-export type VariantId = 'seimbang' | 'saldo' | 'teman' | 'struk'
+export type VariantId = 'seimbang'
 
 export interface DemoState {
   persona: PersonId
@@ -43,13 +43,6 @@ export const PERSON: Record<PersonId, { name: string; short: string; color: stri
   B: { name: 'Kamu', short: 'K', color: 'blue' },
   C: { name: 'Citra', short: 'C', color: 'violet' },
 }
-
-export const VARIANTS: Array<{ id: VariantId; name: string; type: string; desc: string; strength: string; tradeoff: string }> = [
-  { id: 'seimbang', name: 'Seimbang', type: 'Arah utama', desc: 'Layout item first dengan warna navy dan teal dari konsep Saldo.', strength: 'Item dan nominal dekat dengan aksi; warna kini konsisten di seluruh layar.', tradeoff: 'Halaman bill masih perlu pendalaman alur dan komponen.' },
-  { id: 'saldo', name: 'Saldo', type: 'Money first', desc: 'Kewajiban dan uang masuk jadi pintu masuk utama.', strength: 'Kuat untuk orang yang sering patungan.', tradeoff: 'Butuh perhatian agar item tetap mudah ditemukan.' },
-  { id: 'teman', name: 'Teman', type: 'People first', desc: 'Pembagian terasa seperti aktivitas bersama orang yang dikenal.', strength: 'Undangan dan assignment terasa natural.', tradeoff: 'Perlu menjaga angka agar tidak tenggelam oleh unsur sosial.' },
-  { id: 'struk', name: 'Struk', type: 'Receipt first', desc: 'Bill tampil sebagai dokumen yang bisa diperiksa baris demi baris.', strength: 'Paling transparan untuk diskon, biaya, dan sumber angka.', tradeoff: 'Tampilan lebih padat pada HP kecil.' },
-]
 
 export const ITEMS = [
   { id: 'nasi', name: 'Nasi goreng kampung', note: '1 porsi', price: 42000, discount: 0 },

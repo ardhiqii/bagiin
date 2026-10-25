@@ -114,6 +114,17 @@ Bukan preferensi visual. Ini empat hal yang kalau dilanggar membuat orang mentra
 3. **Nominal wajib tabular numbers.** Angka yang bergeser lebar saat nilainya berubah membuat orang salah baca.
 4. **Target sentuh minimal 44 px.** Dipakai satu tangan sambil makan; meleset tap di layar bill berarti salah tagihan.
 
+## Ilustrasi dan aset
+
+Ilustrasi dibuat dengan model gambar (Codex `image_gen`), bukan stok. Prompt-nya mengunci: kanvas persegi 1024, ukuran tampil akhir (mis. 240 px), enam warna hex yang sama dengan token, "flat vector, hard edges, no outlines, no gradients, no shadows, no texture, no 3D", larangan teks/logo/orang, dan komposisi (subjek 55–62% tinggi frame).
+
+Setelah keluar dari generator, tiap aset melewati dua langkah di repo:
+
+1. **Background datar dijadikan transparan** (`keyout.py`, toleransi ≤ 10 per kanal) supaya ilustrasi duduk langsung di kartu tanpa kotak putih.
+2. **Kuantisasi palet** (`quantize(colors=48)`) sehingga 1024 px turun ke ~8 KB PNG pada 512 px.
+
+Aturan pakai: ilustrasi hanya untuk empty state dan layar pembuka; tidak untuk menghias data. Ukuran tampil empty state 216 px, sampul editor 68 px. Jangan memakai ilustrasi sebagai pengganti teks status.
+
 ## Pemetaan ke shadcn/ui
 
 `prototype/src/design-system.css` adalah sumber token visual prototype. Variabel `--background`, `--foreground`, `--card`, `--primary`, `--secondary`, `--muted`, `--border`, `--input`, `--ring`, `--destructive`, dan `--radius` sudah dipetakan sebagai titik awal theme shadcn/ui. Saat migrasi produksi, pindahkan token ini ke theme aplikasi; jangan membuat warna hex baru di komponen. Komponen shadcn/ui yang paling relevan: Button, Card, Badge, Input, Dialog/Drawer, Tabs, dan NavigationMenu. Struktur dan copy tetap mengikuti aturan Bagiin di atas, bukan default library.

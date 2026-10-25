@@ -174,11 +174,12 @@ export function BottomNav({ active = 'bill' }: { active?: 'home' | 'bill' | 'cre
 
 /* ---------- empty state ---------- */
 
-export function EmptyState({ title, children, art }: { title: string; children: ReactNode; art?: ReactNode }) {
+export function EmptyState({ title, children, art, action }: { title: string; children: ReactNode; art?: ReactNode; action?: ReactNode }) {
   return <div className={`ds-empty${art ? ' has-art' : ''}`}>
     {art ?? <span className="ds-empty-icon" aria-hidden="true"><Info size={22} weight="duotone" /></span>}
     <b>{title}</b>
     <p>{children}</p>
+    {action && <div className="ds-empty-action">{action}</div>}
   </div>
 }
 

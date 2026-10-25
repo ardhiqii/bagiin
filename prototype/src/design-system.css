@@ -553,7 +553,16 @@
 }
 .ds-empty-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 50%; background: var(--ds-mint); color: var(--ds-teal); }
 .ds-empty.has-art { gap: 10px; padding: 20px 20px 24px; }
-.ds-art { display: block; width: min(250px, 100%); height: auto; margin-bottom: 2px; }
+.ds-art { display: block; width: min(216px, 100%); height: auto; margin: 2px 0 4px; }
+.ds-empty-action { margin-top: 4px; }
+
+/* create screen: heading + spot illustration sharing one block */
+.create-hero { display: flex; align-items: flex-start; gap: 16px; margin: 24px 0 16px; }
+.create-hero .create-copy { flex: 1; min-width: 0; }
+.create-hero h1 { margin: 0 0 6px; font: 800 24px/1.12 var(--ds-font-display); letter-spacing: -.045em; }
+.create-hero p { margin: 0; color: var(--ds-muted); font: 400 12.5px/1.5 var(--ds-font-body); }
+.create-hero img { flex: none; width: 68px; height: auto; margin-top: 2px; opacity: .95; }
+.v-seimbang .screen-create { padding-bottom: 18px; }
 .ds-empty b { font: 800 15px/1.3 var(--ds-font-body); }
 .ds-empty p { margin: 0; max-width: 270px; color: var(--ds-muted); font: 400 12.5px/1.5 var(--ds-font-body); }
 

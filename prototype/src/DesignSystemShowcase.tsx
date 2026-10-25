@@ -4,7 +4,7 @@ import {
   Alert, Avatar, BalanceCard, BottomNav, Button, EmptyState, Field, Group, ItemRow, Money, Sheet, StatusBadge,
 } from './ds/primitives'
 import type { ItemState } from './ds/primitives'
-import { EmptyBillArt } from './ds/EmptyBillArt'
+import emptyBillArt from './assets/empty-bill.png'
 import {
   BRAND_TOKENS, COMPONENT_INVENTORY, ELEVATIONS, RADII, RULES, SHADCN_MAP, SPACING, STATUS_GRAMMAR, STATUS_TOKENS, TYPE_SCALE,
 } from './ds/spec'
@@ -172,7 +172,7 @@ export function DesignSystemShowcase() {
           </Specimen>
 
           <Specimen label="Empty state" note="Kosong bukan kesalahan; sebutkan langkah berikutnya.">
-            <EmptyState art={<EmptyBillArt />} title="Belum ada bill">Foto struk atau ketik manual. Pembagian dilakukan setelah bill dibuat.</EmptyState>
+            <EmptyState art={<img className="ds-art" src={emptyBillArt} alt="" width={216} height={216} />} title="Belum ada bill" action={<Button onClick={() => setSheetOpen(true)}>Buat bill</Button>}>Foto struk atau ketik manual. Pembagian dilakukan setelah bill dibuat.</EmptyState>
           </Specimen>
 
           <Specimen label="Bottom sheet" note="Untuk konfirmasi, rincian, dan tujuan bayar. Nominal selalu terlihat sebelum aksi.">

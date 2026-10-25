@@ -4,11 +4,12 @@ import {
   ArrowLeft, ArrowRight, Bell, Camera, CaretRight,
   Check, CheckCircle, Clock, Copy, CreditCard, ForkKnife, House, Info,
   Link as LinkIcon, List, Minus, PencilSimple, Plus, Receipt, ShareNetwork,
-  Sparkle, UserPlus, UsersThree, Wallet, X,
+  Sparkle, UserPlus, Wallet, X,
 } from '@phosphor-icons/react'
-import { calculate, idr, INITIAL_DEMO, ITEMS, PERSON, VARIANTS } from './model'
+import { calculate, idr, INITIAL_DEMO, ITEMS, PERSON } from './model'
 import type { DemoState, PersonId, Screen, Totals, VariantId } from './model'
 import { DesignSystemShowcase } from './DesignSystemShowcase'
+import splitReceiptArt from './assets/split-receipt.png'
 import './styles.css'
 import './design-system.css'
 
@@ -33,19 +34,6 @@ type LabContext = {
   join: () => void
   setCount: (n: number) => void
   notify: (message: string) => void
-}
-
-const featureGroups = [
-  { title: 'Buat bill', icon: Camera, items: ['Foto / upload struk dengan OCR', 'Editor yang sama untuk OCR dan manual', 'Jumlah unit, diskon item dan voucher terpilih', 'Pajak, service, ongkir dan biaya lain', 'Foto struk dan edit setelah dibuat'] },
-  { title: 'Bagi item', icon: ForkKnife, items: ['Undang via link atau kontak lama', 'Owner assign sebelum orang memilih sendiri', 'Satu item untuk satu atau banyak orang', 'Bagian tetap: “Dibagi 3 orang”', 'Selesai pilih, koreksi, keluar dari bill'] },
-  { title: 'Bayar & kelola', icon: CreditCard, items: ['Metode bayar orang yang nalangin', 'Tandai lunas tanpa transfer dalam aplikasi', 'Selisih setelah nominal berubah', 'Catat pengembalian kelebihan bayar', 'Pindah pembayar dengan penerimaan', 'Owner bisa selesaikan bill manual'] },
-  { title: 'Rekap & riwayat', icon: Wallet, items: ['Total utang dan uang masuk yang tersisa', 'Angka final dan sementara dipisah', 'Rincian per orang dan sumber bill', 'Riwayat bill serta perubahan pembayaran', 'Tanpa grup dan tanpa netting otomatis'] },
-  { title: 'Identitas', icon: UsersThree, items: ['Guest dengan ID unik', 'Google opsional dan recovery key', 'Kontak otomatis setelah pernah se-bill', 'Nama bebas dan nickname pribadi', 'Data serta tautan lama tetap bekerja'] },
-]
-
-function useUrlVariant(): VariantId | null {
-  const value = new URLSearchParams(window.location.search).get('v')
-  return VARIANTS.some((variant) => variant.id === value) ? value as VariantId : null
 }
 
 function Avatar({ person, size = 'normal' }: { person: PersonId; size?: 'normal' | 'small' | 'large' }) {
@@ -77,7 +65,6 @@ function Nav({ ctx }: { ctx: LabContext }) {
 }
 
 function LabApp() {
-  const [variant, setVariantState] = useState<VariantId | null>(useUrlVariant)
   const [screen, setScreen] = useState<Screen>('home')
   const [state, setState] = useState<DemoState>(INITIAL_DEMO)
   const [sheet, setSheet] = useState<Sheet>(null)
@@ -91,22 +78,6 @@ function LabApp() {
     const timer = window.setTimeout(() => setToast(''), 3300)
     return () => window.clearTimeout(timer)
   }, [toast])
-
-  function setVariant(next: VariantId | null) {
-    setVariantState(next)
-    setScreen('home')
-    setSheet(null)
-    const url = new URL(window.location.href)
-    if (next) url.searchParams.set('v', next)
-    else url.searchParams.delete('v')
-    window.history.pushState({}, '', url)
-  }
-
-  useEffect(() => {
-    function onPop() { setVariantState(useUrlVariant()) }
-    window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
-  }, [])
 
   function pick(item: ItemId) {
     if (state.persona === 'A') {
@@ -178,38 +149,31 @@ function LabApp() {
     setState((old) => ({ ...old, dimsumCount: n }))
   }
 
-  const ctx: LabContext = { state, totals, screen, variant: variant || 'seimbang', setScreen, setSheet, setActiveItem, setPersonDetail, pick, done, edit, pay, invite, assign, join, setCount, notify: setToast }
+  const ctx: LabContext = { state, totals, screen, variant: 'seimbang', setScreen, setSheet, setActiveItem, setPersonDetail, pick, done, edit, pay, invite, assign, join, setCount, notify: setToast }
 
   if (new URLSearchParams(window.location.search).get('view') === 'system') return <DesignSystemShowcase />
-  if (!variant) return <Gallery choose={setVariant} />
 
-  const currentVariant = VARIANTS.find((entry) => entry.id === variant)!
-  return <div className={`lab-workspace workspace-${variant}`}>
+  return <div className="lab-workspace workspace-seimbang">
     <aside className="lab-sidebar">
-      <button type="button" className="brand-back" onClick={() => setVariant(null)}><ArrowLeft size={17} /> Semua konsep</button>
       <div className="sidebar-title"><span className="brand-logo">b.</span><span>Bagiin<br /><small>Design Lab</small></span></div>
-      <h1>{currentVariant.name}</h1>
-      <p>{currentVariant.desc}</p>
-      <div className="sidebar-callout"><b>Yang kuat</b><span>{currentVariant.strength}</span></div>
-      <div className="sidebar-callout"><b>Tradeoff</b><span>{currentVariant.tradeoff}</span></div>
+      <h1>Satu arah.</h1>
+      <p>Prototype mobile-first untuk pengalaman patungan Bagiin. Struktur Seimbang, palet Saldo, tanpa varian pembanding.</p>
+      <div className="sidebar-callout"><b>Yang dijaga</b><span>Angka dari server, status tidak boleh hanya warna, target sentuh 44 px.</span></div>
+      <div className="sidebar-callout"><b>Yang sedang diuji</b><span>Halaman bill: item bersama, unit barang, peserta yang belum masuk.</span></div>
       <div className="sidebar-divider" />
-      <span className="sidebar-label">Ganti konsep</span>
-      {VARIANTS.map((entry, index) => <button type="button" key={entry.id} className={`sidebar-variant ${entry.id === variant ? 'selected' : ''}`} onClick={() => setVariant(entry.id)}><span>{String(index + 1).padStart(2, '0')}</span>{entry.name}<CaretRight size={16} /></button>)}
+      <a className="sidebar-link" href="/?view=system">Buka design system<CaretRight size={15} /></a>
       <button type="button" className="sidebar-reset" onClick={() => { setState(INITIAL_DEMO); setScreen('home'); setToast('Skenario demo dikembalikan ke awal.') }}>Reset skenario</button>
     </aside>
 
     <main className="lab-main">
       <div className="lab-mobile-header">
-        <button type="button" className="lab-back" onClick={() => setVariant(null)} aria-label="Kembali ke semua konsep"><ArrowLeft size={19} /></button>
-        <div><b>{currentVariant.name}</b><span>{currentVariant.type}</span></div>
+        <div><b>Bagiin</b><span>Design Lab</span></div>
         <button type="button" className="lab-reset" onClick={() => { setState(INITIAL_DEMO); setScreen('home'); setToast('Skenario demo direset.') }} title="Reset skenario"><List size={19} /></button>
       </div>
       <div className="lab-controls">
-        <div className="variant-scroll" aria-label="Pilih varian desain">{VARIANTS.map((entry) => <button type="button" key={entry.id} className={entry.id === variant ? 'selected' : ''} onClick={() => setVariant(entry.id)}>{entry.name}</button>)}</div>
         <div className="persona-control"><span>Bill sebagai</span>{(['A', 'B', 'C'] as const).map((person) => <button type="button" key={person} className={state.persona === person ? 'selected' : ''} onClick={() => { setState((old) => ({ ...old, persona: person })); setScreen('bill') }}>{person === 'A' ? 'Aufa · owner' : person === 'B' ? 'Kamu' : 'Citra'}</button>)}</div>
       </div>
-
-      <div className={`phone-shell v-${variant}`}>
+      <div className="phone-shell v-seimbang">
         <div className="phone-inner">
           {screen === 'home' && <VariantHome ctx={ctx} />}
           {screen === 'bill' && <VariantBill ctx={ctx} />}
@@ -226,25 +190,6 @@ function LabApp() {
   </div>
 }
 
-function Gallery({ choose }: { choose: (id: VariantId) => void }) {
-  const [showFeatures, setShowFeatures] = useState(false)
-  return <div className="gallery-page">
-    <header className="gallery-header"><div className="gallery-brand"><span className="brand-logo">b.</span><span>Bagiin <em>Design Lab</em></span></div><button type="button" onClick={() => setShowFeatures((old) => !old)}>{showFeatures ? 'Tutup daftar fitur' : 'Lihat daftar fitur'} <ArrowRight size={17} /></button></header>
-    <main className="gallery-main">
-      <div className="gallery-intro"><div className="gallery-kicker">4 arah desain · mobile first</div><h1>Pilih rasa yang paling pas buat <span>patungan.</span></h1><p>Satu skenario bill yang sama, empat cara menyusun informasi dan aksi. Buka tiap konsep di HP, coba pilih item, undang teman, lalu lihat rekapnya.</p><div className="gallery-intro-actions"><button type="button" className="gallery-primary" onClick={() => choose('seimbang')}>Mulai dari konsep 01 <ArrowRight size={19} /></button><button type="button" className="gallery-secondary" onClick={() => setShowFeatures((old) => !old)}>{showFeatures ? 'Sembunyikan fitur' : 'Apa saja fiturnya?'}</button></div></div>
-      {showFeatures && <section className="features-panel" id="fitur"><div className="section-heading"><h2>Peta fitur produk</h2><p>Fondasi dari PRODUCT.md. Prototype memvisualkan alur penting; belum terhubung ke backend.</p></div><div className="features-grid">{featureGroups.map((group) => { const Icon = group.icon; return <article key={group.title} className="feature-group"><Icon size={23} weight="duotone" /><h3>{group.title}</h3><ul>{group.items.map((item) => <li key={item}>{item}</li>)}</ul></article> })}</div></section>}
-      <section className="chosen-direction"><div><span>ARAH TERPILIH</span><h2>Layout Seimbang.<br />Warna Saldo.</h2><p>Satu sistem untuk beranda, bill, rekap, dan editor. Halaman bill masih akan diolah lebih lanjut.</p></div><div><a href="/?view=system">Lihat design system <ArrowRight size={17} /></a><button type="button" onClick={() => choose('seimbang')}>Buka prototype utama</button></div></section>
-      <section className="concept-section"><div className="section-heading"><h2>Empat konsep</h2><p>Seimbang sudah memakai palet Saldo; tiga konsep lain tetap tersedia sebagai pembanding.</p></div><div className="concept-grid">{VARIANTS.map((entry, index) => <button type="button" className={`concept-card concept-${entry.id}`} key={entry.id} onClick={() => choose(entry.id)}><span className="concept-index">{String(index + 1).padStart(2, '0')} / 04</span><MiniPreview variant={entry.id} /><span className="concept-meta"><b>{entry.name}</b><span>{entry.type}</span></span><span className="concept-description">{entry.desc}</span><span className="concept-open">Buka konsep <ArrowRight size={17} /></span></button>)}</div></section>
-      <section className="gallery-note"><div><Sparkle size={24} /><h2>Apa yang perlu dinilai?</h2></div><p>Perhatikan apakah jelas siapa yang ambil item, kenapa nominal masih sementara, kapan orang bisa menandai bayar, dan apakah rekap membantu menemukan asal utang.</p></section>
-    </main>
-  </div>
-}
-
-function MiniPreview({ variant }: { variant: VariantId }) {
-  const label = variant === 'seimbang' ? 'Makan siang' : variant === 'saldo' ? 'Tagihanmu' : variant === 'teman' ? 'Bareng teman' : 'Rincian bill'
-  return <span className={`mini-preview mini-${variant}`}><span className="mini-top"><span>bagiin.</span><span>•••</span></span><span className="mini-title">{label}</span><span className="mini-number">{variant === 'saldo' ? 'Rp84.000' : variant === 'struk' ? 'Rp163.000' : 'Rp61.080'}</span><span className="mini-line long" /><span className="mini-line" /><span className="mini-line short" /><span className="mini-action">Lihat bill</span></span>
-}
-
 function QuickHeader({ ctx, title, sub }: { ctx: LabContext; title: string; sub?: string }) {
   return <header className="app-header"><div><span className="app-wordmark">bagiin<span>.</span></span><h1>{title}</h1>{sub && <p>{sub}</p>}</div><button type="button" className="header-icon" onClick={() => { ctx.setScreen('recap'); ctx.notify('Perubahan penting muncul di rekap.') }} aria-label="Lihat pemberitahuan"><Bell size={21} /></button></header>
 }
@@ -252,9 +197,6 @@ function QuickHeader({ ctx, title, sub }: { ctx: LabContext; title: string; sub?
 function VariantHome({ ctx }: { ctx: LabContext }) {
   const { variant, totals } = ctx
   if (variant === 'seimbang') return <div className="screen screen-home home-seimbang"><QuickHeader ctx={ctx} title="Halo, Bima" sub="Patungan hari ini lebih gampang." /><div className="summary-pair"><div><span>Perlu kamu bayar</span><Amount value={totals.due.B} /><small>1 bill masih berjalan</small></div><div><span>Akan kamu terima</span><Amount value={46000} /><small>dari 1 teman</small></div></div><div className="section-row"><h2>Bill yang berjalan</h2><button type="button" onClick={() => ctx.setScreen('recap')}>Lihat semua <CaretRight size={15} /></button></div><button type="button" className="running-card" onClick={() => ctx.setScreen('bill')}><span className="running-card-icon"><ForkKnife size={22} /></span><span><b>Makan siang di Dapur Tiga</b><small>{totals.pendingParts} bagian menunggu · {ctx.state.doneB ? 'Kamu selesai pilih' : 'Pilih itemmu'}</small></span><CaretRight size={21} /></button><div className="quick-create"><div><h2>Bill baru?</h2><p>Foto struk atau ketik manual. Pembagian dilakukan setelah bill dibuat.</p></div><button type="button" onClick={() => ctx.setScreen('create')}><Camera size={19} /> Buat bill</button></div></div>
-  if (variant === 'saldo') return <div className="screen screen-home home-saldo"><div className="saldo-top"><div className="saldo-brand"><span>bagiin.</span><button type="button" onClick={() => ctx.setScreen('recap')} aria-label="Buka rekap"><Bell size={20} /></button></div><span className="saldo-eyebrow">Sisa yang perlu dibayar</span><Amount value={totals.due.B + 28000} className="saldo-huge" /><span className="saldo-sub">Dari 2 bill, termasuk {totals.pendingParts ? '1 angka sementara' : '1 bill baru'}</span><button type="button" className="saldo-detail" onClick={() => ctx.setScreen('recap')}>Lihat rincian saldo <ArrowRight size={17} /></button></div><div className="saldo-white"><div className="section-row"><h2>Perlu perhatian</h2><TinyStatus tone="warn">1 sementara</TinyStatus></div><button type="button" className="saldo-bill" onClick={() => ctx.setScreen('bill')}><div className="saldo-date">12<br /><span>OKT</span></div><div><b>Dapur Tiga</b><small>Aufa nalangin · {ctx.state.doneB ? 'Menunggu Citra' : 'Selesaikan pilihanmu'}</small></div><Amount value={totals.due.B} /></button><div className="saldo-incoming"><span>Uang yang akan masuk</span><Amount value={46000} /><button type="button" onClick={() => ctx.setScreen('recap')}>Detail <ArrowRight size={16} /></button></div></div></div>
-  if (variant === 'teman') return <div className="screen screen-home home-teman"><div className="teman-hero"><span className="teman-brand">bagiin<span>✳</span></span><span className="teman-hello">Hai, Bima!</span><h1>Lebih enak<br />kalau bareng.</h1><p>Urus patungan, teman yang makan tetap santai.</p><div className="teman-hero-actions"><button type="button" onClick={() => ctx.setScreen('create')}><Plus size={18} /> Bill baru</button><button type="button" onClick={() => ctx.setScreen('recap')}>Lihat rekap</button></div></div><div className="teman-section"><div className="section-row"><h2>Lagi bareng</h2><span>1 bill aktif</span></div><button type="button" className="teman-bill" onClick={() => ctx.setScreen('bill')}><div className="teman-avatars"><Avatar person="A" /><Avatar person="B" /><span className="avatar avatar-violet">{ctx.state.invitedC ? 'C' : '+'}</span></div><b>Makan siang di Dapur Tiga</b><small>{ctx.state.invitedC ? 'Citra belum bayar' : 'Satu bagian menunggu teman masuk'}</small><span className="teman-bill-bottom"><span><Amount value={totals.due.B} /> bagianmu</span><ArrowRight size={19} /></span></button><div className="teman-recap-tile"><span>Yang perlu kamu bayar</span><Amount value={totals.due.B + 28000} /><button type="button" onClick={() => ctx.setScreen('recap')}>Lihat asalnya <ArrowRight size={16} /></button></div></div></div>
-  if (variant === 'struk') return <div className="screen screen-home home-struk"><header className="struk-head"><span>BAGIIN / BERANDA</span><button type="button" onClick={() => ctx.setScreen('create')} aria-label="Buat bill"><Plus size={22} /></button></header><div className="struk-intro"><span>REKAP HARI INI</span><h1>Patungan yang<br />masih jalan.</h1></div><div className="struk-ledger"><div><span>UTANG TERBUKA</span><Amount value={totals.due.B + 28000} /></div><div><span>UANG MASUK</span><Amount value={46000} /></div></div><div className="struk-datebar"><span>BILL TERBARU</span><span>12 OKTOBER 2026</span></div><button type="button" className="struk-paper-preview" onClick={() => ctx.setScreen('bill')}><div className="receipt-perf" /><div className="paper-title"><b>DAPUR TIGA</b><small>#BG-1024</small></div><div className="paper-line"><span>4 jenis item</span><span>Rp163.000</span></div><div className="paper-line"><span>Bagianmu · sementara</span><strong>{idr(totals.due.B)}</strong></div><div className="paper-footer">BUKA RINCIAN <ArrowRight size={17} /></div></button><button type="button" className="struk-text-link" onClick={() => ctx.setScreen('recap')}>Lihat semua kewajiban <ArrowRight size={18} /></button></div>
   return null
 }
 
@@ -292,9 +234,6 @@ function BillIntro({ ctx }: { ctx: LabContext }) {
 function VariantBill({ ctx }: { ctx: LabContext }) {
   const { variant, totals } = ctx
   if (variant === 'seimbang') return <div className="screen screen-bill bill-seimbang"><BillIntro ctx={ctx} /><div className="bill-body"><div className="section-row"><h2>Siapa ambil apa?</h2><TinyStatus tone={totals.allocationReady ? 'good' : 'warn'}>{totals.allocationReady ? 'Sudah lengkap' : 'Sementara'}</TinyStatus></div><p className="section-sub">Ketuk item untuk memilih. Item bersama terbagi rata.</p><div className="item-list">{ITEMS.map((item) => <ItemRow key={item.id} ctx={ctx} item={item} />)}</div><button type="button" className="cost-detail" onClick={() => ctx.setSheet('item')}><span>Voucher, service & ongkir</span><span>Periksa rincian <CaretRight size={16} /></span></button><BillProgress ctx={ctx} /></div><BillActions ctx={ctx} /></div>
-  if (variant === 'saldo') return <div className="screen screen-bill bill-saldo"><div className="saldo-bill-top"><button type="button" className="back-in-app" onClick={() => ctx.setScreen('home')}><ArrowLeft size={18} /> Kembali</button><span className="bill-kicker">DAPUR TIGA · 12 OKT</span><h1>Bagianmu</h1><Amount value={totals.due[ctx.state.persona]} className="saldo-bill-amount" /><span className="saldo-estimate">{totals.allocationReady ? 'Pembagian lengkap' : `Masih sementara · ${totals.pendingParts} bagian belum terisi`}</span><div className="saldo-bill-stats"><div><span>Total struk</span><b>{idr(totals.total)}</b></div><div><span>Ditanggung Aufa</span><b>{idr(totals.due.A)}</b></div></div></div><div className="saldo-bill-body"><div className="section-row"><h2>Rincian item</h2><button type="button" onClick={() => ctx.setSheet('share')}><ShareNetwork size={18} /></button></div><div className="item-list">{ITEMS.map((item) => <ItemRow key={item.id} ctx={ctx} item={item} compact />)}</div><div className="saldo-people"><span>Yang ada di bill</span><span><Avatar person="A" size="small" /><Avatar person="B" size="small" />{ctx.state.invitedC && <Avatar person="C" size="small" />}</span></div></div><BillActions ctx={ctx} /></div>
-  if (variant === 'teman') return <div className="screen screen-bill bill-teman"><div className="teman-bill-head"><button type="button" onClick={() => ctx.setScreen('home')}><ArrowLeft size={19} /></button><span>Bill bareng</span><button type="button" onClick={() => ctx.setSheet('share')}><ShareNetwork size={19} /></button></div><h1>Dapur Tiga</h1><p>Makan siang · 12 Oktober 2026</p><div className="teman-party"><div><Avatar person="A" /><b>Aufa</b><small>Nalangin</small></div><div><Avatar person="B" /><b>Kamu</b><small>{ctx.state.doneB ? 'Selesai pilih' : 'Memilih item'}</small></div><button type="button" onClick={() => ctx.state.invitedC ? (ctx.setPersonDetail('Citra'), ctx.setSheet('person')) : ctx.setSheet('invite')}><span className="avatar avatar-violet">{ctx.state.invitedC ? 'C' : '+'}</span><b>{ctx.state.invitedC ? 'Citra' : 'Undang'}</b><small>{ctx.state.invitedC ? ctx.state.doneC ? 'Ditentukan A' : 'Belum pilih' : 'Kontak'}</small></button></div><div className="teman-own"><span>Bagianmu sekarang</span><Amount value={totals.due[ctx.state.persona]} /><small>{totals.allocationReady ? 'Pembagian lengkap' : `${totals.pendingParts} bagian masih menunggu`}</small></div><div className="teman-item-area"><div className="section-row"><h2>Item di meja</h2><TinyStatus tone="accent">4 item</TinyStatus></div><div className="item-list">{ITEMS.map((item) => <ItemRow key={item.id} ctx={ctx} item={item} />)}</div></div><BillActions ctx={ctx} /></div>
-  if (variant === 'struk') return <div className="screen screen-bill bill-struk"><div className="struk-bill-head"><button type="button" onClick={() => ctx.setScreen('home')}><ArrowLeft size={18} /> Beranda</button><button type="button" onClick={() => ctx.setSheet('share')}><ShareNetwork size={18} /> Bagikan</button></div><div className="struk-bill-paper"><div className="receipt-perf" /><div className="struk-bill-logo">BAGIIN <span>/</span> BILL</div><div className="receipt-center"><h1>DAPUR TIGA</h1><p>Makan siang bareng<br />12/10/2026 · #BG-1024</p></div><div className="receipt-rule">✦ ✦ ✦</div><div className="receipt-table-head"><span>ITEM / PEMILIK</span><span>JUMLAH</span></div><div className="item-list">{ITEMS.map((item) => <ItemRow key={item.id} ctx={ctx} item={item} compact />)}</div><div className="receipt-calcs"><div><span>Subtotal</span><Amount value={150000} /></div><div><span>Voucher</span><span>−{idr(12000)}</span></div><div><span>Service</span><Amount value={15000} /></div><div><span>Ongkir</span><Amount value={10000} /></div></div><div className="receipt-grand"><span>TOTAL</span><Amount value={totals.total} /></div><div className="receipt-own"><span>BAGIANMU · {totals.allocationReady ? 'FINAL' : 'SEMENTARA'}</span><Amount value={totals.due[ctx.state.persona]} /></div><div className="receipt-bottom-mark">BAGI BARENG, BERES BARENG.</div></div><BillActions ctx={ctx} /></div>
   return null
 }
 
@@ -302,14 +241,14 @@ function VariantRecap({ ctx }: { ctx: LabContext }) {
   const { totals, variant } = ctx
   const debt = Math.max(0, totals.due.B - ctx.state.paidB) + 28000
   const provisional = !totals.allocationReady
-  return <div className={`screen screen-recap recap-${variant}`}><div className="recap-head"><button type="button" onClick={() => ctx.setScreen('home')}><ArrowLeft size={18} /> Beranda</button><span>{variant === 'struk' ? 'BUKU PATUNGAN' : 'Rekap patungan'}</span></div><h1>{variant === 'teman' ? 'Uang di antara kita.' : 'Yang masih berjalan.'}</h1><p className="recap-description">Sisa dari bill aktif. Ketuk orang untuk melihat asal angkanya.</p><div className="recap-dual"><div><span>Perlu kamu bayar</span><Amount value={debt} /><small>Ke 2 orang</small></div><div><span>Akan kamu terima</span><Amount value={46000} /><small>Dari 1 orang</small></div></div><div className="recap-segment"><span>Sudah pasti</span><b>{idr(28000)}</b><small>Bill yang pembagiannya lengkap</small></div>{provisional && <div className="recap-provisional"><div><Clock size={20} /><b>Perkiraan tambahan</b></div><Amount value={Math.max(0, totals.due.B - ctx.state.paidB)} /><p>Bill Dapur Tiga masih punya {totals.pendingParts} bagian yang menunggu. Nominal bisa berubah.</p><button type="button" onClick={() => ctx.setScreen('bill')}>Lihat bill <ArrowRight size={16} /></button></div>}<div className="section-row recap-list-title"><h2>Per orang</h2><span>Tanpa saling potong</span></div><button type="button" className="recap-person" onClick={() => { ctx.setPersonDetail('Aufa'); ctx.setSheet('person') }}><Avatar person="A" /><span><b>Aufa</b><small>Dapur Tiga · Makan siang</small></span><Amount value={Math.max(0, totals.due.B - ctx.state.paidB)} /><CaretRight size={17} /></button><button type="button" className="recap-person" onClick={() => { ctx.setPersonDetail('Nadia'); ctx.setSheet('person') }}><span className="avatar avatar-rose">N</span><span><b>Nadia</b><small>Kopi Jumat · Sudah pasti</small></span><Amount value={28000} /><CaretRight size={17} /></button><button type="button" className="recap-person incoming" onClick={() => { ctx.setPersonDetail('Raka'); ctx.setSheet('person') }}><span className="avatar avatar-green">R</span><span><b>Raka</b><small>Belanja snack · Uang masuk</small></span><Amount value={46000} /><CaretRight size={17} /></button></div>
+  return <div className={`screen screen-recap recap-${variant}`}><div className="recap-head"><button type="button" onClick={() => ctx.setScreen('home')}><ArrowLeft size={18} /> Beranda</button><span>{'Rekap patungan'}</span></div><h1>{'Yang masih berjalan.'}</h1><p className="recap-description">Sisa dari bill aktif. Ketuk orang untuk melihat asal angkanya.</p><div className="recap-dual"><div><span>Perlu kamu bayar</span><Amount value={debt} /><small>Ke 2 orang</small></div><div><span>Akan kamu terima</span><Amount value={46000} /><small>Dari 1 orang</small></div></div><div className="recap-segment"><span>Sudah pasti</span><b>{idr(28000)}</b><small>Bill yang pembagiannya lengkap</small></div>{provisional && <div className="recap-provisional"><div><Clock size={20} /><b>Perkiraan tambahan</b></div><Amount value={Math.max(0, totals.due.B - ctx.state.paidB)} /><p>Bill Dapur Tiga masih punya {totals.pendingParts} bagian yang menunggu. Nominal bisa berubah.</p><button type="button" onClick={() => ctx.setScreen('bill')}>Lihat bill <ArrowRight size={16} /></button></div>}<div className="section-row recap-list-title"><h2>Per orang</h2><span>Tanpa saling potong</span></div><button type="button" className="recap-person" onClick={() => { ctx.setPersonDetail('Aufa'); ctx.setSheet('person') }}><Avatar person="A" /><span><b>Aufa</b><small>Dapur Tiga · Makan siang</small></span><Amount value={Math.max(0, totals.due.B - ctx.state.paidB)} /><CaretRight size={17} /></button><button type="button" className="recap-person" onClick={() => { ctx.setPersonDetail('Nadia'); ctx.setSheet('person') }}><span className="avatar avatar-rose">N</span><span><b>Nadia</b><small>Kopi Jumat · Sudah pasti</small></span><Amount value={28000} /><CaretRight size={17} /></button><button type="button" className="recap-person incoming" onClick={() => { ctx.setPersonDetail('Raka'); ctx.setSheet('person') }}><span className="avatar avatar-green">R</span><span><b>Raka</b><small>Belanja snack · Uang masuk</small></span><Amount value={46000} /><CaretRight size={17} /></button></div>
 }
 
 function CreateScreen({ ctx }: { ctx: LabContext }) {
   const [source, setSource] = useState<'ocr' | 'manual'>('ocr')
   const [rows, setRows] = useState([{ name: 'Nasi goreng kampung', price: 42000 }, { name: 'Mie ayam bakso', price: 36000 }, { name: 'Es teh manis ×3', price: 24000 }, { name: 'Dimsum platter', price: 54000 }])
   const [discount, setDiscount] = useState(6000)
-  return <div className={`screen screen-create create-${ctx.variant}`}><div className="create-head"><button type="button" onClick={() => ctx.setScreen('home')}><ArrowLeft size={18} /></button><span>Bill baru</span><span>1 / 2</span></div><h1>Isi struknya dulu.</h1><p>Pemilihan orang dan item dilakukan setelah bill dibuat.</p><div className="source-switch"><button type="button" className={source === 'ocr' ? 'selected' : ''} onClick={() => { setSource('ocr'); ctx.notify('Contoh hasil OCR dimuat ke editor.') }}><Camera size={18} /> Dari foto</button><button type="button" className={source === 'manual' ? 'selected' : ''} onClick={() => { setSource('manual'); ctx.notify('Mode manual memakai editor yang sama.') }}><PencilSimple size={18} /> Ketik manual</button></div><div className="create-source-note">{source === 'ocr' ? <><Sparkle size={18} /> Contoh hasil OCR sudah terisi. Cek dan ubah bila ada yang meleset.</> : <><PencilSimple size={18} /> Ketik nama dan harga item langsung di bawah.</>}</div><div className="editor-title"><span>ITEM BILL</span><button type="button" onClick={() => setRows((old) => [...old, { name: '', price: 0 }])}><Plus size={17} /> Tambah</button></div><div className="editor-rows">{rows.map((row, i) => <div className="editor-row" key={i}><input aria-label={`Nama item ${i + 1}`} value={row.name} placeholder="Nama item" onChange={(event) => setRows((old) => old.map((item, n) => n === i ? { ...item, name: event.target.value } : item))} /><div><span>Rp</span><input aria-label={`Harga item ${i + 1}`} type="number" min="0" value={row.price || ''} placeholder="0" onChange={(event) => setRows((old) => old.map((item, n) => n === i ? { ...item, price: Number(event.target.value) } : item))} /></div><button type="button" aria-label={`Hapus item ${i + 1}`} onClick={() => setRows((old) => old.filter((_, n) => n !== i))}><X size={17} /></button></div>)}</div><div className="editor-cost"><span>Diskon item / voucher</span><div><span>− Rp</span><input aria-label="Diskon contoh" type="number" min="0" value={discount || ''} onChange={(event) => setDiscount(Number(event.target.value))} /></div></div><div className="editor-total"><span>Total editor contoh</span><Amount value={rows.reduce((sum, row) => sum + row.price, 0) - discount} /></div><div className="create-bottom"><button type="button" className="primary-action" onClick={() => { ctx.setScreen('bill'); ctx.notify('Membuka bill contoh. Editor ini simulasi lokal; data bill contoh tetap sama.') }}>Lihat bill contoh <ArrowRight size={18} /></button><small>Prototype: perubahan editor hanya contoh tampilan, tidak disimpan ke bill.</small></div></div>
+  return <div className={`screen screen-create create-${ctx.variant}`}><div className="create-head"><button type="button" onClick={() => ctx.setScreen('home')}><ArrowLeft size={18} /></button><span>Bill baru</span><span>1 / 2</span></div><div className="create-hero"><div className="create-copy"><h1>Isi struknya dulu.</h1><p>Pemilihan orang dan item dilakukan setelah bill dibuat.</p></div><img src={splitReceiptArt} alt="" width={96} height={96} /></div><div className="source-switch"><button type="button" className={source === 'ocr' ? 'selected' : ''} onClick={() => { setSource('ocr'); ctx.notify('Contoh hasil OCR dimuat ke editor.') }}><Camera size={18} /> Dari foto</button><button type="button" className={source === 'manual' ? 'selected' : ''} onClick={() => { setSource('manual'); ctx.notify('Mode manual memakai editor yang sama.') }}><PencilSimple size={18} /> Ketik manual</button></div><div className="create-source-note">{source === 'ocr' ? <><Sparkle size={18} /> Contoh hasil OCR sudah terisi. Cek dan ubah bila ada yang meleset.</> : <><PencilSimple size={18} /> Ketik nama dan harga item langsung di bawah.</>}</div><div className="editor-title"><span>ITEM BILL</span><button type="button" onClick={() => setRows((old) => [...old, { name: '', price: 0 }])}><Plus size={17} /> Tambah</button></div><div className="editor-rows">{rows.map((row, i) => <div className="editor-row" key={i}><input aria-label={`Nama item ${i + 1}`} value={row.name} placeholder="Nama item" onChange={(event) => setRows((old) => old.map((item, n) => n === i ? { ...item, name: event.target.value } : item))} /><div><span>Rp</span><input aria-label={`Harga item ${i + 1}`} type="number" min="0" value={row.price || ''} placeholder="0" onChange={(event) => setRows((old) => old.map((item, n) => n === i ? { ...item, price: Number(event.target.value) } : item))} /></div><button type="button" aria-label={`Hapus item ${i + 1}`} onClick={() => setRows((old) => old.filter((_, n) => n !== i))}><X size={17} /></button></div>)}</div><div className="editor-cost"><span>Diskon item / voucher</span><div><span>− Rp</span><input aria-label="Diskon contoh" type="number" min="0" value={discount || ''} onChange={(event) => setDiscount(Number(event.target.value))} /></div></div><div className="editor-total"><span>Total editor contoh</span><Amount value={rows.reduce((sum, row) => sum + row.price, 0) - discount} /></div><div className="create-bottom"><button type="button" className="primary-action" onClick={() => { ctx.setScreen('bill'); ctx.notify('Membuka bill contoh. Editor ini simulasi lokal; data bill contoh tetap sama.') }}>Lihat bill contoh <ArrowRight size={18} /></button><small>Prototype: perubahan editor hanya contoh tampilan, tidak disimpan ke bill.</small></div></div>
 }
 
 function SheetLayer({ ctx, sheet, activeItem, personDetail, close }: { ctx: LabContext; sheet: Sheet; activeItem: ItemId; personDetail: string; close: () => void }) {
