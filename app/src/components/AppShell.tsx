@@ -45,7 +45,12 @@ export function AppShell({
             {subtitle ? <span className="app-top-sub">{subtitle}</span> : null}
           </h1>
           <Link to="/settings" className="app-back" aria-label="Pengaturan" title={'Pengaturan · ' + (me?.name ?? '')}>
-            <span aria-hidden="true" style={{ fontWeight: 800, fontSize: 13, letterSpacing: 0 }}>{initial}</span>
+            <span
+              aria-hidden="true"
+              style={{ fontFamily: 'var(--ds-font-display)', fontWeight: 800, fontSize: 13, letterSpacing: 0, lineHeight: 1 }}
+            >
+              {initial}
+            </span>
           </Link>
         </header>
         <main className={'app-body' + (dock ? ' has-dock' : '')}>{children}</main>
