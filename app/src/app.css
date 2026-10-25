@@ -230,7 +230,31 @@
 .app-body.has-dock { padding-bottom: 190px; }
 .create-dock .tot b { font-family: var(--ds-font-display); font-size: 20px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 
+/* Satu kartu untuk satu daftar: baris di dalamnya berbagi sudut dan pemisah,
+   bukan masing-masing jadi pill mengambang. */
+.app-list {
+  background: var(--ds-surface);
+  border-radius: 20px;
+  overflow: hidden;
+}
+.app-list > * + * { border-top: 1px solid var(--ds-border); }
+.app-list .app-row { border-radius: 0 !important; }
+
 .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-filter {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface);
+  color: var(--ds-navy);
+  font: 700 12.5px var(--ds-font-body);
+  cursor: pointer;
+}
+.chip-filter.is-active {
+  background: var(--ds-teal);
+  border-color: var(--ds-teal);
+  color: #fff;
+}
 .chip {
   display: inline-flex;
   align-items: center;

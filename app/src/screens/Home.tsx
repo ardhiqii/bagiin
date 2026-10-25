@@ -136,7 +136,7 @@ export function Home({
             Foto struk atau ketik manual, lalu bagikan link ke teman kamu.
           </EmptyState>
         ) : (
-          <div>
+          <div className="app-list">
             {open.map((bill) => (
               <BillRow
                 key={bill.id}
@@ -159,7 +159,7 @@ export function Home({
       {settled.length > 0 ? (
         <section className="app-stack">
           <strong style={{ fontSize: 14, fontWeight: 800 }}>Sudah lunas</strong>
-          <div>
+          <div className="app-list">
             {settled.slice(0, 5).map((bill) => (
               <BillRow
                 key={bill.id}

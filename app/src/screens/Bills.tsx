@@ -1,41 +1,69 @@
+import { useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useBills } from '../lib/queries'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
-import { Alert, EmptyState } from '../ds/primitives'
+import { Alert, EmptyState, Field } from '../ds/primitives'
 import emptyArt from '../assets/empty-bill.webp'
+
+type Filter = 'semua' | 'berjalan' | 'lunas'
+
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: 'semua', label: 'Semua' },
+  { key: 'berjalan', label: 'Berjalan' },
+  { key: 'lunas', label: 'Lunas' },
+]
+
+function shortDate(value: string) {
+  const parsed = new Date(value.replace(' ', 'T'))
+  if (Number.isNaN(parsed.getTime())) return ''
+  return parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: '2-digit' })
+}
 
 export function Bills({ identityId }: { identityId: string | null }) {
   const bills = useBills(identityId)
   const rows = bills.data ?? []
-  const open = rows.filter((b) => b.status === 'open')
-  const closed = rows.filter((b) => b.status !== 'open')
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<Filter>('semua')
 
-  const list = (items: typeof rows, empty: string) =>
-    items.length === 0 ? (
-      <div className="app-note">{empty}</div>
-    ) : (
-      <div>
-        {items.map((b) => (
-          <Link key={b.id} to="/b/$billId" params={{ billId: b.id }} style={{ textDecoration: 'none', color: 'inherit' }}>
-            <span className="app-row">
-              <span className="grow">
-                <b>{b.title}</b>
-                <small>
-                  {b.merchant ? b.merchant + ' · ' : ''}
-                  {b.status === 'open' ? 'berjalan' : 'ditutup'}
-                  {b.can_manage ? ' · kamu yang atur' : ''}
-                </small>
-              </span>
-              <span className="amt">
-                {formatRp(b.total_idr)}
-                <small style={{ display: 'block', fontWeight: 600 }}>{b.settled ? 'Lunas' : b.my_paid ? 'Kamu lunas' : 'Belum'}</small>
-              </span>
+  const shown = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return rows.filter((bill) => {
+      const matchesText =
+        !needle || bill.title.toLowerCase().includes(needle) || (bill.merchant ?? '').toLowerCase().includes(needle)
+      const matchesFilter =
+        filter === 'semua' || (filter === 'lunas' ? bill.settled : !bill.settled)
+      return matchesText && matchesFilter
+    })
+  }, [rows, query, filter])
+
+  const open = shown.filter((bill) => !bill.settled)
+  const done = shown.filter((bill) => bill.settled)
+
+  const list = (items: typeof rows) => (
+    <div className="app-list">
+      {items.map((bill) => (
+        <Link key={bill.id} to="/b/$billId" params={{ billId: bill.id }} style={{ textDecoration: 'none', color: 'inherit' }}>
+          <span className="app-row">
+            <span className="grow">
+              <b>{bill.title}</b>
+              <small>
+                {shortDate(bill.created_at)}
+                {bill.merchant ? ' · ' + bill.merchant : ''}
+                {bill.settled ? ' · lunas' : bill.my_paid ? ' · bagianmu lunas' : ' · belum lunas'}
+              </small>
             </span>
-          </Link>
-        ))}
-      </div>
-    )
+            <span className="amt">
+              {bill.my_total_idr > 0 ? formatRp(bill.my_total_idr) : '—'}
+              <small style={{ display: 'block', fontWeight: 600, color: 'var(--ds-muted)' }}>
+                {bill.my_total_idr === bill.total_idr ? 'seluruh bill' : 'dari ' + formatRp(bill.total_idr)}
+              </small>
+            </span>
+          </span>
+        </Link>
+      ))}
+    </div>
+  )
 
   return (
     <AppShell title="Semua bill" subtitle={rows.length + ' bill tercatat'} active="bill">
@@ -48,17 +76,41 @@ export function Bills({ identityId }: { identityId: string | null }) {
         </EmptyState>
       ) : null}
 
+      {rows.length > 0 ? (
+        <>
+          <Field id="bill-search" label="Cari bill" value={query} onChange={setQuery} hint="Nama bill atau merchant" />
+
+          <div className="chip-row" role="group" aria-label="Saring bill">
+            {FILTERS.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                className={'chip-filter' + (filter === option.key ? ' is-active' : '')}
+                aria-pressed={filter === option.key}
+                onClick={() => setFilter(option.key)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {shown.length === 0 && rows.length > 0 ? (
+        <div className="app-note">Tidak ada bill yang cocok dengan pencarian itu.</div>
+      ) : null}
+
       {open.length > 0 ? (
         <section className="app-stack">
           <strong style={{ fontSize: 14, fontWeight: 800 }}>Berjalan</strong>
-          {list(open, '')}
+          {list(open)}
         </section>
       ) : null}
 
-      {closed.length > 0 ? (
+      {done.length > 0 ? (
         <section className="app-stack">
-          <strong style={{ fontSize: 14, fontWeight: 800 }}>Selesai</strong>
-          {list(closed, '')}
+          <strong style={{ fontSize: 14, fontWeight: 800 }}>Lunas</strong>
+          {list(done)}
         </section>
       ) : null}
     </AppShell>
