@@ -230,7 +230,64 @@
 .app-body.has-dock { padding-bottom: 190px; }
 .create-dock .tot b { font-family: var(--ds-font-display); font-size: 20px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px 7px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ds-teal) 12%, #fff);
+  color: var(--ds-teal);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.chip button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+/* Hero ilustrasi dipakai di layar Buat dan Ubah bill: gambar 120 px + teks.
+   Tanpa aturan ini kelasnya tidak punya CSS sama sekali dan gambarnya menempel
+   kotak-kotak di kiri. */
+.ds-create-hero {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  background: var(--ds-surface);
+  border-radius: 20px;
+}
+.ds-create-hero img {
+  width: 120px;
+  height: 120px;
+  border-radius: 16px;
+  display: block;
+  flex: none;
+}
+.ds-create-hero b { display: block; font-size: 14px; font-weight: 800; letter-spacing: -.01em; }
+.ds-create-hero p { margin: 4px 0 0; }
+
 /* Foto struk: kecil, bisa diketuk untuk melihat ukuran penuh. */
+.ds-sheet-head { display: flex; align-items: center; gap: 12px; }
+.ds-sheet-head h3 { margin: 0; }
+.ds-sheet-art { width: 54px; height: 54px; border-radius: 14px; flex: none; }
+
+.ds-empty-soft {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 8px 0 4px;
+}
+.ds-empty-soft img { width: 104px; height: 104px; }
+
 .receipt-preview {
   display: flex;
   align-items: center;

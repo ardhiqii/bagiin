@@ -46,7 +46,7 @@ test.describe('Bagiin — pembayar, undangan, keluar', () => {
     const { ctx } = await twoPeople(page, browser, 'Payer ' + stamp)
 
     await page.getByRole('button', { name: 'Ganti yang bayar duluan' }).click()
-    await page.getByRole('button', { name: /Bima/ }).click()
+    await page.getByRole('button', { name: 'Bima Jadikan pembayar' }).click()
     await expect(page.getByText('Pembayar diganti ke Bima')).toBeVisible()
     await expect(page.getByText('Dibayar Bima')).toBeVisible()
 
@@ -126,7 +126,7 @@ test.describe('Bagiin — pembayar, undangan, keluar', () => {
     const { ctx } = await twoPeople(page, browser, 'Pindah ' + stamp)
 
     await page.getByRole('button', { name: 'Ganti yang bayar duluan' }).click()
-    await page.getByRole('button', { name: /Bima/ }).click()
+    await page.getByRole('button', { name: 'Bima Jadikan pembayar' }).click()
     await expect(page.getByText('Pembayar diganti ke Bima')).toBeVisible()
 
     await page.reload()

@@ -5,6 +5,7 @@ import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { Alert, BalanceCard, Button, EmptyState, Field } from '../ds/primitives'
 import emptyArt from '../assets/empty-bill.webp'
+import personArt from '../assets/person.webp'
 
 function NamePrompt({ onRenamed }: { onRenamed: (next: string) => Promise<void> }) {
   const [name, setName] = useState('')
@@ -26,6 +27,7 @@ function NamePrompt({ onRenamed }: { onRenamed: (next: string) => Promise<void> 
 
   return (
     <div className="ds-card ds-card-mint ds-pad-md" style={{ display: 'grid', gap: 10 }}>
+      <img src={personArt} alt="" width={110} height={110} />
       <b style={{ fontSize: 14 }}>Kenalan dulu</b>
       <p className="app-note" style={{ margin: 0 }}>
         Nama ini yang muncul ke teman waktu kamu ikut bill. Tanpa akun, tanpa password.

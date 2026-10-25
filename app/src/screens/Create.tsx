@@ -7,7 +7,7 @@ import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
 import { Alert, Button, Field } from '../ds/primitives'
 import { X } from '@phosphor-icons/react'
-import manualArt from '../assets/manual.webp'
+import createHeroArt from '../assets/create-hero.webp'
 import { keys } from '../lib/queries'
 
 type DraftItem = { key: string; name: string; qty: string; price: string; slots: string }
@@ -34,6 +34,8 @@ export function Create({ identityId }: { identityId: string | null }) {
   const [ocrBusy, setOcrBusy] = useState(false)
   const [ocrNote, setOcrNote] = useState('')
   const [photoPath, setPhotoPath] = useState<string | null>(null)
+  const [roster, setRoster] = useState<string[]>([])
+  const [rosterName, setRosterName] = useState('')
 
   async function readPhoto(file: File) {
     setOcrBusy(true)
@@ -125,7 +127,9 @@ export function Create({ identityId }: { identityId: string | null }) {
           photos: photoPath ? [photoPath] : [],
           paid_by_name: payerName.trim() || null,
           tax_included: 0,
-          participants: [],
+          // nama yang diketik di sini jadi placeholder: begitu orangnya join,
+          // backend mencocokkan namanya dan klaim otomatis
+          participants: roster,
         },
       })
       await qc.invalidateQueries({ queryKey: keys.bills(identityId ?? '') })
@@ -141,7 +145,7 @@ export function Create({ identityId }: { identityId: string | null }) {
   return (
     <AppShell title="Bill baru" subtitle="Isi item, pajak, lalu simpan" back active="create" dock>
       <div className="ds-create-hero">
-        <img src={manualArt} alt="" width={104} height={104} />
+        <img src={createHeroArt} alt="" width={120} height={120} />
         <div>
           <b>Ketik manual atau tempel hasil fotonya</b>
           <p className="app-note">Semua angka rupiah. Pajak dibagi proporsional ke porsi masing-masing.</p>
@@ -239,6 +243,46 @@ export function Create({ identityId }: { identityId: string | null }) {
             </div>
           </div>
         ))}
+      </section>
+
+      <section className="app-stack">
+        <strong style={{ fontSize: 14, fontWeight: 800 }}>Siapa saja yang ikut (opsional)</strong>
+        <p className="app-note">
+          Tulis nama teman kamu sekarang. Begitu mereka buka link dan memakai nama yang sama, bagiannya langsung nyambung.
+        </p>
+        {roster.length > 0 ? (
+          <div className="chip-row">
+            {roster.map((person) => (
+              <span className="chip" key={person}>
+                {person}
+                <button type="button" aria-label={'Hapus nama ' + person} onClick={() => setRoster((prev) => prev.filter((p) => p !== person))}>
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div className="app-inline">
+          <div className="grow">
+            <Field
+              id="roster-name"
+              label="Nama teman"
+              value={rosterName}
+              onChange={setRosterName}
+              hint="Contoh: Bima"
+            />
+          </div>
+          <Button
+            variant="quiet"
+            disabled={!rosterName.trim() || roster.some((p) => p.toLowerCase() === rosterName.trim().toLowerCase())}
+            onClick={() => {
+              setRoster((prev) => [...prev, rosterName.trim()])
+              setRosterName('')
+            }}
+          >
+            Tambah
+          </Button>
+        </div>
       </section>
 
       <section className="app-stack">

@@ -185,13 +185,28 @@ export function EmptyState({ title, children, art, action }: { title: string; ch
 
 /* ---------- sheet ---------- */
 
-export function Sheet({ open, title, children, onClose }: { open: boolean; title: string; children: ReactNode; onClose: () => void }) {
+export function Sheet({
+  open,
+  title,
+  art,
+  children,
+  onClose,
+}: {
+  open: boolean
+  title: string
+  art?: string
+  children: ReactNode
+  onClose: () => void
+}) {
   if (!open) return null
   return <div className="ds-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <section className="ds-sheet" role="dialog" aria-modal="true" aria-label={title}>
       <span className="ds-sheet-handle" aria-hidden="true" />
       <button type="button" className="ds-sheet-close" onClick={onClose} aria-label="Tutup"><X size={20} /></button>
-      <h3>{title}</h3>
+      <div className="ds-sheet-head">
+        {art ? <img className="ds-sheet-art" src={art} alt="" width={108} height={108} /> : null}
+        <h3>{title}</h3>
+      </div>
       {children}
     </section>
   </div>

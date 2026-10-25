@@ -6,6 +6,7 @@ import { useToast } from '../components/Toast'
 import { billActions, keys, useBill, useBillAction } from '../lib/queries'
 import { formatRp, parseRupiah } from '../lib/money'
 import { Alert, Button, Field } from '../ds/primitives'
+import manualArt from '../assets/manual.webp'
 import type { BillItem } from '../lib/types'
 
 const formatRd = (value: number): string => formatRp(value).replace('Rp', '')
@@ -112,6 +113,14 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
       {data && data.can_manage ? (
         <>
           {error ? <Alert tone="danger" title="Perubahan gagal disimpan">{error}</Alert> : null}
+
+          <div className="ds-create-hero">
+            <img src={manualArt} alt="" width={120} height={120} />
+            <div>
+              <b>Perbaiki tanpa bikin ulang</b>
+              <p className="app-note">Ubah judul, harga, atau pajak. Pilihan yang sudah diambil orang lain tetap menempel.</p>
+            </div>
+          </div>
 
           <section className="app-stack">
             <Field id="edit-title" label="Nama bill" value={titleValue} onChange={setTitle} />

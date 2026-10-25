@@ -6,6 +6,8 @@ import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
 import { Alert, Avatar, Button, Money, Sheet, StatusBadge } from '../ds/primitives'
+import inviteArt from '../assets/invite.webp'
+import itemArt from '../assets/item.webp'
 import { Check, UsersThree } from '@phosphor-icons/react'
 
 /**
@@ -266,11 +268,32 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             <div className="app-inline">
               <strong style={{ fontSize: 14, fontWeight: 800 }}>Orang</strong>
               <span className="app-spacer" />
-              <span className="app-note"><UsersThree size={13} /> {data.people.length}</span>
+              <span className="app-note">
+                <UsersThree size={13} /> {data.people.length} bergabung
+                {data.participants.some((participant) => !participant.identity_id)
+                  ? ' · ' + data.participants.filter((participant) => !participant.identity_id).length + ' diundang'
+                  : ''}
+              </span>
             </div>
             <div>
+              {/* nama yang diketik pembuat tapi orangnya belum join */}
+              {data.participants
+                .filter((participant) => !participant.identity_id)
+                .map((participant) => (
+                  <div className="app-row" key={'placeholder-' + participant.name}>
+                    <Avatar label={initials(participant.name)} tone="muted" />
+                    <span className="grow">
+                      <b>{participant.name}</b>
+                      <small>Diundang, belum bergabung</small>
+                    </span>
+                    <span className="amt">
+                      <StatusBadge tone="pending">Menunggu</StatusBadge>
+                    </span>
+                  </div>
+                ))}
               {data.people.map((person) => {
                 const isMe = person.identity_id === identityId
+                const removable = canManage && data.bill.status === 'open' && !isMe
                 return (
                   <div className="app-row" key={person.identity_id}>
                     <Avatar label={initials(person.name)} tone={isMe ? 'teal' : 'navy'} />
@@ -281,6 +304,16 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                     <span className="amt">
                       {person.paid === 'paid' ? <StatusBadge tone="success">Lunas</StatusBadge> : <StatusBadge tone="pending">Belum</StatusBadge>}
                     </span>
+                    {removable ? (
+                      <button
+                        type="button"
+                        className="link-action is-danger"
+                        aria-label={'Keluarkan ' + person.name}
+                        onClick={() => run(billActions.removePerson(billId, person.identity_id), person.name + ' dikeluarkan')}
+                      >
+                        Keluarkan
+                      </button>
+                    ) : null}
                   </div>
                 )
               })}
@@ -418,6 +451,26 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               </Button>
             ) : null}
 
+            {canManage ? (
+              data.settled_manual ? (
+                <Button
+                  variant="quiet"
+                  block
+                  onClick={() => run(billActions.unsettle(billId), 'Tanda lunas dibatalkan')}
+                >
+                  Batalkan tanda lunas
+                </Button>
+              ) : (
+                <Button
+                  variant="quiet"
+                  block
+                  onClick={() => run(billActions.settle(billId), 'Bill ditandai lunas')}
+                >
+                  Tandai semua lunas
+                </Button>
+              )
+            ) : null}
+
             {me && !canManage ? (
               <Button
                 variant="danger"
@@ -460,7 +513,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
         </div>
       </Sheet>
 
-      <Sheet open={slotOpen} title="Atur jumlah slot" onClose={() => setSlotOpen(false)}>
+      <Sheet open={slotOpen} title="Atur jumlah slot" art={itemArt} onClose={() => setSlotOpen(false)}>
         <p className="app-note">
           Slot menentukan berapa orang yang bisa ambil bagian item ini. Menambah slot membuat porsi tiap orang lebih kecil;
           menguranginya tidak bisa di bawah jumlah yang sudah diambil.
@@ -500,7 +553,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
         </div>
       </Sheet>
 
-      <Sheet open={inviteOpen} title="Undang teman" onClose={() => setInviteOpen(false)}>
+      <Sheet open={inviteOpen} title="Undang teman" art={inviteArt} onClose={() => setInviteOpen(false)}>
         <p className="app-note">Yang bisa diundang cuma orang yang pernah berbagi bill dengan kamu.</p>
         {contacts.isPending ? <div className="app-note">Memuat kontak…</div> : null}
         {contacts.isError ? <Alert tone="danger" title="Kontak gagal dimuat">{(contacts.error as Error).message}</Alert> : null}

@@ -3,6 +3,7 @@ import { useBills, useRecap } from '../lib/queries'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { Alert, BalanceCard, StatusBadge } from '../ds/primitives'
+import recapArt from '../assets/recap.webp'
 
 /** Kode alasan dari backend diterjemahkan ke kalimat yang bisa dibaca. */
 const REASON: Record<string, string> = {
@@ -60,7 +61,10 @@ export function Recap({ identityId }: { identityId: string | null }) {
               </div>
             ) : null}
             {data.final.counterparties.length === 0 ? (
-              <div className="app-note">Belum ada bill final. Tandai bill lunas supaya masuk ke sini.</div>
+              <div className="ds-empty-soft">
+                <img src={recapArt} alt="" width={104} height={104} />
+                <span className="app-note">Belum ada bill final. Tandai bill lunas supaya masuk ke sini.</span>
+              </div>
             ) : (
               data.final.counterparties.map((c) => (
                 <div className="app-row" key={c.identity_id}>
