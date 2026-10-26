@@ -147,7 +147,10 @@ def test_discount_quantity_and_default_selection_qty_are_explicit():
         participants=[],
         fallback_id="alice",
     )
-    assert person(discounted, "alice")["total_idr"] == 16
+    # diskon 2 per unit, qty 2 -> baris 16. alice ambil 1 porsi: bayar 8,
+    # sisa 8 porsi kedua jadi uncovered (dulu alice ditagih 16).
+    assert person(discounted, "alice")["total_idr"] == 8
+    assert discounted["uncovered_idr"] == 8
 
     default_quantity = calc.compute(
         bill=bill(10),
@@ -261,10 +264,10 @@ def test_slot_remainder_uncovered_and_warning_invariants():
     assert partial["total_ok"] is True
     assert "warnings" in partial
     assert partial["warnings"] == [
-        "Bagian kosong: pizza 2 bagian belum terisi (total Rp 6)",
-        "Bagian kosong: cake 2 bagian belum terisi (total Rp 4)",
-        "Bagian kosong: small 1 bagian belum terisi (total Rp 1)",
-        "Bagian kosong: empty 2 bagian belum terisi (total Rp 4)",
+        "Belum ada yang ambil: pizza 2 porsi (total Rp 6)",
+        "Belum ada yang ambil: cake 2 porsi (total Rp 4)",
+        "Belum ada yang ambil: small 1 porsi (total Rp 1)",
+        "Belum ada yang ambil: empty 2 porsi (total Rp 4)",
     ]
 
 

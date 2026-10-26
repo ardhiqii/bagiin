@@ -137,10 +137,13 @@ def test_tax_and_service_are_proportional_after_quantity_scaling():
         response = client.post(f"/api/bills/{bill_id}/selections", json={"picks": [{"item_id": item["id"]}]}, headers=_headers(person))
         assert response.status_code == 200, response.text
     people = {p["identity_id"]: p for p in _detail(bill_id)["people"]}
-    assert people[owner["id"]]["subtotal_idr"] == 200
+    # owner mengambil 1 dari 2 unit "A" (100/unit): bayar harga satuan, bukan
+    # seluruh baris. Sisa 100 jadi porsi yang belum diambil.
+    assert people[owner["id"]]["subtotal_idr"] == 100
     assert people[alice["id"]]["subtotal_idr"] == 300
+    assert _detail(bill_id)["uncovered_idr"] == 100
     assert people[owner["id"]]["tax_idr"] + people[alice["id"]]["tax_idr"] == 60
-    assert sum(p["total_idr"] for p in people.values()) == 560
+    assert sum(p["total_idr"] for p in people.values()) + 100 == 560
     assert _detail(bill_id)["total_ok"] is True
 
 
