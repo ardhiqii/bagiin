@@ -2373,7 +2373,13 @@ async def ocr_upload(request: Request, file: list[UploadFile] = File(...)):
             detail = "Layanan AI gratis sedang penuh atau mengalami gangguan. Coba lagi beberapa menit kemudian atau isi secara manual."
         raise HTTPException(422, detail)
     except Exception:
-        raise HTTPException(422, "Layanan AI sedang mengalami gangguan. Isi manual dulu ya.")
+        # Jangan diam: tanpa log, kegagalan penyedia (429/urllib/timeout) hilang
+        # dan pengguna cuma dapat kalimat generik tanpa jejak untuk ditelusuri.
+        logging.getLogger("bagiin").exception("OCR gagal di luar RuntimeError")
+        raise HTTPException(
+            422,
+            "Layanan AI gratis sedang penuh atau mengalami gangguan. Coba lagi beberapa menit kemudian atau isi secara manual.",
+        )
 
     if not isinstance(result, dict):
         raise HTTPException(422, "Hasil pembacaan AI tidak sesuai format, isi manual dulu ya.")
