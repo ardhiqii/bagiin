@@ -24,7 +24,7 @@ test.describe('Bagiin — baca struk dari foto', () => {
     // Kalau penyedianya yang mati, tes ini di-skip dengan alasan jelas —
     // aplikasinya sendiri benar: dia menampilkan gangguan dan menyuruh isi manual.
     const done = page.getByText('Struk terbaca. Cek lagi angkanya ya.')
-    const down = page.getByText(/Layanan AI sedang mengalami gangguan/)
+    const down = page.getByText(/Layanan AI (gratis )?sedang (mengalami gangguan|penuh)/)
     const input = page.locator('input[type="file"]')
     let read = false
     for (let attempt = 0; attempt < 3 && !read; attempt += 1) {
