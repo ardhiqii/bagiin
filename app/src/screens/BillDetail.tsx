@@ -229,6 +229,39 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             </small>
           </div>
 
+          {/* Rincian struk: tanpa ini, diskon atau pajak yang ikut di total
+              tidak punya penjelasan di layar. Baris nol tidak ditampilkan. */}
+          <div className="ds-card ds-pad-md bill-breakdown">
+            <div className="bill-line">
+              <span>Subtotal</span>
+              <b>{formatRp(data.bill.subtotal_idr)}</b>
+            </div>
+            {data.bill.order_discount_idr > 0 ? (
+              <div className="bill-line is-credit">
+                <span>Diskon pesanan</span>
+                <b>-{formatRp(data.bill.order_discount_idr)}</b>
+              </div>
+            ) : null}
+            {data.bill.tax_idr > 0 ? (
+              <div className="bill-line">
+                <span>{data.bill.tax_included ? 'Pajak (sudah termasuk)' : 'Pajak'}</span>
+                <b>{formatRp(data.bill.tax_idr)}</b>
+              </div>
+            ) : null}
+            {data.bill.service_idr > 0 ? (
+              <div className="bill-line">
+                <span>Service</span>
+                <b>{formatRp(data.bill.service_idr)}</b>
+              </div>
+            ) : null}
+            {data.bill.cashback_idr > 0 ? (
+              <div className="bill-line is-credit">
+                <span>Cashback</span>
+                <b>-{formatRp(data.bill.cashback_idr)}</b>
+              </div>
+            ) : null}
+          </div>
+
           {data.settled ? (
             <div className="ds-card ds-card-mint ds-pad-md art-card">
               <img src={paidArt} alt="" width={150} height={150} />

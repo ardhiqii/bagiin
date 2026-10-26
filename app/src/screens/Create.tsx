@@ -53,12 +53,18 @@ export function Create({ identityId }: { identityId: string | null }) {
         photo_path?: string
         tax?: number
         service?: number
+        /** backend menamainya order_discount; discount cuma alias lama */
+        order_discount?: number
         discount?: number
       }>('/api/ocr', { method: 'POST', body: form })
       if (draft.title && draft.title.trim()) setTitle(draft.title)
       if (draft.merchant) setMerchant(draft.merchant)
       if (draft.tax) setTax(formatRd(draft.tax))
       if (draft.service) setService(formatRd(draft.service))
+      // diskon voucher ikut kebaca struk: dulu kuncinya 'discount' sehingga
+      // diskon pesanan hilang dan total jadi lebih besar dari struk
+      const discountFromReceipt = draft.order_discount ?? draft.discount
+      if (discountFromReceipt) setDiscount(formatRd(discountFromReceipt))
       if (draft.photos?.[0]) setPhotoPath(draft.photos[0])
       if (draft.items?.length) {
         setItems(

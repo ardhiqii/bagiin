@@ -657,3 +657,25 @@ body { margin: 0; }
 @media (min-width: 1200px) {
   .app-toast { left: calc(50% + 118px); }
 }
+
+/* Rincian struk di layar bill: baris angka, bukan kartu di dalam kartu. */
+.bill-breakdown { display: grid; gap: 9px; }
+.bill-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+  color: var(--ds-muted);
+}
+.bill-line b { color: var(--ds-navy); font-weight: 700; font-variant-numeric: tabular-nums; }
+.bill-line.is-credit b { color: var(--ds-success, #167354); }
+.bill-line.is-total {
+  margin-top: 3px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ds-border);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ds-navy);
+}
+.bill-line.is-total b { font-family: var(--ds-font-display); font-size: 17px; letter-spacing: -.02em; }
