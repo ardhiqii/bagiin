@@ -598,6 +598,7 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
 
 _RECAP_REASON_ORDER = (
     "pending_selection",
+    "unassigned_items",
     "uncovered_slots",
     "open_bill",
     "payer_unresolved",
@@ -682,6 +683,11 @@ def _recap_is_final(
         return False
     if response.get("uncovered_idr", 0) > 0:
         return False
+    # Item yang sama sekali belum dipilih juga membuat angka belum final: selama
+    # masih bisa ada yang mengaku, porsi orang lain (termasuk pajak proporsional)
+    # masih bisa bergeser. Dulu kasus ini lolos sebagai "final".
+    if response.get("unassigned_items"):
+        return False
     if _recap_pending_selection_ids(bill_data, response):
         return False
     if _recap_payer_unresolved(bill_data, response):
@@ -702,6 +708,8 @@ def _recap_reason_codes(bill_data: dict, response: dict, *, pending_workflow: bo
         reasons.add("pending_selection")
     if response.get("uncovered_idr", 0) > 0:
         reasons.add("uncovered_slots")
+    if response.get("unassigned_items"):
+        reasons.add("unassigned_items")
     if (
         bill.get("status") == "open"
         and not response.get("settled")
@@ -872,16 +880,37 @@ def _recap_provisional_bill(
     """Shape one provisional bill and return it with its estimate totals."""
     bill = bill_data["bill"]
     estimate = _recap_current_user_state(bill_data, response, viewer_id)
+    # Yang membuat bill ini belum final harus bisa dibaca orangnya, bukan cuma
+    # kode alasan: "tiket Rp62.000 belum ada yang ngaku" jauh lebih berguna
+    # daripada "uncovered_slots".
+    uncovered_items = [
+        {
+            "name": slot.get("name"),
+            "amount_idr": int(slot.get("amount_idr", 0) or 0),
+        }
+        for slot in response.get("uncovered_slots", []) or []
+    ]
     payload = {
         "bill_id": bill["id"],
         "title": bill["title"],
         "status": bill.get("status", "open"),
+        "created_at": bill.get("created_at"),
         "reason_codes": _recap_reason_codes(
             bill_data, response, pending_workflow=pending_workflow,
         ),
         "estimated_payable_idr": estimate["estimated_payable_idr"],
         "estimated_receivable_idr": estimate["estimated_receivable_idr"],
         "current_user": estimate["current_user"],
+        "uncovered_idr": int(response.get("uncovered_idr", 0) or 0),
+        "uncovered_items": uncovered_items,
+        # item yang sama sekali belum dipilih; nominalnya tidak dikirim karena
+        # bergantung pada berapa orang yang nanti mengaku
+        "unassigned_items": [
+            item.get("name") for item in response.get("unassigned_items", []) or []
+        ],
+        # siapa yang menalangi: arah utangnya sudah pasti walau nominalnya belum
+        "paid_by_name": response.get("paid_by_name"),
+        "can_manage": bool(response.get("can_manage")),
     }
     return payload, estimate
 
@@ -1173,6 +1202,10 @@ def _build_identity_recap(identity: dict) -> dict:
         final_rows.append({
             "identity_id": other_id,
             "name": _recap_identity_name(other_id, counterparty["people"], name_cache),
+            # bruto per arah: orang bisa sekaligus piutang dan utang, dan net
+            # saja menyembunyikan dua fakta itu
+            "payable_idr": counterparty["payable_idr"],
+            "receivable_idr": counterparty["receivable_idr"],
             "net_idr": net,
             "direction": "receive" if net > 0 else "pay",
             "amount_idr": abs(net),
