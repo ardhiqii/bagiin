@@ -38,7 +38,7 @@ test.describe('Bagiin — perilaku user', () => {
 
     const prices = page.getByLabel('Harga satuan')
     await prices.nth(1).fill('20000')
-    await page.getByLabel('Pajak').fill('11000')
+    await page.getByLabel('Pajak', { exact: true }).fill('11000')
 
     await expect(page.getByText('Rp71.000')).toBeVisible()
     await page.getByRole('button', { name: 'Buat bill' }).click()

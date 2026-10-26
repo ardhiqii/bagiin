@@ -130,7 +130,7 @@ export function ItemRow({
 /* ---------- inputs ---------- */
 
 export function Field({
-  label, value, onChange, hint, error, inputMode, id,
+  label, value, onChange, hint, error, inputMode, id, disabled,
 }: {
   label: string
   value: string
@@ -139,6 +139,7 @@ export function Field({
   error?: string
   inputMode?: 'text' | 'numeric'
   id: string
+  disabled?: boolean
 }) {
   const describedBy = [hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined
   return <div className={`ds-field${error ? ' has-error' : ''}`}>
@@ -147,6 +148,7 @@ export function Field({
       id={id}
       value={value}
       inputMode={inputMode}
+      disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
       aria-invalid={error ? true : undefined}
       aria-describedby={describedBy}

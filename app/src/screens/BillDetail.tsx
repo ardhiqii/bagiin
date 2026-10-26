@@ -245,6 +245,13 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                 <span>{data.bill.tax_included ? 'Pajak (sudah termasuk)' : 'Pajak'}</span>
                 <b>{formatRp(data.bill.tax_idr)}</b>
               </div>
+            ) : data.bill.tax_included ? (
+              // Pajak nempel di harga item: kolomnya nol, tapi orang tetap perlu
+              // tahu kenapa tidak ada baris pajak di sini.
+              <div className="bill-line">
+                <span>Pajak (sudah termasuk)</span>
+                <b>di harga item</b>
+              </div>
             ) : null}
             {data.bill.service_idr > 0 ? (
               <div className="bill-line">

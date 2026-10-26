@@ -61,7 +61,10 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
       body,
       signal: opts.signal,
     })
-  } catch {
+  } catch (error) {
+    // Permintaan yang dibatalkan user bukan kegagalan jaringan: teruskan apa
+    // adanya supaya pemanggil bisa membedakan "dibatalkan" dari "gagal".
+    if ((error as Error)?.name === 'AbortError') throw error
     throw new ApiError('Koneksi bermasalah. Periksa internet kamu, lalu coba lagi.', 0)
   }
 

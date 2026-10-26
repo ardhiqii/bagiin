@@ -42,7 +42,7 @@ test.describe('Bagiin — mengubah bill', () => {
     await expect(page).toHaveURL(/\/edit$/)
 
     await page.getByLabel('Nama bill').fill('Ubah judul ' + stamp)
-    await page.getByLabel('Pajak').fill('5000')
+    await page.getByLabel('Pajak', { exact: true }).fill('5000')
     await expect(page.getByText('Rp55.000')).toBeVisible()
     await page.getByRole('button', { name: 'Simpan perubahan' }).click()
 

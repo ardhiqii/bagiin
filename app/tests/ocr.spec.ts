@@ -49,7 +49,7 @@ test.describe('Bagiin — baca struk dari foto', () => {
     await expect(page.getByLabel('Item 2')).toHaveValue('Es teh manis')
     await expect(page.getByLabel('Item 3')).toHaveValue('Ayam bakar')
     await expect(page.getByLabel('Harga satuan').first()).toHaveValue('45.000')
-    await expect(page.getByLabel('Pajak')).toHaveValue('8.800')
+    await expect(page.getByLabel('Pajak', { exact: true })).toHaveValue('8.800')
     await expect(page.getByText('Rp96.800').first()).toBeVisible()
 
     // foto sudah diunggah dan akan menempel di bill

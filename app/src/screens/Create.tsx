@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
@@ -32,16 +32,76 @@ export function Create({ identityId }: { identityId: string | null }) {
   const [payerName, setPayerName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [ocrBusy, setOcrBusy] = useState(false)
-  const [ocrNote, setOcrNote] = useState('')
   const [photoPath, setPhotoPath] = useState<string | null>(null)
+  /**
+   * 'ocr' = foto dibaca AI dan angkanya masuk form, 'attach' = foto cuma bukti
+   * dan angkanya diketik sendiri. Dua jalur ini yang bikin orang tetap bisa
+   * lanjut waktu AI sedang mati atau kuotanya habis.
+   */
+  const [photoMode, setPhotoMode] = useState<'ocr' | 'attach' | null>(null)
+  const [photoBusy, setPhotoBusy] = useState<'ocr' | 'attach' | null>(null)
+  const [ocrError, setOcrError] = useState('')
+  const [ocrSeconds, setOcrSeconds] = useState(0)
+  const [lastPhoto, setLastPhoto] = useState<File | null>(null)
+  const [taxIncluded, setTaxIncluded] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const intentRef = useRef<'ocr' | 'attach'>('ocr')
+  const abortRef = useRef<AbortController | null>(null)
   const [roster, setRoster] = useState<string[]>([])
   const [rosterName, setRosterName] = useState('')
 
-  async function readPhoto(file: File) {
-    setOcrBusy(true)
-    setOcrNote('Membaca struk…')
+  useEffect(() => {
+    if (!photoBusy) return
+    const timer = setInterval(() => setOcrSeconds((s) => s + 1), 1000)
+    return () => clearInterval(timer)
+  }, [photoBusy])
+
+  function pickPhoto(intent: 'ocr' | 'attach') {
+    intentRef.current = intent
+    fileRef.current?.click()
+  }
+
+  function onFilePicked(file: File) {
+    setLastPhoto(file)
     setError('')
+    setOcrError('')
+    setOcrSeconds(0)
+    if (intentRef.current === 'attach') void attachPhoto(file)
+    else void readPhoto(file)
+  }
+
+  /** Unggah foto tanpa AI: bukti struk, angkanya diketik sendiri. */
+  async function attachPhoto(file: File) {
+    setPhotoBusy('attach')
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const saved = await api<{ photo_path: string }>('/api/photos', { method: 'POST', body: form })
+      setPhotoPath(saved.photo_path)
+      setPhotoMode('attach')
+      setOcrError('')
+      toast('Foto dilampirkan. Angkanya isi sendiri ya.')
+    } catch (err) {
+      setOcrError((err as Error).message)
+    } finally {
+      setPhotoBusy(null)
+    }
+  }
+
+  function cancelRead() {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setPhotoBusy(null)
+    setOcrError('')
+  }
+
+  async function readPhoto(file: File) {
+    setPhotoBusy('ocr')
+    setPhotoMode(null)
+    setOcrError('')
+    setOcrSeconds(0)
+    const controller = new AbortController()
+    abortRef.current = controller
     try {
       const form = new FormData()
       form.append('file', file)
@@ -56,10 +116,17 @@ export function Create({ identityId }: { identityId: string | null }) {
         /** backend menamainya order_discount; discount cuma alias lama */
         order_discount?: number
         discount?: number
-      }>('/api/ocr', { method: 'POST', body: form })
+        /** harga item sudah termasuk pajak: jangan tambah kolom pajak lagi */
+        tax_included?: boolean
+      }>('/api/ocr', { method: 'POST', body: form, signal: controller.signal })
       if (draft.title && draft.title.trim()) setTitle(draft.title)
       if (draft.merchant) setMerchant(draft.merchant)
-      if (draft.tax) setTax(formatRd(draft.tax))
+      // Struk yang harga itemnya sudah termasuk pajak: OCR sudah mengosongkan
+      // tax, dan bill harus ditandai tax_included supaya pajak tidak dihitung
+      // dua kali saat orang mengetik ulang angkanya.
+      const included = Boolean(draft.tax_included)
+      setTaxIncluded(included)
+      setTax(included ? '' : draft.tax ? formatRd(draft.tax) : '')
       if (draft.service) setService(formatRd(draft.service))
       // diskon voucher ikut kebaca struk: dulu kuncinya 'discount' sehingga
       // diskon pesanan hilang dan total jadi lebih besar dari struk
@@ -76,13 +143,14 @@ export function Create({ identityId }: { identityId: string | null }) {
           })),
         )
       }
-      setOcrNote('Struk terbaca. Periksa angkanya sebelum simpan.')
+      setPhotoMode('ocr')
       toast('Struk terbaca. Cek lagi angkanya ya.')
     } catch (err) {
-      setOcrNote('')
-      setError((err as Error).message)
+      if (controller.signal.aborted || (err as Error).name === 'AbortError') return
+      setOcrError((err as Error).message)
     } finally {
-      setOcrBusy(false)
+      if (abortRef.current === controller) abortRef.current = null
+      setPhotoBusy(null)
     }
   }
 
@@ -132,7 +200,7 @@ export function Create({ identityId }: { identityId: string | null }) {
           photo_path: photoPath,
           photos: photoPath ? [photoPath] : [],
           paid_by_name: payerName.trim() || null,
-          tax_included: 0,
+          tax_included: taxIncluded ? 1 : 0,
           // nama yang diketik di sini jadi placeholder: begitu orangnya join,
           // backend mencocokkan namanya dan klaim otomatis
           participants: roster,
@@ -166,39 +234,126 @@ export function Create({ identityId }: { identityId: string | null }) {
         </div>
       }
     >
-      <div className={'ds-create-hero' + (ocrBusy ? ' is-scanning' : '')}>
-        <img src={ocrBusy ? scanArt : createHeroArt} alt="" width={120} height={120} />
-        <div>
-          <b>{ocrBusy ? 'Membaca struk…' : 'Ketik manual atau tempel hasil fotonya'}</b>
-          <p className="app-note">
-            {ocrBusy
-              ? 'Angkanya sedang diambil dari foto. Biasanya beberapa detik.'
-              : 'Semua angka rupiah. Pajak dibagi proporsional ke porsi masing-masing.'}
-          </p>
-        </div>
-      </div>
+      {/* Satu input file untuk dua niat: dibaca AI, atau cuma dilampirkan.
+          Di HP input ini langsung membuka kamera, jadi tidak perlu tempel. */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file) onFilePicked(file)
+          event.target.value = ''
+        }}
+      />
 
-      <label className="ds-button ds-button-secondary" style={{ textAlign: 'center', cursor: 'pointer' }}>
-        {ocrBusy ? 'Membaca struk…' : 'Foto struk (opsional)'}
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          style={{ display: 'none' }}
-          disabled={ocrBusy}
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file) void readPhoto(file)
-            event.target.value = ''
-          }}
-        />
-      </label>
-      {ocrNote ? <div className="app-note">{ocrNote}</div> : null}
       {photoPath ? (
         <div className="receipt-preview">
           <img src={'/uploads/' + photoPath.split('/').pop()} alt="Foto struk yang dibaca" />
-          <span className="app-note">Foto ini ikut tersimpan di bill.</span>
+          <div className="grow">
+            <b>{photoMode === 'ocr' ? 'Foto dibaca AI' : 'Foto dilampirkan'}</b>
+            <p className="app-note">
+              {photoMode === 'ocr'
+                ? 'Angka di bawah berasal dari foto ini. Periksa lagi sebelum simpan.'
+                : 'Foto ini bukti saja. Angkanya kamu isi sendiri.'}
+            </p>
+            <div className="app-inline">
+              <Button variant="quiet" onClick={() => pickPhoto(photoMode === 'ocr' ? 'ocr' : 'attach')}>
+                Ganti foto
+              </Button>
+              <Button
+                variant="quiet"
+                onClick={() => {
+                  setPhotoPath(null)
+                  setPhotoMode(null)
+                  setLastPhoto(null)
+                }}
+              >
+                Lepas foto
+              </Button>
+            </div>
+          </div>
         </div>
+      ) : photoBusy ? (
+        <div className={'ds-create-hero' + (photoBusy === 'ocr' ? ' is-scanning' : '')} role="status">
+          <img src={scanArt} alt="" width={110} height={110} />
+          <div>
+            <b>
+              {photoBusy === 'ocr'
+                ? `Membaca struk… ${ocrSeconds > 0 ? ocrSeconds + ' detik' : ''}`
+                : 'Mengunggah foto…'}
+            </b>
+            <p className="app-note">
+              {photoBusy === 'ocr'
+                ? 'Bisa 10–60 detik, kadang lebih kalau layanan AI ramai. Kamu tetap bisa mengisi manual sambil menunggu.'
+                : 'Sebentar, fotonya sedang disimpan.'}
+            </p>
+            {photoBusy === 'ocr' ? (
+              <Button variant="quiet" onClick={cancelRead}>
+                Batal baca
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : ocrError ? null : (
+        <div className="ds-create-hero is-choice">
+          <img src={createHeroArt} alt="" width={76} height={76} />
+          <div>
+            <b>Isi otomatis dari foto struk?</b>
+            <p className="app-note">AI baca struk dan isi item serta harganya. Atau lampirkan fotonya saja sebagai bukti.</p>
+            <div className="photo-actions">
+              <Button onClick={() => pickPhoto('ocr')}>Scan struk, isi otomatis</Button>
+              <Button variant="secondary" onClick={() => pickPhoto('attach')}>
+                Lampirkan foto sebagai bukti
+              </Button>
+            </div>
+            <button
+              type="button"
+              className="ds-button ds-button-quiet"
+              style={{ marginTop: 6 }}
+              onClick={() => document.getElementById('item-name-0')?.focus()}
+            >
+              Isi manual saja
+            </button>
+          </div>
+        </div>
+      )}
+
+      {ocrError ? (
+        <Alert tone="danger" title={photoBusy ? 'Struk gagal diunggah' : 'Struk gagal dibaca'}>
+          {ocrError}
+          <span style={{ display: 'block', marginTop: 10 }}>
+            <Button
+              onClick={() => {
+                document.getElementById('item-name-0')?.scrollIntoView({ block: 'center' })
+                document.getElementById('item-name-0')?.focus()
+              }}
+            >
+              Isi manual sekarang
+            </Button>
+          </span>
+          <span style={{ display: 'block', marginTop: 8 }}>
+            <Button
+              variant="quiet"
+              disabled={!lastPhoto || Boolean(photoBusy)}
+              onClick={() => lastPhoto && readPhoto(lastPhoto)}
+            >
+              Coba baca lagi
+            </Button>
+            <Button
+              variant="quiet"
+              disabled={!lastPhoto || Boolean(photoBusy)}
+              onClick={() => lastPhoto && attachPhoto(lastPhoto)}
+            >
+              Pakai foto struk tadi sebagai bukti
+            </Button>
+            <Button variant="quiet" onClick={() => pickPhoto('ocr')}>
+              Foto lain
+            </Button>
+          </span>
+        </Alert>
       ) : null}
 
       {error ? <Alert tone="danger" title="Bill gagal dibuat">{error}</Alert> : null}
@@ -297,9 +452,30 @@ export function Create({ identityId }: { identityId: string | null }) {
 
       <section className="app-stack">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Field id="bill-tax" label="Pajak" value={tax} inputMode="numeric" onChange={(v) => setTax(formatRp(parseRupiah(v)).replace('Rp', ''))} />
+          <Field
+            id="bill-tax"
+            label={taxIncluded ? 'Pajak (di dalam harga)' : 'Pajak'}
+            value={taxIncluded ? '' : tax}
+            inputMode="numeric"
+            disabled={taxIncluded}
+            onChange={(v) => setTax(formatRp(parseRupiah(v)).replace('Rp', ''))}
+          />
           <Field id="bill-service" label="Service" value={service} inputMode="numeric" onChange={(v) => setService(formatRp(parseRupiah(v)).replace('Rp', ''))} />
         </div>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={taxIncluded}
+            onChange={(event) => {
+              setTaxIncluded(event.target.checked)
+              if (event.target.checked) setTax('')
+            }}
+          />
+          <span>
+            Harga item sudah termasuk pajak
+            <small>Pilih ini kalau struk menulis “termasuk pajak”. Pajak tidak ditambahkan lagi.</small>
+          </span>
+        </label>
         <Field
           id="bill-discount"
           label="Diskon pesanan"
@@ -318,10 +494,13 @@ export function Create({ identityId }: { identityId: string | null }) {
           <span>{formatRp(subtotal)}</span>
         </div>
         <div className="app-inline" style={{ marginTop: 6 }}>
-          <span style={{ fontSize: 13, fontWeight: 700 }}>Pajak + service</span>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>{taxIncluded ? 'Service' : 'Pajak + service'}</span>
           <span className="app-spacer" />
-          <span>{formatRp(taxIdr + serviceIdr)}</span>
+          <span>{formatRp((taxIncluded ? 0 : taxIdr) + serviceIdr)}</span>
         </div>
+        {taxIncluded ? (
+          <p className="app-note" style={{ marginTop: 6 }}>Pajak sudah nempel di harga item, jadi tidak dihitung lagi.</p>
+        ) : null}
         {discountIdr > 0 ? (
           <div className="app-inline" style={{ marginTop: 6 }}>
             <span style={{ fontSize: 13, fontWeight: 700 }}>Diskon</span>

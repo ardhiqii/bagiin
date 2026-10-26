@@ -149,3 +149,26 @@ Satu cara ambil untuk semua baris, tanpa istilah mode di layar:
 - **Mode slot dihapus dari layar.** Bill lama yang datanya bermode slot tetap
   dihitung dengan aturan lamanya dan tombol "atur jumlah bagian" hanya muncul di
   bill seperti itu.
+
+## Foto struk di layar buat bill (2026-10-26)
+
+Satu input file, dua niat. Di HP input ini memakai `capture="environment"`, jadi
+langsung membuka kamera — tidak ada alur tempel, karena Ctrl+V memang tidak ada
+di HP.
+
+- **Scan struk, isi otomatis** — foto dikirim ke `/api/ocr`, hasilnya mengisi
+  item, pajak, service, diskon, merchant. Selama menunggu, kartu berubah jadi
+  status berjalan: "Membaca struk… N detik" plus tombol **Batal baca**. Form di
+  bawahnya tetap bisa diketik sambil menunggu.
+- **Lampirkan foto sebagai bukti** — foto diunggah ke `/api/photos` tanpa
+  memanggil AI. Form tetap kosong, dan foto ikut tersimpan di bill sebagai bukti.
+  Ini jalur untuk orang yang memang mau mengetik manual, atau untuk saat kuota
+  AI habis.
+- **Kalau AI gagal** — kartu pilihan disembunyikan, muncul blok "Struk gagal
+  dibaca" berisi penyebab dari server plus tiga jalan keluar: **Isi manual
+  sekarang**, **Coba baca lagi**, **Pakai foto struk tadi sebagai bukti** (dan
+  **Foto lain**). Fotonya tidak hilang, jadi tidak perlu memotret ulang.
+- **Pajak** — kalau struk menyatakan harga sudah termasuk pajak, kolom Pajak
+  dikunci dan bill ditandai `tax_included`; di layar bill muncul
+  "Pajak (sudah termasuk) · di harga item" supaya orang tahu kenapa tidak ada
+  baris pajak.

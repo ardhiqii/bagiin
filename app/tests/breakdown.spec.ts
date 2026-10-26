@@ -19,7 +19,7 @@ test.describe('Bagiin — rincian struk di layar bill', () => {
     await page.getByLabel('Nama bill').fill('Rincian ' + stamp)
     await page.getByLabel('Item 1').fill('Nasi goreng')
     await page.getByLabel('Harga satuan').first().fill('100000')
-    await page.getByLabel('Pajak').fill('10000')
+    await page.getByLabel('Pajak', { exact: true }).fill('10000')
     await page.getByLabel('Service').fill('5000')
     await page.getByLabel('Diskon pesanan').fill('15000')
     await page.getByRole('button', { name: 'Buat bill' }).click()

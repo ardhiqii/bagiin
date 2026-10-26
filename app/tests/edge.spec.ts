@@ -31,7 +31,7 @@ async function createBill(
     await page.getByLabel('Item ' + (i + 1)).fill(items[i].name)
     await page.getByLabel('Harga satuan').nth(i).fill(items[i].price)
   }
-  if (opts.tax) await page.getByLabel('Pajak').fill(opts.tax)
+  if (opts.tax) await page.getByLabel('Pajak', { exact: true }).fill(opts.tax)
   if (opts.service) await page.getByLabel('Service').fill(opts.service)
   await page.getByRole('button', { name: 'Buat bill' }).click()
   await expect(page).toHaveURL(/\/b\//)
