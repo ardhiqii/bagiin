@@ -132,6 +132,10 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
     subtotal_by_ident: dict[str, int] = {}
     uncovered_slots: list[dict] = []
     uncovered_idr = 0
+    # item tanpa satu pun pemilih: uangnya ditanggung pembayar, dicatat supaya
+    # bisa diberitahukan (dan supaya bill tidak dianggap final)
+    owner_absorbed_items: list[dict] = []
+    owner_absorbed_idr = 0
 
     for it in items:
         selectors = sel_by_item.get(it["id"], [])
@@ -180,10 +184,19 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
         # portions this person takes, default 1). line_total // total_qty per serving,
         # rounding remainder round-robin across servings.
         if not selectors:
-            # nobody picked this free item -> the owner takes it (matches the
-            # warning "masuk ke yang nalangin"). This keeps the split complete:
-            # sum(people) + uncovered_idr == bill.total.
+            # Tidak ada yang memilih item ini. Uangnya tetap dibebankan ke
+            # pembayar (keputusan produk lama: "masuk ke yang nalangin"), tapi
+            # dicatat terpisah sebagai owner_absorbed supaya kelihatan. Dulu
+            # tidak ada jejaknya sama sekali: bill terlihat final, "bagianmu"
+            # pembayar membengkak, dan tak seorang pun tahu ada item tanpa
+            # pemilik.
             subtotal_by_ident[fallback_id] = subtotal_by_ident.get(fallback_id, 0) + line_total
+            owner_absorbed_idr += line_total
+            owner_absorbed_items.append({
+                "item_id": it["id"],
+                "name": it["name"],
+                "amount_idr": line_total,
+            })
             continue
         total_qty = sum(q for _, q in selectors)
         even = line_total // total_qty
@@ -403,6 +416,8 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
         "unassigned_items": unassigned,
         "uncovered_slots": uncovered_slots,
         "uncovered_idr": net_uncovered_idr,
+        "owner_absorbed_idr": owner_absorbed_idr,
+        "owner_absorbed_items": owner_absorbed_items,
         "warnings": warnings,
         "total_ok": total_ok,
         "remaining_to_creator": total_idr - assigned - net_uncovered_idr,

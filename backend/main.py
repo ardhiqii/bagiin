@@ -590,6 +590,10 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
         "unassigned_items": result["unassigned_items"],
         "uncovered_slots": result["uncovered_slots"],
         "uncovered_idr": result["uncovered_idr"],
+        # item yang tidak dipilih siapa pun: uangnya ditanggung pembayar, tapi
+        # harus kelihatan supaya bisa ditagihkan atau ditutup sadar
+        "owner_absorbed_idr": result.get("owner_absorbed_idr", 0),
+        "owner_absorbed_items": result.get("owner_absorbed_items", []),
         "settled": settled,
     }
 
@@ -687,6 +691,8 @@ def _recap_is_final(
     # masih bisa ada yang mengaku, porsi orang lain (termasuk pajak proporsional)
     # masih bisa bergeser. Dulu kasus ini lolos sebagai "final".
     if response.get("unassigned_items"):
+        return False
+    if response.get("owner_absorbed_idr", 0) > 0:
         return False
     if _recap_pending_selection_ids(bill_data, response):
         return False
@@ -907,6 +913,12 @@ def _recap_provisional_bill(
         # bergantung pada berapa orang yang nanti mengaku
         "unassigned_items": [
             item.get("name") for item in response.get("unassigned_items", []) or []
+        ],
+        # item tanpa pemilih: jadi bagian pembayar, tapi nominalnya disebut
+        "owner_absorbed_idr": int(response.get("owner_absorbed_idr", 0) or 0),
+        "owner_absorbed_items": [
+            {"name": item.get("name"), "amount_idr": int(item.get("amount_idr", 0) or 0)}
+            for item in response.get("owner_absorbed_items", []) or []
         ],
         # siapa yang menalangi: arah utangnya sudah pasti walau nominalnya belum
         "paid_by_name": response.get("paid_by_name"),

@@ -780,3 +780,39 @@ def test_provisional_row_explains_what_blocks_finality():
     assert row["can_manage"] is True
     assert "uncovered_slots" in row["reason_codes"]
     assert "unassigned_items" in row["reason_codes"]
+
+
+def test_unpicked_item_is_reported_not_silently_charged():
+    """Item yang tidak dipilih siapa pun harus kelihatan di rekap.
+
+    Uangnya memang ditanggung pembayar (keputusan produk lama), tapi tanpa
+    catatan ini bill terlihat final sementara ada item yang tidak ada
+    pemiliknya — dan "bagianmu" pembayar membengkak tanpa penjelasan.
+    """
+    owner = db.new_identity("Owner Absorb", role="creator")
+    guest = db.new_identity("Guest Absorb")
+
+    bill_id = _mk_bill(
+        owner,
+        title="Bill Tanpa Pemilih",
+        items=[
+            {"name": "Kopi", "price": 49000, "quantity": 1, "mode": "free"},
+            {"name": "Teh", "price": 39000, "quantity": 1, "mode": "free"},
+        ],
+        total=88000,
+    )
+    items = _item_ids(bill_id)
+    _join_and_pick(bill_id, guest, [items[1]])
+
+    detail = c.get(f"/api/bills/{bill_id}", headers=_H(owner)).json()
+    assert detail["owner_absorbed_idr"] == 49000
+    assert detail["owner_absorbed_items"] == [{"item_id": items[0], "name": "Kopi", "amount_idr": 49000}]
+    # uangnya tetap masuk bagian pembayar: invarian tidak berubah
+    owner_row = next(p for p in detail["people"] if p["identity_id"] == owner["id"])
+    assert owner_row["total_idr"] >= 49000
+
+    recap = _recap(owner)
+    assert recap["provisional"]["bill_count"] == 1
+    row = recap["provisional"]["bills"][0]
+    assert row["owner_absorbed_idr"] == 49000
+    assert row["owner_absorbed_items"] == [{"name": "Kopi", "amount_idr": 49000}]
