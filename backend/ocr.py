@@ -174,18 +174,32 @@ def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
     if GEMINI_API_KEY:
         try:
             return _gemini_ocr(provider_input, mime_type, primary_deadline)
-        except RuntimeError:
+        except Exception as error:  # noqa: BLE001 - provider apa pun boleh gagal
+            # Dulu hanya RuntimeError yang ditangkap. HTTPError/TimeoutError dari
+            # urllib lolos ke handler generik di main.py, jadi pesan 429 berubah
+            # jadi "sedang mengalami gangguan" dan penyebabnya tidak pernah
+            # tercatat di log (bug: kuota Gemini habis 26 Okt, log cuma bilang
+            # failure=provider).
             providers_tried.append("Gemini")
-            log.warning("Gemini OCR model=%s failure=provider, coba OpenRouter", GEMINI_MODEL)
+            log.warning(
+                "Gemini OCR model=%s failure=provider (%s: %s), coba OpenRouter",
+                GEMINI_MODEL,
+                type(error).__name__,
+                str(error)[:120],
+            )
     else:
         log.warning("GEMINI_API_KEY kosong, langsung coba OpenRouter")
 
     if OR_API_KEY:
         try:
             return _openrouter_ocr(provider_input, deadline, mime_type=mime_type)
-        except RuntimeError:
+        except Exception as error:  # noqa: BLE001
             providers_tried.append("OpenRouter")
-            log.warning("OpenRouter OCR fallback exhausted")
+            log.warning(
+                "OpenRouter OCR fallback exhausted (%s: %s)",
+                type(error).__name__,
+                str(error)[:120],
+            )
     else:
         log.warning("OPENROUTER_API_KEY kosong, tidak ada fallback")
 
