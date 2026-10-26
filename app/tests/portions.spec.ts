@@ -41,7 +41,7 @@ test.describe('Bagiin — ambil porsi per baris', () => {
     await page.getByRole('button', { name: 'Tambah porsi tiket' }).click()
     await expect(page.getByText(/bagian kamu Rp62\.000/)).toBeVisible()
     await expect(page.getByText('1 dari 2 diambil')).toBeVisible()
-    await expect(page.getByText(/1 porsi belum ada yang ambil/)).toBeVisible()
+    await expect(page.getByText(/1 porsi belum diambil/)).toBeVisible()
 
     await page.getByRole('button', { name: 'Tambah porsi tiket' }).click()
     await expect(page.getByText(/bagian kamu Rp124\.000/)).toBeVisible()

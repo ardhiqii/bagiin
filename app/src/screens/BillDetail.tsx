@@ -31,7 +31,7 @@ function summarizeUncovered(data: BillResponse) {
   if (freeNames.length > 0) parts.push(freeNames.length + ' item belum dipilih')
   // istilah "slot" sudah tidak dipakai: yang tersisa adalah porsi yang belum
   // diambil siapa pun, dan itu ditanggung yang menalangi.
-  if (slotCount > 0) parts.push(slotCount + ' porsi belum ada yang ambil')
+  if (slotCount > 0) parts.push(slotCount + ' porsi belum diambil')
   return {
     has: parts.length > 0,
     title: parts.join(' · '),
@@ -223,7 +223,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             <small className="ds-balance-note">
               {data.people.length} orang · {data.items.length} item
               {me ? ' · bagian kamu ' + formatRp(me.total_idr) : ''}
-              {me && data.uncovered_idr > 0 ? ' + ' + formatRp(data.uncovered_idr) + ' yang belum ada yang ambil' : ''}
+              {me && data.uncovered_idr > 0 ? ' + ' + formatRp(data.uncovered_idr) + ' belum diambil' : ''}
             </small>
           </div>
 
@@ -290,7 +290,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
           {canManage && summarizeUncovered(data).has && !data.settled ? (
             <Alert tone="pending" title={summarizeUncovered(data).title}>
-              {summarizeUncovered(data).names} — sementara ditanggung yang menalangi
+              Untuk: {summarizeUncovered(data).names} — sementara ditanggung yang menalangi
               {summarizeUncovered(data).money > 0 ? ' (' + formatRp(summarizeUncovered(data).money) + ')' : ''}.
             </Alert>
           ) : null}
@@ -301,7 +301,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               <div>
                 <b style={{ fontSize: 14 }}>Bagikan bill ini</b>
                 <p className="app-note" style={{ margin: '4px 0 8px' }}>
-                  Belum ada yang masuk. Kirim linknya supaya teman bisa memilih bagiannya sendiri.
+                  Baru kamu yang di sini. Kirim linknya supaya teman bisa memilih bagiannya sendiri.
                 </p>
                 <Button variant="primary" onClick={share}>
                   Kirim link ke teman
