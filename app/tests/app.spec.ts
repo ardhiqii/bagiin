@@ -115,7 +115,8 @@ test.describe('Bagiin — perilaku user', () => {
     await expect(page.getByText(title)).toBeVisible()
 
     await page.goto('/recap')
-    await expect(page.getByText('Masih berjalan', { exact: true })).toBeVisible()
+    // rekap dibuka di daftar "Belum final": bill baru tanpa pilihan ada di situ
+    await expect(page.getByRole('tab', { name: /Belum final/ })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByText(title)).toBeVisible()
   })
 

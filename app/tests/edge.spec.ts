@@ -171,7 +171,9 @@ test.describe('Bagiin — kasus pinggir', () => {
     await ctx.close()
 
     await page.goto('/recap')
-    await expect(page.getByText('Sudah final', { exact: true })).toBeVisible()
+    // bill yang sudah lunas pindah ke tab "Sudah final", tidak lagi tampil
+    // di daftar utama
+    await page.getByRole('tab', { name: /Sudah final/ }).click()
     await expect(page.getByText('Final ' + stamp)).toBeVisible()
   })
 

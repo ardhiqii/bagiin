@@ -493,6 +493,67 @@ textarea {
   letter-spacing: .06em;
   color: var(--ds-navy);
 }
+/* Segmented control: dua daftar yang saling meniadakan. Dipakai di rekap
+   supaya arsip 50+ bill tidak ikut discroll saat mencari yang belum beres. */
+.seg {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--ds-space-1);
+  padding: var(--ds-space-1);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-bg-deep);
+}
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  min-height: 40px;
+  padding: 0 var(--ds-space-3);
+  border: 0;
+  border-radius: calc(var(--ds-radius-md) - 2px);
+  background: none;
+  color: var(--ds-muted);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease;
+}
+.seg-btn.is-active {
+  background: var(--ds-surface);
+  color: var(--ds-navy);
+  box-shadow: var(--ds-shadow-content);
+}
+.seg-count {
+  font-size: 11.5px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--ds-bg-deep);
+  color: var(--ds-muted);
+}
+.seg-btn.is-active .seg-count { background: var(--ds-mint); color: var(--ds-teal) }
+
+/* Baris bill yang belum final: barisnya bisa dibuka, tapi aksi tutup tetap
+   terpisah supaya tidak ikut tertekan saat orang cuma mau lihat detail. */
+.recap-pending { display: grid; gap: var(--ds-space-1); }
+.seg + .recap-pending { margin-top: var(--ds-space-2); }
+/* Penanggung sisa ditulis sebagai label kecil, bukan kalimat abu-abu di baris
+   yang sama dengan alasannya — dua hal ini beda peran. */
+.recap-payer {
+  display: inline-block;
+  margin-top: var(--ds-space-1);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--ds-pending-bg);
+  color: var(--ds-pending);
+  font-size: 11px;
+  font-weight: 700;
+}
+.recap-pending-action { display: flex; justify-content: flex-end; padding-bottom: var(--ds-space-1); }
+
 /* Pencarian ringkas: ikon di dalam kolom, tinggi 44 px, tanpa label terpisah.
    Label di atas kolom membuat layar daftar terasa seperti formulir. */
 .search-field {

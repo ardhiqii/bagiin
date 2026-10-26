@@ -123,10 +123,18 @@ export type RecapBill = {
   bill_id: string
   title: string
   status: string
+  created_at: string | null
   reason_codes: string[]
   estimated_payable_idr: number
   estimated_receivable_idr: number
   current_user: { total_idr: number; paid: boolean; direction: string }
+  /** nominal porsi yang belum ada pengakunya (mode per porsi) */
+  uncovered_idr: number
+  uncovered_items: { name: string; amount_idr: number }[]
+  /** item yang sama sekali belum dipilih siapa pun */
+  unassigned_items: string[]
+  paid_by_name: string | null
+  can_manage: boolean
 }
 
 /** Satu baris bill yang pembagiannya sudah final (belum tentu lunas). */
@@ -145,7 +153,14 @@ export type Recap = {
     payable_idr: number
     receivable_idr: number
     net_idr: number
-    counterparties: { identity_id: string; name: string; net_idr: number }[]
+    counterparties: {
+      identity_id: string
+      name: string
+      /** bruto: satu orang bisa sekaligus piutang dan utang */
+      payable_idr: number
+      receivable_idr: number
+      net_idr: number
+    }[]
     bill_count: number
     bills: RecapFinalBill[]
   }
