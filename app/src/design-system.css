@@ -37,6 +37,18 @@
   --ds-info: #356b8c;
   --ds-info-bg: #e7f1f7;
 
+  /* Skala jarak: kelipatan 4 seperti DESIGN_SYSTEM.md. Jangan tulis angka px
+     langsung di app.css — dulu 8/10/18/22 tersebar dan tiap layar melenceng. */
+  --ds-space-1: 4px;
+  --ds-space-2: 8px;   /* ikon-teks, tombol berdampingan */
+  --ds-space-3: 12px;  /* padding kartu kecil */
+  --ds-space-4: 16px;  /* padding kartu normal */
+  --ds-space-5: 20px;  /* jarak antar blok + gutter layar mobile */
+  --ds-space-6: 24px;  /* padding kartu besar, jarak setelah blok panjang */
+  --ds-space-8: 32px;
+  --ds-gutter: var(--ds-space-5);
+  --ds-touch: 44px;    /* target sentuh minimum */
+
   --ds-radius-sm: 10px;
   --ds-radius-md: 14px;
   --ds-radius-lg: 20px;

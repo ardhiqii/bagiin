@@ -608,7 +608,10 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
         </>
       ) : null}
 
-      <Sheet open={actionsOpen} title="Aksi lain" art={itemArt} onClose={() => setActionsOpen(false)}>
+      {/* Tanpa ilustrasi: piring-garpu-pisau itu arti 'item', bukan 'aksi'.
+          Untuk daftar aksi, judul + label sudah cukup; ilustrasi di sini cuma
+          dekorasi yang menyesatkan. */}
+      <Sheet open={actionsOpen} title="Aksi lain" onClose={() => setActionsOpen(false)}>
         {data && me && me.identity_id === data.paid_by_id && !data.settled ? (
           <p className="app-note">Bagian kamu otomatis lunas. Yang perlu ditandai lunas adalah orang lain.</p>
         ) : null}
@@ -676,8 +679,9 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             )
           ) : null}
           {me && me.paid === 'paid' && me.total_idr > 0 ? (
+            // neutral, bukan hijau: ini membatalkan status, bukan konfirmasi
             <Button
-              variant="secondary"
+              variant="quiet"
               block
               onClick={() => {
                 setActionsOpen(false)

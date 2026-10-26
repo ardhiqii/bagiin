@@ -105,6 +105,43 @@ Setiap komponen di bawah harus punya seluruh state-nya sebelum React dianggap si
 
 Aturan yang mengikat semua komponen: target sentuh minimal 44×44 px, cincin fokus 3 px terlihat, radius hanya empat ukuran (8/12/16/24), dan bayangan hanya untuk lapisan yang menutup konten — kartu biasa memakai garis border.
 
+## Implementasi token (react)
+
+Skala di atas sudah jadi variabel CSS di `app/src/design-system.css`. Pakai
+nama ini, jangan angka mentah:
+
+| token | nilai | untuk |
+|---|---|---|
+| `--ds-space-1` | 4px | ikon kecil, chip |
+| `--ds-space-2` | 8px | ikon ↔ teks, dua tombol berdampingan |
+| `--ds-space-3` | 12px | padding kartu kecil, gap dalam grup |
+| `--ds-space-4` | 16px | padding kartu normal |
+| `--ds-space-5` | 20px | jarak antar blok halaman + gutter mobile |
+| `--ds-space-6` | 24px | padding kartu besar, jarak setelah blok panjang |
+| `--ds-space-8` | 32px | pemisah antar seksi besar |
+| `--ds-gutter` | = `--ds-space-5` | gutter kiri-kanan |
+| `--ds-touch` | 44px | target sentuh minimum |
+
+Tiga hal yang pernah bikin layout rusak dan harus dijaga:
+
+1. `.app-body > * { flex: 0 0 auto; }` — tanpa ini flexbox mengompres kartu yang
+   isinya tinggi; kartu total pernah jatuh ke 40px dari 139px sehingga nominal
+   hero terpotong dan tidak terlihat sama sekali.
+2. `html, body, button, input, select, textarea` wajib memakai `--ds-font-body`.
+   Elemen yang di-portal ke `<body>` (toast, sheet) tidak mewarisi font dari
+   `.app-shell` dan jatuh ke Times New Roman.
+3. `.app-bottom` memakai `--ds-gutter`; tanpa itu CTA menempel ke tepi layar
+   sementara kartu di atasnya punya gutter.
+
+Konvensi tambahan:
+
+- Bar aksi bawah = satu CTA utama + tombol **Aksi lain** pembuka sheet. Aksi
+  sekunder dan destruktif masuk sheet, tidak menumpuk di halaman.
+- Sheet utilitas tanpa ilustrasi. Ilustrasi hanya untuk sheet bercerita (undang
+  teman, ganti pembayar, atur bagian). Piring-garpu-pisau di sheet "Aksi lain"
+  salah arti: aset itu untuk konsep *item*, bukan *aksi*.
+- Thumbnail struk 84×112, diketuk membuka viewer penuh dengan penanda "n dari m".
+
 ## Empat larangan mahal
 
 Bukan preferensi visual. Ini empat hal yang kalau dilanggar membuat orang mentransfer nominal salah atau tidak bisa memakai aplikasi.

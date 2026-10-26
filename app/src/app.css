@@ -59,7 +59,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 18px;
+  padding: var(--ds-space-3) var(--ds-gutter);
   background: color-mix(in srgb, var(--ds-bg) 88%, transparent);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 70%, transparent);
@@ -109,11 +109,11 @@ textarea {
 .app-body {
   flex: 1;
   min-height: 0;
-  padding: 18px 18px 24px;
+  padding: var(--ds-gutter) var(--ds-gutter) var(--ds-space-6);
   scroll-padding-bottom: 24px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--ds-space-5);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -124,7 +124,7 @@ textarea {
   z-index: 30;
   /* Padding samping sama dengan .app-body supaya tombol utama tidak menempel
      ke tepi layar sementara kartu di atasnya punya gutter 18 px. */
-  padding: 10px 18px 6px;
+  padding: var(--ds-space-3) var(--ds-gutter) var(--ds-space-2);
   background: var(--ds-bg);
   box-shadow: 0 -12px 24px color-mix(in srgb, var(--ds-navy) 6%, transparent);
 }
@@ -133,7 +133,7 @@ textarea {
   width: 100%;
   display: flex;
   justify-content: space-around;
-  padding: 8px 18px calc(8px + env(safe-area-inset-bottom));
+  padding: var(--ds-space-2) var(--ds-gutter) calc(var(--ds-space-2) + env(safe-area-inset-bottom));
   background: var(--ds-bg);
   border-top: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
 }
@@ -184,8 +184,8 @@ textarea {
 .app-row small { display: block; font-size: 11.5px; color: var(--ds-muted); margin-top: 2px; }
 .app-row .amt { text-align: right; font-variant-numeric: tabular-nums; font-weight: 800; font-size: 14.5px; }
 
-.app-stack { display: flex; flex-direction: column; gap: 10px; }
-.app-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.app-stack { display: flex; flex-direction: column; gap: var(--ds-space-3); }
+.app-inline { display: flex; align-items: center; gap: var(--ds-space-2); flex-wrap: wrap; }
 .app-spacer { flex: 1; }
 
 .app-note {
@@ -236,7 +236,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 14px 18px;
+  padding: var(--ds-space-3) var(--ds-gutter);
   border-top: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
 }
 .create-dock .tot { flex: 1; min-width: 0; display: grid; gap: 2px; }
@@ -267,7 +267,7 @@ textarea {
   gap: 14px;
   align-items: center;
 }
-.art-card img { border-radius: 18px; object-fit: cover; }
+.art-card img { border-radius: var(--ds-radius-lg); object-fit: cover; }
 
 .art-head {
   display: grid;
@@ -399,7 +399,7 @@ textarea {
   align-items: flex-start;
   gap: 12px;
   padding: 12px;
-  border-radius: 18px;
+  border-radius: var(--ds-radius-lg);
   background: var(--ds-surface);
   box-shadow: inset 0 0 0 1px var(--ds-border);
 }
@@ -421,8 +421,8 @@ textarea {
 .photo-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 10px;
+  gap: var(--ds-space-2);
+  margin-top: var(--ds-space-3);
 }
 .photo-actions .ds-button {
   width: 100%;
@@ -434,9 +434,13 @@ textarea {
 .link-quiet {
   border: 0;
   background: none;
-  /* target sentuh minimal 32 px walau tampilannya teks kecil */
-  padding: 8px 2px;
-  margin: -8px 0;
+  /* target sentuh 44 px walau tampilannya cuma teks: padding dinaikkan lalu
+     dikompensasi margin negatif supaya tinggi baris tidak berubah */
+  min-height: var(--ds-touch);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--ds-space-1);
+  margin: calc(-1 * var(--ds-space-3)) calc(-1 * var(--ds-space-1));
   font: 700 12.5px var(--ds-font-body);
   color: var(--ds-teal);
   cursor: pointer;
@@ -464,13 +468,13 @@ textarea {
 .bill-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ds-space-2);
 }
 .bill-actions .ds-button { flex: 1; }
 .bill-actions .ds-button:first-child { flex: 0 0 auto; }
 
 /* Sheet aksi: tombol berjarak rapat, bukan menumpuk penuh. */
-.app-stack-tight { display: grid; gap: 8px; margin-top: 6px; }
+.app-stack-tight { display: grid; gap: var(--ds-space-2); margin-top: var(--ds-space-2); }
 .sheet-divider { border-top: 1px solid var(--ds-border); margin: 4px 0 2px; }
 
 /* Thumbnail struk bisa diketuk untuk dilihat penuh. */
@@ -488,7 +492,7 @@ textarea {
 .receipt-open:hover { box-shadow: 0 0 0 1px var(--ds-teal), var(--ds-shadow-soft, 0 2px 8px rgba(20, 47, 58, .08)); }
 
 /* Viewer foto: struk penuh di tengah, navigasi di bawahnya. */
-.photo-viewer { display: grid; gap: 12px; }
+.photo-viewer { display: grid; gap: var(--ds-space-3); }
 .photo-viewer img {
   width: 100%;
   max-height: 62dvh;
@@ -500,14 +504,14 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--ds-space-2);
 }
 
 /* Beberapa foto: struk panjang, atau screenshot pesanan dari aplikasi lain. */
 .photo-block {
   display: grid;
-  gap: 8px;
-  padding: 14px;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-3);
   border-radius: 20px;
   background: var(--ds-surface);
   box-shadow: inset 0 0 0 1px var(--ds-border);
@@ -515,7 +519,7 @@ textarea {
 .photo-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: var(--ds-space-2);
 }
 .photo-tile {
   position: relative;
@@ -541,8 +545,8 @@ textarea {
   position: absolute;
   top: 5px;
   right: 5px;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   border: 0;
   border-radius: 50%;
   background: rgba(255, 255, 255, .92);
@@ -602,7 +606,7 @@ textarea {
 .account-card {
   padding: 14px 16px;
   background: var(--ds-surface);
-  border-radius: 18px;
+  border-radius: var(--ds-radius-lg);
 }
 .account-card + .account-card { margin-top: 8px; }
 .account-no {
@@ -629,7 +633,7 @@ textarea {
   display: grid;
   grid-template-columns: 1fr;
   background: var(--ds-surface);
-  border-radius: 18px;
+  border-radius: var(--ds-radius-lg);
   overflow: hidden;
 }
 .item-line + .item-line { margin-top: 8px; }
@@ -714,7 +718,7 @@ textarea {
     flex: none;
     overflow: visible;
     min-height: calc(100dvh - 122px);
-    padding: 22px 22px 28px;
+    padding: var(--ds-space-6) var(--ds-space-6) var(--ds-space-8);
   }
   /* sticky, bukan fixed: tetap memakan ruangnya sendiri sehingga isi
      terakhir tidak pernah tertutup */
@@ -771,7 +775,7 @@ textarea {
 
   .app-brand {
     display: block;
-    padding: 0 14px 22px;
+    padding: 0 var(--ds-space-3) var(--ds-space-6);
     font-family: var(--ds-font-display);
     font-size: 21px;
     font-weight: 800;
