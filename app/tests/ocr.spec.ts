@@ -56,4 +56,42 @@ test.describe('Bagiin — baca struk dari foto', () => {
     const response = await page.request.get(src as string)
     expect(response.status()).toBe(200)
   })
+
+  test('37. hasil foto struk ikut aturan porsi: yang belum diambil jadi tanggungan', async ({ page, browser }) => {
+    await freshUser(page, 'Aufa')
+    await page.goto('/create')
+
+    const note = page.getByText('Struk terbaca. Cek lagi angkanya ya.')
+    const input = page.locator('input[type="file"]')
+    await input.setInputFiles('tests/fixtures/receipt.png')
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await expect(note).toBeVisible({ timeout: 45_000 })
+        break
+      } catch (err) {
+        if (attempt === 1) throw err
+        await page.waitForTimeout(15_000)
+        await input.setInputFiles('tests/fixtures/receipt.png')
+      }
+    }
+
+    // struk uji: 3 baris, total 96.800
+    await page.getByLabel('Nama bill').fill('Struk sebagian ' + stamp)
+    await page.getByRole('button', { name: 'Buat bill' }).click()
+    await expect(page).toHaveURL(/\/b\//)
+
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const guest = await ctx.newPage()
+    await freshUser(guest, 'Bima')
+    await guest.goto(page.url())
+    await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
+    await guest.getByRole('button', { name: /Nasi goreng, ketuk untuk/ }).click()
+    // nasi 45.000 + pajak proporsionalnya 4.500 = 49.500
+    await expect(guest.getByText(/bagian kamu Rp49\.500/)).toBeVisible()
+
+    // dua baris lain belum diambil: muncul sebagai tanggungan, bukan dibebankan
+    await page.reload()
+    await expect(page.getByText(/2 item belum dipilih/)).toBeVisible()
+    await ctx.close()
+  })
 })

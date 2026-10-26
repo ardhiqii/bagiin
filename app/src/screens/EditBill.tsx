@@ -11,7 +11,16 @@ import type { BillItem } from '../lib/types'
 
 const formatRd = (value: number): string => formatRp(value).replace('Rp', '')
 
-type Draft = { id?: number; key: string; name: string; qty: string; price: string; slots: string }
+type Draft = {
+  id?: number
+  key: string
+  name: string
+  qty: string
+  price: string
+  /** bill lama bisa masih bermode slot; nilainya dibawa apa adanya, tak ditampilkan */
+  mode: 'free' | 'slot'
+  slotCount: number | null
+}
 
 const draftFrom = (item: BillItem): Draft => ({
   id: item.id,
@@ -19,7 +28,8 @@ const draftFrom = (item: BillItem): Draft => ({
   name: item.name,
   qty: String(item.quantity),
   price: formatRd(item.price_idr),
-  slots: item.mode === 'slot' && item.slot_count ? String(item.slot_count) : '',
+  mode: item.mode === 'slot' ? 'slot' : 'free',
+  slotCount: item.mode === 'slot' ? (item.slot_count ?? null) : null,
 })
 
 export function EditBill({ billId, identityId }: { billId: string; identityId: string | null }) {
@@ -58,7 +68,8 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
     name: draft.name.trim(),
     qty: Math.max(1, Number.parseInt(draft.qty || '1', 10) || 1),
     price: parseRupiah(draft.price),
-    slots: Number(draft.slots),
+    mode: draft.id ? draft.mode : ('free' as const),
+    slotCount: draft.id ? draft.slotCount : null,
   }))
   const subtotal = parsed.reduce((sum, item) => sum + item.price * item.qty, 0)
   const taxIdr = parseRupiah(taxValue)
@@ -93,8 +104,10 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
             price: item.price,
             discount: 0,
             quantity: item.qty,
-            mode: item.slots > 1 ? 'slot' : 'free',
-            slot_count: item.slots > 1 ? item.slots : null,
+            // bill lama yang bermode slot dikirim balik dengan mode aslinya:
+            // mengubahnya jadi bebas akan mengubah pembagian yang sudah jalan
+            mode: item.mode,
+            slot_count: item.mode === 'slot' ? item.slotCount : null,
           })),
         },
       })
@@ -163,7 +176,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
                 onClick={() =>
                   setItems((prev) => [
                     ...(prev ?? drafts),
-                    { key: 'new-' + Math.random().toString(36).slice(2), name: '', qty: '1', price: '', slots: '' },
+                    { key: 'new-' + Math.random().toString(36).slice(2), name: '', qty: '1', price: '', mode: 'free', slotCount: null },
                   ])
                 }
               >
@@ -214,23 +227,6 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
                     >
                       ×
                     </button>
-                  </div>
-                  <div className="item-slot">
-                    <label htmlFor={'edit-item-slots-' + index}>Dibagi rata jadi</label>
-                    <input
-                      id={'edit-item-slots-' + index}
-                      aria-label={'Jumlah slot baris ' + (index + 1)}
-                      inputMode="numeric"
-                      value={draft.slots}
-                      onChange={(event) =>
-                        setItems((prev) =>
-                          (prev ?? drafts).map((it) =>
-                            it.key === draft.key ? { ...it, slots: event.target.value.replace(/[^0-9]/g, '') } : it,
-                          ),
-                        )
-                      }
-                    />
-                    <span>slot</span>
                   </div>
                 </div>
               </div>

@@ -29,7 +29,9 @@ function summarizeUncovered(data: BillResponse) {
   const slotCount = data.uncovered_slots.reduce((sum, slot) => sum + slot.empty, 0)
   const parts: string[] = []
   if (freeNames.length > 0) parts.push(freeNames.length + ' item belum dipilih')
-  if (slotCount > 0) parts.push(slotCount + ' slot belum terisi')
+  // istilah "slot" sudah tidak dipakai: yang tersisa adalah porsi yang belum
+  // diambil siapa pun, dan itu ditanggung yang menalangi.
+  if (slotCount > 0) parts.push(slotCount + ' porsi belum ada yang ambil')
   return {
     has: parts.length > 0,
     title: parts.join(' · '),
@@ -135,23 +137,19 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
     if (!item) return
     const mine = myPicks.get(itemId) ?? 0
     const next = new Map(myPicks)
-
-    if (item.mode === 'slot') {
-      const taken = (data?.sel_by_item[String(itemId)] ?? [])
-        .filter((s) => s.id !== identityId)
-        .reduce((sum, s) => sum + s.qty, 0)
-      const room = (item.slot_count ?? 1) - taken
-      // ketuk menambah satu slot; kalau sudah penuh dari sisi saya, ketuk lagi mengosongkan
-      if (mine >= room) next.delete(itemId)
-      else next.set(itemId, mine + 1)
-    } else {
-      if (mine > 0) next.delete(itemId)
-      else next.set(itemId, 1)
-    }
+    const taken = (data?.sel_by_item[String(itemId)] ?? [])
+      .filter((s) => s.id !== identityId)
+      .reduce((sum, s) => sum + s.qty, 0)
+    // Satu ketukan = satu porsi. Baris qty 3 bisa diambil 1, 2, atau 3 kali;
+    // ketukan saat sudah penuh mengosongkan pilihan. Slot lama tetap dibatasi
+    // jumlah slotnya.
+    const room = item.mode === 'slot' ? (item.slot_count ?? 1) - taken : item.quantity
+    if (mine >= room) next.delete(itemId)
+    else next.set(itemId, mine + 1)
     await savePicks(next, itemId)
   }
 
-  async function stepSlots(itemId: number, delta: number) {
+  async function stepPortion(itemId: number, delta: number) {
     const mine = myPicks.get(itemId) ?? 0
     const nextQty = mine + delta
     const next = new Map(myPicks)
@@ -225,7 +223,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             <small className="ds-balance-note">
               {data.people.length} orang · {data.items.length} item
               {me ? ' · bagian kamu ' + formatRp(me.total_idr) : ''}
-              {me && data.uncovered_idr > 0 ? ' + ' + formatRp(data.uncovered_idr) + ' yang belum ada pemiliknya' : ''}
+              {me && data.uncovered_idr > 0 ? ' + ' + formatRp(data.uncovered_idr) + ' yang belum ada yang ambil' : ''}
             </small>
           </div>
 
@@ -327,8 +325,11 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               const slotTotal = item.slot_count ?? 0
               const taken = selectors.reduce((sum, s) => sum + s.qty, 0)
               const isSlot = item.mode === 'slot'
-              const lineTotal = item.price_idr * item.quantity - item.discount_idr
+              // harga satuan = yang dibayar satu ketukan; lineTotal = seluruh baris
+              const unit = Math.max(0, item.price_idr - item.discount_idr)
+              const lineTotal = unit * item.quantity
               const perSlot = isSlot && slotTotal > 0 ? Math.floor(lineTotal / slotTotal) : 0
+              const stepTotal = isSlot ? slotTotal : item.quantity
               const editable = joined && data.bill.status === 'open'
               return (
                 <div className="item-line" key={item.id}>
@@ -338,7 +339,9 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                     onClick={() => (editable ? toggleItem(item.id) : undefined)}
                     disabled={!editable || busyItem === item.id}
                     aria-pressed={mine > 0}
-                    aria-label={item.name + ', ketuk untuk ' + (mine > 0 ? 'membatalkan' : 'memilih')}
+                    aria-label={
+                      item.name + ', ketuk untuk ' + (mine >= (item.mode === 'slot' ? (item.slot_count ?? 1) : item.quantity) ? 'membatalkan' : mine > 0 ? 'menambah porsi' : 'memilih')
+                    }
                   >
                     <span className="ds-item-check" aria-hidden="true">
                       {mine > 0 ? <span>{mine > 1 ? mine : <Check size={13} weight="bold" />}</span> : null}
@@ -346,30 +349,37 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                     <span className="ds-item-copy">
                       <b>{item.name}</b>
                       <small>
+                        {/* harga sudah tampil di kanan; di sini cukup statusnya,
+                            dan tanpa "1/2" yang bisa dibaca "setengah tiket" */}
                         {isSlot
-                          ? slotTotal + ' slot · ' + formatRp(perSlot) + '/slot · sisa ' + (slotTotal - taken)
+                          ? slotTotal + ' bagian · ' + formatRp(perSlot) + '/bagian · sisa ' + (slotTotal - taken)
                           : item.quantity > 1
-                            ? item.quantity + '× ' + formatRp(item.price_idr)
-                            : formatRp(item.price_idr)}
-                        {label ? ' · ' + label : ' · belum ada yang ambil'}
+                            ? taken + ' dari ' + item.quantity + ' diambil'
+                            : null}
+                        {isSlot || item.quantity > 1 ? ' · ' : ''}
+                        {label || 'belum ada yang ambil'}
                       </small>
                     </span>
                     <span className="ds-item-price">
-                      <Money value={lineTotal} size="small" />
+                      {/* angka di kanan = harga yang muncul saat baris ini diketuk */}
+                      <Money value={isSlot ? lineTotal : item.quantity > 1 ? unit : lineTotal} size="small" />
                     </span>
                   </button>
 
-                  {isSlot && editable ? (
+                  {(isSlot || item.quantity > 1) && editable ? (
                     <div className="slot-ctl">
-                      <button type="button" onClick={() => stepSlots(item.id, -1)} disabled={mine === 0 || busyItem === item.id} aria-label={'Kurangi slot ' + item.name}>
+                      <button type="button" onClick={() => stepPortion(item.id, -1)} disabled={mine === 0 || busyItem === item.id} aria-label={'Kurangi porsi ' + item.name}>
                         −
                       </button>
-                      <span aria-live="polite">{mine}/{slotTotal}</span>
+                      <span aria-live="polite">{mine}/{stepTotal}</span>
                       <button
                         type="button"
-                        onClick={() => stepSlots(item.id, 1)}
-                        disabled={mine >= slotTotal - (taken - mine) || busyItem === item.id}
-                        aria-label={'Tambah slot ' + item.name}
+                        onClick={() => stepPortion(item.id, 1)}
+                        disabled={
+                          busyItem === item.id ||
+                          (isSlot ? mine >= slotTotal - (taken - mine) : mine >= item.quantity)
+                        }
+                        aria-label={'Tambah porsi ' + item.name}
                       >
                         +
                       </button>
@@ -593,7 +603,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
             {canManage && data.bill.status === 'open' && data.items.some((item) => item.mode === 'slot') ? (
               <Button variant="quiet" block onClick={() => setSlotOpen(true)}>
-                Atur jumlah slot
+                Atur jumlah bagian
               </Button>
             ) : null}
 
@@ -684,10 +694,10 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
         </Button>
       </Sheet>
 
-      <Sheet open={slotOpen} title="Atur jumlah slot" art={itemArt} onClose={() => setSlotOpen(false)}>
+      <Sheet open={slotOpen} title="Atur jumlah bagian" art={itemArt} onClose={() => setSlotOpen(false)}>
         <p className="app-note">
-          Slot menentukan berapa orang yang bisa ambil bagian item ini. Menambah slot membuat porsi tiap orang lebih kecil;
-          menguranginya tidak bisa di bawah jumlah yang sudah diambil.
+          Ini hanya untuk bill lama yang dibuat sebelum aturan baru. Jumlah bagian menentukan berapa orang yang bisa ambil
+          item ini; menguranginya tidak bisa di bawah yang sudah diambil.
         </p>
         <div>
           {data?.items.filter((item) => item.mode === 'slot').map((item) => {
@@ -697,23 +707,23 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               <div className="app-row" key={item.id}>
                 <span className="grow">
                   <b>{item.name}</b>
-                  <small>{count} slot · {taken} sudah diambil</small>
+                  <small>{count} bagian · {taken} sudah diambil</small>
                 </span>
                 <div className="slot-ctl">
                   <button
                     type="button"
-                    aria-label={'Kurangi jumlah slot ' + item.name}
+                    aria-label={'Kurangi jumlah bagian ' + item.name}
                     disabled={count <= Math.max(1, taken)}
-                    onClick={() => run(billActions.setSlots(billId, item.id, count - 1), 'Slot ' + item.name + ' jadi ' + (count - 1))}
+                    onClick={() => run(billActions.setSlots(billId, item.id, count - 1), 'Bagian ' + item.name + ' jadi ' + (count - 1))}
                   >
                     −
                   </button>
                   <span>{count}</span>
                   <button
                     type="button"
-                    aria-label={'Tambah jumlah slot ' + item.name}
+                    aria-label={'Tambah jumlah bagian ' + item.name}
                     disabled={count >= 24}
-                    onClick={() => run(billActions.setSlots(billId, item.id, count + 1), 'Slot ' + item.name + ' jadi ' + (count + 1))}
+                    onClick={() => run(billActions.setSlots(billId, item.id, count + 1), 'Bagian ' + item.name + ' jadi ' + (count + 1))}
                   >
                     +
                   </button>
