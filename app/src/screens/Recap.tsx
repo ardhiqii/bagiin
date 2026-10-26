@@ -42,7 +42,11 @@ export function Recap({ identityId }: { identityId: string | null }) {
   // daftar final diambil dari respons rekap, bukan dari flag `settled` per bill:
   // angkanya dihitung dari aturan "pembagian sudah final", yang tidak sama
   // dengan "semua orang sudah lunas"
-  const settledBills = data?.final.bills ?? []
+  // backend mengurutkan naik (paling lama dulu) karena dipakai juga untuk
+  // drilldown yang stabil. Untuk dibaca, yang terbaru harus di atas.
+  const settledBills = [...(data?.final.bills ?? [])].sort((a, b) =>
+    (b.created_at ?? '').localeCompare(a.created_at ?? ''),
+  )
 
   // dikelompokkan per bulan: 50+ bill final dalam satu daftar panjang tidak bisa
   // menjawab pertanyaan yang sebenarnya orang cari, "bulan ini aku keluar berapa"
