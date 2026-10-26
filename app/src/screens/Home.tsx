@@ -119,7 +119,7 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
         value={Math.abs(net)}
         note={
           provisional && provisional.bill_count > 0
-            ? 'Belum termasuk ' + provisional.bill_count + ' bill yang masih berjalan'
+            ? 'Belum termasuk ' + provisional.bill_count + ' bill yang pembagiannya belum jelas'
             : 'Semua bill sudah selesai'
         }
       />

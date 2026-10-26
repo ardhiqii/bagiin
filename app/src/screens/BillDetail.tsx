@@ -331,7 +331,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               <div>
                 <b style={{ fontSize: 14 }}>Semua sudah lunas</b>
                 <p className="app-note" style={{ margin: '4px 0 0' }}>
-                  {formatRp(data.bill.total_idr)} sudah dibayar penuh. Bill ini tersimpan di rekap.
+                  {formatRp(data.bill.total_idr)} sudah dibayar penuh. Bill ini tidak muncul lagi di rekap.
                 </p>
               </div>
             </div>
