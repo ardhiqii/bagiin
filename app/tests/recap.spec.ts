@@ -36,7 +36,11 @@ test.describe('Bagiin — rekap memisahkan yang pasti dan belum pasti', () => {
 
     await expect(page.getByText(title)).toHaveCount(0)
 
+    // rekap tidak lagi mendaftar bill per bill (itu tugas Beranda); buktinya
+    // bill pindah ke daftar final dan masuk ke total bulanan
+    await expect(page.getByRole('tab', { name: /Belum final/ })).toContainText('0')
     await page.getByRole('tab', { name: /Sudah final/ }).click()
-    await expect(page.getByText(title)).toBeVisible()
+    await expect(page.getByRole('tab', { name: /Sudah final/ })).toContainText('1')
+    await expect(page.getByText('Semua bill final')).toBeVisible()
   })
 })

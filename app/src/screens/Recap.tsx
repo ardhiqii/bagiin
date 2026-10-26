@@ -19,8 +19,14 @@ function blockers(bill: RecapBill) {
   for (const item of bill.uncovered_items) {
     parts.push(item.name + ' ' + formatRp(item.amount_idr) + ' belum ada yang ngaku')
   }
+  // item yang tidak dipilih siapa pun: uangnya sudah masuk bagian pembayar,
+  // tapi harus disebut supaya kelihatan
+  for (const item of bill.owner_absorbed_items) {
+    parts.push(item.name + ' ' + formatRp(item.amount_idr) + ' belum ada yang ngaku')
+  }
+  const named = new Set([...bill.uncovered_items, ...bill.owner_absorbed_items].map((i) => i.name))
   for (const name of bill.unassigned_items) {
-    parts.push(name + ' belum ada yang pilih')
+    if (!named.has(name)) parts.push(name + ' belum ada yang pilih')
   }
   if (parts.length === 0) {
     if (bill.reason_codes.includes('pending_selection')) parts.push('ada yang belum pilih item')
@@ -29,13 +35,6 @@ function blockers(bill: RecapBill) {
     else parts.push('belum bisa dihitung pasti')
   }
   return parts.join(' · ')
-}
-
-function shortDate(value: string | null) {
-  if (!value) return ''
-  const parsed = new Date(value.replace(' ', 'T'))
-  if (Number.isNaN(parsed.getTime())) return ''
-  return parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
 }
 
 function monthLabel(value: string | null) {
@@ -247,7 +246,7 @@ export function Recap({ identityId }: { identityId: string | null }) {
             <>
               {unpaid.length > 0 ? (
                 <section className="app-stack">
-                  <strong style={{ fontSize: 14, fontWeight: 800 }}>Kamu bayar</strong>
+                  <strong style={{ fontSize: 14, fontWeight: 800 }}>Belum kamu transfer</strong>
                   <div className="app-list">
                     {unpaid.map((c) => (
                       <div className="app-row" key={c.identity_id}>
@@ -268,7 +267,7 @@ export function Recap({ identityId }: { identityId: string | null }) {
 
               {owed.length > 0 ? (
                 <section className="app-stack">
-                  <strong style={{ fontSize: 14, fontWeight: 800 }}>Kamu tagih</strong>
+                  <strong style={{ fontSize: 14, fontWeight: 800 }}>Belum kamu tagih</strong>
                   <div className="app-list">
                     {owed.map((c) => (
                       <div className="app-row" key={c.identity_id}>
@@ -289,53 +288,43 @@ export function Recap({ identityId }: { identityId: string | null }) {
 
               {finalBills.length > 0 ? (
                 <div className="app-inline">
-                  <strong style={{ fontSize: 14, fontWeight: 800 }}>Arsip per bulan</strong>
+                  <strong style={{ fontSize: 14, fontWeight: 800 }}>Keluar per bulan</strong>
                   <span className="app-spacer" />
                   <span className="app-note" style={{ margin: 0 }}>
-                    bagianmu
+                    dari bill final
                   </span>
                 </div>
               ) : null}
 
-              {[...groups.entries()].map(([month, list]) => {
-                const subtotal = list.reduce((sum, bill) => sum + bill.my_total_idr, 0)
-                return (
-                  <div className="recap-month" key={month}>
-                    <div className="recap-month-head">
-                      <span>{month}</span>
-                      <span>{formatRp(subtotal)}</span>
+              {/* Daftar bill per bulan TIDAK diulang di sini: itu tugas Beranda.
+                  Yang rekap butuhkan hanya angkanya — berapa yang keluar tiap
+                  bulan — supaya satu layar tetap terbaca. */}
+              <div className="app-list">
+                {[...groups.entries()].map(([month, list]) => {
+                  const subtotal = list.reduce((sum, bill) => sum + bill.my_total_idr, 0)
+                  return (
+                    <div className="app-row" key={month}>
+                      <span className="grow">
+                        <b>{month}</b>
+                        <small>{list.length} bill final</small>
+                      </span>
+                      <span className="amt">
+                        {formatRp(subtotal)}
+                        <small style={{ display: 'block', fontWeight: 600, color: 'var(--ds-muted)' }}>
+                          bagianmu
+                        </small>
+                      </span>
                     </div>
-                    <div className="app-list">
-                      {list.map((bill) => (
-                        <Link
-                          key={bill.bill_id}
-                          to="/b/$billId"
-                          params={{ billId: bill.bill_id }}
-                          style={{ textDecoration: 'none', color: 'inherit' }}
-                        >
-                          <span className="app-row">
-                            <span className="grow">
-                              <b>{bill.title}</b>
-                              <small>
-                                {shortDate(bill.created_at)}
-                                {bill.merchant ? ' · ' + bill.merchant : ''}
-                              </small>
-                            </span>
-                            <span className="amt">
-                              {bill.my_total_idr > 0 ? formatRp(bill.my_total_idr) : '—'}
-                              <small style={{ display: 'block', fontWeight: 600, color: 'var(--ds-muted)' }}>
-                                {bill.my_total_idr === bill.total_idr
-                                  ? 'seluruh bill'
-                                  : 'dari ' + formatRp(bill.total_idr)}
-                              </small>
-                            </span>
-                          </span>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+                <div className="app-row">
+                  <span className="grow">
+                    <b>Semua bill final</b>
+                    <small>{finalBills.length} bill · termasuk yang belum kamu transfer</small>
+                  </span>
+                  <span className="amt">{formatRp(finalBills.reduce((sum, bill) => sum + bill.my_total_idr, 0))}</span>
+                </div>
+              </div>
             </>
           ) : null}
 

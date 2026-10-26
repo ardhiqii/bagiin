@@ -171,10 +171,11 @@ test.describe('Bagiin — kasus pinggir', () => {
     await ctx.close()
 
     await page.goto('/recap')
-    // bill yang sudah lunas pindah ke tab "Sudah final", tidak lagi tampil
-    // di daftar utama
+    // rekap tidak lagi mendaftar ulang bill per bill (itu tugas Beranda);
+    // yang bisa diperiksa di sini adalah perpindahannya ke daftar final
     await page.getByRole('tab', { name: /Sudah final/ }).click()
-    await expect(page.getByText('Final ' + stamp)).toBeVisible()
+    await expect(page.getByRole('tab', { name: /Sudah final/ })).toContainText('1')
+    await expect(page.getByText('Keluar per bulan')).toBeVisible()
   })
 
   test('19. layar tidak melebar di 390 px', async ({ page }) => {

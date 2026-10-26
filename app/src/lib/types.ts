@@ -133,6 +133,9 @@ export type RecapBill = {
   uncovered_items: { name: string; amount_idr: number }[]
   /** item yang sama sekali belum dipilih siapa pun */
   unassigned_items: string[]
+  /** item tanpa pemilih yang uangnya ditanggung pembayar */
+  owner_absorbed_idr: number
+  owner_absorbed_items: { name: string; amount_idr: number }[]
   paid_by_name: string | null
   can_manage: boolean
 }
