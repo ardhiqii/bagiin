@@ -145,8 +145,9 @@ test.describe('Bagiin — perilaku user', () => {
   test('8. navigasi bawah pindah layar tanpa error', async ({ page }) => {
     await onboard(page, 'Aufa')
     const nav = page.getByRole('navigation', { name: 'Navigasi utama' })
-    await nav.getByRole('link', { name: 'Bill', exact: true }).click()
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Semua bill')
+    // daftar bill sekarang menyatu dengan beranda: tab "Bill" hilang
+    await expect(nav.getByRole('link', { name: 'Bill', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Halo')
     await nav.getByRole('link', { name: 'Rekap', exact: true }).click()
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Rekap')
     await nav.getByRole('link', { name: 'Beranda', exact: true }).click()

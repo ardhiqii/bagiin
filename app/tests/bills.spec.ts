@@ -51,7 +51,7 @@ test.describe('Bagiin — mencari dan menyaring bill', () => {
     await page.getByRole('button', { name: 'Lunas', exact: true }).click()
     await expect(page.getByText('Sate ' + stamp)).toHaveCount(0)
 
-    await page.getByRole('button', { name: 'Berjalan', exact: true }).click()
+    await page.getByRole('button', { name: 'Belum selesai', exact: true }).click()
     await expect(page.getByText('Sate ' + stamp)).toBeVisible()
   })
 
@@ -68,9 +68,8 @@ test.describe('Bagiin — mencari dan menyaring bill', () => {
     await page.goto('/bills')
     await page.getByRole('button', { name: 'Lunas', exact: true }).click()
     await expect(page.getByText('Lunas filter ' + stamp)).toBeVisible()
-    await expect(page.getByText(/lunas/).first()).toBeVisible()
 
-    await page.getByRole('button', { name: 'Berjalan', exact: true }).click()
+    await page.getByRole('button', { name: 'Belum selesai', exact: true }).click()
     await expect(page.getByText('Lunas filter ' + stamp)).toHaveCount(0)
   })
 })

@@ -493,6 +493,86 @@ textarea {
   letter-spacing: .06em;
   color: var(--ds-navy);
 }
+/* Pencarian ringkas: ikon di dalam kolom, tinggi 44 px, tanpa label terpisah.
+   Label di atas kolom membuat layar daftar terasa seperti formulir. */
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-height: var(--ds-touch);
+  padding: 0 var(--ds-space-3);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-surface);
+  color: var(--ds-muted);
+  box-shadow: var(--ds-shadow-content);
+}
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ds-navy);
+  outline: none;
+  padding: var(--ds-space-3) 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.search-field input::placeholder { color: var(--ds-muted-soft); }
+.search-field input::-webkit-search-cancel-button { display: none; }
+.search-clear {
+  border: 0;
+  background: var(--ds-bg-deep);
+  color: var(--ds-muted);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 16px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+/* Banner tipis yang bisa diketuk: pengganti Alert besar supaya daftar tidak
+   terdorong jauh ke bawah layar. */
+.app-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  width: 100%;
+  text-align: left;
+  padding: var(--ds-space-3);
+  border: 0;
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-surface);
+  box-shadow: var(--ds-shadow-content);
+  color: var(--ds-navy);
+  font: inherit;
+  cursor: pointer;
+}
+.app-banner-text { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.app-banner-text b { font-size: 13.5px; }
+.app-banner-text small { font-size: 11.5px; color: var(--ds-muted); }
+.app-banner.is-pending { background: var(--ds-pending-bg); color: var(--ds-pending); }
+.app-banner.is-pending small { color: var(--ds-pending); opacity: .8; }
+
+/* Pengelompokan bulan di rekap: kepala grup lebih kecil dari judul seksi,
+   angkanya rata kanan seperti kolom angka di daftar. */
+.recap-month { display: grid; gap: var(--ds-space-2); }
+.recap-month-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ds-space-2);
+  padding: 0 var(--ds-space-1);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: capitalize;
+  color: var(--ds-muted);
+}
 .sheet-divider { border-top: 1px solid var(--ds-border); margin: 4px 0 2px; }
 
 /* Thumbnail struk bisa diketuk untuk dilihat penuh. */

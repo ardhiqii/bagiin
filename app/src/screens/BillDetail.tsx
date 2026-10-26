@@ -202,7 +202,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
       title={data?.bill.title ?? 'Bill'}
       subtitle={data?.bill.merchant ?? undefined}
       back
-      active="bill"
+      active="home"
       footer={
         data ? (
           <div className="bill-actions">

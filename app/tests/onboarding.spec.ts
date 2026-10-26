@@ -21,7 +21,8 @@ test.describe('Bagiin — gerbang nama', () => {
 
     for (const [path, needle] of [
       ['/create', 'Buat bill butuh nama dulu'],
-      ['/bills', 'Isi nama dulu supaya daftar bill kamu'],
+      // /bills dialihkan ke beranda, jadi gate-nya memakai kalimat beranda
+      ['/bills', 'Isi nama kamu dulu'],
       ['/recap', 'Isi nama dulu supaya rekap kamu'],
       ['/settings', 'Isi nama dulu untuk membuka pengaturan'],
     ] as const) {

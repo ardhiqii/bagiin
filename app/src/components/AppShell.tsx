@@ -2,13 +2,14 @@ import { Link, useRouter } from '@tanstack/react-router'
 import { useIdentity } from '../lib/identity'
 import { ArrowLeft } from '@phosphor-icons/react'
 import type { ReactNode } from 'react'
-import { NavBill, NavCreate, NavHome, NavRecap } from '../ds/icons'
+import { NavCreate, NavHome, NavRecap } from '../ds/icons'
 
-type Tab = 'home' | 'bill' | 'create' | 'recap'
+/* Tiga tab. "Bill" dulu tab terpisah padahal isinya daftar bill yang sama
+   dengan beranda; penggabungan itu menghapus satu tempat menebak. */
+type Tab = 'home' | 'create' | 'recap'
 
 const TABS: { id: Tab; label: string; to: string; Icon: typeof NavHome }[] = [
   { id: 'home', label: 'Beranda', to: '/', Icon: NavHome },
-  { id: 'bill', label: 'Bill', to: '/bills', Icon: NavBill },
   { id: 'create', label: 'Buat', to: '/create', Icon: NavCreate },
   { id: 'recap', label: 'Rekap', to: '/recap', Icon: NavRecap },
 ]

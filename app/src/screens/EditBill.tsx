@@ -124,7 +124,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
       title="Ubah bill"
       subtitle="Perbaiki judul, item, atau pajak"
       back
-      active="bill"
+      active="home"
       footer={
         // tamu yang membuka /edit tidak boleh melihat tombol simpan sama sekali
         data?.can_manage ? (

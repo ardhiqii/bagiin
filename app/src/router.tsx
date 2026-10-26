@@ -1,6 +1,5 @@
-import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
+import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
 import { Home } from './screens/Home'
-import { Bills } from './screens/Bills'
 import { Create } from './screens/Create'
 import { BillDetail } from './screens/BillDetail'
 import { EditBill } from './screens/EditBill'
@@ -28,13 +27,13 @@ const homeRoute = createRoute({
   },
 })
 
+/* Daftar bill sekarang jadi satu dengan beranda. Alamat lama tetap hidup supaya
+   link yang sudah tersebar tidak jadi 404. */
 const billsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/bills',
-  component: function BillsRoute() {
-    const me = useMe()
-    if (!me) return <Welcome context="Isi nama dulu supaya daftar bill kamu bisa dibuka." />
-    return <Bills identityId={me.id} />
+  beforeLoad: () => {
+    throw redirect({ to: '/' })
   },
 })
 

@@ -129,6 +129,16 @@ export type RecapBill = {
   current_user: { total_idr: number; paid: boolean; direction: string }
 }
 
+/** Satu baris bill yang pembagiannya sudah final (belum tentu lunas). */
+export type RecapFinalBill = {
+  bill_id: string
+  title: string
+  created_at: string | null
+  merchant: string | null
+  my_total_idr: number
+  total_idr: number
+}
+
 export type Recap = {
   identity: { id: string; name: string }
   final: {
@@ -137,6 +147,7 @@ export type Recap = {
     net_idr: number
     counterparties: { identity_id: string; name: string; net_idr: number }[]
     bill_count: number
+    bills: RecapFinalBill[]
   }
   provisional: {
     bill_count: number
