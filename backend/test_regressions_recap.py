@@ -100,6 +100,9 @@ def test_reciprocal_final_bills_net_by_real_identity_with_drilldown():
     assert len(recap["final"]["bills"]) == 2
     assert len({b["bill_id"] for b in recap["final"]["bills"]}) == 2
     assert all(b["bill_id"] for b in recap["final"]["bills"])
+    # total bill harus ikut: tanpa ini UI menulis "dari Rp0"
+    assert all(b["total_idr"] > 0 for b in recap["final"]["bills"])
+    assert all(b["my_total_idr"] >= 0 for b in recap["final"]["bills"])
 
     assert len(recap["final"]["counterparties"]) == 1
     counterparty = recap["final"]["counterparties"][0]

@@ -968,7 +968,9 @@ def _build_identity_recap(identity: dict) -> dict:
                         ),
                         0,
                     ),
-                    "total_idr": response.get("total_idr", 0),
+                    # total bill ada di objek bill, bukan di respons; dulu di sini
+                    # memakai kunci yang tidak ada sehingga UI menulis "dari Rp0"
+                    "total_idr": int(bill.get("total_idr") or 0),
                 }
             )
             for edge in _recap_edges_for_viewer(bill_data, response, viewer_id):
