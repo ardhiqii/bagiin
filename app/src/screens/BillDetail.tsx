@@ -11,6 +11,10 @@ import { useToast } from '../components/Toast'
 import { Alert, Avatar, Button, Field, Money, Sheet, StatusBadge } from '../ds/primitives'
 import inviteArt from '../assets/invite.webp'
 import personArt from '../assets/person.webp'
+import errorArt from '../assets/error.webp'
+import paidArt from '../assets/paid.webp'
+import shareArt from '../assets/share.webp'
+import transferArt from '../assets/transfer.webp'
 import itemArt from '../assets/item.webp'
 import { Check, UsersThree } from '@phosphor-icons/react'
 
@@ -200,9 +204,12 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
       active="bill"
     >
       {bill.isError ? (
-        <Alert tone="danger" title="Bill tidak bisa dibuka">
-          {(bill.error as Error).message}
-        </Alert>
+        <div className="art-empty">
+          <img src={errorArt} alt="" width={160} height={160} />
+          <Alert tone="danger" title="Bill tidak bisa dibuka">
+            {(bill.error as Error).message}
+          </Alert>
+        </div>
       ) : null}
 
       {bill.isPending ? <div className="app-note">Memuat bill…</div> : null}
@@ -222,8 +229,20 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             </small>
           </div>
 
+          {data.settled ? (
+            <div className="ds-card ds-card-mint ds-pad-md art-card">
+              <img src={paidArt} alt="" width={150} height={150} />
+              <div>
+                <b style={{ fontSize: 14 }}>Semua sudah lunas</b>
+                <p className="app-note" style={{ margin: '4px 0 0' }}>
+                  {formatRp(data.bill.total_idr)} sudah dibayar penuh. Bill ini tersimpan di rekap.
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           <div className="app-inline">
-            {data.settled ? <StatusBadge tone="success">Lunas</StatusBadge> : <StatusBadge tone="pending">Belum selesai</StatusBadge>}
+            {data.settled ? null : <StatusBadge tone="pending">Belum selesai</StatusBadge>}
             {data.bill.status !== 'open' ? <StatusBadge tone="info">Ditutup</StatusBadge> : null}
             {data.bill.paid_by_confirmed ? <StatusBadge tone="info">Dibayar {data.paid_by_name}</StatusBadge> : null}
           </div>
@@ -238,10 +257,26 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             </div>
           ) : null}
 
-          {canManage && summarizeUncovered(data).has ? (
+          {canManage && summarizeUncovered(data).has && !data.settled ? (
             <Alert tone="pending" title={summarizeUncovered(data).title}>
-              {summarizeUncovered(data).names} — sementara dibebankan ke yang menalangi ({formatRp(summarizeUncovered(data).money)}).
+              {summarizeUncovered(data).names} — sementara ditanggung yang menalangi
+              {summarizeUncovered(data).money > 0 ? ' (' + formatRp(summarizeUncovered(data).money) + ')' : ''}.
             </Alert>
+          ) : null}
+
+          {canManage && data.bill.status === 'open' && data.people.length <= 1 && !data.settled ? (
+            <div className="ds-card ds-pad-md art-card">
+              <img src={shareArt} alt="" width={120} height={120} />
+              <div>
+                <b style={{ fontSize: 14 }}>Bagikan bill ini</b>
+                <p className="app-note" style={{ margin: '4px 0 8px' }}>
+                  Belum ada yang masuk. Kirim linknya supaya teman bisa memilih bagiannya sendiri.
+                </p>
+                <Button variant="primary" onClick={share}>
+                  Kirim link ke teman
+                </Button>
+              </div>
+            </div>
           ) : null}
 
           <section className="app-stack">
@@ -443,6 +478,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
           {transferAccounts.length > 0 ? (
             <section className="app-stack">
               <strong style={{ fontSize: 14, fontWeight: 800 }}>Transfer ke {data.paid_by_name}</strong>
+              <p className="app-note" style={{ margin: '2px 0 0' }}>Salin nomornya, lalu bayar sesuai bagianmu.</p>
               <div>
                 {transferAccounts.map((account) => (
                   <div className="app-row" key={account.id}>
@@ -479,7 +515,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               Bagikan link bill
             </Button>
 
-            {me && me.identity_id === data.paid_by_id ? (
+            {me && me.identity_id === data.paid_by_id && !data.settled ? (
               <div className="ds-card ds-card-mint ds-pad-sm">
                 <b style={{ fontSize: 13 }}>Kamu yang menalangi bill ini</b>
                 <p className="app-note" style={{ margin: '4px 0 0' }}>
@@ -541,7 +577,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                   block
                   onClick={() => run(billActions.unsettle(billId), 'Tanda lunas dibatalkan')}
                 >
-                  Batalkan tanda lunas
+                  Batalkan lunas seluruh bill
                 </Button>
               ) : (
                 <Button
@@ -573,7 +609,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
         </>
       ) : null}
 
-      <Sheet open={payerOpen} title="Siapa yang bayar duluan" onClose={() => setPayerOpen(false)}>
+      <Sheet open={payerOpen} title="Siapa yang bayar duluan" art={transferArt} onClose={() => setPayerOpen(false)}>
         <p className="app-note">Orang ini yang menalangi bill. Setelah dipilih, dia yang jadi pemilik bill dan bisa menutup atau mengubahnya.</p>
         <div>
           {data?.people.map((person) => (

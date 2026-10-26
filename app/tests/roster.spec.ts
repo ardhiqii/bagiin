@@ -41,9 +41,9 @@ test.describe('Bagiin — lunas manual dan daftar nama', () => {
     await page.reload()
     await page.getByRole('button', { name: 'Tandai semua lunas' }).first().click()
     await expect(page.getByText(/ditandai lunas|Bill ditandai lunas/).first()).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Batalkan tanda lunas' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Batalkan lunas seluruh bill' })).toBeVisible()
 
-    await page.getByRole('button', { name: 'Batalkan tanda lunas' }).click()
+    await page.getByRole('button', { name: 'Batalkan lunas seluruh bill' }).click()
     await expect(page.getByRole('button', { name: 'Tandai semua lunas' }).first()).toBeVisible()
     await ctx.close()
   })

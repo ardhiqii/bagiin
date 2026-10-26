@@ -3,7 +3,7 @@ import { useBills, useRecap } from '../lib/queries'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { Alert, BalanceCard, Button, EmptyState } from '../ds/primitives'
-import emptyArt from '../assets/empty-bill.webp'
+import homeEmptyArt from '../assets/home-empty.webp'
 
 function shortDate(value: string) {
   const parsed = new Date(value.replace(' ', 'T'))
@@ -83,7 +83,7 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
         ) : open.length === 0 ? (
           <EmptyState
             title="Belum ada bill"
-            art={<img className="ds-art" src={emptyArt} alt="" width={180} height={180} />}
+            art={<img className="ds-art" src={homeEmptyArt} alt="" width={216} height={216} />}
             action={
               <Link to="/create" style={{ textDecoration: 'none' }}>
                 <Button>Buat bill</Button>

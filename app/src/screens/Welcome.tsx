@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useToast } from '../components/Toast'
 import { Alert, Button, Field } from '../ds/primitives'
 import { startIdentity } from '../lib/identity'
-import personArt from '../assets/person.webp'
+import welcomeArt from '../assets/welcome.webp'
 
 /**
  * Gerbang pertama: tanpa nama, tidak ada yang bisa dikerjakan. Sebelum ini app
@@ -51,7 +51,7 @@ export function Welcome({
       <div className="app-frame">
         <main className="app-body welcome-body">
           <section className="welcome-card">
-            <img src={personArt} alt="" width={128} height={128} />
+            <img className="welcome-art" src={welcomeArt} alt="" width={200} height={200} />
             <h1>Kenalan dulu</h1>
             <p className="app-note" style={{ margin: 0, textAlign: 'center' }}>
               {context ??

@@ -43,9 +43,26 @@ Composition/framing: <porsi frame, penempatan, ruang kosong>
 | `item.webp` 320 px | piring, sendok, garpu | 108 px (sheet item) | 7 KB |
 | `person.webp` 320 px | koin dan setengah struk | 108 px (sheet orang) | 9 KB |
 | `recap.webp` 320 px | koin dan catatan | 104 px (layar Rekap) | 6 KB |
+| `welcome.webp` 512 px | struk berdiri, koin di kakinya | 200 px (layar kenalan) | 5 KB |
+| `home-empty.webp` 512 px | dompet terbuka kosong, dua koin | 216 px (Beranda kosong) | 24 KB |
+| `scan.webp` 384 px | struk di dalam bingkai pindai, satu garis | 120 px (Buat · sedang membaca) | 20 KB |
+| `share.webp` 384 px | struk terlipat jadi pesawat kertas | 120 px (Bill · ajakan bagikan) | 9 KB |
+| `paid.webp` 384 px | stempel dengan centang menghantam struk | 150 px (Bill lunas) | 24 KB |
+| `error.webp` 384 px | struk sobek dua, di depan segitiga amber | 160 px (bill tidak bisa dibuka) | 14 KB |
+| `transfer.webp` 384 px | kartu bank dan koin berbaris | 120 px (sheet pembayar) | 18 KB |
 
 Aset besar (648/576 px) untuk tempat yang tampil ≥200 px; aset kecil (320 px) untuk
 thumbnail dan sheet, cukup untuk layar 3× pada ukuran 104–120 px.
+
+## Di mana ilustrasi boleh muncul
+
+Dari review gambar sendiri dan dari design system lain (Atlassian, Astryx, ServiceNow):
+ilustrasi 120–240 px, **satu per layar**, selalu berpasangan dengan judul + satu
+aksi. Tempatnya: empty state, header sheet, layar kenalan, dan satu kartu yang
+menjelaskan aksi utama. **Bukan** di samping deretan angka — di bagian "Transfer
+ke …" ilustrasi 120 px terbukti menekan baris rekening, jadi dicabut dan
+dipindahkan ke header sheet. Di bawah 110 px grain jadi noise; kalau slotnya
+sekecil itu, pakai teks saja.
 
 ## Aturan produksi
 

@@ -60,7 +60,7 @@ test.describe('Bagiin — keadaan yang berubah di belakang layar', () => {
 
     await page.reload()
     await page.getByRole('button', { name: 'Tandai semua lunas' }).first().click()
-    await expect(page.getByRole('button', { name: 'Batalkan tanda lunas' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Batalkan lunas seluruh bill' })).toBeVisible()
 
     await guest.getByRole('button', { name: /Bakmi, ketuk/ }).click()
     await expect(guest.getByText(/lunas semua|sudah lunas/i).first()).toBeVisible({ timeout: 15_000 })

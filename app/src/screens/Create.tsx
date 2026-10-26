@@ -8,6 +8,7 @@ import { useToast } from '../components/Toast'
 import { Alert, Button, Field } from '../ds/primitives'
 import { X } from '@phosphor-icons/react'
 import createHeroArt from '../assets/create-hero.webp'
+import scanArt from '../assets/scan.webp'
 import { keys } from '../lib/queries'
 
 type DraftItem = { key: string; name: string; qty: string; price: string; slots: string }
@@ -144,11 +145,15 @@ export function Create({ identityId }: { identityId: string | null }) {
 
   return (
     <AppShell title="Bill baru" subtitle="Isi item, pajak, lalu simpan" back active="create" dock>
-      <div className="ds-create-hero">
-        <img src={createHeroArt} alt="" width={120} height={120} />
+      <div className={'ds-create-hero' + (ocrBusy ? ' is-scanning' : '')}>
+        <img src={ocrBusy ? scanArt : createHeroArt} alt="" width={120} height={120} />
         <div>
-          <b>Ketik manual atau tempel hasil fotonya</b>
-          <p className="app-note">Semua angka rupiah. Pajak dibagi proporsional ke porsi masing-masing.</p>
+          <b>{ocrBusy ? 'Membaca struk…' : 'Ketik manual atau tempel hasil fotonya'}</b>
+          <p className="app-note">
+            {ocrBusy
+              ? 'Angkanya sedang diambil dari foto. Biasanya beberapa detik.'
+              : 'Semua angka rupiah. Pajak dibagi proporsional ke porsi masing-masing.'}
+          </p>
         </div>
       </div>
 

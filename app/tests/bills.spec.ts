@@ -54,7 +54,7 @@ test.describe('Bagiin — mencari dan menyaring bill', () => {
     await createBill(page, 'Lunas filter ' + stamp, 'Mie')
 
     await page.getByRole('button', { name: 'Tandai semua lunas' }).first().click()
-    await expect(page.getByRole('button', { name: 'Batalkan tanda lunas' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Batalkan lunas seluruh bill' })).toBeVisible()
 
     await page.goto('/bills')
     await page.getByRole('button', { name: 'Lunas', exact: true }).click()

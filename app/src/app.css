@@ -231,6 +231,43 @@
 .create-dock .tot b { font-family: var(--ds-font-display); font-size: 20px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 
 /* Layar kenalan: satu kartu di tengah, tanpa navigasi bawah. */
+/* Kartu dengan ilustrasi: gambar di kiri, teks di kanan, sejajar atas.
+   Dipakai untuk keadaan yang menjelaskan satu aksi utama, bukan di samping
+   deretan angka. */
+.art-card {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 14px;
+  align-items: center;
+}
+.art-card img { border-radius: 18px; object-fit: cover; }
+
+.art-head {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+.art-head img { border-radius: 16px; object-fit: cover; }
+
+.art-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 8px 0 4px;
+}
+.art-empty img { border-radius: 20px; object-fit: cover; }
+
+.welcome-art { border-radius: 22px; object-fit: cover; }
+
+.ds-create-hero.is-scanning img {
+  animation: scan-settle 1.6s ease-in-out infinite;
+}
+@keyframes scan-settle {
+  0%, 100% { transform: translateY(0) }
+  50% { transform: translateY(-3px) }
+}
+
 .welcome-body {
   display: grid;
   place-items: center;
