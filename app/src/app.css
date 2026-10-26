@@ -22,7 +22,10 @@
 .app-frame {
   width: 100%;
   max-width: 480px;
-  min-height: 100dvh;
+  /* tinggi tetap, bukan min-height: isi yang scroll di dalam, bar bawah dan
+     navigasi selalu menempel di dasar frame */
+  height: 100dvh;
+  max-height: 100dvh;
   background: var(--ds-bg);
   display: flex;
   flex-direction: column;
@@ -32,7 +35,8 @@
 @media (min-width: 720px) {
   .app-shell { padding: 28px 0; }
   .app-frame {
-    min-height: calc(100dvh - 56px);
+    height: calc(100dvh - 56px);
+    max-height: calc(100dvh - 56px);
     border-radius: 32px;
     overflow: hidden;
     box-shadow: 0 30px 80px rgba(20, 47, 58, .16);
@@ -90,8 +94,9 @@
 
 .app-body {
   flex: 1;
-  padding: 18px 18px 108px;
-  scroll-padding-bottom: 108px;
+  min-height: 0;
+  padding: 18px 18px 24px;
+  scroll-padding-bottom: 24px;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -99,20 +104,21 @@
   -webkit-overflow-scrolling: touch;
 }
 
+.app-bottom {
+  flex: none;
+  position: relative;
+  z-index: 30;
+  background: var(--ds-bg);
+  box-shadow: 0 -12px 24px color-mix(in srgb, var(--ds-navy) 6%, transparent);
+}
+
 .app-nav {
-  position: fixed;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
   width: 100%;
-  max-width: 480px;
   display: flex;
   justify-content: space-around;
   padding: 8px 18px calc(8px + env(safe-area-inset-bottom));
-  background: color-mix(in srgb, var(--ds-bg) 82%, transparent);
-  backdrop-filter: blur(18px) saturate(1.2);
-  border-top: 1px solid color-mix(in srgb, var(--ds-border) 60%, transparent);
-  z-index: 30;
+  background: var(--ds-bg);
+  border-top: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
 }
 
 .app-nav a {
@@ -134,9 +140,6 @@
 .app-nav a.is-active { color: var(--ds-teal); font-weight: 800; }
 .app-nav a:active svg { transform: scale(.92); }
 
-@media (min-width: 720px) {
-  .app-nav { position: sticky; bottom: 0; transform: none; max-width: none; }
-}
 
 .app-row {
   display: flex;
@@ -210,25 +213,29 @@
 /* Bar ringkasan di layar buat bill: total selalu kelihatan, tombol simpan
    tidak pernah tenggelam di bawah lipatan. */
 .create-dock {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(62px + env(safe-area-inset-bottom));
-  width: 100%;
-  max-width: 480px;
-  z-index: 28;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 12px 18px;
-  background: color-mix(in srgb, var(--ds-bg) 92%, transparent);
-  backdrop-filter: blur(14px);
-  border-top: 1px solid color-mix(in srgb, var(--ds-border) 70%, transparent);
+  gap: 16px;
+  padding: 14px 18px;
+  border-top: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
 }
-.create-dock .tot { flex: 1; min-width: 0; }
-.create-dock .tot small { display: block; font-size: 11px; font-weight: 700; color: var(--ds-muted); letter-spacing: .02em; text-transform: uppercase; }
-.app-body.has-dock { padding-bottom: 190px; }
-.create-dock .tot b { font-family: var(--ds-font-display); font-size: 20px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.create-dock .tot { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.create-dock .tot small {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--ds-muted);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.create-dock .tot b {
+  font-family: var(--ds-font-display);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -.035em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.create-dock .ds-button { flex: none; min-width: 132px; }
 
 /* Layar kenalan: satu kartu di tengah, tanpa navigasi bawah. */
 /* Kartu dengan ilustrasi: gambar di kiri, teks di kanan, sejajar atas.
@@ -271,7 +278,7 @@
 .welcome-body {
   display: grid;
   place-items: center;
-  min-height: calc(100dvh - 56px);
+  min-height: 100%;
 }
 .welcome-card {
   display: grid;

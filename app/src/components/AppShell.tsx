@@ -18,14 +18,15 @@ export function AppShell({
   subtitle,
   back = false,
   active,
-  dock = false,
+  footer,
   children,
 }: {
   title: string
   subtitle?: string
   back?: boolean
   active?: Tab
-  dock?: boolean
+  /** Bar ringkasan yang menempel di bawah isi, di atas navigasi. */
+  footer?: ReactNode
   children: ReactNode
 }) {
   const router = useRouter()
@@ -53,16 +54,26 @@ export function AppShell({
             </span>
           </Link>
         </header>
-        <main className={'app-body' + (dock ? ' has-dock' : '')}>{children}</main>
-        {active ? (
-          <nav className="app-nav" aria-label="Navigasi utama">
-            {TABS.map(({ id, label, to, Icon }) => (
-              <Link key={id} to={to} className={id === active ? 'is-active' : ''} aria-current={id === active ? 'page' : undefined}>
-                <Icon />
-                {label}
-              </Link>
-            ))}
-          </nav>
+        <main className="app-body">{children}</main>
+        {footer || active ? (
+          <div className="app-bottom">
+            {footer}
+            {active ? (
+              <nav className="app-nav" aria-label="Navigasi utama">
+                {TABS.map(({ id, label, to, Icon }) => (
+                  <Link
+                    key={id}
+                    to={to}
+                    className={id === active ? 'is-active' : ''}
+                    aria-current={id === active ? 'page' : undefined}
+                  >
+                    <Icon />
+                    {label}
+                  </Link>
+                ))}
+              </nav>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </div>

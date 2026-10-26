@@ -144,7 +144,23 @@ export function Create({ identityId }: { identityId: string | null }) {
   }
 
   return (
-    <AppShell title="Bill baru" subtitle="Isi item, pajak, lalu simpan" back active="create" dock>
+    <AppShell
+      title="Bill baru"
+      subtitle="Isi item, pajak, lalu simpan"
+      back
+      active="create"
+      footer={
+        <div className="create-dock">
+          <div className="tot">
+            <small>Total bill</small>
+            <b>{formatRp(total)}</b>
+          </div>
+          <Button loading={busy} disabled={!canSubmit} onClick={submit}>
+            Buat bill
+          </Button>
+        </div>
+      }
+    >
       <div className={'ds-create-hero' + (ocrBusy ? ' is-scanning' : '')}>
         <img src={ocrBusy ? scanArt : createHeroArt} alt="" width={120} height={120} />
         <div>
@@ -326,15 +342,6 @@ export function Create({ identityId }: { identityId: string | null }) {
         ) : null}
       </div>
 
-      <div className="create-dock">
-        <div className="tot">
-          <small>Total</small>
-          <b>{formatRp(total)}</b>
-        </div>
-        <Button loading={busy} disabled={!canSubmit} onClick={submit}>
-          Buat bill
-        </Button>
-      </div>
     </AppShell>
   )
 }

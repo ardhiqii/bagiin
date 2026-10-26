@@ -107,7 +107,26 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
   }
 
   return (
-    <AppShell title="Ubah bill" subtitle="Perbaiki judul, item, atau pajak" back active="bill" dock>
+    <AppShell
+      title="Ubah bill"
+      subtitle="Perbaiki judul, item, atau pajak"
+      back
+      active="bill"
+      footer={
+        // tamu yang membuka /edit tidak boleh melihat tombol simpan sama sekali
+        data?.can_manage ? (
+          <div className="create-dock">
+            <div className="tot">
+              <small>Total baru</small>
+              <b>{formatRp(total)}</b>
+            </div>
+            <Button loading={action.isPending} disabled={!valid} onClick={save}>
+              Simpan perubahan
+            </Button>
+          </div>
+        ) : null
+      }
+    >
       {bill.isPending ? <div className="app-note">Memuat bill…</div> : null}
       {bill.isError ? <Alert tone="danger" title="Bill tidak bisa dibuka">{(bill.error as Error).message}</Alert> : null}
 
@@ -340,15 +359,6 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
             )}
           </section>
 
-          <div className="create-dock">
-            <div className="tot">
-              <small>Total baru</small>
-              <b>{formatRp(total)}</b>
-            </div>
-            <Button loading={action.isPending} disabled={!valid} onClick={save}>
-              Simpan perubahan
-            </Button>
-          </div>
         </>
       ) : null}
     </AppShell>
