@@ -287,6 +287,16 @@ export function Recap({ identityId }: { identityId: string | null }) {
                 </section>
               ) : null}
 
+              {finalBills.length > 0 ? (
+                <div className="app-inline">
+                  <strong style={{ fontSize: 14, fontWeight: 800 }}>Arsip per bulan</strong>
+                  <span className="app-spacer" />
+                  <span className="app-note" style={{ margin: 0 }}>
+                    bagianmu
+                  </span>
+                </div>
+              ) : null}
+
               {[...groups.entries()].map(([month, list]) => {
                 const subtotal = list.reduce((sum, bill) => sum + bill.my_total_idr, 0)
                 return (
