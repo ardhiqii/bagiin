@@ -85,8 +85,15 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
 
 export const endpoints = {
   createIdentity: (name: string) => api<Identity>('/api/identities', { method: 'POST', body: { name } }),
-  restoreIdentity: (id: string, secret: string) =>
-    api<Identity>('/api/identities/restore', { method: 'POST', body: { id, secret } }),
+  /* Endpoint restore menerima KODE pemulihan, bukan id+secret. Versi lama di
+     sini salah bentuk dan tidak pernah dipakai layar mana pun. */
+  restoreByCode: (code: string) =>
+    api<Identity & { secret?: string | null }>('/api/identities/restore', {
+      method: 'POST',
+      body: { code },
+    }),
+  newRecoveryCode: (id: string) =>
+    api<{ code: string }>(`/api/identities/${id}/code/generate`, { method: 'POST', body: {} }),
   bind: (id: string) => api<{ secret: string }>(`/api/identities/${id}/bind`, { method: 'POST', body: {} }),
   me: (id: string) => api<Identity & { stats?: unknown }>(`/api/identities/${id}/me`),
   rename: (id: string, name: string) =>

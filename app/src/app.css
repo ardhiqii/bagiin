@@ -475,6 +475,24 @@ textarea {
 
 /* Sheet aksi: tombol berjarak rapat, bukan menumpuk penuh. */
 .app-stack-tight { display: grid; gap: var(--ds-space-2); margin-top: var(--ds-space-2); }
+/* Kode pemulihan ditampilkan monospace supaya huruf/angka mirip tidak tertukar
+   saat diketik di HP lain. */
+.recovery-code {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-3);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-mint);
+}
+.recovery-code code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--ds-navy);
+}
 .sheet-divider { border-top: 1px solid var(--ds-border); margin: 4px 0 2px; }
 
 /* Thumbnail struk bisa diketuk untuk dilihat penuh. */

@@ -5,6 +5,7 @@ import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
 import { Alert, Button, Field } from '../ds/primitives'
 import { publishIdentity, renameIdentity, resetIdentity } from '../lib/identity'
+import { endpoints } from '../lib/api'
 import { accountActions, keys, useAccounts, useBillAction, type PaymentAccount } from '../lib/queries'
 import type { Identity } from '../lib/types'
 
@@ -25,6 +26,8 @@ export function Settings({ identity }: { identity: Identity | null }) {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
   const [autoAccept, setAutoAccept] = useState<boolean>((identity?.auto_accept ?? 1) === 1)
+  const [recoveryCode, setRecoveryCode] = useState('')
+  const [codeBusy, setCodeBusy] = useState(false)
 
   async function saveName() {
     if (!identity) return
@@ -192,6 +195,54 @@ export function Settings({ identity }: { identity: Identity | null }) {
               </Button>
             ) : null}
           </div>
+        </div>
+      </section>
+
+      <section className="app-stack">
+        <strong style={{ fontSize: 14, fontWeight: 800 }}>Kode pemulihan</strong>
+        <div className="ds-card ds-card-surface ds-pad-md" style={{ display: 'grid', gap: 10 }}>
+          <span className="app-note" style={{ margin: 0 }}>
+            Untuk masuk ke akun ini di HP lain: buka <b>/masuk</b> lalu ketik kodenya.
+            Kode lama langsung mati begitu kamu buat yang baru.
+          </span>
+          {recoveryCode ? (
+            <div className="recovery-code" aria-live="polite">
+              <code>{recoveryCode}</code>
+              <button
+                type="button"
+                className="link-quiet"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(recoveryCode)
+                    toast('Kode disalin')
+                  } catch {
+                    toast('Salin manual: ' + recoveryCode)
+                  }
+                }}
+              >
+                Salin
+              </button>
+            </div>
+          ) : null}
+          <Button
+            variant="secondary"
+            loading={codeBusy}
+            onClick={async () => {
+              if (!identity) return
+              setCodeBusy(true)
+              try {
+                const res = await endpoints.newRecoveryCode(identity.id)
+                setRecoveryCode(res.code)
+                toast('Kode pemulihan baru dibuat')
+              } catch (err) {
+                toast((err as Error).message)
+              } finally {
+                setCodeBusy(false)
+              }
+            }}
+          >
+            {recoveryCode ? 'Buat kode lain' : 'Buat kode pemulihan'}
+          </Button>
         </div>
       </section>
 

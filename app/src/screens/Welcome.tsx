@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useToast } from '../components/Toast'
 import { Alert, Button, Field } from '../ds/primitives'
@@ -21,6 +22,7 @@ export function Welcome({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const toast = useToast()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -73,6 +75,9 @@ export function Welcome({
             <Button block loading={busy} disabled={!name.trim()} onClick={submit}>
               Mulai pakai Bagiin
             </Button>
+            <button type="button" className="link-quiet" onClick={() => navigate({ to: '/masuk' })}>
+              Sudah punya akun? Masuk pakai kode
+            </button>
             <span className="app-note" style={{ fontSize: 11.5 }}>
               Namamu tersimpan di perangkat ini saja. Bisa diganti kapan saja di Pengaturan.
             </span>

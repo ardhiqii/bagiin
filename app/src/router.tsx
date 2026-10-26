@@ -8,6 +8,7 @@ import { Recap } from './screens/Recap'
 import { Settings } from './screens/Settings'
 import { useIdentity } from './lib/identity'
 import { Welcome } from './screens/Welcome'
+import { Restore } from './screens/Restore'
 
 const rootRoute = createRootRoute()
 
@@ -87,7 +88,15 @@ const settingsRoute = createRoute({
   },
 })
 
-const routeTree = rootRoute.addChildren([homeRoute, billsRoute, createBillRoute, billRoute, editBillRoute, recapRoute, settingsRoute])
+/* Halaman masuk harus bisa dibuka tanpa identitas — ini satu-satunya pintu
+   untuk memakai akun lama di perangkat baru. */
+const restoreRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/masuk',
+  component: Restore,
+})
+
+const routeTree = rootRoute.addChildren([homeRoute, billsRoute, createBillRoute, billRoute, editBillRoute, recapRoute, settingsRoute, restoreRoute])
 
 export const router = createRouter({ routeTree })
 

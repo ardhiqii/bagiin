@@ -74,6 +74,28 @@ export function storedName(): string {
 }
 
 /**
+ * Masuk di perangkat lain dengan kode pemulihan. Backend mencocokkan hash kode
+ * lalu mengembalikan identitas beserta secret-nya, jadi HP baru langsung punya
+ * sesi yang sama. Kode lama tetap berlaku sampai dibuat ulang.
+ */
+export async function restoreFromCode(code: string): Promise<Stored> {
+  const clean = code.trim().toUpperCase()
+  if (!clean) throw new Error('Kode belum diisi')
+  const ident = await endpoints.restoreByCode(clean)
+  if (!ident?.id) throw new Error('Kode tidak dikenal')
+  // hash kode tidak pernah disimpan di perangkat
+  const stored: Stored = {
+    id: ident.id,
+    name: ident.name,
+    role: ident.role,
+    auto_accept: ident.auto_accept,
+    secret: ident.secret ?? null,
+  } as Stored
+  storeIdentity(stored)
+  return stored
+}
+
+/**
  * Identitas guest: dibuat sekali, disimpan di localStorage, dan dipulihkan
  * lewat /restore kalau secret hilang (mis. localStorage dibersihkan sebagian).
  */
