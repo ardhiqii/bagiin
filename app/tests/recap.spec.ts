@@ -35,7 +35,7 @@ async function guestPicks(
   await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
   await guest.getByRole('button', { name: /Sate, ketuk/ }).click()
   if (pay) {
-    await guest.getByRole('button', { name: 'Tandai bagianku lunas' }).click()
+    await guest.getByRole('button', { name: /Tandai lunas/ }).click()
     await expect(guest.getByText('Ditandai lunas')).toBeVisible()
   }
   const identity = await guest.evaluate(() => localStorage.getItem('bagiin_identity'))
@@ -94,7 +94,7 @@ test.describe('Bagiin — rekap berisi pekerjaan, bukan arsip', () => {
     await expect(sheet.getByText(/belum dia transfer/).first()).toBeVisible()
     await page.locator('.ds-sheet-close').click()
 
-    await guest.getByRole('button', { name: 'Tandai bagianku lunas' }).click()
+    await guest.getByRole('button', { name: /Tandai lunas/ }).click()
     await expect(guest.getByText('Ditandai lunas')).toBeVisible()
     await ctx.close()
 

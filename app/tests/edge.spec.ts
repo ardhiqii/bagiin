@@ -113,13 +113,13 @@ test.describe('Bagiin — kasus pinggir', () => {
     await guest.goto(url)
     await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
     await guest.getByRole('button', { name: /Ayam, ketuk/ }).click()
-    await guest.getByRole('button', { name: 'Tandai bagianku lunas' }).click()
+    await guest.getByRole('button', { name: /Tandai lunas/ }).click()
     await expect(guest.getByText('Ditandai lunas')).toBeVisible()
 
     await openActions(guest)
     await guest.getByRole('button', { name: 'Batalkan status lunas' }).click()
     await expect(guest.getByText('Status lunas dibatalkan')).toBeVisible()
-    await expect(guest.getByRole('button', { name: 'Tandai bagianku lunas' })).toBeVisible()
+    await expect(guest.getByRole('button', { name: /Tandai lunas/ })).toBeVisible()
     await ctx.close()
   })
 
@@ -166,7 +166,7 @@ test.describe('Bagiin — kasus pinggir', () => {
     await guest.goto(url)
     await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
     await guest.getByRole('button', { name: /Ayam, ketuk/ }).click()
-    await guest.getByRole('button', { name: 'Tandai bagianku lunas' }).click()
+    await guest.getByRole('button', { name: /Tandai lunas/ }).click()
     await expect(guest.getByText('Ditandai lunas')).toBeVisible()
     await ctx.close()
 

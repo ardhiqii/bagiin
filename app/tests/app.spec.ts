@@ -92,7 +92,7 @@ test.describe('Bagiin — perilaku user', () => {
     await expect(guest.getByText(/bagian kamu Rp30\.000/)).toBeVisible()
 
     // tamu menandai bagiannya lunas
-    await guest.getByRole('button', { name: 'Tandai bagianku lunas' }).click()
+    await guest.getByRole('button', { name: /Tandai lunas/ }).click()
     await expect(guest.getByText('Ditandai lunas')).toBeVisible()
 
     // pembuat bill melihat tamu itu di daftar orang
@@ -137,7 +137,9 @@ test.describe('Bagiin — perilaku user', () => {
     await page.getByLabel('Harga satuan').fill('8000')
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
-    await page.getByRole('button', { name: 'Bagikan link bill' }).click()
+    // bagikan sekarang di menu "Aksi lain" (ikon ⋮ di header), bukan di bar bawah
+    await page.getByRole('button', { name: 'Aksi lain' }).click()
+    await page.getByRole('button', { name: 'Bagikan link', exact: true }).click()
     await expect(page.getByText('Link disalin. Kirim ke teman kamu.')).toBeVisible()
     const clip = await page.evaluate(() => navigator.clipboard.readText())
     expect(clip).toContain('/b/')

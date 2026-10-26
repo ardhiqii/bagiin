@@ -16,7 +16,7 @@ import paidArt from '../assets/paid.webp'
 import shareArt from '../assets/share.webp'
 import transferArt from '../assets/transfer.webp'
 import itemArt from '../assets/item.webp'
-import { Check, UsersThree } from '@phosphor-icons/react'
+import { Check, DotsThree, UsersThree } from '@phosphor-icons/react'
 
 /**
  * Backend mengirim kalimat siap-tampil per kasus ("7 bagian belum terisi (total
@@ -78,6 +78,24 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
   const joined = Boolean(me)
   const canManage = data?.can_manage ?? false
+  /** Aksi pribadi yang belum selesai — satu-satunya isi bar bawah. */
+  const primaryAction = (() => {
+    if (!data) return null
+    if (!joined) {
+      return identityId
+        ? { label: 'Ikut bill ini', onClick: () => void join() }
+        : { label: 'Ikut bill ini', onClick: () => setNameOpen(true) }
+    }
+    // pembayar tidak punya bagian untuk ditandai: bagiannya otomatis lunas
+    const owes = me && me.paid !== 'paid' && me.total_idr > 0 && me.identity_id !== data.paid_by_id
+    if (owes && !data.settled) {
+      return {
+        label: 'Tandai lunas · ' + formatRp(me!.total_idr),
+        onClick: () => run(billActions.markPaid(billId, me!.identity_id), 'Ditandai lunas'),
+      }
+    }
+    return null
+  })()
   // rekening milik penerima uang; kalau pembayar belum jelas, pakai milik pembuat
   const transferAccounts = data
     ? data.paid_by_id
@@ -203,21 +221,30 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
       subtitle={data?.bill.merchant ?? undefined}
       back
       active="home"
-      footer={
+      action={
         data ? (
-          <div className="bill-actions">
-            <Button variant="quiet" onClick={() => setActionsOpen(true)}>
-              Aksi lain
+          <button
+            type="button"
+            className="app-back"
+            aria-label="Aksi lain"
+            title="Aksi lain"
+            onClick={() => setActionsOpen(true)}
+          >
+            <DotsThree size={20} weight="bold" aria-hidden="true" />
+          </button>
+        ) : undefined
+      }
+      footer={
+        /* Bar bawah hanya untuk aksi PRIBADI yang belum selesai: masuk ke bill
+           atau menandai bagian sendiri lunas. Kalau tidak ada, bar tidak
+           dirender sama sekali — dulu bar tetap muncul hanya untuk tombol
+           "bagikan", dan itu memakan ~76px tinggi layar di semua bill,
+           termasuk yang sudah lunas dan tidak butuh apa-apa. */
+        primaryAction ? (
+          <div className="bill-action-bar">
+            <Button block onClick={primaryAction.onClick}>
+              {primaryAction.label}
             </Button>
-            {me && me.paid !== 'paid' && me.total_idr > 0 && me.identity_id !== data.paid_by_id ? (
-              <Button block onClick={() => run(billActions.markPaid(billId, me.identity_id), 'Ditandai lunas')}>
-                Tandai bagianku lunas
-              </Button>
-            ) : (
-              <Button block onClick={share}>
-                Bagikan link bill
-              </Button>
-            )}
           </div>
         ) : undefined
       }
@@ -254,7 +281,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               {data.settled ? (
                 <StatusBadge tone="success">Semua lunas</StatusBadge>
               ) : (
-                <StatusBadge tone="pending">Belum selesai</StatusBadge>
+                <StatusBadge tone="pending">Belum lunas</StatusBadge>
               )}
               {data.bill.status !== 'open' ? <StatusBadge tone="info">Ditutup</StatusBadge> : null}
               {data.bill.paid_by_confirmed ? (
@@ -339,12 +366,14 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
 
           {!joined && data.bill.status === 'open' ? (
+            /* tanpa tombol: tombolnya sudah ada di bar bawah sebagai aksi utama.
+               Dua tombol "Ikut bill ini" di satu layar bikin orang menebak mana
+               yang berbeda (dan dulu memang tidak berbeda). */
             <div className="ds-card ds-card-mint ds-pad-md">
               <b style={{ fontSize: 14 }}>Kamu belum masuk bill ini</b>
-              <p className="app-note">Masuk dulu supaya bisa memilih item yang kamu makan.</p>
-              <Button onClick={() => (identityId ? join() : setNameOpen(true))} loading={action.isPending}>
-                Ikut bill ini
-              </Button>
+              <p className="app-note" style={{ margin: '4px 0 0' }}>
+                Masuk dulu supaya bisa memilih item yang kamu makan.
+              </p>
             </div>
           ) : null}
 
@@ -412,7 +441,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                         {/* harga sudah tampil di kanan; di sini cukup statusnya,
                             dan tanpa "1/2" yang bisa dibaca "setengah tiket" */}
                         {isSlot
-                          ? slotTotal + ' bagian · ' + formatRp(perSlot) + '/bagian · sisa ' + (slotTotal - taken)
+                          ? formatRp(perSlot) + '/bagian · sisa ' + (slotTotal - taken)
                           : item.quantity > 1
                             ? taken + ' dari ' + item.quantity + ' diambil'
                             : null}
@@ -616,6 +645,9 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
           <p className="app-note">Bagian kamu otomatis lunas. Yang perlu ditandai lunas adalah orang lain.</p>
         ) : null}
         <div className="app-stack-tight">
+          <Button variant="secondary" block onClick={() => { setActionsOpen(false); void share() }}>
+            Bagikan link
+          </Button>
           {canManage && data?.bill.status === 'open' ? (
             <Button variant="secondary" block onClick={() => { setActionsOpen(false); setInviteOpen(true) }}>
               Undang teman

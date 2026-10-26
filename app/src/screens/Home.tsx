@@ -11,7 +11,7 @@ type Filter = 'semua' | 'berjalan' | 'lunas'
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'semua', label: 'Semua' },
-  { key: 'berjalan', label: 'Belum selesai' },
+  { key: 'berjalan', label: 'Belum lunas' },
   { key: 'lunas', label: 'Lunas' },
 ]
 
@@ -103,7 +103,7 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
       title={'Halo, ' + (name || 'Teman')}
       subtitle={
         rows.length > 0
-          ? rows.length + ' bill · ' + allOpen.length + ' masih berjalan'
+          ? rows.length + ' bill · ' + allOpen.length + ' belum lunas'
           : 'Semua bill kamu di satu tempat'
       }
       active="home"

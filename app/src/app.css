@@ -456,14 +456,11 @@ textarea {
 .bill-hero-chips .ds-tone-success { background: rgba(22, 115, 84, .55); color: #eafff6; }
 .bill-hero-chips .ds-tone-pending { background: rgba(255, 209, 138, .22); color: #ffe9c4; }
 
-/* Bar aksi bawah di layar bill: satu tombol utama, sisanya masuk sheet. */
-.bill-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-}
-.bill-actions .ds-button { flex: 1; }
-.bill-actions .ds-button:first-child { flex: 0 0 auto; }
+/* Bar aksi bawah di layar bill: satu tombol, selebar layar. Dulu ada dua
+   (teks "Aksi lain" + pill), dan pasangan tombol dengan bobot berbeda dalam
+   satu baris terbaca sebagai tombol yang salah ukuran. */
+.bill-action-bar { display: flex; }
+.bill-action-bar .ds-button { flex: 1; }
 
 /* Sheet aksi: tombol berjarak rapat, bukan menumpuk penuh. */
 .app-stack-tight { display: grid; gap: var(--ds-space-2); margin-top: var(--ds-space-2); }
@@ -880,11 +877,13 @@ textarea {
   justify-self: end;
   padding: 0 15px 12px;
 }
+/* 44 px: tombol 30 px gagal target sentuh dan gampang salah tekan saat
+   menambah porsi. Ikonnya tetap kecil, kotaknya yang dibesarkan. */
 .slot-ctl button {
-  width: 30px;
-  height: 30px;
+  width: var(--ds-touch);
+  height: var(--ds-touch);
   border: 0;
-  border-radius: 9px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--ds-teal) 10%, #fff);
   color: var(--ds-teal);
   font-size: 16px;

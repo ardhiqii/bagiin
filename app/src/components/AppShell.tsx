@@ -20,6 +20,7 @@ export function AppShell({
   back = false,
   active,
   footer,
+  action,
   children,
 }: {
   title: string
@@ -28,6 +29,8 @@ export function AppShell({
   active?: Tab
   /** Bar ringkasan yang menempel di bawah isi, di atas navigasi. */
   footer?: ReactNode
+  /** Tombol tambahan di header (mis. menu "Aksi lain"). */
+  action?: ReactNode
   children: ReactNode
 }) {
   const router = useRouter()
@@ -46,6 +49,7 @@ export function AppShell({
             {title}
             {subtitle ? <span className="app-top-sub">{subtitle}</span> : null}
           </h1>
+          {action}
           <Link to="/settings" className="app-back" aria-label="Pengaturan" title={'Pengaturan · ' + (me?.name ?? '')}>
             <span
               aria-hidden="true"
