@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 
+/** Aksi sekunder sekarang ada di sheet 'Aksi lain' supaya layar bill tidak penuh tombol. */
+async function openActions(screen: any) {
+  await screen.getByRole('button', { name: 'Aksi lain' }).click()
+  await screen.waitForTimeout(150)
+}
+
 const stamp = Date.now().toString().slice(-6)
 
 async function freshUser(page: Page, name: string) {
@@ -81,12 +87,16 @@ test.describe('Bagiin — kasus pinggir', () => {
     await freshUser(page, 'Aufa')
     await createBill(page, { title: 'Tutup ' + stamp })
 
+    await openActions(page)
+
     await page.getByRole('button', { name: 'Tutup bill' }).click()
     await expect(page.getByText('Bill ditutup')).toBeVisible()
     await expect(page.getByText('Ditutup', { exact: true })).toBeVisible()
 
     const item = page.getByRole('button', { name: /Ayam, ketuk/ })
     await expect(item).toBeDisabled()
+
+    await openActions(page)
 
     await page.getByRole('button', { name: 'Buka lagi' }).click()
     await expect(page.getByText('Bill dibuka lagi')).toBeVisible()
@@ -106,6 +116,7 @@ test.describe('Bagiin — kasus pinggir', () => {
     await guest.getByRole('button', { name: 'Tandai bagianku lunas' }).click()
     await expect(guest.getByText('Ditandai lunas')).toBeVisible()
 
+    await openActions(guest)
     await guest.getByRole('button', { name: 'Batalkan status lunas' }).click()
     await expect(guest.getByText('Status lunas dibatalkan')).toBeVisible()
     await expect(guest.getByRole('button', { name: 'Tandai bagianku lunas' })).toBeVisible()

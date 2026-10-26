@@ -57,6 +57,9 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
   const [payerOpen, setPayerOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [slotOpen, setSlotOpen] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
+  /** indeks foto yang sedang dilihat penuh; null = viewer tertutup */
+  const [viewer, setViewer] = useState<number | null>(null)
   const contacts = useContacts(identityId, inviteOpen)
 
   const data: BillResponse | undefined = bill.data
@@ -200,6 +203,24 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
       subtitle={data?.bill.merchant ?? undefined}
       back
       active="bill"
+      footer={
+        data ? (
+          <div className="bill-actions">
+            <Button variant="quiet" onClick={() => setActionsOpen(true)}>
+              Aksi lain
+            </Button>
+            {me && me.paid !== 'paid' && me.total_idr > 0 && me.identity_id !== data.paid_by_id ? (
+              <Button block onClick={() => run(billActions.markPaid(billId, me.identity_id), 'Ditandai lunas')}>
+                Tandai bagianku lunas
+              </Button>
+            ) : (
+              <Button block onClick={share}>
+                Bagikan link bill
+              </Button>
+            )}
+          </div>
+        ) : undefined
+      }
     >
       {bill.isError ? (
         <div className="art-empty">
@@ -223,49 +244,86 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             <small className="ds-balance-note">
               {data.people.length} orang · {data.items.length} item
               {me ? ' · bagian kamu ' + formatRp(me.total_idr) : ''}
-              {me && data.uncovered_idr > 0 ? ' + ' + formatRp(data.uncovered_idr) + ' belum diambil' : ''}
+              {me && data.uncovered_idr > 0 ? (
+                <span className="nowrap">{' + ' + formatRp(data.uncovered_idr) + ' belum diambil'}</span>
+              ) : null}
             </small>
+            {/* Status menempel di kartu total: pertanyaan pertama orang adalah
+                "tagihanku berapa, dan sudah beres belum". */}
+            <div className="bill-hero-chips">
+              {data.settled ? (
+                <StatusBadge tone="success">Semua lunas</StatusBadge>
+              ) : (
+                <StatusBadge tone="pending">Belum selesai</StatusBadge>
+              )}
+              {data.bill.status !== 'open' ? <StatusBadge tone="info">Ditutup</StatusBadge> : null}
+              {data.bill.paid_by_confirmed ? (
+                <StatusBadge tone="info">Dibayar {data.paid_by_name}</StatusBadge>
+              ) : null}
+            </div>
           </div>
 
-          {/* Rincian struk: tanpa ini, diskon atau pajak yang ikut di total
-              tidak punya penjelasan di layar. Baris nol tidak ditampilkan. */}
-          <div className="ds-card ds-pad-md bill-breakdown">
-            <div className="bill-line">
-              <span>Subtotal</span>
-              <b>{formatRp(data.bill.subtotal_idr)}</b>
-            </div>
-            {data.bill.order_discount_idr > 0 ? (
-              <div className="bill-line is-credit">
-                <span>Diskon pesanan</span>
-                <b>-{formatRp(data.bill.order_discount_idr)}</b>
+          {data.photos.length > 0 || (canManage && data.bill.status === 'open') ? (
+            <section className="app-stack">
+              <div className="app-inline">
+                <strong style={{ fontSize: 14, fontWeight: 800 }}>Foto struk</strong>
+                <span className="app-spacer" />
+                {data.photos.length > 0 ? (
+                  <button
+                    type="button"
+                    className="link-quiet"
+                    onClick={() => setViewer(0)}
+                  >
+                    Lihat struk{data.photos.length > 1 ? ' (' + data.photos.length + ')' : ''}
+                  </button>
+                ) : null}
+                {canManage && data.bill.status === 'open' ? (
+                  <label className="link-action" style={{ cursor: 'pointer' }}>
+                    {photoBusy ? 'Mengunggah…' : '+ Tambah foto'}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      style={{ display: 'none' }}
+                      disabled={photoBusy}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0]
+                        if (file) void addPhoto(file)
+                        event.target.value = ''
+                      }}
+                    />
+                  </label>
+                ) : null}
               </div>
-            ) : null}
-            {data.bill.tax_idr > 0 ? (
-              <div className="bill-line">
-                <span>{data.bill.tax_included ? 'Pajak (sudah termasuk)' : 'Pajak'}</span>
-                <b>{formatRp(data.bill.tax_idr)}</b>
-              </div>
-            ) : data.bill.tax_included ? (
-              // Pajak nempel di harga item: kolomnya nol, tapi orang tetap perlu
-              // tahu kenapa tidak ada baris pajak di sini.
-              <div className="bill-line">
-                <span>Pajak (sudah termasuk)</span>
-                <b>di harga item</b>
-              </div>
-            ) : null}
-            {data.bill.service_idr > 0 ? (
-              <div className="bill-line">
-                <span>Service</span>
-                <b>{formatRp(data.bill.service_idr)}</b>
-              </div>
-            ) : null}
-            {data.bill.cashback_idr > 0 ? (
-              <div className="bill-line is-credit">
-                <span>Cashback</span>
-                <b>-{formatRp(data.bill.cashback_idr)}</b>
-              </div>
-            ) : null}
-          </div>
+              {data.photos.length === 0 ? (
+                <div className="app-note">Belum ada foto. Struk bisa kamu simpan di sini supaya bisa dicek lagi nanti.</div>
+              ) : (
+                <div className="receipt-strip">
+                  {data.photos.map((photo, index) => (
+                    <div className="receipt-item" key={photo.id}>
+                      <button
+                        type="button"
+                        className="receipt-open"
+                        aria-label={'Lihat foto struk ' + (index + 1)}
+                        onClick={() => setViewer(index)}
+                      >
+                        <img src={'/uploads/' + photo.path.split('/').pop()} alt="Foto struk bill" />
+                      </button>
+                      {canManage && data.bill.status === 'open' ? (
+                        <button
+                          type="button"
+                          className="receipt-kill"
+                          aria-label={'Hapus foto ' + photo.id}
+                          onClick={() => run(billActions.removePhoto(billId, photo.id), 'Foto dihapus')}
+                        >
+                          ×
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
 
           {data.settled ? (
             <div className="ds-card ds-card-mint ds-pad-md art-card">
@@ -279,11 +337,6 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             </div>
           ) : null}
 
-          <div className="app-inline">
-            {data.settled ? null : <StatusBadge tone="pending">Belum selesai</StatusBadge>}
-            {data.bill.status !== 'open' ? <StatusBadge tone="info">Ditutup</StatusBadge> : null}
-            {data.bill.paid_by_confirmed ? <StatusBadge tone="info">Dibayar {data.paid_by_name}</StatusBadge> : null}
-          </div>
 
           {!joined && data.bill.status === 'open' ? (
             <div className="ds-card ds-card-mint ds-pad-md">
@@ -397,6 +450,47 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             })}
           </section>
 
+          {/* Rincian struk: tanpa ini, diskon atau pajak yang ikut di total
+              tidak punya penjelasan di layar. Baris nol tidak ditampilkan. */}
+          <div className="ds-card ds-pad-md bill-breakdown">
+            <div className="bill-line">
+              <span>Subtotal</span>
+              <b>{formatRp(data.bill.subtotal_idr)}</b>
+            </div>
+            {data.bill.order_discount_idr > 0 ? (
+              <div className="bill-line is-credit">
+                <span>Diskon pesanan</span>
+                <b>-{formatRp(data.bill.order_discount_idr)}</b>
+              </div>
+            ) : null}
+            {data.bill.tax_idr > 0 ? (
+              <div className="bill-line">
+                <span>{data.bill.tax_included ? 'Pajak (sudah termasuk)' : 'Pajak'}</span>
+                <b>{formatRp(data.bill.tax_idr)}</b>
+              </div>
+            ) : data.bill.tax_included ? (
+              // Pajak nempel di harga item: kolomnya nol, tapi orang tetap perlu
+              // tahu kenapa tidak ada baris pajak di sini.
+              <div className="bill-line">
+                <span>Pajak (sudah termasuk)</span>
+                <b>di harga item</b>
+              </div>
+            ) : null}
+            {data.bill.service_idr > 0 ? (
+              <div className="bill-line">
+                <span>Service</span>
+                <b>{formatRp(data.bill.service_idr)}</b>
+              </div>
+            ) : null}
+            {data.bill.cashback_idr > 0 ? (
+              <div className="bill-line is-credit">
+                <span>Cashback</span>
+                <b>-{formatRp(data.bill.cashback_idr)}</b>
+              </div>
+            ) : null}
+          </div>
+
+
           <section className="app-stack">
             <div className="app-inline">
               <strong style={{ fontSize: 14, fontWeight: 800 }}>Orang</strong>
@@ -477,54 +571,6 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             </section>
           ) : null}
 
-          {data.photos.length > 0 || (canManage && data.bill.status === 'open') ? (
-            <section className="app-stack">
-              <div className="app-inline">
-                <strong style={{ fontSize: 14, fontWeight: 800 }}>Foto struk</strong>
-                <span className="app-spacer" />
-                {canManage && data.bill.status === 'open' ? (
-                  <label className="link-action" style={{ cursor: 'pointer' }}>
-                    {photoBusy ? 'Mengunggah…' : '+ Tambah foto'}
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      style={{ display: 'none' }}
-                      disabled={photoBusy}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0]
-                        if (file) void addPhoto(file)
-                        event.target.value = ''
-                      }}
-                    />
-                  </label>
-                ) : null}
-              </div>
-              {data.photos.length === 0 ? (
-                <div className="app-note">Belum ada foto. Struk bisa kamu simpan di sini supaya bisa dicek lagi nanti.</div>
-              ) : (
-                <div className="receipt-strip">
-                  {data.photos.map((photo) => (
-                    <div className="receipt-item" key={photo.id}>
-                      <a href={'/uploads/' + photo.path.split('/').pop()} target="_blank" rel="noreferrer">
-                        <img src={'/uploads/' + photo.path.split('/').pop()} alt="Foto struk bill" />
-                      </a>
-                      {canManage && data.bill.status === 'open' ? (
-                        <button
-                          type="button"
-                          className="receipt-kill"
-                          aria-label={'Hapus foto ' + photo.id}
-                          onClick={() => run(billActions.removePhoto(billId, photo.id), 'Foto dihapus')}
-                        >
-                          ×
-                        </button>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          ) : null}
-
           {transferAccounts.length > 0 ? (
             <section className="app-stack">
               <strong style={{ fontSize: 14, fontWeight: 800 }}>Transfer ke {data.paid_by_name}</strong>
@@ -559,105 +605,140 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             </section>
           ) : null}
 
-          <section className="app-stack">
-            <strong style={{ fontSize: 14, fontWeight: 800 }}>Aksi</strong>
-            <Button variant="secondary" block onClick={share}>
-              Bagikan link bill
-            </Button>
-
-            {me && me.identity_id === data.paid_by_id && !data.settled ? (
-              <div className="ds-card ds-card-mint ds-pad-sm">
-                <b style={{ fontSize: 13 }}>Kamu yang menalangi bill ini</b>
-                <p className="app-note" style={{ margin: '4px 0 0' }}>
-                  Bagian kamu otomatis lunas. Yang perlu ditandai lunas adalah orang lain.
-                </p>
-              </div>
-            ) : me && me.total_idr > 0 ? (
-              me.paid === 'paid' ? (
-                <Button variant="quiet" block onClick={() => run(billActions.markUnpaid(billId, me.identity_id), 'Status lunas dibatalkan')}>
-                  Batalkan status lunas
-                </Button>
-              ) : (
-                <Button block onClick={() => run(billActions.markPaid(billId, me.identity_id), 'Ditandai lunas')}>
-                  Tandai bagianku lunas
-                </Button>
-              )
-            ) : null}
-
-            {canManage ? (
-              data.bill.status === 'open' ? (
-                <Button variant="quiet" block onClick={() => run(billActions.close(billId), 'Bill ditutup')}>
-                  Tutup bill
-                </Button>
-              ) : (
-                <Button variant="quiet" block onClick={() => run(billActions.reopen(billId), 'Bill dibuka lagi')}>
-                  Buka lagi
-                </Button>
-              )
-            ) : null}
-
-            {canManage && data.bill.status === 'open' ? (
-              <Button variant="secondary" block onClick={() => navigate({ to: '/b/$billId/edit', params: { billId } })}>
-                Ubah bill
-              </Button>
-            ) : null}
-
-            {canManage && data.bill.status === 'open' ? (
-              <Button variant="secondary" block onClick={() => setInviteOpen(true)}>
-                Undang teman
-              </Button>
-            ) : null}
-
-            {canManage && data.bill.status === 'open' && data.items.some((item) => item.mode === 'slot') ? (
-              <Button variant="quiet" block onClick={() => setSlotOpen(true)}>
-                Atur jumlah bagian
-              </Button>
-            ) : null}
-
-            {canManage && data.bill.status === 'open' ? (
-              <Button variant="quiet" block onClick={() => setPayerOpen(true)}>
-                Ganti yang bayar duluan
-              </Button>
-            ) : null}
-
-            {canManage ? (
-              data.settled_manual ? (
-                <Button
-                  variant="quiet"
-                  block
-                  onClick={() => run(billActions.unsettle(billId), 'Tanda lunas dibatalkan')}
-                >
-                  Batalkan lunas seluruh bill
-                </Button>
-              ) : (
-                <Button
-                  variant="quiet"
-                  block
-                  onClick={() => run(billActions.settle(billId), 'Bill ditandai lunas')}
-                >
-                  Tandai semua lunas
-                </Button>
-              )
-            ) : null}
-
-            {me && !canManage ? (
-              <Button
-                variant="danger"
-                block
-                onClick={() => {
-                  void run(billActions.leave(billId), 'Kamu keluar dari bill ini').then(() => navigate({ to: '/' }))
-                }}
-              >
-                Keluar dari bill ini
-              </Button>
-            ) : null}
-
-            <Button variant="quiet" block onClick={() => navigate({ to: '/' })}>
-              Kembali ke beranda
-            </Button>
-          </section>
         </>
       ) : null}
+
+      <Sheet open={actionsOpen} title="Aksi lain" art={itemArt} onClose={() => setActionsOpen(false)}>
+        {data && me && me.identity_id === data.paid_by_id && !data.settled ? (
+          <p className="app-note">Bagian kamu otomatis lunas. Yang perlu ditandai lunas adalah orang lain.</p>
+        ) : null}
+        <div className="app-stack-tight">
+          {canManage && data?.bill.status === 'open' ? (
+            <Button variant="secondary" block onClick={() => { setActionsOpen(false); setInviteOpen(true) }}>
+              Undang teman
+            </Button>
+          ) : null}
+          {canManage && data?.bill.status === 'open' ? (
+            <Button
+              variant="secondary"
+              block
+              onClick={() => { setActionsOpen(false); navigate({ to: '/b/$billId/edit', params: { billId } }) }}
+            >
+              Ubah bill
+            </Button>
+          ) : null}
+          {canManage ? (
+            data?.bill.status === 'open' ? (
+              <Button
+                variant="secondary"
+                block
+                onClick={() => { setActionsOpen(false); void run(billActions.close(billId), 'Bill ditutup') }}
+              >
+                Tutup bill
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                block
+                onClick={() => { setActionsOpen(false); void run(billActions.reopen(billId), 'Bill dibuka lagi') }}
+              >
+                Buka lagi
+              </Button>
+            )
+          ) : null}
+          {canManage && data?.bill.status === 'open' && data.items.some((item) => item.mode === 'slot') ? (
+            <Button variant="secondary" block onClick={() => { setActionsOpen(false); setSlotOpen(true) }}>
+              Atur jumlah bagian
+            </Button>
+          ) : null}
+          {canManage && data?.bill.status === 'open' ? (
+            <Button variant="secondary" block onClick={() => { setActionsOpen(false); setPayerOpen(true) }}>
+              Ganti yang bayar duluan
+            </Button>
+          ) : null}
+          {canManage ? (
+            data?.settled_manual ? (
+              <Button
+                variant="secondary"
+                block
+                onClick={() => { setActionsOpen(false); void run(billActions.unsettle(billId), 'Tanda lunas dibatalkan') }}
+              >
+                Batalkan lunas seluruh bill
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                block
+                onClick={() => { setActionsOpen(false); void run(billActions.settle(billId), 'Bill ditandai lunas') }}
+              >
+                Tandai semua lunas
+              </Button>
+            )
+          ) : null}
+          {me && me.paid === 'paid' && me.total_idr > 0 ? (
+            <Button
+              variant="secondary"
+              block
+              onClick={() => {
+                setActionsOpen(false)
+                void run(billActions.markUnpaid(billId, me.identity_id), 'Status lunas dibatalkan')
+              }}
+            >
+              Batalkan status lunas
+            </Button>
+          ) : null}
+          {me && !canManage ? (
+            <Button
+              variant="danger"
+              block
+              onClick={() => {
+                setActionsOpen(false)
+                void run(billActions.leave(billId), 'Kamu keluar dari bill ini').then(() => navigate({ to: '/' }))
+              }}
+            >
+              Keluar dari bill ini
+            </Button>
+          ) : null}
+          <div className="sheet-divider" aria-hidden="true" />
+          <Button variant="quiet" block onClick={() => { setActionsOpen(false); navigate({ to: '/' }) }}>
+            Kembali ke beranda
+          </Button>
+        </div>
+      </Sheet>
+
+      <Sheet
+        open={viewer !== null}
+        title="Foto struk"
+        onClose={() => setViewer(null)}
+      >
+        {data && viewer !== null && data.photos[viewer] ? (
+          <div className="photo-viewer">
+            <img
+              src={'/uploads/' + data.photos[viewer].path.split('/').pop()}
+              alt={'Foto struk ' + (viewer + 1)}
+            />
+            <div className="photo-viewer-nav">
+              <Button
+                variant="secondary"
+                disabled={viewer === 0}
+                onClick={() => setViewer((v) => Math.max(0, (v ?? 0) - 1))}
+              >
+                Sebelumnya
+              </Button>
+              <span className="app-note">
+                {viewer + 1} dari {data.photos.length}
+              </span>
+              <Button
+                variant="secondary"
+                disabled={viewer >= data.photos.length - 1}
+                onClick={() => setViewer((v) => Math.min(data.photos.length - 1, (v ?? 0) + 1))}
+              >
+                Berikutnya
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Sheet>
 
       <Sheet open={payerOpen} title="Siapa yang bayar duluan" art={transferArt} onClose={() => setPayerOpen(false)}>
         <p className="app-note">Orang ini yang menalangi bill. Setelah dipilih, dia yang jadi pemilik bill dan bisa menutup atau mengubahnya.</p>

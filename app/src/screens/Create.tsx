@@ -105,9 +105,10 @@ export function Create({ identityId }: { identityId: string | null }) {
   }
 
   async function readPhotos(files: File[]) {
-    // Backend membaca paling banyak dua foto per permintaan; sisanya tetap
-    // disimpan sebagai bukti supaya tidak ada foto yang hilang.
-    const forAi = files.slice(0, 2)
+    // Tiga foto terbukti aman: struk 11 item dipotong tiga bagian dengan
+    // overlap tetap terbaca 11 item dan total yang sama, tanpa duplikat.
+    // Sisanya tetap disimpan sebagai bukti supaya tidak ada foto yang hilang.
+    const forAi = files.slice(0, 3)
     const extras = files.slice(2)
     setPhotoBusy('ocr')
     setOcrError('')
@@ -341,7 +342,7 @@ export function Create({ identityId }: { identityId: string | null }) {
               </button>
             </div>
             <p className="app-note">
-              AI bisa membaca struk atau screenshot pesanan (Gojek, ShopeeFood, Grab). Boleh lebih dari satu foto.
+              AI bisa membaca struk atau screenshot pesanan (Gojek, ShopeeFood, Grab). Sampai 3 foto sekaligus.
             </p>
             <div className="photo-actions">
               <Button onClick={() => pickPhoto('ocr')}>Scan pakai AI</Button>

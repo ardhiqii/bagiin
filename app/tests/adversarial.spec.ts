@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 
+/** Aksi sekunder sekarang ada di sheet 'Aksi lain' supaya layar bill tidak penuh tombol. */
+async function openActions(screen: any) {
+  await screen.getByRole('button', { name: 'Aksi lain' }).click()
+  await screen.waitForTimeout(150)
+}
+
 const stamp = Date.now().toString().slice(-6)
 
 async function freshUser(page: Page, name: string) {
@@ -37,6 +43,7 @@ test.describe('Bagiin — keadaan yang berubah di belakang layar', () => {
 
     // pemilik menutup bill, tamu belum tahu
     await page.reload()
+    await openActions(page)
     await page.getByRole('button', { name: 'Tutup bill' }).click()
     await expect(page.getByText('Bill ditutup')).toBeVisible()
 
@@ -59,7 +66,9 @@ test.describe('Bagiin — keadaan yang berubah di belakang layar', () => {
     await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
 
     await page.reload()
+    await openActions(page)
     await page.getByRole('button', { name: 'Tandai semua lunas' }).first().click()
+    await openActions(page)
     await expect(page.getByRole('button', { name: 'Batalkan lunas seluruh bill' })).toBeVisible()
 
     await guest.getByRole('button', { name: /Bakmi, ketuk/ }).click()
@@ -84,6 +93,7 @@ test.describe('Bagiin — keadaan yang berubah di belakang layar', () => {
 
     // pemilik menghapus Soto
     await page.reload()
+    await openActions(page)
     await page.getByRole('button', { name: 'Ubah bill' }).click()
     await page.getByRole('button', { name: 'Hapus baris 1' }).click()
     await page.getByRole('button', { name: 'Simpan perubahan' }).click()
@@ -107,6 +117,8 @@ test.describe('Bagiin — keadaan yang berubah di belakang layar', () => {
     await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
     await guest.getByRole('button', { name: /Pecel, ketuk/ }).click()
     await expect(guest.getByText(/bagian kamu Rp21\.000/)).toBeVisible()
+
+    await openActions(guest)
 
     await guest.getByRole('button', { name: 'Keluar dari bill ini' }).click()
     await expect(guest).toHaveURL(/\/$/)

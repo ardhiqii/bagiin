@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 
+/** Aksi sekunder sekarang ada di sheet 'Aksi lain' supaya layar bill tidak penuh tombol. */
+async function openActions(screen: any) {
+  await screen.getByRole('button', { name: 'Aksi lain' }).click()
+  await screen.waitForTimeout(150)
+}
+
 const stamp = Date.now().toString().slice(-6)
 
 async function freshUser(page: Page, name: string) {
@@ -39,11 +45,16 @@ test.describe('Bagiin — lunas manual dan daftar nama', () => {
     await expect(guest.getByText(/bagian kamu Rp30\.000/)).toBeVisible()
 
     await page.reload()
+    await openActions(page)
     await page.getByRole('button', { name: 'Tandai semua lunas' }).first().click()
     await expect(page.getByText(/ditandai lunas|Bill ditandai lunas/).first()).toBeVisible()
+    // muat ulang: label aksi bergantung pada status bill yang baru berubah
+    await page.reload()
+    await openActions(page)
     await expect(page.getByRole('button', { name: 'Batalkan lunas seluruh bill' })).toBeVisible()
-
     await page.getByRole('button', { name: 'Batalkan lunas seluruh bill' }).click()
+    await expect(page.getByText(/Tanda lunas dibatalkan/).first()).toBeVisible()
+    await openActions(page)
     await expect(page.getByRole('button', { name: 'Tandai semua lunas' }).first()).toBeVisible()
     await ctx.close()
   })

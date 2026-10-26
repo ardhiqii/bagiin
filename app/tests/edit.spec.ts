@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 
+/** Aksi sekunder sekarang ada di sheet 'Aksi lain' supaya layar bill tidak penuh tombol. */
+async function openActions(screen: any) {
+  await screen.getByRole('button', { name: 'Aksi lain' }).click()
+  await screen.waitForTimeout(150)
+}
+
 const stamp = Date.now().toString().slice(-6)
 
 async function freshUser(page: Page, name: string) {
@@ -38,6 +44,7 @@ test.describe('Bagiin — mengubah bill', () => {
     await expect(guest.getByText(/bagian kamu Rp30\.000/)).toBeVisible()
 
     await page.reload()
+    await openActions(page)
     await page.getByRole('button', { name: 'Ubah bill' }).click()
     await expect(page).toHaveURL(/\/edit$/)
 
@@ -102,6 +109,7 @@ test.describe('Bagiin — mengubah bill', () => {
     await expect(guest.getByText(/bagian kamu Rp30\.000/)).toBeVisible()
 
     await page.reload()
+    await openActions(page)
     await page.getByRole('button', { name: 'Ubah bill' }).click()
 
     // nama yang sudah bergabung tidak punya tombol hapus
@@ -128,6 +136,8 @@ test.describe('Bagiin — mengubah bill', () => {
     const title = 'Hapus ' + stamp
     await createTwoItemBill(page, title)
 
+    await openActions(page)
+
     await page.getByRole('button', { name: 'Ubah bill' }).click()
     await page.getByRole('button', { name: 'Hapus bill ini' }).click()
     await expect(page.getByText('Yakin menghapus bill ini?')).toBeVisible()
@@ -148,6 +158,8 @@ test.describe('Bagiin — mengubah bill', () => {
   test('35. tambah dan hapus item saat mengubah bill', async ({ page }) => {
     await freshUser(page, 'Aufa')
     await createTwoItemBill(page, 'Item ubah ' + stamp)
+
+    await openActions(page)
 
     await page.getByRole('button', { name: 'Ubah bill' }).click()
     await page.getByRole('button', { name: '+ Tambah item' }).click()

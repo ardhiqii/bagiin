@@ -177,3 +177,42 @@ di HP.
   dikunci dan bill ditandai `tax_included`; di layar bill muncul
   "Pajak (sudah termasuk) · di harga item" supaya orang tahu kenapa tidak ada
   baris pajak.
+
+## Layar bill: urutan dari atas ke bawah (2026-10-26)
+
+Urutan lama menaruh rincian struk di atas item, foto struk di paling bawah, dan
+sembilan tombol aksi bertumpuk di ujung halaman. Tiga masalahnya: yang paling
+dibutuhkan (bagianku dan item yang harus dipilih) tenggelam, foto struk — yang
+justru dipakai sebagai acuan saat mengisi — tidak kelihatan, dan aksi menumpuk.
+
+Urutan sekarang:
+
+1. **Kartu total + status.** Angka besar, lalu satu baris "N orang · N item ·
+   bagian kamu RpX · + RpY belum diambil". Status (Belum selesai / Semua lunas /
+   Dibayar <nama> / Ditutup) menempel di dalam kartu yang sama, karena
+   pertanyaan pertama orang adalah "tagihanku berapa dan sudah beres belum".
+   *Bug yang ketemu di sini:* `.app-body` flex column tanpa `flex-shrink: 0`
+   mengompres kartu ini sampai 40 px saat isi halaman panjang, sehingga angka
+   totalnya terpotong dan tidak terlihat sama sekali.
+2. **Foto struk.** Strip thumbnail 84×112 tepat di bawah kartu total, dengan
+   tautan "Lihat struk". Ketuk thumbnail → viewer penuh dengan tombol
+   Sebelumnya/Berikutnya dan penanda "2 dari 3". Ini yang bikin struk bisa
+   dipakai sebagai acuan sambil mengetuk item, tanpa memakan satu layar penuh
+   seperti kalau fotonya ditaruh sebagai gambar besar.
+3. **Pemberitahuan.** "Kamu belum masuk bill ini" (tamu), sisa yang belum
+   diambil (pemilik), atau ajakan membagikan link kalau masih sendirian.
+4. **Item.** Isi utama; tiap baris tetap satu ketukan = satu porsi.
+5. **Rincian struk.** Subtotal, diskon, pajak, service, cashback — dipindah ke
+   bawah item karena ini penjelasan, bukan hal pertama yang dicari.
+6. **Orang**, undangan menunggu, lalu cara transfer ke yang menalangi.
+7. **Bar aksi bawah.** Satu tombol utama sesuai peran: tamu yang belum lunas
+   dapat "Tandai bagianku lunas", sisanya "Bagikan link bill". Semua aksi lain
+   (Ubah, Undang, Tutup/Buka, Atur jumlah bagian, Ganti yang bayar, Tandai semua
+   lunas, Batalkan status lunas, Keluar, Kembali) masuk sheet **Aksi lain** —
+   termasuk aksi destruktif yang dulu tampil sebaris dengan tombol biasa.
+
+Catatan tradeoff: Splitwise versi 5.0 justru membuang menu overflow dan
+memindahkan fitur ke baris tombol yang bisa di-scroll, karena fitur jadi
+tersembunyi. Di sini tombol yang sering dipakai cuma 2–3, jadi bar + "Aksi lain"
+masih masuk akal; kalau nanti aksi harian bertambah, tiga yang paling sering
+perlu dinaikkan ke bar.

@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 
+/** Aksi sekunder sekarang ada di sheet 'Aksi lain' supaya layar bill tidak penuh tombol. */
+async function openActions(screen: any) {
+  await screen.getByRole('button', { name: 'Aksi lain' }).click()
+  await screen.waitForTimeout(150)
+}
+
 const stamp = Date.now().toString().slice(-6)
 
 async function freshUser(page: Page, name: string) {
@@ -53,7 +59,10 @@ test.describe('Bagiin — mencari dan menyaring bill', () => {
     await freshUser(page, 'Aufa')
     await createBill(page, 'Lunas filter ' + stamp, 'Mie')
 
+    await openActions(page)
+
     await page.getByRole('button', { name: 'Tandai semua lunas' }).first().click()
+    await openActions(page)
     await expect(page.getByRole('button', { name: 'Batalkan lunas seluruh bill' })).toBeVisible()
 
     await page.goto('/bills')

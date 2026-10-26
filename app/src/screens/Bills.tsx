@@ -54,7 +54,13 @@ export function Bills({ identityId }: { identityId: string | null }) {
               </small>
             </span>
             <span className="amt">
-              {bill.my_total_idr > 0 ? formatRp(bill.my_total_idr) : '—'}
+              {bill.my_total_idr > 0 ? (
+                formatRp(bill.my_total_idr)
+              ) : (
+                // strip kosong lebih jujur daripada em dash: orang belum memilih
+                // item, jadi bagiannya memang belum ada
+                <span style={{ fontWeight: 600, color: 'var(--ds-muted)' }}>Belum pilih</span>
+              )}
               <small style={{ display: 'block', fontWeight: 600, color: 'var(--ds-muted)' }}>
                 {bill.my_total_idr === bill.total_idr ? 'seluruh bill' : 'dari ' + formatRp(bill.total_idr)}
               </small>

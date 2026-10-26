@@ -101,6 +101,11 @@ textarea {
 }
 .app-back:active { transform: scale(.94); }
 
+/* Anak .app-body tidak boleh menyusut. Tanpa ini, saat total isi lebih tinggi
+   dari layar, flexbox mengompres tiap kartu — .ds-balance pernah jatuh ke 40 px
+   sehingga angka totalnya terpotong dan tidak kelihatan sama sekali. */
+.app-body > * { flex: 0 0 auto; }
+
 .app-body {
   flex: 1;
   min-height: 0;
@@ -117,6 +122,9 @@ textarea {
   flex: none;
   position: relative;
   z-index: 30;
+  /* Padding samping sama dengan .app-body supaya tombol utama tidak menempel
+     ke tepi layar sementara kartu di atasnya punya gutter 18 px. */
+  padding: 10px 18px 6px;
   background: var(--ds-bg);
   box-shadow: 0 -12px 24px color-mix(in srgb, var(--ds-navy) 6%, transparent);
 }
@@ -169,6 +177,8 @@ textarea {
 .app-row:only-child { border-radius: 20px; }
 
 .app-row .grow { flex: 1; min-width: 0; }
+/* hindari satu kata menggantung di baris kedua ("... belum / bayar") */
+.app-row small { text-wrap: pretty; }
 .app-row b { display: block; font-size: 14.5px; font-weight: 700; letter-spacing: -.01em; }
 .app-stack > strong { font-family: var(--ds-font-display); }
 .app-row small { display: block; font-size: 11.5px; color: var(--ds-muted); margin-top: 2px; }
@@ -424,12 +434,74 @@ textarea {
 .link-quiet {
   border: 0;
   background: none;
-  padding: 2px 0;
+  /* target sentuh minimal 32 px walau tampilannya teks kecil */
+  padding: 8px 2px;
+  margin: -8px 0;
   font: 700 12.5px var(--ds-font-body);
   color: var(--ds-teal);
   cursor: pointer;
 }
 .link-quiet:hover { color: var(--ds-teal-hover); }
+
+/* Status di dalam kartu total: pil terang di atas navy. */
+.nowrap { white-space: nowrap; }
+
+.bill-hero-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.bill-hero-chips .ds-badge {
+  background: rgba(255, 255, 255, .14);
+  color: #eaf4f4;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
+}
+.bill-hero-chips .ds-tone-success { background: rgba(22, 115, 84, .55); color: #eafff6; }
+.bill-hero-chips .ds-tone-pending { background: rgba(255, 209, 138, .22); color: #ffe9c4; }
+
+/* Bar aksi bawah di layar bill: satu tombol utama, sisanya masuk sheet. */
+.bill-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bill-actions .ds-button { flex: 1; }
+.bill-actions .ds-button:first-child { flex: 0 0 auto; }
+
+/* Sheet aksi: tombol berjarak rapat, bukan menumpuk penuh. */
+.app-stack-tight { display: grid; gap: 8px; margin-top: 6px; }
+.sheet-divider { border-top: 1px solid var(--ds-border); margin: 4px 0 2px; }
+
+/* Thumbnail struk bisa diketuk untuk dilihat penuh. */
+.receipt-open {
+  border: 0;
+  padding: 0;
+  background: none;
+  display: block;
+  border-radius: 14px;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+.receipt-open img { display: block; height: 112px; width: 84px; object-fit: cover; }
+.receipt-open { box-shadow: 0 0 0 1px var(--ds-border), var(--ds-shadow-soft, 0 2px 8px rgba(20, 47, 58, .08)); }
+.receipt-open:hover { box-shadow: 0 0 0 1px var(--ds-teal), var(--ds-shadow-soft, 0 2px 8px rgba(20, 47, 58, .08)); }
+
+/* Viewer foto: struk penuh di tengah, navigasi di bawahnya. */
+.photo-viewer { display: grid; gap: 12px; }
+.photo-viewer img {
+  width: 100%;
+  max-height: 62dvh;
+  object-fit: contain;
+  border-radius: 16px;
+  background: var(--ds-bg-deep);
+}
+.photo-viewer-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 
 /* Beberapa foto: struk panjang, atau screenshot pesanan dari aplikasi lain. */
 .photo-block {

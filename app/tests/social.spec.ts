@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 
+/** Aksi sekunder sekarang ada di sheet 'Aksi lain' supaya layar bill tidak penuh tombol. */
+async function openActions(screen: any) {
+  await screen.getByRole('button', { name: 'Aksi lain' }).click()
+  await screen.waitForTimeout(150)
+}
+
 const stamp = Date.now().toString().slice(-6)
 
 async function freshUser(page: Page, name: string) {
@@ -45,6 +51,8 @@ test.describe('Bagiin — pembayar, undangan, keluar', () => {
   test('21. ganti pembayar memindahkan kepemilikan bill', async ({ page, browser }) => {
     const { ctx } = await twoPeople(page, browser, 'Payer ' + stamp)
 
+    await openActions(page)
+
     await page.getByRole('button', { name: 'Ganti yang bayar duluan' }).click()
     await page.getByRole('button', { name: 'Bima Jadikan pembayar' }).click()
     await expect(page.getByText('Pembayar diganti ke Bima')).toBeVisible()
@@ -65,6 +73,8 @@ test.describe('Bagiin — pembayar, undangan, keluar', () => {
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
 
+    await openActions(page)
+
     await page.getByRole('button', { name: 'Undang teman' }).click()
     await expect(page.getByRole('dialog', { name: 'Undang teman' })).toBeVisible()
     await page.getByRole('button', { name: 'Undang', exact: true }).first().click()
@@ -82,6 +92,7 @@ test.describe('Bagiin — pembayar, undangan, keluar', () => {
     await expect(page.getByRole('button', { name: 'Keluar dari bill ini' })).toHaveCount(0)
 
     await guest.reload()
+    await openActions(guest)
     await guest.getByRole('button', { name: 'Keluar dari bill ini' }).click()
     await expect(guest.getByText('Kamu keluar dari bill ini')).toBeVisible()
 
@@ -108,6 +119,8 @@ test.describe('Bagiin — pembayar, undangan, keluar', () => {
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
 
+    await openActions(page)
+
     await page.getByRole('button', { name: 'Undang teman' }).click()
     await page.getByRole('button', { name: 'Undang', exact: true }).first().click()
     await expect(page.getByText(/Undangan dikirim ke Bima/)).toBeVisible()
@@ -125,11 +138,15 @@ test.describe('Bagiin — pembayar, undangan, keluar', () => {
   test('25. setelah ganti pembayar, pembuat lama bisa keluar', async ({ page, browser }) => {
     const { ctx } = await twoPeople(page, browser, 'Pindah ' + stamp)
 
+    await openActions(page)
+
     await page.getByRole('button', { name: 'Ganti yang bayar duluan' }).click()
     await page.getByRole('button', { name: 'Bima Jadikan pembayar' }).click()
     await expect(page.getByText('Pembayar diganti ke Bima')).toBeVisible()
 
     await page.reload()
+    // aksi keluar ada di sheet, bukan sebagai tombol permanen di halaman
+    await openActions(page)
     const leave = page.getByRole('button', { name: 'Keluar dari bill ini' })
     await expect(leave).toBeVisible()
     await leave.click()
