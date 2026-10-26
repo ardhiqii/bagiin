@@ -1238,3 +1238,28 @@ delete/set-payer/tandai lunas orang lain).
   "Bagian kosong …"), istilah slot hilang dari teks.
 - **Test**: `test_calc_unit_price_floor.py` (9 kasus) + 3 test lama yang
   mengunci perilaku lama diperbarui. Suite backend 402 passed.
+
+## 2026-10-26 — batas foto OCR dinaikkan ke 4 (AI memakai 3)
+
+Struk panjang sering harus difoto dua atau tiga kali, dan screenshot pesanan
+(Gojek/ShopeeFood/Grab) juga bisa lebih dari satu halaman. Batas lama 2 foto per
+pembacaan membuat orang harus memilih: foto mana yang dibaca.
+
+**Bukti uji dengan struk asli** (SSB BENHIL, 11 item, foto 2160×2880):
+
+| masukan | item | subtotal | pajak | total | waktu |
+|---|---|---|---|---|---|
+| 1 foto utuh | 11 | 87.000 | 8.700 | 95.700 | 9,7 s |
+| 2 potongan (overlap 10%) | 11 | 87.000 | 8.700 | 95.700 | 13,5 s |
+| 3 potongan (overlap 10%) | 11 | 87.000 | 8.700 | 95.700 | 13,0 s |
+| 4 foto | — | — | — | — | 422 (kuota penyedia) |
+
+Tidak ada item dobel dan tidak ada yang hilang di ketiga kasus yang berhasil —
+prompt memang sudah menyuruh model mencocokkan baris yang muncul di lebih dari
+satu gambar. Percobaan 4 foto tidak menyimpulkan apa pun soal kualitas karena
+penyedia gratis menolak permintaan (bukan karena batas aplikasi).
+
+**Yang berubah:** `_MAX_OCR_IMAGES` 2 → 4, `_MAX_OCR_TOTAL_BYTES` 10 MB → 20 MB,
+pesan penolakan menyebut angka baru. Frontend mengirim **paling banyak 3 foto**
+ke `/api/ocr` (batas yang terbukti) dan melampirkan sisanya sebagai bukti, jadi
+tidak ada foto yang dibuang.

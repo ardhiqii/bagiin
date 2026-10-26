@@ -372,9 +372,9 @@ def _normalize_participants(value) -> list[str]:
 
 
 _ALLOWED_PHOTO_MIME = {"image/jpeg", "image/png", "image/webp"}
-_MAX_OCR_IMAGES = 2
+_MAX_OCR_IMAGES = 4
 _MAX_OCR_FILE_BYTES = 5 * 1024 * 1024
-_MAX_OCR_TOTAL_BYTES = 10 * 1024 * 1024
+_MAX_OCR_TOTAL_BYTES = 20 * 1024 * 1024
 
 
 def _parse_bool(value, field: str, *, default=None) -> bool:
@@ -2336,7 +2336,7 @@ async def ocr_upload(request: Request, file: list[UploadFile] = File(...)):
     if not uploads:
         raise HTTPException(400, "Minimal satu foto diperlukan")
     if len(uploads) > _MAX_OCR_IMAGES:
-        raise HTTPException(400, "Maksimal 2 foto struk dalam satu pembacaan")
+        raise HTTPException(400, "Maksimal 4 foto struk dalam satu pembacaan")
 
     images = []
     total_bytes = 0
