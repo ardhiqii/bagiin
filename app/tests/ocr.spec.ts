@@ -4,11 +4,11 @@ const stamp = Date.now().toString().slice(-6)
 
 async function freshUser(page: Page, name: string) {
   await page.goto('/')
-  if (await page.getByText('Kenalan dulu').count()) {
+  if (await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).count()) {
     await page.getByLabel('Nama kamu').fill(name)
-    await page.getByRole('button', { name: 'Simpan nama' }).click()
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(name)
+    await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
   }
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(name)
 }
 
 test.describe('Bagiin — baca struk dari foto', () => {
@@ -16,10 +16,21 @@ test.describe('Bagiin — baca struk dari foto', () => {
     await freshUser(page, 'Aufa')
     await page.goto('/create')
 
-    await page.locator('input[type="file"]').setInputFiles('tests/fixtures/receipt.png')
-
-    // hasil OCR mengisi merchant, item, dan pajak
-    await expect(page.getByText('Struk terbaca. Cek lagi angkanya ya.')).toBeVisible({ timeout: 30_000 })
+    // OCR bergantung layanan luar: beri waktu, dan coba sekali lagi kalau
+    // percobaan pertama kena batas laju dari server
+    const note = page.getByText('Struk terbaca. Cek lagi angkanya ya.')
+    const input = page.locator('input[type="file"]')
+    await input.setInputFiles('tests/fixtures/receipt.png')
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await expect(note).toBeVisible({ timeout: 45_000 })
+        break
+      } catch (err) {
+        if (attempt === 1) throw err
+        await page.waitForTimeout(15_000)
+        await input.setInputFiles('tests/fixtures/receipt.png')
+      }
+    }
     await expect(page.getByLabel('Merchant (opsional)')).toHaveValue('WARTEG BAHARI')
     await expect(page.getByLabel('Item 1')).toHaveValue('Nasi goreng')
     await expect(page.getByLabel('Item 2')).toHaveValue('Es teh manis')

@@ -6,7 +6,8 @@ import { BillDetail } from './screens/BillDetail'
 import { EditBill } from './screens/EditBill'
 import { Recap } from './screens/Recap'
 import { Settings } from './screens/Settings'
-import { renameIdentity, useIdentity } from './lib/identity'
+import { useIdentity } from './lib/identity'
+import { Welcome } from './screens/Welcome'
 
 const rootRoute = createRootRoute()
 
@@ -19,15 +20,9 @@ const homeRoute = createRoute({
   path: '/',
   component: function HomeRoute() {
     const me = useMe()
+    if (!me) return <Welcome />
     return (
-      <Home
-        identityId={me?.id ?? null}
-        name={me?.name ?? ''}
-        onRenamed={async (next) => {
-          if (!me) return
-          await renameIdentity(me, next)
-        }}
-      />
+      <Home identityId={me.id} name={me.name} />
     )
   },
 })
@@ -37,7 +32,8 @@ const billsRoute = createRoute({
   path: '/bills',
   component: function BillsRoute() {
     const me = useMe()
-    return <Bills identityId={me?.id ?? null} />
+    if (!me) return <Welcome context="Isi nama dulu supaya daftar bill kamu bisa dibuka." />
+    return <Bills identityId={me.id} />
   },
 })
 
@@ -46,7 +42,8 @@ const createBillRoute = createRoute({
   path: '/create',
   component: function CreateRoute() {
     const me = useMe()
-    return <Create identityId={me?.id ?? null} />
+    if (!me) return <Welcome context="Buat bill butuh nama dulu, biar teman tahu siapa yang menalangi." />
+    return <Create identityId={me.id} />
   },
 })
 
@@ -75,7 +72,8 @@ const recapRoute = createRoute({
   path: '/recap',
   component: function RecapRoute() {
     const me = useMe()
-    return <Recap identityId={me?.id ?? null} />
+    if (!me) return <Welcome context="Isi nama dulu supaya rekap kamu bisa dihitung." />
+    return <Recap identityId={me.id} />
   },
 })
 
@@ -84,6 +82,7 @@ const settingsRoute = createRoute({
   path: '/settings',
   component: function SettingsRoute() {
     const me = useMe()
+    if (!me) return <Welcome context="Isi nama dulu untuk membuka pengaturan." />
     return <Settings identity={me} />
   },
 })

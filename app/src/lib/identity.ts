@@ -96,7 +96,22 @@ export async function ensureIdentity(name?: string): Promise<Stored> {
     return existing
   }
 
-  const clean = (name ?? '').trim() || 'Teman'
+  const clean = (name ?? '').trim()
+  if (!clean) throw new Error('Nama belum diisi')
+  const created = await endpoints.createIdentity(clean)
+  const stored: Stored = { ...created }
+  storeIdentity(stored)
+  return stored
+}
+
+/** Dipanggil dari layar kenalan: buat identitas dengan nama yang benar-benar diisi. */
+export async function startIdentity(name: string): Promise<Stored> {
+  const clean = name.trim()
+  if (!clean) throw new Error('Nama belum diisi')
+  // identitas lama dari versi yang auto-memberi nama "Teman" cukup diganti
+  // namanya supaya bill lama tetap menempel di orang yang sama
+  const existing = loadStored()
+  if (existing?.id) return renameIdentity(existing, clean)
   const created = await endpoints.createIdentity(clean)
   const stored: Stored = { ...created }
   storeIdentity(stored)

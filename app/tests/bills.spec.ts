@@ -4,11 +4,11 @@ const stamp = Date.now().toString().slice(-6)
 
 async function freshUser(page: Page, name: string) {
   await page.goto('/')
-  if (await page.getByText('Kenalan dulu').count()) {
+  if (await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).count()) {
     await page.getByLabel('Nama kamu').fill(name)
-    await page.getByRole('button', { name: 'Simpan nama' }).click()
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(name)
+    await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
   }
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(name)
 }
 
 async function createBill(page: Page, title: string, item: string) {

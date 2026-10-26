@@ -4,11 +4,13 @@ import { useNavigate } from '@tanstack/react-router'
 import type { BillResponse } from '../lib/types'
 import { billActions, keys, useBill, useBillAction, useContacts } from '../lib/queries'
 import { api } from '../lib/api'
+import { startIdentity } from '../lib/identity'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { Alert, Avatar, Button, Money, Sheet, StatusBadge } from '../ds/primitives'
+import { Alert, Avatar, Button, Field, Money, Sheet, StatusBadge } from '../ds/primitives'
 import inviteArt from '../assets/invite.webp'
+import personArt from '../assets/person.webp'
 import itemArt from '../assets/item.webp'
 import { Check, UsersThree } from '@phosphor-icons/react'
 
@@ -75,6 +77,10 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
     : []
 
   const [photoBusy, setPhotoBusy] = useState(false)
+  const [nameOpen, setNameOpen] = useState(false)
+  const [joinName, setJoinName] = useState('')
+  const [joinBusy, setJoinBusy] = useState(false)
+  const [joinError, setJoinError] = useState('')
 
   async function addPhoto(file: File) {
     if (!billId) return
@@ -150,6 +156,27 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
     await savePicks(next, itemId)
   }
 
+  /** Belum ada nama: minta nama dulu, baru masuk ke bill. */
+  async function joinWithName() {
+    if (!joinName.trim() || !billId) {
+      setJoinError('Nama tidak boleh kosong')
+      return
+    }
+    setJoinBusy(true)
+    setJoinError('')
+    try {
+      await startIdentity(joinName.trim())
+      await api('/api/bills/' + billId + '/join', { method: 'POST', body: {} })
+      await queryClient.invalidateQueries({ queryKey: keys.bill(billId) })
+      setNameOpen(false)
+      toast('Kamu masuk ke bill ini')
+    } catch (err) {
+      setJoinError((err as Error).message)
+    } finally {
+      setJoinBusy(false)
+    }
+  }
+
   async function join() {
     if (!identityId) return
     await run(billActions.join(billId), 'Kamu sudah masuk ke bill ini')
@@ -205,7 +232,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             <div className="ds-card ds-card-mint ds-pad-md">
               <b style={{ fontSize: 14 }}>Kamu belum masuk bill ini</b>
               <p className="app-note">Masuk dulu supaya bisa memilih item yang kamu makan.</p>
-              <Button onClick={join} loading={action.isPending}>
+              <Button onClick={() => (identityId ? join() : setNameOpen(true))} loading={action.isPending}>
                 Ikut bill ini
               </Button>
             </div>
@@ -567,6 +594,25 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             </button>
           ))}
         </div>
+      </Sheet>
+
+      <Sheet open={nameOpen} title="Isi nama dulu" art={personArt} onClose={() => setNameOpen(false)}>
+        <p className="app-note" style={{ marginTop: 0 }}>
+          Nama ini yang muncul ke teman di bill ini. Tanpa akun, tanpa password.
+        </p>
+        <Field
+          id="join-name"
+          label="Nama kamu"
+          value={joinName}
+          onChange={(next) => {
+            setJoinName(next)
+            setJoinError('')
+          }}
+          error={joinError || undefined}
+        />
+        <Button block loading={joinBusy} disabled={!joinName.trim()} onClick={joinWithName}>
+          Simpan nama & ikut bill
+        </Button>
       </Sheet>
 
       <Sheet open={slotOpen} title="Atur jumlah slot" art={itemArt} onClose={() => setSlotOpen(false)}>

@@ -19,15 +19,19 @@ function Boot() {
     let alive = true
     ;(async () => {
       const stored = loadStored()
-      if (stored) publishIdentity(stored)
-      try {
-        const identity = await ensureIdentity(stored?.name)
-        if (alive) publishIdentity(identity)
-      } catch {
-        /* gagal membuat identitas — layar tetap tampil dan aksi akan memberi tahu */
-      } finally {
-        if (alive) setReady(true)
+      if (stored) {
+        publishIdentity(stored)
+        try {
+          // pulihkan secret kalau localStorage dibersihkan sebagian
+          const identity = await ensureIdentity(stored.name)
+          if (alive) publishIdentity(identity)
+        } catch {
+          /* tanpa secret, aksi tulis akan memberi tahu sendiri */
+        }
       }
+      // tanpa identitas tersimpan, app berhenti di layar kenalan: tidak ada
+      // identitas "Teman" yang dibuat diam-diam
+      if (alive) setReady(true)
     })()
     return () => {
       alive = false

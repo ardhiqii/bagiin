@@ -23,6 +23,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
   const accounts = useAccounts(identity?.id ?? null)
   const [draft, setDraft] = useState(EMPTY)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [confirmReset, setConfirmReset] = useState(false)
   const [autoAccept, setAutoAccept] = useState<boolean>((identity?.auto_accept ?? 1) === 1)
 
   async function saveName() {
@@ -230,17 +231,34 @@ export function Settings({ identity }: { identity: Identity | null }) {
         <p className="app-note">
           Menghapus identitas di perangkat ini. Bill yang sudah kamu buat tetap ada di server, tapi kamu tidak akan bisa membukanya lagi sebagai dirimu.
         </p>
-        <Button
-          variant="danger"
-          block
-          onClick={() => {
-            resetIdentity()
-            publishIdentity(null)
-            navigate({ to: '/' })
-          }}
-        >
-          Hapus identitas di perangkat ini
-        </Button>
+        {confirmReset ? (
+          <Alert tone="danger" title="Yakin mulai dari nol?">
+            Identitas di perangkat ini dihapus. Bill yang pernah kamu buat tetap ada di server, tapi kamu tidak bisa
+            membukanya lagi sebagai dirimu.
+          </Alert>
+        ) : null}
+        {confirmReset ? (
+          <div className="app-inline">
+            <Button
+              variant="danger"
+              onClick={() => {
+                resetIdentity()
+                publishIdentity(null)
+                toast('Identitas dihapus dari perangkat ini')
+                navigate({ to: '/' })
+              }}
+            >
+              Ya, hapus identitas
+            </Button>
+            <Button variant="quiet" onClick={() => setConfirmReset(false)}>
+              Batal
+            </Button>
+          </div>
+        ) : (
+          <Button variant="danger" block onClick={() => setConfirmReset(true)}>
+            Hapus identitas di perangkat ini
+          </Button>
+        )}
       </section>
     </AppShell>
   )

@@ -1,44 +1,9 @@
-import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useBills, useRecap } from '../lib/queries'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
-import { Alert, BalanceCard, Button, EmptyState, Field } from '../ds/primitives'
+import { Alert, BalanceCard, Button, EmptyState } from '../ds/primitives'
 import emptyArt from '../assets/empty-bill.webp'
-import personArt from '../assets/person.webp'
-
-function NamePrompt({ onRenamed }: { onRenamed: (next: string) => Promise<void> }) {
-  const [name, setName] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  async function save() {
-    if (!name.trim()) return
-    setBusy(true)
-    setError('')
-    try {
-      await onRenamed(name.trim())
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="ds-card ds-card-mint ds-pad-md" style={{ display: 'grid', gap: 10 }}>
-      <img src={personArt} alt="" width={110} height={110} />
-      <b style={{ fontSize: 14 }}>Kenalan dulu</b>
-      <p className="app-note" style={{ margin: 0 }}>
-        Nama ini yang muncul ke teman waktu kamu ikut bill. Tanpa akun, tanpa password.
-      </p>
-      <Field id="onboard-name" label="Nama kamu" value={name} onChange={setName} error={error || undefined} />
-      <Button loading={busy} disabled={!name.trim()} onClick={save}>
-        Simpan nama
-      </Button>
-    </div>
-  )
-}
 
 function shortDate(value: string) {
   const parsed = new Date(value.replace(' ', 'T'))
@@ -67,15 +32,7 @@ function BillRow({ id, title, meta, share, label }: { id: string; title: string;
   )
 }
 
-export function Home({
-  identityId,
-  name,
-  onRenamed,
-}: {
-  identityId: string | null
-  name: string
-  onRenamed: (next: string) => Promise<void>
-}) {
+export function Home({ identityId, name }: { identityId: string | null; name: string }) {
   const bills = useBills(identityId)
   const recap = useRecap(identityId)
 
@@ -88,7 +45,7 @@ export function Home({
 
   return (
     <AppShell title={'Halo, ' + (name || 'Teman')} subtitle="Semua bill kamu di satu tempat" active="home">
-      {name === 'Teman' ? <NamePrompt onRenamed={onRenamed} /> : null}
+
 
       {bills.isError ? (
         <Alert tone="danger" title="Tidak bisa memuat bill">
