@@ -362,6 +362,10 @@
 }
 .ds-button:active:not(:disabled) { transform: scale(.985); }
 .ds-button.is-block { width: 100%; }
+/* Varian ringkas untuk tombol di dalam baris daftar. Tingginya tetap 44 px
+   (target sentuh), yang menyusut hanya padding dan ukuran huruf — tombol 36 px
+   di dalam baris 64 px terbaca sebagai ikon, bukan aksi. */
+.ds-button.is-compact { min-height: 44px; padding: 0 14px; font-size: 12.5px; }
 .ds-button-primary { background: var(--ds-teal); color: #fff; box-shadow: 0 8px 20px -12px rgba(8, 118, 101, .9); }
 .ds-button-primary:hover:not(:disabled) { background: var(--ds-teal-hover); }
 .ds-button-ink { background: var(--ds-navy); color: #fff; box-shadow: 0 10px 24px -14px rgba(20, 47, 58, .95); }

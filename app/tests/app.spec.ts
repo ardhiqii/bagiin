@@ -115,8 +115,8 @@ test.describe('Bagiin — perilaku user', () => {
     await expect(page.getByText(title)).toBeVisible()
 
     await page.goto('/recap')
-    // rekap dibuka di daftar "Belum final": bill baru tanpa pilihan ada di situ
-    await expect(page.getByRole('tab', { name: /Belum final/ })).toHaveAttribute('aria-selected', 'true')
+    // bill baru tanpa pilihan: pembagiannya belum jelas, jadi masuk daftar kerja
+    await expect(page.getByText(/Pembagian belum jelas/i)).toBeVisible()
     await expect(page.getByText(title)).toBeVisible()
   })
 

@@ -150,20 +150,39 @@ export type RecapFinalBill = {
   total_idr: number
 }
 
+/** Satu bill yang masih menyisakan uang antara kamu dan satu orang. */
+export type RecapEdge = {
+  bill_id: string
+  title: string
+  amount_idr: number
+  /** pay = kamu belum transfer, receive = dia belum transfer */
+  direction: 'pay' | 'receive'
+  /** status bill, bukan status bayar */
+  status: string
+}
+
+export type RecapCounterparty = {
+  identity_id: string
+  name: string
+  /** bruto: satu orang bisa sekaligus piutang dan utang */
+  payable_idr: number
+  receivable_idr: number
+  net_idr: number
+  direction: 'pay' | 'receive'
+  /** abs(net_idr) */
+  amount_idr: number
+  /** hanya bill yang masih ada sisa */
+  bills: RecapEdge[]
+  pending: { count: number; current_user: number; waiting_other: number }
+}
+
 export type Recap = {
   identity: { id: string; name: string }
   final: {
     payable_idr: number
     receivable_idr: number
     net_idr: number
-    counterparties: {
-      identity_id: string
-      name: string
-      /** bruto: satu orang bisa sekaligus piutang dan utang */
-      payable_idr: number
-      receivable_idr: number
-      net_idr: number
-    }[]
+    counterparties: RecapCounterparty[]
     bill_count: number
     bills: RecapFinalBill[]
   }

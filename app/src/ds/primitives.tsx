@@ -19,6 +19,7 @@ type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger' | 'ink'
 
 export function Button({
   children, variant = 'primary', onClick, disabled = false, loading = false, type = 'button', block = false,
+  compact = false,
 }: {
   children: ReactNode
   variant?: ButtonVariant
@@ -27,10 +28,13 @@ export function Button({
   loading?: boolean
   type?: 'button' | 'submit'
   block?: boolean
+  /** Untuk tombol di dalam baris daftar: padding dan huruf lebih kecil, tinggi
+   *  tetap 44 px supaya target sentuh tidak mengecil. */
+  compact?: boolean
 }) {
   return <button
     type={type}
-    className={`ds-button ds-button-${variant}${block ? ' is-block' : ''}${loading ? ' is-loading' : ''}`}
+    className={`ds-button ds-button-${variant}${block ? ' is-block' : ''}${loading ? ' is-loading' : ''}${compact ? ' is-compact' : ''}`}
     onClick={onClick}
     disabled={disabled || loading}
     aria-busy={loading || undefined}

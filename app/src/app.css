@@ -385,14 +385,6 @@ textarea {
 .ds-sheet-head h3 { margin: 0; }
 .ds-sheet-art { width: 54px; height: 54px; border-radius: 14px; flex: none; }
 
-.ds-empty-soft {
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  text-align: center;
-  padding: 8px 0 4px;
-}
-.ds-empty-soft img { width: 104px; height: 104px; }
 
 .receipt-preview {
   display: flex;
@@ -493,57 +485,112 @@ textarea {
   letter-spacing: .06em;
   color: var(--ds-navy);
 }
-/* Segmented control: dua daftar yang saling meniadakan. Dipakai di rekap
-   supaya arsip 50+ bill tidak ikut discroll saat mencari yang belum beres. */
-.seg {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: var(--ds-space-1);
-  padding: var(--ds-space-1);
-  border-radius: var(--ds-radius-md);
-  background: var(--ds-bg-deep);
-}
-.seg-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--ds-space-2);
-  min-height: 40px;
-  padding: 0 var(--ds-space-3);
-  border: 0;
-  border-radius: calc(var(--ds-radius-md) - 2px);
-  background: none;
-  color: var(--ds-muted);
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background .16s ease, color .16s ease;
-}
-.seg-btn.is-active {
-  background: var(--ds-surface);
-  color: var(--ds-navy);
-  box-shadow: var(--ds-shadow-content);
-}
-.seg-count {
-  font-size: 11.5px;
-  font-weight: 800;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--ds-bg-deep);
-  color: var(--ds-muted);
-}
-.seg-btn.is-active .seg-count { background: var(--ds-mint); color: var(--ds-teal) }
+/* ---------- Rekap ----------
+   Rekap berisi pekerjaan yang belum selesai, bukan arsip: bill yang sudah
+   lunas tidak dikirim backend, jadi tiap baris di sini butuh tindakan.
+   Dua sumbu dipisah tegas — pembagian (jelas / belum jelas) dan uang
+   (lunas / belum lunas) — karena mencampurnya membuat orang transfer angka
+   yang masih bisa berubah. */
 
-/* Baris bill yang belum final: barisnya bisa dibuka, tapi aksi tutup tetap
-   terpisah supaya tidak ikut tertekan saat orang cuma mau lihat detail. */
-.recap-pending { display: grid; gap: var(--ds-space-1); }
-.seg + .recap-pending { margin-top: var(--ds-space-2); }
+/* Baris per orang. Satu permukaan (ds-group) dengan hairline di dalam, jadi
+   daftarnya terbaca sebagai satu objek, bukan tumpukan kotak. */
+.recap-person {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  width: 100%;
+  min-height: 64px;
+  padding: 14px var(--ds-space-4);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background .16s var(--ds-ease);
+}
+.recap-person:hover { background: rgba(20, 47, 58, .025); }
+.recap-person:active { background: rgba(20, 47, 58, .045); }
+/* hairline mulai dari tepi teks (16 + 34 avatar + 12 gap), bukan dari tepi
+   kartu — garis yang menembus avatar terbaca sebagai tabel */
+.recap-person + .recap-person::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 62px;
+  right: var(--ds-space-4);
+  height: 1px;
+  background: var(--ds-hairline);
+}
+.recap-person-copy { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.recap-person-copy b {
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  color: var(--ds-navy);
+}
+.recap-person-copy small {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ds-muted);
+  text-wrap: pretty;
+}
+/* bruto arah sebaliknya: tetap terlihat walau angka utama memakai net */
+.recap-person-copy .recap-recip { color: var(--ds-teal); font-weight: 600; }
+.recap-person-amt { display: grid; gap: 2px; justify-items: end; text-align: right; }
+.recap-person-amt b {
+  font-size: 14.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-navy);
+}
+.recap-person-amt small { font-size: 11px; font-weight: 600; color: var(--ds-muted); }
+.recap-chevron { flex: none; color: var(--ds-muted-soft); }
+
+/* Baris bill yang pembagiannya belum jelas: teks di kiri (bisa dibuka),
+   tombol tutup di kanan sebagai aksi terpisah supaya tidak ikut tertekan. */
+.recap-open {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding: 14px var(--ds-space-3) 14px var(--ds-space-4);
+}
+.recap-open + .recap-open::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--ds-space-4);
+  right: var(--ds-space-3);
+  height: 1px;
+  background: var(--ds-hairline);
+}
+.recap-open-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  min-height: var(--ds-touch);
+  align-content: center;
+  text-decoration: none;
+  color: inherit;
+}
+.recap-open-main b {
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+.recap-open-main small {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ds-muted);
+  text-wrap: pretty;
+}
 /* Penanggung sisa ditulis sebagai label kecil, bukan kalimat abu-abu di baris
    yang sama dengan alasannya — dua hal ini beda peran. */
 .recap-payer {
-  display: inline-block;
+  justify-self: start;
   margin-top: var(--ds-space-1);
   padding: 2px 8px;
   border-radius: 999px;
@@ -551,8 +598,50 @@ textarea {
   color: var(--ds-pending);
   font-size: 11px;
   font-weight: 700;
+  /* nama orang bisa panjang ("temen terbaik aufa"); pill tidak boleh melebar
+     sampai menekan tombol di kanan, jadi dipotong dengan elipsis */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.recap-pending-action { display: flex; justify-content: flex-end; padding-bottom: var(--ds-space-1); }
+
+/* Sheet per orang: angka utama di atas, rincian bill di bawah. */
+.recap-sheet-total { display: grid; gap: 2px; }
+.recap-sheet-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ds-muted);
+}
+.recap-sheet-value {
+  font: 800 24px/1.1 var(--ds-font-display);
+  letter-spacing: -.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-navy);
+}
+.recap-sheet-total small { font-size: 12px; color: var(--ds-muted); }
+.recap-bill-row { text-decoration: none; color: inherit; }
+
+/* Empty state rekap memakai aset paid.webp (stempel centang) — 150 px sesuai
+   kontrak aset, bukan diskalakan dari 216 px. */
+.recap-empty-art {
+  display: block;
+  width: 150px;
+  height: 150px;
+  object-fit: contain;
+  margin: 2px 0 6px;
+}
+
+/* Fokus keyboard harus kelihatan: baris ini tombol/tautan, bukan div. */
+.recap-person:focus-visible,
+.recap-open-main:focus-visible,
+.recap-bill-row:focus-visible {
+  outline: 2px solid var(--ds-teal);
+  outline-offset: 2px;
+  border-radius: var(--ds-radius-md);
+}
 
 /* Pencarian ringkas: ikon di dalam kolom, tinggi 44 px, tanpa label terpisah.
    Label di atas kolom membuat layar daftar terasa seperti formulir. */
@@ -619,21 +708,6 @@ textarea {
 .app-banner.is-pending { background: var(--ds-pending-bg); color: var(--ds-pending); }
 .app-banner.is-pending small { color: var(--ds-pending); opacity: .8; }
 
-/* Pengelompokan bulan di rekap: kepala grup lebih kecil dari judul seksi,
-   angkanya rata kanan seperti kolom angka di daftar. */
-.recap-month { display: grid; gap: var(--ds-space-2); }
-.recap-month-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--ds-space-2);
-  padding: 0 var(--ds-space-1);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .02em;
-  text-transform: capitalize;
-  color: var(--ds-muted);
-}
 .sheet-divider { border-top: 1px solid var(--ds-border); margin: 4px 0 2px; }
 
 /* Thumbnail struk bisa diketuk untuk dilihat penuh. */

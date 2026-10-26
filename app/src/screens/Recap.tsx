@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { CaretRight, WarningCircle } from '@phosphor-icons/react'
 import { useRecap } from '../lib/queries'
 import { api } from '../lib/api'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
-import { Alert, BalanceCard, Button, Sheet, StatusBadge } from '../ds/primitives'
-import type { RecapBill } from '../lib/types'
-import recapArt from '../assets/recap.webp'
+import { Alert, Avatar, BalanceCard, Button, EmptyState, Group, Sheet } from '../ds/primitives'
+import type { RecapBill, RecapCounterparty, RecapEdge } from '../lib/types'
+import personArt from '../assets/person.webp'
+import paidArt from '../assets/paid.webp'
 
 /**
  * Alasan bill belum final, ditulis sebagai kalimat. Kode alasan dari backend
@@ -37,30 +39,133 @@ function blockers(bill: RecapBill) {
   return parts.join(' · ')
 }
 
-function monthLabel(value: string | null) {
-  if (!value) return 'Tanpa tanggal'
-  const parsed = new Date(value.replace(' ', 'T'))
-  if (Number.isNaN(parsed.getTime())) return 'Tanpa tanggal'
-  return parsed.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+/** "belum kamu transfer" vs "belum dia transfer" — dari arah sisanya. */
+function edgeLabel(edge: RecapEdge) {
+  if (edge.status === 'closed') return 'bill ditutup, sisa belum dibayar'
+  return edge.direction === 'pay' ? 'belum kamu transfer' : 'belum dia transfer'
 }
 
-type Tab = 'belum' | 'final'
+function initial(name: string) {
+  const trimmed = name.trim()
+  return trimmed ? trimmed.slice(0, 1).toUpperCase() : '?'
+}
+
+function PersonRow({ row, onOpen }: { row: RecapCounterparty; onOpen: () => void }) {
+  const pays = row.net_idr < 0
+  const twoWay = row.payable_idr > 0 && row.receivable_idr > 0
+  // meta menyebut apa yang harus dilakukan, bukan status sistem. Kalau uangnya
+  // dua arah, menyebut satu arah saja akan menyesatkan — jadi dikatakan apa
+  // adanya dan rinciannya ada di baris kedua.
+  const meta = twoWay
+    ? row.bills.length + ' bill'
+    : pays
+      ? row.bills.length + ' bill · belum kamu transfer'
+      : row.bills.length + ' bill · belum dia transfer'
+  return (
+    <button type="button" className="recap-person" onClick={onOpen}>
+      <Avatar label={initial(row.name)} tone={pays ? 'navy' : 'mint'} />
+      <span className="recap-person-copy">
+        <b>{row.name}</b>
+        <small>{meta}</small>
+        {/* dua arah sekaligus: jangan sembunyikan yang satunya di balik net */}
+        {twoWay ? (
+          <>
+            {/* dua baris pendek, bukan satu baris dengan pemisah: kalimat
+                gabungan mematah setelah "dia" dan terbaca sebagai salah ketik */}
+            <small className="recap-recip">kamu bayar {formatRp(row.payable_idr)}</small>
+            <small className="recap-recip">dia bayar {formatRp(row.receivable_idr)}</small>
+          </>
+        ) : null}
+      </span>
+      <span className="recap-person-amt">
+        <b>{formatRp(row.amount_idr)}</b>
+        <small>{pays ? 'kamu bayar' : 'kamu tagih'}</small>
+      </span>
+      <CaretRight size={16} className="recap-chevron" aria-hidden="true" />
+    </button>
+  )
+}
+
+function PersonSheet({ row, onClose }: { row: RecapCounterparty | null; onClose: () => void }) {
+  const twoWay = !!row && row.payable_idr > 0 && row.receivable_idr > 0
+  return (
+    <Sheet open={row !== null} title={row?.name ?? 'Orang'} art={personArt} onClose={onClose}>
+      {row ? (
+        <div className="app-stack">
+          <div className="recap-sheet-total">
+            <span className="recap-sheet-label">{row.net_idr < 0 ? 'Kamu bayar' : 'Kamu tagih'}</span>
+            <strong className="recap-sheet-value">{formatRp(row.amount_idr)}</strong>
+            <small>{row.bills.length} bill belum lunas</small>
+          </div>
+
+          {twoWay ? (
+            <div className="app-list">
+              <div className="app-row">
+                <span className="grow">
+                  <b>Kamu bayar</b>
+                  <small>bagianmu yang belum kamu transfer</small>
+                </span>
+                <span className="amt">{formatRp(row.payable_idr)}</span>
+              </div>
+              <div className="app-row">
+                <span className="grow">
+                  <b>Dia bayar</b>
+                  <small>bagian dia yang belum dia transfer</small>
+                </span>
+                <span className="amt">{formatRp(row.receivable_idr)}</span>
+              </div>
+              <div className="app-row">
+                <span className="grow">
+                  <b>Bersih</b>
+                  <small>selisih kalau dua-duanya dihitung</small>
+                </span>
+                <span className="amt">{formatRp(Math.abs(row.net_idr))}</span>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="app-list">
+            {row.bills.map((edge) => (
+              <Link
+                key={edge.bill_id}
+                to="/b/$billId"
+                params={{ billId: edge.bill_id }}
+                className="app-row recap-bill-row"
+                onClick={onClose}
+              >
+                <span className="grow">
+                  <b>{edge.title}</b>
+                  <small>{edgeLabel(edge)}</small>
+                </span>
+                <span className="amt">{formatRp(edge.amount_idr)}</span>
+                <CaretRight size={15} className="recap-chevron" aria-hidden="true" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </Sheet>
+  )
+}
 
 /**
  * Rekap menjawab dua pertanyaan yang tidak boleh dicampur:
- *   1. berapa utang/piutang yang SUDAH PASTI (bill final),
- *   2. bill mana yang angkanya BELUM PASTI, dan kenapa.
+ *   1. berapa utang/piutang yang pembagiannya SUDAH JELAS — angkanya tidak
+ *      berubah lagi, boleh langsung ditransfer;
+ *   2. bill mana yang pembagiannya BELUM JELAS, dan apa yang membuatnya belum
+ *      jelas.
  * Angka dari keduanya tidak pernah dijumlahkan; kalau dicampur, orang
  * mentransfer nominal yang salah.
+ *
+ * Yang sudah lunas tidak muncul sama sekali: backend hanya mengirim sisa
+ * (`_recap_edges_for_viewer`), jadi rekap berisi pekerjaan, bukan arsip.
  */
 export function Recap({ identityId }: { identityId: string | null }) {
   const recap = useRecap(identityId)
   const qc = useQueryClient()
   const data = recap.data
 
-  // tab dibuka di "Belum final": rekap dipakai untuk mencari yang belum beres,
-  // bukan untuk membaca arsip
-  const [tab, setTab] = useState<Tab>('belum')
+  const [openPerson, setOpenPerson] = useState<RecapCounterparty | null>(null)
   const [closing, setClosing] = useState<RecapBill | null>(null)
 
   const settle = useMutation({
@@ -73,37 +178,57 @@ export function Recap({ identityId }: { identityId: string | null }) {
     },
   })
 
-  const finalBills = useMemo(
+  const people = useMemo(
     () =>
-      [...(data?.final.bills ?? [])].sort((a, b) =>
-        (b.created_at ?? '').localeCompare(a.created_at ?? ''),
+      [...(data?.final.counterparties ?? [])].sort(
+        (a, b) => Math.abs(b.net_idr) - Math.abs(a.net_idr),
       ),
     [data],
   )
+  // urut: kewajiban dulu, baru hak. Nominal terbesar di atas.
+  const pays = people.filter((row) => row.net_idr < 0)
+  const receives = people.filter((row) => row.net_idr > 0)
+  const unclear = data?.provisional.bills ?? []
 
-  // arsip per bulan, terbaru di atas: 50+ bill dalam satu daftar tidak
-  // menjawab "bulan ini aku keluar berapa"
-  const groups = new Map<string, typeof finalBills>()
-  for (const bill of finalBills) {
-    const key = monthLabel(bill.created_at)
-    const bucket = groups.get(key)
-    if (bucket) bucket.push(bill)
-    else groups.set(key, [bill])
+  const outstandingBills = useMemo(() => {
+    const ids = new Set<string>()
+    for (const row of people) for (const edge of row.bills) ids.add(edge.bill_id)
+    return ids.size
+  }, [people])
+
+  const payable = data?.final.payable_idr ?? 0
+  const receivable = data?.final.receivable_idr ?? 0
+  const heroPays = payable > 0
+  const heroValue = heroPays ? payable : receivable
+  const otherDirection = heroPays ? receivable : payable
+
+  const note =
+    outstandingBills === 0
+      ? 'tidak ada sisa tagihan yang pembagiannya sudah jelas'
+      : outstandingBills +
+        ' bill belum lunas' +
+        (otherDirection > 0
+          ? ' · kamu juga ' + (heroPays ? 'terima' : 'bayar') + ' ' + formatRp(otherDirection)
+          : '')
+
+  const nothingToDo = people.length === 0 && unclear.length === 0
+
+  function jumpToUnclear() {
+    const target = document.getElementById('rekap-belum-jelas')
+    if (!target) return
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
   }
-
-  const unpaid = data?.final.counterparties.filter((c) => c.payable_idr > 0) ?? []
-  const owed = data?.final.counterparties.filter((c) => c.receivable_idr > 0) ?? []
-  const provisional = data?.provisional.bills ?? []
-  const kasaranPay = data?.provisional.payable_idr ?? 0
-  const kasaranRecv = data?.provisional.receivable_idr ?? 0
-  const belumCount = data?.provisional.bill_count ?? 0
-  const finalCount = data?.final.bill_count ?? 0
-  const emptyTab = tab === 'belum' ? provisional.length === 0 : finalBills.length === 0
 
   return (
     <AppShell
       title="Rekap"
-      subtitle={belumCount > 0 ? belumCount + ' bill belum final' : 'Semua bill sudah final'}
+      subtitle={
+        // angka sudah ada di kartu dan di banner; subtitle menyebut cakupannya
+        // supaya tidak ada tiga kalimat yang mengatakan hal yang sama.
+        // Sebelum data datang jangan menebak "tidak ada yang perlu diurus".
+        !data ? undefined : nothingToDo ? 'tidak ada yang perlu diurus' : 'yang belum beres aja'
+      }
       active="recap"
     >
       {recap.isError ? (
@@ -115,218 +240,84 @@ export function Recap({ identityId }: { identityId: string | null }) {
 
       {data ? (
         <>
-          {/* Angka pasti: hanya dari bill final. Yang belum final sengaja tidak
-              dijumlahkan ke sini. */}
-          <BalanceCard
-            label={data.final.net_idr >= 0 ? 'Pasti: harus kamu terima' : 'Pasti: harus kamu bayar'}
-            value={Math.abs(data.final.net_idr)}
-            note={'dari ' + finalCount + ' bill final, angkanya sudah tidak berubah'}
-          />
-
-          {belumCount > 0 ? (
-            <section className="app-stack">
-              <div className="app-inline">
-                <strong style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.04em', color: 'var(--ds-muted)' }}>
-                  BELUM PASTI
-                </strong>
-                <span className="app-spacer" />
-                <StatusBadge tone="pending">{belumCount} bill</StatusBadge>
-              </div>
-              <div className="app-list">
-                {kasaranPay > 0 ? (
-                  <div className="app-row">
-                    <span className="grow">
-                      <b>Mungkin kamu bayar</b>
-                      <small>Bisa naik-turun selama bill di bawah belum final</small>
-                    </span>
-                    <span className="amt">
-                      {formatRp(kasaranPay)}
-                      <small style={{ display: 'block', fontWeight: 600, color: 'var(--ds-muted)' }}>
-                        perkiraan
-                      </small>
-                    </span>
-                  </div>
-                ) : null}
-                {kasaranRecv > 0 ? (
-                  <div className="app-row">
-                    <span className="grow">
-                      <b>Mungkin kamu terima</b>
-                      <small>Baru pasti setelah semua orang memilih</small>
-                    </span>
-                    <span className="amt">
-                      {formatRp(kasaranRecv)}
-                      <small style={{ display: 'block', fontWeight: 600, color: 'var(--ds-muted)' }}>
-                        perkiraan
-                      </small>
-                    </span>
-                  </div>
-                ) : null}
-                {kasaranPay === 0 && kasaranRecv === 0 ? (
-                  <div className="app-row">
-                    <span className="grow">
-                      <b>Tidak ada kasaran untuk kamu</b>
-                      <small>Bagianmu di bill yang belum final sudah kamu bayar semua</small>
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-            </section>
+          {people.length > 0 ? (
+            <BalanceCard
+              label={heroPays ? 'Harus kamu bayar' : 'Harus kamu terima'}
+              value={heroValue}
+              note={note}
+            />
           ) : null}
 
-          <div className="seg" role="tablist" aria-label="Saring rekap">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'belum'}
-              className={'seg-btn' + (tab === 'belum' ? ' is-active' : '')}
-              onClick={() => setTab('belum')}
-            >
-              Belum final <span className="seg-count">{belumCount}</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'final'}
-              className={'seg-btn' + (tab === 'final' ? ' is-active' : '')}
-              onClick={() => setTab('final')}
-            >
-              Sudah final <span className="seg-count">{finalCount}</span>
-            </button>
-          </div>
-
-          {emptyTab ? (
-            <div className="ds-empty-soft">
-              <img src={recapArt} alt="" width={104} height={104} />
-              <span className="app-note">
-                {tab === 'belum'
-                  ? 'Tidak ada bill yang menunggu. Semua sudah final.'
-                  : 'Belum ada bill final. Tandai bill lunas supaya masuk ke sini.'}
+          {unclear.length > 0 ? (
+            <button type="button" className="app-banner is-pending" onClick={jumpToUnclear}>
+              <WarningCircle size={19} weight="bold" aria-hidden="true" />
+              <span className="app-banner-text">
+                {/* kalimat aksi, bukan pengulangan label seksi di bawahnya */}
+                <b>{unclear.length} bill perlu dibereskan</b>
+                <small>pembagiannya belum jelas, angkanya masih bisa berubah</small>
               </span>
+              <CaretRight size={16} aria-hidden="true" />
+            </button>
+          ) : null}
+
+          {unclear.length > 0 ? (
+            <div id="rekap-belum-jelas">
+              <Group label={'Pembagian belum jelas · ' + unclear.length + ' bill'}>
+                {unclear.map((bill) => (
+                  <div className="recap-open" key={bill.bill_id}>
+                    <Link
+                      className="recap-open-main"
+                      to="/b/$billId"
+                      params={{ billId: bill.bill_id }}
+                    >
+                      <b>{bill.title}</b>
+                      <small>{blockers(bill)}</small>
+                      <span className="recap-payer">
+                        sisa ditanggung {bill.paid_by_name ?? 'pembayar'}
+                      </span>
+                    </Link>
+                    {bill.can_manage ? (
+                      <Button variant="quiet" compact onClick={() => setClosing(bill)}>
+                        Tutup bill
+                      </Button>
+                    ) : (
+                      // bukan pembayarnya: yang bisa menutup hanya dia, tapi
+                      // barisnya tetap bisa dibuka — chevron menggantikan tombol
+                      // supaya ruang kanan tidak kosong tanpa alasan
+                      <CaretRight size={16} className="recap-chevron" aria-hidden="true" />
+                    )}
+                  </div>
+                ))}
+              </Group>
             </div>
           ) : null}
 
-          {tab === 'belum'
-            ? provisional.map((bill) => (
-                <div className="recap-pending" key={bill.bill_id}>
-                  <Link
-                    to="/b/$billId"
-                    params={{ billId: bill.bill_id }}
-                    style={{ textDecoration: 'none', color: 'inherit' }}
-                  >
-                    <span className="app-row">
-                      <span className="grow">
-                        <b>{bill.title}</b>
-                        <small>{blockers(bill)}</small>
-                        <span className="recap-payer">
-                          {bill.paid_by_name
-                            ? 'sisa ditanggung ' + bill.paid_by_name
-                            : 'pembayar belum pasti'}
-                        </span>
-                      </span>
-                      <span className="amt">
-                        {formatRp(bill.current_user.total_idr)}
-                        <small style={{ display: 'block', fontWeight: 600, color: 'var(--ds-muted)' }}>
-                          {bill.current_user.paid ? 'bagianmu, sudah lunas' : 'bagianmu, belum lunas'}
-                        </small>
-                      </span>
-                    </span>
-                  </Link>
-                  {bill.can_manage ? (
-                    <div className="recap-pending-action">
-                      <Button variant="secondary" onClick={() => setClosing(bill)}>
-                        Tutup bill
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              ))
-            : null}
-
-          {tab === 'final' ? (
-            <>
-              {unpaid.length > 0 ? (
-                <section className="app-stack">
-                  <strong style={{ fontSize: 14, fontWeight: 800 }}>Belum kamu transfer</strong>
-                  <div className="app-list">
-                    {unpaid.map((c) => (
-                      <div className="app-row" key={c.identity_id}>
-                        <span className="grow">
-                          <b>{c.name}</b>
-                          <small>
-                            {c.receivable_idr > 0
-                              ? 'dia juga bayar ' + formatRp(c.receivable_idr) + ' ke kamu'
-                              : 'sudah final, tinggal transfer'}
-                          </small>
-                        </span>
-                        <span className="amt">{formatRp(c.payable_idr)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-
-              {owed.length > 0 ? (
-                <section className="app-stack">
-                  <strong style={{ fontSize: 14, fontWeight: 800 }}>Belum kamu tagih</strong>
-                  <div className="app-list">
-                    {owed.map((c) => (
-                      <div className="app-row" key={c.identity_id}>
-                        <span className="grow">
-                          <b>{c.name}</b>
-                          <small>
-                            {c.payable_idr > 0
-                              ? 'kamu juga bayar ' + formatRp(c.payable_idr) + ' ke dia'
-                              : 'sudah final, tinggal ditagih'}
-                          </small>
-                        </span>
-                        <span className="amt">{formatRp(c.receivable_idr)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-
-              {finalBills.length > 0 ? (
-                <div className="app-inline">
-                  <strong style={{ fontSize: 14, fontWeight: 800 }}>Keluar per bulan</strong>
-                  <span className="app-spacer" />
-                  <span className="app-note" style={{ margin: 0 }}>
-                    dari bill final
-                  </span>
-                </div>
-              ) : null}
-
-              {/* Daftar bill per bulan TIDAK diulang di sini: itu tugas Beranda.
-                  Yang rekap butuhkan hanya angkanya — berapa yang keluar tiap
-                  bulan — supaya satu layar tetap terbaca. */}
-              <div className="app-list">
-                {[...groups.entries()].map(([month, list]) => {
-                  const subtotal = list.reduce((sum, bill) => sum + bill.my_total_idr, 0)
-                  return (
-                    <div className="app-row" key={month}>
-                      <span className="grow">
-                        <b>{month}</b>
-                        <small>{list.length} bill final</small>
-                      </span>
-                      <span className="amt">
-                        {formatRp(subtotal)}
-                        <small style={{ display: 'block', fontWeight: 600, color: 'var(--ds-muted)' }}>
-                          bagianmu
-                        </small>
-                      </span>
-                    </div>
-                  )
-                })}
-                <div className="app-row">
-                  <span className="grow">
-                    <b>Semua bill final</b>
-                    <small>{finalBills.length} bill · termasuk yang belum kamu transfer</small>
-                  </span>
-                  <span className="amt">{formatRp(finalBills.reduce((sum, bill) => sum + bill.my_total_idr, 0))}</span>
-                </div>
-              </div>
-            </>
+          {pays.length > 0 ? (
+            <Group label="Kamu bayar">
+              {pays.map((row) => (
+                <PersonRow key={row.identity_id} row={row} onOpen={() => setOpenPerson(row)} />
+              ))}
+            </Group>
           ) : null}
+
+          {receives.length > 0 ? (
+            <Group label="Kamu tagih">
+              {receives.map((row) => (
+                <PersonRow key={row.identity_id} row={row} onOpen={() => setOpenPerson(row)} />
+              ))}
+            </Group>
+          ) : null}
+
+          {nothingToDo ? (
+            <EmptyState
+              title="Semua bill beres"
+              art={<img className="recap-empty-art" src={paidArt} alt="" width={150} height={150} />}
+            >
+              Tidak ada utang, piutang, atau bill yang menunggu dipilih.
+            </EmptyState>
+          ) : null}
+
+          <PersonSheet row={openPerson} onClose={() => setOpenPerson(null)} />
 
           <Sheet open={closing !== null} title="Tutup bill ini?" onClose={() => setClosing(null)}>
             {closing ? (
