@@ -5,6 +5,22 @@
    halaman di samping scrollbar isi. */
 body { margin: 0; }
 
+/* Body dan kontrol form ikut font design system. Tanpa ini, apa pun yang
+   di-portal ke <body> (toast, sheet) jatuh ke Times New Roman bawaan browser
+   sementara isi .app-shell pakai DM Sans — kelihatan seperti dua font campur. */
+html,
+body {
+  font-family: var(--ds-font-body);
+  color: var(--ds-navy);
+  background: var(--ds-bg);
+}
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
 .app-shell, .app-shell *, .app-shell *::before, .app-shell *::after { box-sizing: border-box; }
 
 .app-shell {
@@ -379,21 +395,92 @@ body { margin: 0; }
 }
 .receipt-preview .grow { min-width: 0; }
 .receipt-preview b { font-size: 14px; }
-/* Dua niat satu kartu: baca pakai AI, atau lampirkan sebagai bukti. */
+
+/* Kartu pilihan foto: ilustrasi kecil di kiri, judul + dua tombol sebaris. */
+.ds-create-hero.is-choice {
+  grid-template-columns: 64px 1fr;
+  align-items: start;
+  gap: 12px;
+  padding: 14px 14px 12px;
+}
+.ds-create-hero.is-choice img { width: 64px; height: 64px; }
+.ds-create-hero b { font-family: var(--ds-font-display); letter-spacing: -.01em; }
+.ds-create-hero.is-choice b { font-size: 15px; }
+
+/* Dua niat berdampingan, bukan menumpuk tiga baris tombol. */
 .photo-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 10px;
 }
-/* Kartu pilihan foto: ilustrasi dikecilkan supaya teksnya tidak sempit. */
-.ds-create-hero.is-choice {
-  grid-template-columns: 76px 1fr;
-  align-items: start;
+.photo-actions .ds-button {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 10px;
+  font-size: 12.5px;
+  white-space: nowrap;
 }
-.ds-create-hero.is-choice img { width: 76px; height: 76px; }
-.ds-create-hero.is-choice b { font-size: 15px; }
-.photo-actions .ds-button { flex: 1 1 150px; }
+.link-quiet {
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  font: 700 12.5px var(--ds-font-body);
+  color: var(--ds-teal);
+  cursor: pointer;
+}
+.link-quiet:hover { color: var(--ds-teal-hover); }
+
+/* Beberapa foto: struk panjang, atau screenshot pesanan dari aplikasi lain. */
+.photo-block {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 20px;
+  background: var(--ds-surface);
+  box-shadow: inset 0 0 0 1px var(--ds-border);
+}
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.photo-tile {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  aspect-ratio: 3 / 4;
+  background: var(--ds-bg-deep);
+}
+.photo-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-tag {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(20, 47, 58, .82);
+  color: #fff;
+  font: 700 10px var(--ds-font-body);
+  letter-spacing: .02em;
+}
+.photo-tag.is-ai { background: var(--ds-teal); }
+.photo-tile button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .92);
+  color: var(--ds-navy);
+  font-size: 14px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
 .check-row {
   display: flex;
   align-items: flex-start;

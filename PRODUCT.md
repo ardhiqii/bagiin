@@ -160,10 +160,15 @@ di HP.
   item, pajak, service, diskon, merchant. Selama menunggu, kartu berubah jadi
   status berjalan: "Membaca struk… N detik" plus tombol **Batal baca**. Form di
   bawahnya tetap bisa diketik sambil menunggu.
-- **Lampirkan foto sebagai bukti** — foto diunggah ke `/api/photos` tanpa
-  memanggil AI. Form tetap kosong, dan foto ikut tersimpan di bill sebagai bukti.
-  Ini jalur untuk orang yang memang mau mengetik manual, atau untuk saat kuota
-  AI habis.
+- **Lampirkan foto sebagai bukti** — satu atau beberapa foto diunggah ke
+  `/api/photos` tanpa memanggil AI, lalu muncul sebagai grid thumbnail bertanda
+  "bukti". Form tetap kosong, dan semua foto ikut tersimpan di bill. Ini jalur
+  untuk orang yang memang mau mengetik manual, untuk struk panjang yang terpotong,
+  atau untuk screenshot pesanan dari Gojek/ShopeeFood/Grab — dan tetap hidup saat
+  kuota AI habis.
+- **Batas** — maksimal 10 foto per bill. AI membaca paling banyak **2 foto** per
+  permintaan (satu bill panjang yang difoto dua kali); foto ketiga dan seterusnya
+  otomatis dilampirkan sebagai bukti, bukan dibuang.
 - **Kalau AI gagal** — kartu pilihan disembunyikan, muncul blok "Struk gagal
   dibaca" berisi penyebab dari server plus tiga jalan keluar: **Isi manual
   sekarang**, **Coba baca lagi**, **Pakai foto struk tadi sebagai bukti** (dan

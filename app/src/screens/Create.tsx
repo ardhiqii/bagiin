@@ -32,17 +32,17 @@ export function Create({ identityId }: { identityId: string | null }) {
   const [payerName, setPayerName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [photoPath, setPhotoPath] = useState<string | null>(null)
+  /** Semua foto bill ini: ada yang dibaca AI, ada yang cuma bukti. */
+  const [photos, setPhotos] = useState<{ path: string; source: 'ocr' | 'attach' }[]>([])
   /**
    * 'ocr' = foto dibaca AI dan angkanya masuk form, 'attach' = foto cuma bukti
    * dan angkanya diketik sendiri. Dua jalur ini yang bikin orang tetap bisa
    * lanjut waktu AI sedang mati atau kuotanya habis.
    */
-  const [photoMode, setPhotoMode] = useState<'ocr' | 'attach' | null>(null)
   const [photoBusy, setPhotoBusy] = useState<'ocr' | 'attach' | null>(null)
   const [ocrError, setOcrError] = useState('')
   const [ocrSeconds, setOcrSeconds] = useState(0)
-  const [lastPhoto, setLastPhoto] = useState<File | null>(null)
+  const [lastFiles, setLastFiles] = useState<File[]>([])
   const [taxIncluded, setTaxIncluded] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const intentRef = useRef<'ocr' | 'attach'>('ocr')
@@ -51,8 +51,8 @@ export function Create({ identityId }: { identityId: string | null }) {
   const [rosterName, setRosterName] = useState('')
 
   useEffect(() => {
-    if (!photoBusy) return
-    const timer = setInterval(() => setOcrSeconds((s) => s + 1), 1000)
+    if (photoBusy !== 'ocr') return
+    const timer = setInterval(() => setOcrSeconds((n) => n + 1), 1000)
     return () => clearInterval(timer)
   }, [photoBusy])
 
@@ -61,26 +61,35 @@ export function Create({ identityId }: { identityId: string | null }) {
     fileRef.current?.click()
   }
 
-  function onFilePicked(file: File) {
-    setLastPhoto(file)
+  function onFilesPicked(files: File[]) {
+    if (!files.length) return
+    setLastFiles(files)
     setError('')
     setOcrError('')
     setOcrSeconds(0)
-    if (intentRef.current === 'attach') void attachPhoto(file)
-    else void readPhoto(file)
+    if (intentRef.current === 'attach') void attachPhotos(files)
+    else void readPhotos(files)
   }
 
   /** Unggah foto tanpa AI: bukti struk, angkanya diketik sendiri. */
-  async function attachPhoto(file: File) {
+  async function attachPhotos(files: File[]) {
+    if (!files.length) return
     setPhotoBusy('attach')
     try {
-      const form = new FormData()
-      form.append('file', file)
-      const saved = await api<{ photo_path: string }>('/api/photos', { method: 'POST', body: form })
-      setPhotoPath(saved.photo_path)
-      setPhotoMode('attach')
+      const saved: { path: string; source: 'attach' }[] = []
+      for (const file of files) {
+        const form = new FormData()
+        form.append('file', file)
+        const res = await api<{ photo_path: string }>('/api/photos', { method: 'POST', body: form })
+        saved.push({ path: res.photo_path, source: 'attach' })
+      }
+      setPhotos((prev) => [...prev, ...saved].slice(0, 10))
       setOcrError('')
-      toast('Foto dilampirkan. Angkanya isi sendiri ya.')
+      toast(
+        saved.length > 1
+          ? saved.length + ' foto dilampirkan sebagai bukti.'
+          : 'Foto dilampirkan sebagai bukti. Angkanya isi sendiri ya.',
+      )
     } catch (err) {
       setOcrError((err as Error).message)
     } finally {
@@ -95,16 +104,19 @@ export function Create({ identityId }: { identityId: string | null }) {
     setOcrError('')
   }
 
-  async function readPhoto(file: File) {
+  async function readPhotos(files: File[]) {
+    // Backend membaca paling banyak dua foto per permintaan; sisanya tetap
+    // disimpan sebagai bukti supaya tidak ada foto yang hilang.
+    const forAi = files.slice(0, 2)
+    const extras = files.slice(2)
     setPhotoBusy('ocr')
-    setPhotoMode(null)
     setOcrError('')
     setOcrSeconds(0)
     const controller = new AbortController()
     abortRef.current = controller
     try {
       const form = new FormData()
-      form.append('file', file)
+      for (const file of forAi) form.append('file', file)
       const draft = await api<{
         title?: string
         merchant?: string
@@ -121,18 +133,19 @@ export function Create({ identityId }: { identityId: string | null }) {
       }>('/api/ocr', { method: 'POST', body: form, signal: controller.signal })
       if (draft.title && draft.title.trim()) setTitle(draft.title)
       if (draft.merchant) setMerchant(draft.merchant)
-      // Struk yang harga itemnya sudah termasuk pajak: OCR sudah mengosongkan
-      // tax, dan bill harus ditandai tax_included supaya pajak tidak dihitung
-      // dua kali saat orang mengetik ulang angkanya.
       const included = Boolean(draft.tax_included)
       setTaxIncluded(included)
       setTax(included ? '' : draft.tax ? formatRd(draft.tax) : '')
       if (draft.service) setService(formatRd(draft.service))
-      // diskon voucher ikut kebaca struk: dulu kuncinya 'discount' sehingga
-      // diskon pesanan hilang dan total jadi lebih besar dari struk
       const discountFromReceipt = draft.order_discount ?? draft.discount
       if (discountFromReceipt) setDiscount(formatRd(discountFromReceipt))
-      if (draft.photos?.[0]) setPhotoPath(draft.photos[0])
+      const readPaths = (draft.photos?.length
+        ? draft.photos
+        : draft.photo_path
+          ? [draft.photo_path]
+          : []
+      ).map((path) => ({ path, source: 'ocr' as const }))
+      setPhotos((prev) => [...prev, ...readPaths].slice(0, 10))
       if (draft.items?.length) {
         setItems(
           draft.items.map((it) => ({
@@ -143,8 +156,12 @@ export function Create({ identityId }: { identityId: string | null }) {
           })),
         )
       }
-      setPhotoMode('ocr')
-      toast('Struk terbaca. Cek lagi angkanya ya.')
+      toast(
+        forAi.length > 1
+          ? forAi.length + ' foto digabung jadi satu bill. Cek lagi angkanya ya.'
+          : 'Struk terbaca. Cek lagi angkanya ya.',
+      )
+      if (extras.length) await attachPhotos(extras)
     } catch (err) {
       if (controller.signal.aborted || (err as Error).name === 'AbortError') return
       setOcrError((err as Error).message)
@@ -197,8 +214,8 @@ export function Create({ identityId }: { identityId: string | null }) {
               mode: 'free',
               slot_count: null,
             })),
-          photo_path: photoPath,
-          photos: photoPath ? [photoPath] : [],
+          photo_path: photos[0]?.path ?? null,
+          photos: photos.map((p) => p.path),
           paid_by_name: payerName.trim() || null,
           tax_included: taxIncluded ? 1 : 0,
           // nama yang diketik di sini jadi placeholder: begitu orangnya join,
@@ -234,60 +251,68 @@ export function Create({ identityId }: { identityId: string | null }) {
         </div>
       }
     >
-      {/* Satu input file untuk dua niat: dibaca AI, atau cuma dilampirkan.
-          Di HP input ini langsung membuka kamera, jadi tidak perlu tempel. */}
+      {/* Tanpa atribut capture: di HP, pemilih bawaan menawarkan kamera atau
+          galeri, jadi beberapa foto sekaligus bisa dipilih. */}
       <input
         ref={fileRef}
         type="file"
         accept="image/*"
-        capture="environment"
+        multiple
         style={{ display: 'none' }}
         onChange={(event) => {
-          const file = event.target.files?.[0]
-          if (file) onFilePicked(file)
+          onFilesPicked(Array.from(event.target.files ?? []))
           event.target.value = ''
         }}
       />
 
-      {photoPath ? (
-        <div className="receipt-preview">
-          <img src={'/uploads/' + photoPath.split('/').pop()} alt="Foto struk yang dibaca" />
-          <div className="grow">
-            <b>{photoMode === 'ocr' ? 'Foto dibaca AI' : 'Foto dilampirkan'}</b>
-            <p className="app-note">
-              {photoMode === 'ocr'
-                ? 'Angka di bawah berasal dari foto ini. Periksa lagi sebelum simpan.'
-                : 'Foto ini bukti saja. Angkanya kamu isi sendiri.'}
-            </p>
-            <div className="app-inline">
-              <Button variant="quiet" onClick={() => pickPhoto(photoMode === 'ocr' ? 'ocr' : 'attach')}>
-                Ganti foto
-              </Button>
-              <Button
-                variant="quiet"
-                onClick={() => {
-                  setPhotoPath(null)
-                  setPhotoMode(null)
-                  setLastPhoto(null)
-                }}
-              >
-                Lepas foto
-              </Button>
-            </div>
+      {photos.length > 0 ? (
+        <section className="photo-block">
+          <div className="app-inline">
+            <strong style={{ fontSize: 14, fontWeight: 800 }}>Foto struk</strong>
+            <span className="app-spacer" />
+            <span className="app-note">{photos.length} dari 10</span>
           </div>
-        </div>
+          <div className="photo-grid">
+            {photos.map((photo) => (
+              <div className="photo-tile" key={photo.path}>
+                <img
+                  src={'/uploads/' + photo.path.split('/').pop()}
+                  alt={photo.source === 'ocr' ? 'Foto struk yang dibaca' : 'Foto struk bukti'}
+                />
+                <span className={'photo-tag' + (photo.source === 'ocr' ? ' is-ai' : '')}>
+                  {photo.source === 'ocr' ? 'AI' : 'bukti'}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Hapus foto"
+                  onClick={() => setPhotos((prev) => prev.filter((item) => item.path !== photo.path))}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="photo-actions">
+            <Button variant="secondary" onClick={() => pickPhoto('ocr')}>
+              Scan foto lagi (AI)
+            </Button>
+            <Button variant="secondary" onClick={() => pickPhoto('attach')}>
+              Tambah bukti
+            </Button>
+          </div>
+        </section>
       ) : photoBusy ? (
         <div className={'ds-create-hero' + (photoBusy === 'ocr' ? ' is-scanning' : '')} role="status">
-          <img src={scanArt} alt="" width={110} height={110} />
+          <img src={scanArt} alt="" width={92} height={92} />
           <div>
             <b>
               {photoBusy === 'ocr'
-                ? `Membaca struk… ${ocrSeconds > 0 ? ocrSeconds + ' detik' : ''}`
+                ? 'Membaca struk… ' + (ocrSeconds > 0 ? ocrSeconds + ' detik' : '')
                 : 'Mengunggah foto…'}
             </b>
             <p className="app-note">
               {photoBusy === 'ocr'
-                ? 'Bisa 10–60 detik, kadang lebih kalau layanan AI ramai. Kamu tetap bisa mengisi manual sambil menunggu.'
+                ? 'Bisa 10–60 detik kalau layanan AI ramai. Kamu tetap bisa mengisi manual sambil menunggu.'
                 : 'Sebentar, fotonya sedang disimpan.'}
             </p>
             {photoBusy === 'ocr' ? (
@@ -299,30 +324,37 @@ export function Create({ identityId }: { identityId: string | null }) {
         </div>
       ) : ocrError ? null : (
         <div className="ds-create-hero is-choice">
-          <img src={createHeroArt} alt="" width={76} height={76} />
-          <div>
-            <b>Isi otomatis dari foto struk?</b>
-            <p className="app-note">AI baca struk dan isi item serta harganya. Atau lampirkan fotonya saja sebagai bukti.</p>
+          <img src={createHeroArt} alt="" width={64} height={64} />
+          <div className="grow">
+            <div className="app-inline">
+              <b>Foto struk (opsional)</b>
+              <span className="app-spacer" />
+              <button
+                type="button"
+                className="link-quiet"
+                onClick={() => {
+                  document.getElementById('item-name-0')?.scrollIntoView({ block: 'center' })
+                  document.getElementById('item-name-0')?.focus()
+                }}
+              >
+                Isi manual saja
+              </button>
+            </div>
+            <p className="app-note">
+              AI bisa membaca struk atau screenshot pesanan (Gojek, ShopeeFood, Grab). Boleh lebih dari satu foto.
+            </p>
             <div className="photo-actions">
-              <Button onClick={() => pickPhoto('ocr')}>Scan struk, isi otomatis</Button>
+              <Button onClick={() => pickPhoto('ocr')}>Scan pakai AI</Button>
               <Button variant="secondary" onClick={() => pickPhoto('attach')}>
-                Lampirkan foto sebagai bukti
+                Lampirkan saja
               </Button>
             </div>
-            <button
-              type="button"
-              className="ds-button ds-button-quiet"
-              style={{ marginTop: 6 }}
-              onClick={() => document.getElementById('item-name-0')?.focus()}
-            >
-              Isi manual saja
-            </button>
           </div>
         </div>
       )}
 
       {ocrError ? (
-        <Alert tone="danger" title={photoBusy ? 'Struk gagal diunggah' : 'Struk gagal dibaca'}>
+        <Alert tone="danger" title={photoBusy === 'attach' ? 'Foto gagal diunggah' : 'Struk gagal dibaca'}>
           {ocrError}
           <span style={{ display: 'block', marginTop: 10 }}>
             <Button
@@ -337,15 +369,15 @@ export function Create({ identityId }: { identityId: string | null }) {
           <span style={{ display: 'block', marginTop: 8 }}>
             <Button
               variant="quiet"
-              disabled={!lastPhoto || Boolean(photoBusy)}
-              onClick={() => lastPhoto && readPhoto(lastPhoto)}
+              disabled={!lastFiles.length || Boolean(photoBusy)}
+              onClick={() => lastFiles.length && readPhotos(lastFiles)}
             >
               Coba baca lagi
             </Button>
             <Button
               variant="quiet"
-              disabled={!lastPhoto || Boolean(photoBusy)}
-              onClick={() => lastPhoto && attachPhoto(lastPhoto)}
+              disabled={!lastFiles.length || Boolean(photoBusy)}
+              onClick={() => lastFiles.length && attachPhotos(lastFiles)}
             >
               Pakai foto struk tadi sebagai bukti
             </Button>

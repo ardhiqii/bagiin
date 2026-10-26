@@ -30,10 +30,11 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     })
 
     await page.goto('/create')
-    await pickPhotoThrough(page, 'Lampirkan foto sebagai bukti')
+    await pickPhotoThrough(page, 'Lampirkan saja')
 
-    await expect(page.getByText('Foto dilampirkan', { exact: true })).toBeVisible()
-    await expect(page.getByText(/bukti saja\. Angkanya kamu isi sendiri/)).toBeVisible()
+    await expect(page.locator('.photo-tile')).toHaveCount(1)
+    await expect(page.getByText('bukti', { exact: true })).toBeVisible()
+    await expect(page.getByText(/1 dari 10/)).toBeVisible()
     // tidak ada satu pun panggilan ke layanan AI
     expect(ocrCalls).toBe(0)
 
@@ -61,7 +62,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     )
 
     await page.goto('/create')
-    await pickPhotoThrough(page, 'Scan struk, isi otomatis')
+    await pickPhotoThrough(page, 'Scan pakai AI')
 
     await expect(page.getByText('Struk gagal dibaca')).toBeVisible()
     await expect(page.getByText(/Layanan AI gratis sedang penuh/)).toBeVisible()
@@ -69,7 +70,8 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
 
     // jalan keluar: foto yang sama dilampirkan sebagai bukti, lalu isi manual
     await page.getByRole('button', { name: 'Pakai foto struk tadi sebagai bukti' }).click()
-    await expect(page.getByText('Foto dilampirkan', { exact: true })).toBeVisible()
+    await expect(page.locator('.photo-tile')).toHaveCount(1)
+    await expect(page.getByText('bukti', { exact: true })).toBeVisible()
     await expect(page.getByText('Struk gagal dibaca')).toHaveCount(0)
 
     await page.getByLabel('Item 1').fill('Sate ayam')
@@ -91,14 +93,14 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     })
 
     await page.goto('/create')
-    await pickPhotoThrough(page, 'Scan struk, isi otomatis')
+    await pickPhotoThrough(page, 'Scan pakai AI')
 
     await expect(page.getByText(/Membaca struk…/)).toBeVisible()
     await expect(page.getByText(/Bisa 10–60 detik/)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Batal baca' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Batal baca' }).click()
-    await expect(page.getByText('Isi otomatis dari foto struk?')).toBeVisible()
+    await expect(page.getByText('Foto struk (opsional)')).toBeVisible()
     await expect(page.getByText(/Membaca struk…/)).toHaveCount(0)
   })
 
@@ -129,7 +131,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     })
 
     await page.goto('/create')
-    await pickPhotoThrough(page, 'Scan struk, isi otomatis')
+    await pickPhotoThrough(page, 'Scan pakai AI')
 
     // pajak tidak boleh ikut ditambahkan lagi
     await expect(page.getByLabel('Pajak (di dalam harga)')).toBeDisabled()
@@ -143,5 +145,30 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     expect(sent.tax_included).toBe(1)
     expect(sent.tax).toBe(0)
     await expect(page.getByText('Pajak (sudah termasuk)')).toBeVisible()
+  })
+
+  test('42. beberapa foto sekaligus: struk panjang atau screenshot pesanan', async ({ page }) => {
+    await freshUser(page, 'Aufa')
+    await page.goto('/create')
+
+    const [chooser] = await Promise.all([
+      page.waitForEvent('filechooser'),
+      page.getByRole('button', { name: 'Lampirkan saja' }).click(),
+    ])
+    await chooser.setFiles([PHOTO, PHOTO, PHOTO])
+
+    await expect(page.locator('.photo-tile')).toHaveCount(3)
+    await expect(page.getByText(/3 dari 10/)).toBeVisible()
+
+    // satu foto bisa dilepas lagi tanpa mengganggu yang lain
+    await page.locator('.photo-tile button').first().click()
+    await expect(page.locator('.photo-tile')).toHaveCount(2)
+
+    await page.getByLabel('Nama bill').fill('Pesanan panjang ' + stamp)
+    await page.getByLabel('Item 1').fill('Paket hemat')
+    await page.getByLabel('Harga satuan').fill('55.000')
+    await page.getByRole('button', { name: 'Buat bill' }).click()
+    await expect(page).toHaveURL(/\/b\//)
+    await expect(page.getByAltText('Foto struk bill')).toHaveCount(2)
   })
 })
