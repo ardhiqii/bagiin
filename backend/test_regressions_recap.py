@@ -97,6 +97,9 @@ def test_reciprocal_final_bills_net_by_real_identity_with_drilldown():
     assert recap["final"]["receivable_idr"] == 100000
     assert recap["final"]["net_idr"] == 20000
     assert recap["final"]["bill_count"] == 2
+    assert len(recap["final"]["bills"]) == 2
+    assert len({b["bill_id"] for b in recap["final"]["bills"]}) == 2
+    assert all(b["bill_id"] for b in recap["final"]["bills"])
 
     assert len(recap["final"]["counterparties"]) == 1
     counterparty = recap["final"]["counterparties"][0]
@@ -670,6 +673,7 @@ def test_empty_recap_has_stable_zero_shape_and_no_secret():
             "net_idr": 0,
             "counterparties": [],
             "bill_count": 0,
+            "bills": [],
         },
         "provisional": {
             "bill_count": 0,

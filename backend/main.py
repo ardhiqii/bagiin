@@ -928,6 +928,10 @@ def _build_identity_recap(identity: dict) -> dict:
     final_payable = 0
     final_receivable = 0
     final_bill_count = 0
+    # Daftar bill yang pembagiannya sudah final. Tanpa ini UI hanya bisa memakai
+    # flag `settled` per bill, yang jumlahnya beda dengan angka `bill_count` di
+    # sini (satu bill bisa final pembagiannya tapi belum lunas).
+    final_bills: list[dict] = []
     counterparties = {}
     provisional_bills = []
     provisional_payable = 0
@@ -948,6 +952,25 @@ def _build_identity_recap(identity: dict) -> dict:
         )
         if final:
             final_bill_count += 1
+            final_bills.append(
+                {
+                    "bill_id": bill_id,
+                    "title": title,
+                    "created_at": bill.get("created_at"),
+                    "merchant": bill.get("merchant"),
+                    # orang yang dilihat: cari di daftar people, bukan asumsi
+                    # urutan — bill bisa punya banyak orang
+                    "my_total_idr": next(
+                        (
+                            person.get("total_idr", 0)
+                            for person in response.get("people", [])
+                            if person.get("identity_id") == viewer_id
+                        ),
+                        0,
+                    ),
+                    "total_idr": response.get("total_idr", 0),
+                }
+            )
             for edge in _recap_edges_for_viewer(bill_data, response, viewer_id):
                 amount = edge["amount_idr"]
                 if edge["direction"] == "pay":
@@ -1172,6 +1195,7 @@ def _build_identity_recap(identity: dict) -> dict:
             "net_idr": final_receivable - final_payable,
             "counterparties": final_rows,
             "bill_count": final_bill_count,
+            "bills": final_bills,
         },
         "provisional": {
             "bill_count": len(provisional_rows),
