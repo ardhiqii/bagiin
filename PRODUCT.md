@@ -129,3 +129,23 @@ Versi lama mempunyai mode item `free` dan `slot` dengan jumlah klaim per orang, 
 Kesenjangan yang sudah terlihat di kode: pembuat dapat menulis nama peserta sebelum mereka membuka bill (`bill_participant`), dan frontend bill memperingatkan nama yang belum memilih. Namun kalkulasi `settled`/Rekap backend terutama memakai identitas nyata yang sudah bergabung (`payment`/`selection`) untuk menentukan peserta yang menunggu. Karena itu nama peserta yang belum membuka bill tidak otomatis menjadi penghalang finalisasi di seluruh permukaan. Model baru perlu satu definisi peserta yang konsisten untuk bill, status, dan akumulasi.
 
 Endpoint pilihan item lama menulis pilihan untuk identitas pengirim request sendiri; pembayar belum punya jalur untuk menetapkan item atas nama peserta lain. Undangan kontak lama dapat langsung memasukkan orang bila `auto_accept` aktif, sedangkan yang menonaktifkannya mendapat undangan pending. Desain baru perlu meninjau pengaturan undangan dan asal penetapan item sebagai bagian dari privasi serta kendali peserta.
+
+## Aturan pembagian yang berlaku (2026-10-26)
+
+Satu cara ambil untuk semua baris, tanpa istilah mode di layar:
+
+- **Satu ketukan = satu porsi.** Baris dengan `quantity` 3 bisa diambil 1, 2, atau
+  3 kali oleh orang yang sama; ketukan saat sudah penuh mengosongkan pilihan.
+- **Harga per porsi = `min(harga satuan, total baris / jumlah klaim)`.** Orang
+  tidak pernah ditagih lebih dari harga satu unit hanya karena yang lain belum
+  memilih. Sisa porsi muncul sebagai "belum ada yang ambil" dan ditanggung yang
+  menalangi.
+- **Klaim lebih banyak daripada unit** berarti baris itu memang dibagi (satu
+  piring dimakan berdua, tiga gelas dinikmati enam orang): harganya turun sendiri,
+  tanpa konfirmasi dan tanpa yang menalangi perlu mengatur apa pun.
+- **Angka per orang masih bisa turun** selama bill terbuka, karena totalnya tetap
+  dan jumlah pemakan belum final. Tidak ada dialog konfirmasi; yang tampil adalah
+  harga satuan dan "N dari M diambil".
+- **Mode slot dihapus dari layar.** Bill lama yang datanya bermode slot tetap
+  dihitung dengan aturan lamanya dan tombol "atur jumlah bagian" hanya muncul di
+  bill seperti itu.
