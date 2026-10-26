@@ -1,7 +1,7 @@
 # Python
 __pycache__/
 *.pyc
-backend/venv/
+backend/venv
 
 # Secrets & local config
 backend/.env
