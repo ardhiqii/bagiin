@@ -1220,3 +1220,21 @@ delete/set-payer/tandai lunas orang lain).
 - Test: `test_features.py` (update_bill diff, accounts CRUD+ownership, rename,
   code regenerate) + E2E browser (settings UI, edit flow, pay sheet, restore).
 - 2026-08-10: push ke GitHub — github.com/ardhiqii/bagiin (public, main).
+
+### 2026-10-26 — baris bebas: harga satuan jadi pagar
+- **Masalah**: baris mode `free` membagi total baris dengan jumlah klaim, jadi
+  satu orang yang mengambil 1 dari 2 tiket 62.000 ditagih 124.000 tanpa
+  peringatan. Enam bill di DB produksi salah total Rp 68.096 (RE Blok M
+  124.000, SSB BENHIL 88.550 → 82.502).
+- **Aturan baru**: `share = min(harga satuan, total baris // jumlah klaim)`.
+  Klaim lebih sedikit daripada unit yang dibeli → selisihnya jadi
+  `uncovered` (ditanggung yang menalangi), bukan dibebankan ke pengklaim
+  pertama. Klaim lebih banyak daripada unit → baris dibagi rata seperti biasa,
+  jadi satu piring yang dimakan berdua tetap 67.500/orang.
+- **Yang tidak berubah**: mode `slot` (bill lama), pajak proporsional, service,
+  diskon pesanan, cashback, pembulatan. 18 baris patungan di DB produksi
+  hasilnya identik; 89 baris yang jumlah klaimnya sama dengan qty juga identik.
+- **Copy**: peringatan memakai "Belum ada yang ambil: <item> N porsi" (dulu
+  "Bagian kosong …"), istilah slot hilang dari teks.
+- **Test**: `test_calc_unit_price_floor.py` (9 kasus) + 3 test lama yang
+  mengunci perilaku lama diperbarui. Suite backend 402 passed.

@@ -1,7 +1,10 @@
 """Bagiin - split calculation engine.
 
-Free items: split proportionally by servings taken (each picker takes 1+
-portions; line total // total_qty per portion).
+Free items: split proportionally by servings taken, but never above the unit
+price: share = min(unit price, line total // total_qty). A line claimed by fewer
+people than it has units leaves the difference uncovered (the owner absorbs it)
+instead of charging the first picker for units nobody took. Claimed by more
+people than it has units, the line is shared and the price per person drops.
 Slot items: creator declares N slots; each slot costs line total // N; people
 take 1+ slots; empty slots stay uncovered (shown to the creator, not
 auto-assigned).
@@ -183,13 +186,34 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
             subtotal_by_ident[fallback_id] = subtotal_by_ident.get(fallback_id, 0) + line_total
             continue
         total_qty = sum(q for _, q in selectors)
-        share = line_total // total_qty
-        rem = line_total - share * total_qty
+        even = line_total // total_qty
+        # Harga satuan adalah pagar. Sebelum ini share = line_total // total_qty
+        # selalu, jadi satu orang yang mengklaim 1 dari 2 tiket ditagih harga dua
+        # tiket (124.000 untuk tiket 62.000) tanpa peringatan apa pun. Yang belum
+        # diklaim harus tetap "belum ada yang ambil", bukan dibebankan ke orang
+        # pertama yang mengetuk.
+        share = min(eff, even)
         for ident, qty in selectors:
             subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + share * qty
-        for i in range(rem):
-            ident = selectors[i % len(selectors)][0]
-            subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + 1
+        if share == even:
+            # Dibagi rata: sisa pembulatan (< jumlah klaim) dibagikan satu-satu.
+            rem = line_total - even * total_qty
+            for i in range(rem):
+                ident = selectors[i % len(selectors)][0]
+                subtotal_by_ident[ident] = subtotal_by_ident.get(ident, 0) + 1
+        else:
+            # Kena pagar: klaim lebih sedikit daripada yang dibeli. Selisihnya
+            # adalah porsi yang belum diambil siapa pun.
+            amount = line_total - share * total_qty
+            if amount > 0:
+                uncovered_idr += amount
+                uncovered_slots.append({
+                    "item_id": it["id"],
+                    "name": it["name"],
+                    "per_slot": share,
+                    "empty": max(0, quantity - total_qty),
+                    "amount_idr": amount,
+                })
 
     # Checkout-wide discount is allocated only after every item has been
     # assigned.  The uncovered slot bucket stays separate: its discount share
@@ -356,7 +380,7 @@ def compute(bill: dict, items: list[dict], selections: list[dict],
         warnings.append(f"Item tidak dipilih siapa pun: {it['name']} Rp {line_total:,} -> otomatis dibebankan ke pembayar dahulu")
     for u in uncovered_slots:
         warnings.append(
-            f"Bagian kosong: {u['name']} {u['empty']} bagian belum terisi "
+            f"Belum ada yang ambil: {u['name']} {u['empty']} porsi "
             f"(total Rp {u['amount_idr']:,})"
         )
 
