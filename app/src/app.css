@@ -1,6 +1,10 @@
 /* Layout aplikasi nyata. Design system (ds-*) tetap sumber komponen;
    file ini cuma mengatur chrome: header, area scroll, nav bawah. */
 
+/* Margin bawaan body menambah 16px di luar frame dan memunculkan scrollbar
+   halaman di samping scrollbar isi. */
+body { margin: 0; }
+
 .app-shell, .app-shell *, .app-shell *::before, .app-shell *::after { box-sizing: border-box; }
 
 .app-shell {
@@ -30,17 +34,6 @@
   display: flex;
   flex-direction: column;
   position: relative;
-}
-
-@media (min-width: 720px) {
-  .app-shell { padding: 28px 0; }
-  .app-frame {
-    height: calc(100dvh - 56px);
-    max-height: calc(100dvh - 56px);
-    border-radius: 32px;
-    overflow: hidden;
-    box-shadow: 0 30px 80px rgba(20, 47, 58, .16);
-  }
 }
 
 .app-top {
@@ -192,7 +185,8 @@
 .app-toast {
   position: fixed;
   left: 50%;
-  top: 10px;
+  /* di bawah header sticky, supaya judul layar tidak tertutup */
+  top: 74px;
   transform: translate(-50%, -12px);
   background: var(--ds-navy);
   color: #fff;
@@ -496,4 +490,170 @@
   width: 34px; height: 38px; border: 0; border-radius: 10px;
   background: color-mix(in srgb, var(--ds-danger) 10%, #fff);
   color: var(--ds-danger); cursor: pointer; display: grid; place-items: center;
+}
+
+/* ---------------------------------------------------------------
+   Layar lebar.
+
+   Sampai 720px aplikasi memakai tinggi layar penuh dan isinya yang
+   men-scroll: bar bawah dan navigasi duduk di dasar frame, tidak ada
+   scrollbar halaman.
+
+   Di atas 720px frame berhenti jadi ponsel: tinggi mengikuti isi,
+   halaman yang men-scroll, bar bawah menempel dengan sticky. Satu
+   scrollbar, bukan dua.
+
+   Di atas 1080px navigasi bawah pindah jadi rail di kiri, mengikuti
+   pola adaptive navigation (bottom bar → rail → sidebar) yang dipakai
+   Material dan UX Patterns Guide, dan kolom isi melebar.
+   --------------------------------------------------------------- */
+
+.app-brand { display: none; }
+.app-nav a.app-rail-extra { display: none; }
+
+@media (min-width: 720px) {
+  .app-frame {
+    display: block;
+    height: auto;
+    max-height: none;
+    min-height: 100dvh;
+    max-width: 560px;
+    border-left: 1px solid color-mix(in srgb, var(--ds-border) 45%, transparent);
+    border-right: 1px solid color-mix(in srgb, var(--ds-border) 45%, transparent);
+  }
+  .app-body {
+    flex: none;
+    overflow: visible;
+    min-height: calc(100dvh - 122px);
+    padding: 22px 22px 28px;
+  }
+  /* sticky, bukan fixed: tetap memakan ruangnya sendiri sehingga isi
+     terakhir tidak pernah tertutup */
+  .app-bottom { position: sticky; bottom: 0; }
+  .app-nav {
+    position: sticky;
+    bottom: 0;
+    padding-bottom: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
+  }
+}
+
+@media (min-width: 900px) {
+  .app-shell { --rail: 208px; }
+  .app-frame {
+    display: grid;
+    grid-template-columns: 208px minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
+    align-items: start;
+    max-width: 1020px;
+    min-height: 100dvh;
+  }
+
+  .app-top {
+    grid-column: 2;
+    grid-row: 1;
+    /* padding kiri-kanan header disamakan dengan isi supaya tepinya lurus */
+    padding: 16px 34px;
+  }
+
+
+  .app-body {
+    grid-column: 2;
+    grid-row: 2;
+    min-height: calc(100dvh - 72px);
+    padding: 26px 34px 34px;
+  }
+
+  .app-bottom { grid-column: 2; grid-row: 3; }
+
+  .app-nav {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 2px;
+    padding: 24px 14px;
+    border-top: 0;
+    border-right: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
+  }
+
+  .app-brand {
+    display: block;
+    padding: 0 14px 22px;
+    font-family: var(--ds-font-display);
+    font-size: 21px;
+    font-weight: 800;
+    letter-spacing: -.035em;
+    color: var(--ds-navy);
+  }
+
+  .app-nav a {
+    flex: none;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 11px;
+    min-height: 56px;
+    padding: 0 14px;
+    border-radius: 14px;
+    font-size: 13.5px;
+    font-weight: 700;
+  }
+  .app-nav a.is-active {
+    background: var(--ds-mint);
+    color: var(--ds-teal);
+  }
+  .app-nav a:hover { background: color-mix(in srgb, var(--ds-mint) 55%, transparent); }
+}
+
+@media (min-width: 900px) {
+  .app-nav a.app-rail-extra {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    margin-top: auto;
+    padding: 9px 12px;
+    border-radius: 14px;
+    text-decoration: none;
+    color: var(--ds-muted);
+    font-size: 12.5px;
+    font-weight: 700;
+    min-width: 0;
+  }
+  .app-rail-extra:hover { background: color-mix(in srgb, var(--ds-mint) 55%, transparent); }
+  .app-rail-avatar {
+    width: 30px;
+    height: 30px;
+    flex: none;
+    border-radius: 999px;
+    background: var(--ds-surface);
+    color: var(--ds-navy);
+    display: grid;
+    place-items: center;
+    font-family: var(--ds-font-display);
+    font-weight: 800;
+    font-size: 12px;
+    box-shadow: var(--ds-shadow-content);
+  }
+  .app-rail-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (min-width: 1200px) {
+  .app-shell { --rail: 236px; }
+  .app-frame { grid-template-columns: 236px minmax(0, 1fr); }
+}
+
+/* Toast dirender di luar .app-shell, jadi var(--rail) tidak sampai ke sana:
+   offsetnya ditulis langsung per breakpoint (setengah lebar rail). */
+@media (min-width: 900px) and (max-width: 1199px) {
+  .app-toast { left: calc(50% + 104px); }
+}
+@media (min-width: 1200px) {
+  .app-toast { left: calc(50% + 118px); }
 }

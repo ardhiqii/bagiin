@@ -55,25 +55,31 @@ export function AppShell({
           </Link>
         </header>
         <main className="app-body">{children}</main>
-        {footer || active ? (
-          <div className="app-bottom">
-            {footer}
-            {active ? (
-              <nav className="app-nav" aria-label="Navigasi utama">
-                {TABS.map(({ id, label, to, Icon }) => (
-                  <Link
-                    key={id}
-                    to={to}
-                    className={id === active ? 'is-active' : ''}
-                    aria-current={id === active ? 'page' : undefined}
-                  >
-                    <Icon />
-                    {label}
-                  </Link>
-                ))}
-              </nav>
-            ) : null}
-          </div>
+        {footer ? <div className="app-bottom">{footer}</div> : null}
+        {active ? (
+          <nav className="app-nav" aria-label="Navigasi utama">
+            <span className="app-brand" aria-hidden="true">
+              Bagiin
+            </span>
+            {TABS.map(({ id, label, to, Icon }) => (
+              <Link
+                key={id}
+                to={to}
+                className={id === active ? 'is-active' : ''}
+                aria-current={id === active ? 'page' : undefined}
+              >
+                <Icon />
+                {label}
+              </Link>
+            ))}
+            {/* hanya muncul di rail kiri; di ponsel pengaturan lewat avatar */}
+            <Link to="/settings" className="app-rail-extra">
+              <span className="app-rail-avatar" aria-hidden="true">
+                {initial}
+              </span>
+              <span className="app-rail-name">{me?.name ?? 'Pengaturan'}</span>
+            </Link>
+          </nav>
         ) : null}
       </div>
     </div>
