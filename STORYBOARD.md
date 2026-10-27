@@ -108,6 +108,30 @@ Angka di tabel ini diuji dengan membandingkan **layar** dan **respons server**,
 bukan dengan angka yang ditulis di tes. Kalau server berubah, tes ikut berubah;
 kalau layar menampilkan angka lama, tes gagal.
 
+## Dua tombol "tutup" yang artinya beda — sekarang dibedakan
+
+Ketemu saat menguji: tombol "Tutup bill" ada di dua layar dengan **akibat uang
+yang berbeda**.
+
+- Di **layar bill** ia memanggil `close`: status bill jadi `closed`, terkunci
+  dari perubahan. Tidak ada utang yang dihapus. Orang yang belum bayar tetap
+  tercatat, dan bill-nya tetap dihitung sebagai belum lunas.
+- Di **rekap** ia memanggil `settle`: seluruh bill dianggap lunas
+  (`settled_manual`), supaya cocok untuk pembayaran tunai di luar aplikasi.
+  Setelah itu tidak ada lagi yang ditagih.
+
+Label yang sama untuk dua akibat berbeda adalah cara tercepat membuat orang
+salah paham soal uang. Jadi:
+
+- rekap: judul "Tandai bill ini lunas?", tombol "Tandai lunas, sisa ditanggung
+  {pembayar}", dan salinan yang menyebut bahwa sisanya tidak ditagih lagi;
+- layar bill: catatan "Kunci bill: tidak bisa dipilih atau diubah lagi. Yang
+  belum bayar tetap tercatat." — karena memang itu yang terjadi.
+
+Diuji di e2e 88 (tandai lunas → batalkan, status uang bolak-balik utuh) dan 89
+(tutup → tidak masuk "Lunas", tetap muncul di Semua, buka lagi → kembali
+berjalan dengan total yang sama).
+
 ## Nol tidak perlu diteriakkan
 
 Beranda dulu selalu memasang kartu saldo besar, termasuk saat nilainya Rp0.

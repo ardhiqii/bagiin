@@ -63,9 +63,9 @@ test.describe('Bagiin — rekap berisi pekerjaan, bukan arsip', () => {
     await expect(page.getByText(/belum ada yang pilih|belum ada yang ngaku/).first()).toBeVisible()
     await expect(page.getByText(/sisa ditanggung/).first()).toBeVisible()
 
-    await page.getByRole('button', { name: 'Tutup bill' }).first().click()
-    await expect(page.getByText('Tutup bill ini?')).toBeVisible()
-    await page.getByRole('button', { name: /Tutup, sisa ditanggung/ }).click()
+    await page.getByRole('button', { name: 'Tandai lunas' }).first().click()
+    await expect(page.getByText('Tandai bill ini lunas?')).toBeVisible()
+    await page.getByRole('button', { name: /Tandai lunas, sisa ditanggung/ }).click()
 
     // setelah ditutup tidak ada sisa, jadi rekap bersih
     await expect(page.getByText(title)).toHaveCount(0)

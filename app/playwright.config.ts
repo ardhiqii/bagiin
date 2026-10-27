@@ -4,7 +4,13 @@ export default defineConfig({
   testDir: './tests',
   fullyParallel: false,
   workers: 1,
-  timeout: 45_000,
+  /**
+   * 60 s, bukan 45: tes yang memakai empat konteks browser (empat orang di satu
+   * bill) butuh 34 s hanya untuk alur normalnya. Batas 45 s membuat tes yang
+   * benar sesekali gagal karena lambat, dan kegagalan seperti itu mengaburkan
+   * kegagalan yang sungguhan.
+   */
+  timeout: 60_000,
   expect: { timeout: 10_000 },
   reporter: [['list']],
   use: {

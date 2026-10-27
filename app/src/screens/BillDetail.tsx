@@ -736,7 +736,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                 <ActionRow
                   icon={<LockSimple size={20} weight="bold" />}
                   label="Tutup bill"
-                  note="Sisa yang belum diambil ditanggung yang menalangi"
+                  note="Kunci bill: tidak bisa dipilih atau diubah lagi. Yang belum bayar tetap tercatat"
                   onClick={() => { setActionsOpen(false); void run(billActions.close(billId), 'Bill ditutup') }}
                 />
               ) : (

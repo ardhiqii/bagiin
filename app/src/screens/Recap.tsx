@@ -279,7 +279,7 @@ export function Recap({ identityId }: { identityId: string | null }) {
                     </Link>
                     {bill.can_manage ? (
                       <Button variant="quiet" compact onClick={() => setClosing(bill)}>
-                        Tutup bill
+                        Tandai lunas
                       </Button>
                     ) : (
                       // bukan pembayarnya: yang bisa menutup hanya dia, tapi
@@ -320,17 +320,24 @@ export function Recap({ identityId }: { identityId: string | null }) {
 
           <PersonSheet row={openPerson} onClose={() => setOpenPerson(null)} />
 
-          <Sheet open={closing !== null} title="Tutup bill ini?" onClose={() => setClosing(null)}>
+          {/* Tombol ini menandai bill LUNAS (settle), bukan menutup status bill.
+              Dulu labelnya "Tutup", sama dengan tombol di layar bill yang artinya
+              lain: menutup status tidak membebaskan siapa pun dari utang, sedangkan
+              yang ini menganggap semuanya sudah dibayar. Dua kata yang sama untuk
+              dua akibat uang yang berbeda adalah cara tercepat bikin orang salah
+              paham, jadi labelnya sekarang menyebut akibatnya. */}
+          <Sheet open={closing !== null} title="Tandai bill ini lunas?" onClose={() => setClosing(null)}>
             {closing ? (
               <div className="app-stack">
                 <div className="app-note" style={{ margin: 0 }}>
-                  {closing.title} masih punya {blockers(closing)}. Kalau ditutup, sisa itu
-                  ditanggung {closing.paid_by_name ?? 'pembayar'} dan angkanya tidak bisa diubah lagi.
+                  {closing.title} masih punya {blockers(closing)}. Kalau ditandai lunas, sisa itu
+                  dianggap ditanggung {closing.paid_by_name ?? 'pembayar'} dan tidak ditagih lagi
+                  ke siapa pun.
                 </div>
                 <Button onClick={() => settle.mutate(closing.bill_id)} disabled={settle.isPending}>
                   {settle.isPending
-                    ? 'Menutup…'
-                    : 'Tutup, sisa ditanggung ' + (closing.paid_by_name ?? 'pembayar')}
+                    ? 'Menandai…'
+                    : 'Tandai lunas, sisa ditanggung ' + (closing.paid_by_name ?? 'pembayar')}
                 </Button>
                 <Button variant="quiet" onClick={() => setClosing(null)}>
                   Tunggu dulu

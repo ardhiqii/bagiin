@@ -74,6 +74,16 @@ async function goRecap(page: Page) {
   await page.waitForTimeout(600)
 }
 
+/**
+ * Aksi sekunder bill (tutup, tandai lunas, ganti pembayar, keluar) ada di sheet
+ * "Aksi lain" — bukan tombol di layar. Tanpa membuka sheet dulu, locator-nya
+ * tidak akan pernah muncul dan tes menunggu sampai timeout.
+ */
+async function openActions(page: Page) {
+  await page.getByRole('button', { name: 'Aksi lain' }).click()
+  await page.waitForTimeout(300)
+}
+
 /** Item bill adalah tombol: "Kopi, ketuk untuk memilih". */
 async function pickItem(page: Page, name: string) {
   await page.getByRole('button', { name: new RegExp(name + ', ketuk') }).first().click()
@@ -343,11 +353,11 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     const billId = await createBill(page, { title, items: [{ name: 'Nasi', price: '18000' }] })
 
     await goRecap(page)
-    const closeButton = page.getByRole('button', { name: /Tutup bill/ }).first()
+    const closeButton = page.getByRole('button', { name: /Tandai lunas/ }).first()
     if (await closeButton.count()) {
       await closeButton.click()
       await page.waitForTimeout(300)
-      await page.getByRole('button', { name: /Tutup, sisa ditanggung/ }).click()
+      await page.getByRole('button', { name: /Tandai lunas, sisa ditanggung/ }).click()
       await page.waitForTimeout(1200)
     }
 
@@ -754,5 +764,111 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
       recap.final.payable_idr > 0 ? recap.final.payable_idr : recap.final.receivable_idr,
     )
     await other.close()
+  })
+
+  test('88. tandai semua lunas lalu batalkan: status uang bolak-balik tanpa sisa', async ({ page, browser }) => {
+    await freshUser(page, 'Semua A ' + stamp)
+    const title = 'Semua Lunas ' + stamp
+    const billId = await createBill(page, {
+      title,
+      items: [
+        { name: 'Soto', price: '22000' },
+        { name: 'Jeruk', price: '8000' },
+      ],
+    })
+    const guest = await guestJoins(browser, page.url(), 'Tamu Semua ' + stamp, 'Jeruk')
+    await guest.ctx.close()
+    await pickItem(page, 'Soto')
+
+    // aksi sekunder ada di sheet "Aksi lain", bukan tombol di layar
+    await openActions(page)
+    await page.getByRole('button', { name: /Tandai semua lunas/ }).click()
+    await page.waitForTimeout(1500)
+    // "Tandai semua lunas" adalah keputusan tingkat bill (settled_manual), bukan
+    // menandai satu per satu orang: yang berubah all_paid + settled, bukan people.paid
+    const allPaid = await apiGet(page, '/api/bills/' + billId)
+    expect(allPaid.settled_manual, 'bill harus ditandai lunas manual').toBe(true)
+    expect(allPaid.all_paid).toBe(true)
+    expect(allPaid.settled).toBe(true)
+
+    await goHome(page)
+    const row = page.locator('.app-row', { hasText: title })
+    await expect(row).toBeVisible()
+    await expect(row).not.toContainText('orang belum bayar')
+
+    await goRecap(page)
+    const paidRecap = await assertRecapShape(page)
+    expect(paidRecap.recap.final.counterparties.length, 'tidak boleh ada tagihan tersisa').toBe(0)
+
+    // lalu dibatalkan lagi: utangnya harus muncul utuh, bukan setengah
+    await goHome(page)
+    await page.locator('.app-row', { hasText: title }).click()
+    await page.waitForTimeout(900)
+    await openActions(page)
+    await page.getByRole('button', { name: /Batalkan lunas seluruh bill/ }).click()
+    await page.waitForTimeout(1500)
+    const undone = await apiGet(page, '/api/bills/' + billId)
+    expect(undone.settled_manual).toBe(false)
+    expect(undone.settled).toBe(false)
+
+    await page.reload()
+    await page.waitForTimeout(1200)
+    await goRecap(page)
+    const backRecap = await assertRecapShape(page)
+    expect(backRecap.recap.final.counterparties.length, 'tagihan harus kembali setelah dibatalkan').toBe(1)
+    expect(backRecap.recap.final.receivable_idr).toBe(
+      undone.people.find((p: any) => p.identity_id !== (undone.paid_by_id ?? '')).total_idr,
+    )
+  })
+
+  test('89. tutup lalu buka lagi: bill kembali berjalan dengan angka yang sama', async ({ page }) => {
+    await freshUser(page, 'Buka A ' + stamp)
+    const title = 'Buka Lagi ' + stamp
+    const billId = await createBill(page, {
+      title,
+      items: [
+        { name: 'Bakmi', price: '27000' },
+        { name: 'Teh', price: '5000' },
+      ],
+    })
+    await pickItem(page, 'Bakmi')
+    const before = await apiGet(page, '/api/bills/' + billId)
+    expect(before.bill.total_idr).toBe(32000)
+
+    await openActions(page)
+    await page.getByRole('button', { name: /Tutup bill/ }).click()
+    await page.waitForTimeout(1500)
+    const closed = await apiGet(page, '/api/bills/' + billId)
+    // menutup itu mengunci, bukan membebaskan: status berubah, utang tidak
+    expect(closed.bill.status).toBe('closed')
+    expect(closed.settled_manual).toBe(false)
+
+    // bill yang ditutup tapi masih ada yang belum bayar TIDAK boleh pindah ke
+    // "Lunas": menutup itu mengunci, bukan membebaskan utang
+    await goHome(page)
+    await page.getByRole('button', { name: 'Lunas', exact: true }).click()
+    await expect(page.locator('.app-row', { hasText: title })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Semua', exact: true }).click()
+    await expect(page.locator('.app-row', { hasText: title })).toBeVisible()
+
+    await page.locator('.app-row', { hasText: title }).click()
+    await page.waitForTimeout(900)
+    await openActions(page)
+    await page.getByRole('button', { name: /Buka lagi/ }).click()
+    await page.waitForTimeout(1500)
+    const reopened = await apiGet(page, '/api/bills/' + billId)
+    expect(reopened.bill.status).toBe('open')
+    expect(reopened.bill.total_idr, 'total tidak boleh berubah gara-gara tutup-buka').toBe(32000)
+
+    await goHome(page)
+    await expect(page.locator('.app-row', { hasText: title })).toBeVisible()
+    const rows = await apiGet(page, '/api/identities/' + (await identity(page)).id + '/bills')
+    const rowApi = rows.find((r: any) => r.id === billId)
+    expect(rowApi.settled).toBe(false)
+    expect(await rowAmount(page.locator('.app-row', { hasText: title }))).toBe(rowApi.my_total_idr)
+
+    await goRecap(page)
+    const { finalIds, unclearIds } = await assertRecapShape(page)
+    expect(finalIds.has(billId) || unclearIds.has(billId), 'bill terbuka harus muncul di rekap').toBe(true)
   })
 })
