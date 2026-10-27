@@ -597,7 +597,18 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                     <Avatar label={initials(person.name)} tone={isMe ? 'teal' : 'navy'} />
                     <span className="grow">
                       <b>{person.name}{isMe ? ' (kamu)' : ''}</b>
-                      <small>{person.total_idr > 0 ? 'Bagian ' + formatRp(person.total_idr) : 'Belum memilih'}</small>
+                      {/* Pembayar yang belum memilih item bukan "belum memilih" —
+                          dia sudah menalangi dan menanggung sisa yang tidak diambil
+                          siapa pun. Menulis "belum memilih" di sebelah lencana
+                          "Lunas" membuat orang mengira masih ada yang harus dia
+                          kerjakan. */}
+                      <small>
+                        {person.total_idr > 0
+                          ? 'Bagian ' + formatRp(person.total_idr)
+                          : person.identity_id === data.bill.paid_by_identity_id
+                            ? 'Menalangi bill ini'
+                            : 'Belum memilih'}
+                      </small>
                     </span>
                     <span className="amt">
                       {person.paid === 'paid' ? <StatusBadge tone="success">Lunas</StatusBadge> : <StatusBadge tone="pending">Belum</StatusBadge>}

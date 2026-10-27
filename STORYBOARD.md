@@ -108,6 +108,14 @@ Angka di tabel ini diuji dengan membandingkan **layar** dan **respons server**,
 bukan dengan angka yang ditulis di tes. Kalau server berubah, tes ikut berubah;
 kalau layar menampilkan angka lama, tes gagal.
 
+## Pembayar yang belum memilih bukan "belum memilih"
+
+Di daftar orang pada layar bill, siapa pun yang bagiannya Rp0 dilabeli "Belum
+memilih" — termasuk pembayar. Padahal pembayar yang tidak mengambil satu item
+pun sudah menalangi seluruh bill dan menanggung sisa yang tidak diambil siapa
+pun. Menulis "belum memilih" di sebelah lencana "Lunas" membuat orang mengira
+masih ada yang harus dia kerjakan. Sekarang: "Menalangi bill ini".
+
 ## Rincian per orang, dan pengingat yang nominalnya sama
 
 Kartu orang di rekap bisa dibuka: rinciannya per bill, dan tiap baris membawa
