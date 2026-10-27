@@ -123,6 +123,18 @@ async function apiSend(page: Page, path: string, body: unknown = {}) {
   return res.json().catch(() => ({}))
 }
 
+
+async function sendWithMethod(page: Page, method: 'POST' | 'DELETE' | 'PUT', path: string, body?: unknown) {
+  const me = await identity(page)
+  const res = await page.request.fetch(path, {
+    method,
+    headers: { 'X-Identity-Id': me.id, 'X-Identity-Secret': me.secret },
+    data: body ?? {},
+  })
+  if (!res.ok()) throw new Error(method + ' ' + path + ' -> ' + res.status())
+  return res.json().catch(() => ({}))
+}
+
 async function cardValue(page: Page) {
   return num(await page.locator('.ds-balance-value').first().textContent())
 }
@@ -169,6 +181,15 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     await expect(row).toBeVisible()
     expect(await rowAmount(row)).toBe(rowApi.my_total_idr)
 
+    // dua layar, satu angka: catatan di kartu saldo harus sama dengan jumlah
+    // bill yang benar-benar tidak bisa dihitung pasti di rekap
+    const recapNow = await apiGet(page, '/api/identities/' + me.id + '/recap')
+    if (recapNow.provisional.bill_count > 0) {
+      await expect(page.locator('.ds-balance-note')).toContainText(
+        String(recapNow.provisional.bill_count),
+      )
+    }
+
     await goRecap(page)
     const { recap, finalIds, unclearIds } = await assertRecapShape(page)
     expect(unclearIds.has(billId), 'bill tanpa pilihan harus tampil sebagai belum jelas').toBe(true)
@@ -177,6 +198,9 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     // dan layarnya harus benar-benar menampilkannya — bukan cuma API yang tahu.
     // Cek lewat UI inilah yang menangkap cache rekap yang tidak disegarkan.
     await expect(page.locator('#rekap-belum-jelas')).toContainText(title)
+    await expect(page.locator('#rekap-belum-jelas').locator('.recap-open')).toHaveCount(
+      recap.provisional.bills.length,
+    )
     expect(await recapCardOrZero(page)).toBe(
       recap.final.payable_idr > 0 ? recap.final.payable_idr : recap.final.receivable_idr,
     )
@@ -445,5 +469,174 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     const afterDecline = await apiGet(guest.page, '/api/bills/' + thirdId)
     expect(afterDecline.people.some((person: any) => person.identity_id === guestId.id)).toBe(false)
     await guest.ctx.close()
+  })
+
+  test('82. ganti pembayar: arah utang di beranda dan rekap ikut berbalik', async ({ page, browser }) => {
+    await freshUser(page, 'Payer A ' + stamp)
+    const title = 'Payer Integrasi ' + stamp
+    const billId = await createBill(page, {
+      title,
+      items: [
+        { name: 'Sate', price: '30000' },
+        { name: 'Es', price: '10000' },
+      ],
+    })
+    const guest = await guestJoins(browser, page.url(), 'Tamu Payer ' + stamp, 'Sate')
+    await pickItem(page, 'Es')
+    const me = await identity(page)
+
+    // sebelum: pemilik menalangi, dia menagih
+    const before = await apiGet(page, '/api/bills/' + billId)
+    expect(before.paid_by_id).toBe(me.id)
+    // sebelum: pemilik menalangi, jadi yang muncul piutang sebesar bagian tamu
+    const guestShare = before.people.find((p: any) => p.identity_id !== me.id).total_idr
+    const myShare = before.people.find((p: any) => p.identity_id === me.id).total_idr
+    expect(guestShare).toBe(30000)
+
+    // ganti pembayar ke tamu (masih di layar bill)
+    await page.getByRole('button', { name: 'Aksi lain' }).click()
+    await page.waitForTimeout(250)
+    await page.getByRole('button', { name: 'Ganti yang bayar duluan' }).click()
+    await page.getByRole('button', { name: new RegExp('Tamu Payer ' + stamp + ' Jadikan pembayar') }).click()
+    await page.waitForTimeout(1200)
+
+    const after = await apiGet(page, '/api/bills/' + billId)
+    expect(after.paid_by_id).not.toBe(me.id)
+
+    // beranda: kartu == net server, dan arahnya sekarang "harus kamu bayar"
+    await goHome(page)
+    const rows = await apiGet(page, '/api/identities/' + me.id + '/bills')
+    const rowApi = rows.find((r: any) => r.id === billId)
+    const row = page.locator('.app-row', { hasText: title })
+    expect(await rowAmount(row)).toBe(rowApi.my_total_idr)
+    // arah berbalik: dulu "harus kamu terima", sekarang "harus kamu bayar"
+    await expect(page.locator('.ds-balance-label').first()).toContainText('Harus kamu bayar')
+    expect(await cardValue(page)).toBe(myShare)
+
+    await goRecap(page)
+    const { recap, finalIds } = await assertRecapShape(page)
+    expect(finalIds.has(billId)).toBe(true)
+    expect(recap.final.receivable_idr).toBe(0)
+    expect(recap.final.payable_idr).toBe(myShare)
+    expect(await recapCardOrZero(page)).toBe(myShare)
+    await expect(page.getByText('Tamu Payer ' + stamp).first()).toBeVisible()
+  })
+
+  test('83. tamu keluar: sisa bagiannya jadi belum jelas, bukan hilang diam-diam', async ({ page, browser }) => {
+    await freshUser(page, 'Keluar A ' + stamp)
+    const title = 'Keluar Integrasi ' + stamp
+    const billId = await createBill(page, {
+      title,
+      items: [
+        { name: 'Nasi', price: '20000' },
+        { name: 'Air', price: '5000' },
+      ],
+    })
+    const guest = await guestJoins(browser, page.url(), 'Tamu Keluar ' + stamp, 'Nasi')
+    await pickItem(page, 'Air')
+
+    // tamu keluar dari bill
+    await guest.page.reload()
+    await guest.page.getByRole('button', { name: 'Aksi lain' }).click()
+    await guest.page.waitForTimeout(250)
+    await guest.page.getByRole('button', { name: 'Keluar dari bill ini' }).click()
+    await expect(guest.page.getByText('Kamu keluar dari bill ini')).toBeVisible()
+    await guest.ctx.close()
+
+    const bill = await apiGet(page, '/api/bills/' + billId)
+    expect(bill.people.length, 'tamu harus benar-benar keluar').toBe(1)
+    // yang ditinggal tidak hilang: item tamu pindah ke tanggungan pembayar,
+    // jadi total bill tetap utuh dan bagian pembayar naik
+    expect(bill.owner_absorbed_idr).toBe(20000)
+    // uangnya tidak boleh menguap: jumlah bagian semua orang == total bill
+    const parts = bill.people.reduce((sum: number, p: any) => sum + p.total_idr, 0)
+    expect(parts + bill.uncovered_idr, 'ada uang yang hilang setelah tamu keluar').toBe(bill.bill.total_idr)
+
+    await page.reload()
+    await page.waitForTimeout(1200)
+    await goRecap(page)
+    const { finalIds, unclearIds } = await assertRecapShape(page)
+    expect(unclearIds.has(billId), 'bill dengan bagian tak bertuan harus jadi belum jelas').toBe(true)
+    expect(finalIds.has(billId)).toBe(false)
+
+    await goHome(page)
+    const row = page.locator('.app-row', { hasText: title })
+    await expect(row).toBeVisible()
+  })
+
+  test('84. pajak dan diskon: total tiga layar sama dengan hitungan server', async ({ page, browser }) => {
+    await freshUser(page, 'Pajak A ' + stamp)
+    const title = 'Pajak Integrasi ' + stamp
+    await nav(page, 'Buat')
+    await page.getByLabel('Nama bill').fill(title)
+    await page.getByLabel('Item 1').fill('Ayam')
+    await page.getByLabel('Harga satuan').nth(0).fill('40000')
+    await page.getByRole('button', { name: /Tambah item/ }).click()
+    await page.waitForTimeout(150)
+    await page.getByLabel('Item 2').fill('Nasi')
+    await page.getByLabel('Harga satuan').nth(1).fill('10000')
+    await page.getByLabel('Pajak', { exact: true }).fill('5.500')
+    await page.getByLabel('Diskon pesanan').fill('1.500')
+    await page.getByRole('button', { name: 'Buat bill' }).click()
+    await expect(page).toHaveURL(/\/b\//)
+    await page.waitForTimeout(700)
+    const billId = page.url().split('/b/')[1]
+
+    const guest = await guestJoins(browser, page.url(), 'Tamu Pajak ' + stamp, 'Nasi')
+    await guest.ctx.close()
+    await pickItem(page, 'Ayam')
+    const me = await identity(page)
+
+    const bill = await apiGet(page, '/api/bills/' + billId)
+    // 50.000 + 5.500 - 1.500
+    expect(bill.bill.total_idr).toBe(54000)
+    expect(bill.uncovered_idr).toBe(0)
+    expect(await cardValue(page)).toBe(54000)
+
+    await goHome(page)
+    const rows = await apiGet(page, '/api/identities/' + me.id + '/bills')
+    const rowApi = rows.find((r: any) => r.id === billId)
+    const row = page.locator('.app-row', { hasText: title })
+    expect(await rowAmount(row)).toBe(rowApi.my_total_idr)
+    await expect(row).toContainText('54.000')
+
+    const parts = bill.people.reduce((sum: number, p: any) => sum + p.total_idr, 0)
+    expect(parts, 'pajak/diskon tidak terbagi habis ke semua orang').toBe(54000)
+
+    await goRecap(page)
+    const { recap } = await assertRecapShape(page)
+    expect(await recapCardOrZero(page)).toBe(
+      recap.final.payable_idr > 0 ? recap.final.payable_idr : recap.final.receivable_idr,
+    )
+  })
+
+  test('85. batalkan undangan: kartu di beranda tamu hilang', async ({ page, browser }) => {
+    await freshUser(page, 'Batal A ' + stamp)
+    const firstId = await createBill(page, { title: 'Kontak Batal ' + stamp, items: [{ name: 'Kopi', price: '9000' }] })
+    const guest = await guestJoins(browser, page.url(), 'Tamu Batal ' + stamp)
+    const guestId = await identity(guest.page)
+    await apiSend(guest.page, '/api/identities/' + guestId.id + '/auto_accept', { auto_accept: 0 })
+
+    const title = 'Dibatalkan ' + stamp
+    const billId = await createBill(page, { title, items: [{ name: 'Roti', price: '12000' }] })
+    await apiSend(page, '/api/bills/' + billId + '/invite', { identity_id: guestId.id })
+
+    await guest.page.goto('/')
+    await guest.page.waitForTimeout(1500)
+    await expect(guest.page.locator('.invite-card', { hasText: title })).toBeVisible()
+
+    // pemilik menarik undangannya
+    const me = await identity(page)
+    const invites = await apiGet(page, '/api/bills/' + billId).catch(() => null)
+    const inviteId = invites?.pending_invites?.[0]?.id
+    expect(inviteId, 'undangan harus tercatat di bill').toBeTruthy()
+    await sendWithMethod(page, 'DELETE', '/api/bills/' + billId + '/invites/' + inviteId)
+    expect(me.id).toBeTruthy()
+
+    await guest.page.reload()
+    await guest.page.waitForTimeout(1500)
+    await expect(guest.page.locator('.invite-card', { hasText: title })).toHaveCount(0)
+    await guest.ctx.close()
+    expect(firstId).toBeTruthy()
   })
 })

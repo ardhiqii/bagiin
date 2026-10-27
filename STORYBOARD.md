@@ -88,6 +88,24 @@ Dari Rekap, bill yang pembagiannya belum jelas ditutup.
    Membaca `textContent` mentah menggabungkan keduanya, jadi pembanding angka
    harus memotong di kata "dari" — kalau tidak, tesnya membandingkan angka palsu.
 
+### Perilaku uang yang dikunci e2e (bukan asumsi)
+
+| Kejadian | Yang harus benar di tiga layar |
+|---|---|
+| Bill dibuat | total bill == kartu layar bill; baris beranda == bagian saya; rekap menandainya belum jelas |
+| Semua orang memilih | bill pindah dari belum jelas ke final; kartu beranda == net rekap |
+| Ganti pembayar | arah berbalik: yang tadinya "harus kamu terima" jadi "harus kamu bayar", nominal == bagian saya |
+| Tamu keluar dari bill | itemnya pindah ke tanggungan pembayar (owner_absorbed), total bill tidak berubah, uang tidak menguap |
+| Pajak + diskon | jumlah bagian semua orang == total bill persis, tidak ada sisa pembulatan yang hilang |
+| Batalkan undangan | kartu undangan hilang dari beranda orang yang diundang |
+| Ubah harga | total baru sampai ke bill, baris beranda, dan kartu rekap |
+| Tutup bill | hilang dari daftar belum jelas, muncul di Lunas |
+| Hapus bill | hilang dari beranda dan rekap, link-nya 404 |
+
+Angka di tabel ini diuji dengan membandingkan **layar** dan **respons server**,
+bukan dengan angka yang ditulis di tes. Kalau server berubah, tes ikut berubah;
+kalau layar menampilkan angka lama, tes gagal.
+
 ## Undangan: jalur terpendek yang tetap jujur
 
 Backend sudah memasukkan orang yang diundang ke bill tanpa bertanya kalau
