@@ -736,36 +736,29 @@
      dengan satu kata menggantung di baris kedua. */
   text-wrap: pretty;
 }
-/* tindakan lanjutan sejajar awal teks, bukan awal ikon */
-/* Baris aksi memakai rel ikon yang sama dengan teks di atasnya: ikon kunci
-   segaris dengan ikon jam, teksnya segaris dengan awal paragraf. */
+/* Baris aksi memakai rel ikon yang sama dengan baris di atasnya: ikon kunci
+   segaris dengan ikon jam, teksnya segaris dengan awal paragraf. Satu blok saja -
+   dua blok yang saling menimpa membuat gap ikon-teks tertinggal 4 px sementara
+   paragraf di atasnya 8 px, dan teks aksi meleset 4 px dari teks paragraf. */
 .ds-notice-action { grid-column: 1 / -1; display: flex; }
-.ds-notice .link-quiet > svg { width: 15px; height: 15px; }
-/* link-quiet punya padding 4 px + margin negatif untuk target sentuh; di dalam
-   notice itu menggeser teks 4 px dari awal paragraf di atasnya. */
 .ds-notice .link-quiet {
-  /* rel ikon yang sama dengan baris di atas: ikon 15 px + jarak 8 px = teks
-     mulai di 23 px, sama seperti paragrafnya */
   display: grid;
   grid-template-columns: 15px minmax(0, 1fr);
   column-gap: var(--ds-space-2);
   align-items: center;
   padding: 0;
+  /* link-quiet punya padding 4 px + margin negatif untuk target sentuh; di
+     dalam notice itu menggeser teks dari awal paragraf di atasnya. */
   margin: calc(-1 * var(--ds-space-3)) 0;
   text-align: left;
-}
-.ds-notice .link-quiet {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ds-space-1);
   font-size: var(--ds-text-md);
   font-weight: var(--ds-weight-medium);
   color: var(--ds-navy);
   text-decoration: underline;
   text-underline-offset: 3px;
   min-height: var(--ds-touch);
-  margin: calc(-1 * var(--ds-space-3)) 0;
 }
+.ds-notice .link-quiet > svg { width: 15px; height: 15px; }
 .ds-notice .link-quiet:hover { color: var(--ds-teal); }
 
 /* ---------- Provider logo ----------
