@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { CaretRight, WarningCircle } from '@phosphor-icons/react'
 import { useRecap } from '../lib/queries'
+import { invalidateMoneyViews } from '../lib/mutations'
 import { api } from '../lib/api'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
@@ -171,9 +172,9 @@ export function Recap({ identityId }: { identityId: string | null }) {
   const settle = useMutation({
     mutationFn: (billId: string) =>
       api<unknown>('/api/bills/' + billId + '/settle', { method: 'POST', body: {} }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['recap'] })
-      qc.invalidateQueries({ queryKey: ['bills'] })
+    onSuccess: (_data, billId) => {
+      // tutup bill mengubah rekap, daftar, dan layar bill itu sendiri
+      invalidateMoneyViews(qc, { billId, identityId })
       setClosing(null)
     },
   })

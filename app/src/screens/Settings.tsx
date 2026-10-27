@@ -3,11 +3,12 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { Alert, Button, Field, ProviderLogo } from '../ds/primitives'
+import { Alert, Button, Field, ProviderLogo, SectionHead } from '../ds/primitives'
 import { publishIdentity, renameIdentity, resetIdentity } from '../lib/identity'
 import { signOut } from '../lib/session'
 import { endpoints } from '../lib/api'
-import { accountActions, keys, useAccounts, useBillAction, type PaymentAccount } from '../lib/queries'
+import { accountActions, useAccounts, useBillAction, type PaymentAccount } from '../lib/queries'
+import { invalidateAccountViews } from '../lib/mutations'
 import type { Identity } from '../lib/types'
 
 const EMPTY = { brand: '', number: '', holder: '' }
@@ -36,6 +37,8 @@ export function Settings({ identity }: { identity: Identity | null }) {
     setError('')
     try {
       await renameIdentity(identity as never, name.trim())
+      // nama ikut tersimpan di payload bill & rekap (daftar orang, pembayar)
+      invalidateAccountViews(queryClient, identity?.id)
       toast('Nama kamu sudah diperbarui')
     } catch (err) {
       setError((err as Error).message)
@@ -47,8 +50,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
   async function run(todo: { path: string; method?: 'POST' | 'PUT' | 'DELETE'; body?: unknown }, message: string) {
     try {
       await action.mutateAsync(todo)
-      await queryClient.invalidateQueries({ queryKey: ['accounts', identity?.id ?? ''] })
-      await queryClient.invalidateQueries({ queryKey: keys.bills(identity?.id ?? '') })
+      invalidateAccountViews(queryClient, identity?.id)
       toast(message)
       return true
     } catch (err) {
@@ -108,7 +110,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
       {error ? <Alert tone="danger" title="Gagal menyimpan">{error}</Alert> : null}
 
       <section className="app-stack">
-        <strong className="ds-section-title">Nama</strong>
+        <SectionHead>Nama</SectionHead>
         <Field id="settings-name" label="Nama kamu" value={name} onChange={setName} hint="Nama ini yang muncul ke teman di bill" />
         <Button block loading={busy} disabled={!identity || !name.trim() || name.trim() === identity?.name} onClick={saveName}>
           Simpan nama
@@ -116,11 +118,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
       </section>
 
       <section className="app-stack">
-        <div className="app-inline">
-          <strong className="ds-section-title">Rekening untuk ditransfer</strong>
-          <span className="app-spacer" />
-          <span className="app-note">{accounts.data?.length ?? 0}</span>
-        </div>
+        <SectionHead meta={<>{accounts.data?.length ?? 0}</>}>Rekening untuk ditransfer</SectionHead>
         <p className="app-note">Kalau kamu yang menalangi bill, teman kamu melihat rekening ini di layar bill.</p>
 
         {accounts.data && accounts.data.length > 0 ? (
@@ -203,7 +201,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
       </section>
 
       <section className="app-stack">
-        <strong className="ds-section-title">Kode pemulihan</strong>
+        <SectionHead>Kode pemulihan</SectionHead>
         <div className="ds-card ds-card-surface ds-pad-md" style={{ display: 'grid', gap: 10 }}>
           <span className="app-note" style={{ margin: 0 }}>
             Untuk masuk ke akun ini di HP lain: buka <b>/masuk</b> lalu ketik kodenya.
@@ -251,7 +249,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
       </section>
 
       <section className="app-stack">
-        <strong className="ds-section-title">Undangan</strong>
+        <SectionHead>Undangan</SectionHead>
         <label className="app-row" style={{ cursor: 'pointer' }}>
           <span className="grow">
             <b>Terima undangan otomatis</b>
@@ -269,7 +267,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
       </section>
 
       <section className="app-stack">
-        <strong className="ds-section-title">Identitas</strong>
+        <SectionHead>Identitas</SectionHead>
         <div className="app-row">
           <span className="grow">
             <b>{identity?.id ?? '—'}</b>
@@ -282,7 +280,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
       </section>
 
       <section className="app-stack">
-        <strong className="ds-section-title">Mulai dari nol</strong>
+        <SectionHead>Mulai dari nol</SectionHead>
         <p className="app-note">
           Menghapus identitas di perangkat ini. Bill yang sudah kamu buat tetap ada di server, tapi kamu tidak akan bisa membukanya lagi sebagai dirimu.
         </p>

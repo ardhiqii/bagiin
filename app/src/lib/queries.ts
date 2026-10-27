@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
+import { invalidateMoneyViews } from './mutations'
 import type { BillResponse, BillRow, Recap } from './types'
 
 export const keys = {
@@ -99,13 +100,7 @@ export function useBillAction(billId: string | null, identityId: string | null) 
   return useMutation({
     mutationFn: (action: BillAction) =>
       api<unknown>(action.path, { method: action.method ?? 'POST', body: action.body ?? {} }),
-    onSuccess: () => {
-      if (billId) qc.invalidateQueries({ queryKey: keys.bill(billId) })
-      if (identityId) {
-        qc.invalidateQueries({ queryKey: keys.bills(identityId) })
-        qc.invalidateQueries({ queryKey: keys.recap(identityId) })
-      }
-    },
+    onSuccess: () => invalidateMoneyViews(qc, { billId, identityId }),
   })
 }
 

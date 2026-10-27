@@ -3,9 +3,10 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { billActions, keys, useBill, useBillAction } from '../lib/queries'
+import { billActions, useBill, useBillAction } from '../lib/queries'
+import { invalidateMoneyViews } from '../lib/mutations'
 import { formatRp, parseRupiah } from '../lib/money'
-import { Alert, Button, Field } from '../ds/primitives'
+import { Alert, Button, Field, SectionHead } from '../ds/primitives'
 import manualArt from '../assets/manual.webp'
 import type { BillItem } from '../lib/types'
 
@@ -111,7 +112,8 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
           })),
         },
       })
-      await queryClient.invalidateQueries({ queryKey: keys.bill(billId) })
+      // harga/item berubah -> beranda dan rekap ikut berubah
+      invalidateMoneyViews(queryClient, { billId, identityId })
       toast('Perubahan bill disimpan')
       navigate({ to: '/b/$billId', params: { billId } })
     } catch (err) {
@@ -168,7 +170,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
 
           <section className="app-stack">
             <div className="app-inline">
-              <strong className="ds-section-title">Item</strong>
+              <SectionHead>Item</SectionHead>
               <span className="app-spacer" />
               <button
                 type="button"
@@ -234,7 +236,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
           </section>
 
           <section className="app-stack">
-            <strong className="ds-section-title">Siapa saja yang ikut</strong>
+            <SectionHead>Siapa saja yang ikut</SectionHead>
             <p className="app-note">
               Nama yang belum diklaim bisa diganti atau dihapus di sini. Nama yang sudah bergabung dikunci — kalau mau
               mengeluarkan orangnya, pakai tombol Keluarkan di layar bill.
@@ -317,7 +319,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
           </div>
 
           <section className="app-stack">
-            <strong className="ds-section-title">Hapus bill</strong>
+            <SectionHead>Hapus bill</SectionHead>
             <p className="app-note">
               Bill beserta semua item, pilihan, dan status lunasnya dihapus permanen. Tautan yang sudah kamu bagikan tidak akan bisa dibuka lagi.
             </p>
@@ -334,7 +336,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
                   onClick={async () => {
                     try {
                       await action.mutateAsync(billActions.removeBill(billId))
-                      await queryClient.invalidateQueries({ queryKey: keys.bills(identityId ?? '') })
+                      invalidateMoneyViews(queryClient, { identityId })
                       toast('Bill dihapus')
                       navigate({ to: '/' })
                     } catch (err) {

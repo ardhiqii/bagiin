@@ -700,6 +700,11 @@
    nama item dan angkanya. Sebelum ini tiap layar menulis
    <strong style={{ fontSize: 14, fontWeight: 800 }}> sendiri — 33 angka font
    tersebar di dalam TSX, dan ukurannya jadi beda-beda antar layar. */
+.ds-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+}
 .ds-section-title {
   font: var(--ds-weight-strong) var(--ds-text-sm)/1.2 var(--ds-font-body);
   letter-spacing: .06em;

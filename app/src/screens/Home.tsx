@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { useBills, useRecap } from '../lib/queries'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
-import { Alert, BalanceCard, Button, EmptyState } from '../ds/primitives'
+import { Alert, BalanceCard, Button, EmptyState, SectionHead } from '../ds/primitives'
 import { MagnifyingGlass } from '@phosphor-icons/react'
 import homeEmptyArt from '../assets/home-empty.webp'
 
@@ -192,13 +192,7 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
       {open.length > 0 ? (
         <section className="app-stack">
           {filter === 'semua' ? (
-          <div className="app-inline">
-            <strong className="ds-section-title">Berjalan</strong>
-            <span className="app-spacer" />
-            <span className="app-note" style={{ margin: 0 }}>
-              {open.length} bill
-            </span>
-          </div>
+          <SectionHead meta={<>{open.length} bill</>}>Berjalan</SectionHead>
           ) : null}
           <div className="app-list">
             {open.map((bill) => (
@@ -227,13 +221,7 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
       {settled.length > 0 ? (
         <section className="app-stack">
           {filter === 'semua' ? (
-          <div className="app-inline">
-            <strong className="ds-section-title">Lunas</strong>
-            <span className="app-spacer" />
-            <span className="app-note" style={{ margin: 0 }}>
-              {settled.length} bill
-            </span>
-          </div>
+          <SectionHead meta={<>{settled.length} bill</>}>Lunas</SectionHead>
           ) : null}
           <div className="app-list">
             {settled.map((bill) => (

@@ -86,6 +86,25 @@ export function Notice({ tone, children, action }: { tone: Tone; children: React
   )
 }
 
+/**
+ * Judul bagian dalam satu layar. Dipakai 19 kali di lima layar; sebelumnya tiap
+ * tempat menulis sendiri <strong className="ds-section-title"> plus spacer plus
+ * catatan kecil di kanan, dan uturannya pelan-pelan melenceng antar layar.
+ */
+export function SectionHead({ children, meta }: { children: ReactNode; meta?: ReactNode }) {
+  return (
+    <div className="ds-section-head">
+      <strong className="ds-section-title">{children}</strong>
+      {meta ? (
+        <>
+          <span className="app-spacer" />
+          <span className="app-note">{meta}</span>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
 /* ---------- surfaces ---------- */
 
 export function Card({ children, tone = 'surface', pad = 'md' }: { children: ReactNode; tone?: 'surface' | 'navy' | 'mint'; pad?: 'sm' | 'md' | 'lg' }) {

@@ -5,11 +5,11 @@ import { api } from '../lib/api'
 import { formatRp, parseRupiah } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { Alert, Button, Field } from '../ds/primitives'
+import { Alert, Button, Field, SectionHead } from '../ds/primitives'
 import { X } from '@phosphor-icons/react'
 import createHeroArt from '../assets/create-hero.webp'
 import scanArt from '../assets/scan.webp'
-import { keys } from '../lib/queries'
+import { invalidateMoneyViews } from '../lib/mutations'
 
 type DraftItem = { key: string; name: string; qty: string; price: string }
 
@@ -224,7 +224,8 @@ export function Create({ identityId }: { identityId: string | null }) {
           participants: roster,
         },
       })
-      await qc.invalidateQueries({ queryKey: keys.bills(identityId ?? '') })
+      // bill baru mengubah beranda DAN rekap: yang lain belum tahu bill ini ada
+      invalidateMoneyViews(qc, { identityId })
       toast('Bill sudah jadi. Bagikan linknya ke teman kamu.')
       navigate({ to: '/b/$billId', params: { billId: created.id } })
     } catch (err) {
@@ -268,11 +269,7 @@ export function Create({ identityId }: { identityId: string | null }) {
 
       {photos.length > 0 ? (
         <section className="photo-block">
-          <div className="app-inline">
-            <strong className="ds-section-title">Foto struk</strong>
-            <span className="app-spacer" />
-            <span className="app-note">{photos.length} dari 10</span>
-          </div>
+          <SectionHead meta={<>{photos.length} dari 10</>}>Foto struk</SectionHead>
           <div className="photo-grid">
             {photos.map((photo) => (
               <div className="photo-tile" key={photo.path}>
@@ -396,7 +393,7 @@ export function Create({ identityId }: { identityId: string | null }) {
 
       <section className="app-stack">
         <div className="app-inline">
-          <strong className="ds-section-title">Item</strong>
+          <SectionHead>Item</SectionHead>
           <span className="app-spacer" />
           <button type="button" className="ds-button ds-button-quiet" onClick={() => setItems((prev) => [...prev, newItem()])}>
             + Tambah item
@@ -444,7 +441,7 @@ export function Create({ identityId }: { identityId: string | null }) {
       </section>
 
       <section className="app-stack">
-        <strong className="ds-section-title">Siapa saja yang ikut (opsional)</strong>
+        <SectionHead>Siapa saja yang ikut (opsional)</SectionHead>
         <p className="app-note">
           Tulis nama teman kamu sekarang. Begitu mereka buka link dan memakai nama yang sama, bagiannya langsung nyambung.
         </p>

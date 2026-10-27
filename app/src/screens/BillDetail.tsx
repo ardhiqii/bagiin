@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import type { BillResponse } from '../lib/types'
-import { billActions, keys, useBill, useBillAction, useContacts } from '../lib/queries'
+import { billActions, useBill, useBillAction, useContacts } from '../lib/queries'
+import { invalidateMoneyViews } from '../lib/mutations'
 import { api, isSessionError } from '../lib/api'
 import { startIdentity } from '../lib/identity'
 import { formatRp } from '../lib/money'
@@ -129,7 +130,8 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
       const form = new FormData()
       form.append('file', file)
       await api('/api/bills/' + billId + '/photo', { method: 'POST', body: form })
-      await queryClient.invalidateQueries({ queryKey: keys.bill(billId) })
+      // thumbnail/daftar di beranda ikut berubah, bukan cuma layar bill ini
+      invalidateMoneyViews(queryClient, { billId, identityId })
       toast('Foto ditambahkan')
     } catch (err) {
       toast((err as Error).message)
@@ -201,9 +203,10 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
     setJoinBusy(true)
     setJoinError('')
     try {
-      await startIdentity(joinName.trim())
+      const joined = await startIdentity(joinName.trim())
       await api('/api/bills/' + billId + '/join', { method: 'POST', body: {} })
-      await queryClient.invalidateQueries({ queryKey: keys.bill(billId) })
+      // identitas bisa berganti di sini (belum punya nama -> dibuat baru)
+      invalidateMoneyViews(queryClient, { billId, identityId: joined?.id ?? identityId })
       setNameOpen(false)
       toast('Kamu masuk ke bill ini')
     } catch (err) {
