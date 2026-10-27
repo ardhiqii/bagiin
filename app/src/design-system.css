@@ -499,6 +499,29 @@
 .ds-balance-cur { font-size: .58em; opacity: .6; margin-right: .1em; letter-spacing: 0; }
 .ds-balance-note { display: block; color: #c3d6da; font: var(--ds-weight-regular) var(--ds-text-sm)/1.45 var(--ds-font-body); }
 
+/* Angka kedua di kartu saldo: perkiraan, bukan janji. Dipisah garis supaya
+   terbaca sebagai lapisan berbeda, dan selalu berawalan "±" — angka yang bisa
+   berubah tidak boleh tampil seperti angka yang sudah pasti. */
+.ds-balance-est {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ds-space-2);
+  margin-top: var(--ds-space-3);
+  padding-top: var(--ds-space-3);
+  border-top: 1px solid rgba(255, 255, 255, .14);
+}
+.ds-balance-est-label {
+  flex: 1;
+  color: #c3d6da;
+  font: var(--ds-weight-regular) var(--ds-text-sm)/1.3 var(--ds-font-body);
+}
+.ds-balance-est-value {
+  color: #f3cd9c;
+  font: var(--ds-weight-medium) var(--ds-text-lg)/1 var(--ds-font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+}
+
 /* ---------- arah uang: tanda dulu, warna kedua ----------
    Satu-satunya tempat warna merah dipakai di daftar: uang yang harus KELUAR.
    Amber tetap milik "angkanya belum pasti", hijau milik "uang untukmu". Kalau

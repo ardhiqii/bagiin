@@ -191,18 +191,21 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     await expect(row).toBeVisible()
     expect(await rowAmount(row)).toBe(rowApi.my_total_idr)
 
-    // "belum lunas" di kepala layar harus soal bagian saya, bukan bill terbuka:
-    // di sini pemilik sudah menalangi, jadi tidak ada bagian saya yang belum lunas
-    await expect(page.getByText(/semua bagianmu lunas/)).toBeVisible()
+    // kepala layar tidak menghitung apa pun: angka yang berubah-ubah di atas
+    // bikin orang menebak mana yang harus dipercaya
+    await expect(page.locator('.app-top-sub')).toHaveCount(0)
 
-    // dua layar, satu angka: catatan di kartu saldo harus sama dengan jumlah
-    // bill yang benar-benar tidak bisa dihitung pasti di rekap
+    // angka kasar punya tempatnya sendiri: baris "perkiraan" di kartu, selalu
+    // berawalan ± dan tidak pernah dijumlahkan ke angka pasti
     const recapNow = await apiGet(page, '/api/identities/' + me.id + '/recap')
-    if (recapNow.provisional.bill_count > 0) {
-      // angka yang sama boleh muncul di dua tempat berbeda, tergantung ada
-      // tidaknya uang yang sudah pasti: kartu saldo kalau ada, notice kalau nol
-      const holder = recapNow.final.net_idr === 0 ? '.ds-notice' : '.ds-balance-note'
-      await expect(page.locator(holder)).toContainText(String(recapNow.provisional.bill_count))
+    const rough =
+      (recapNow.provisional.receivable_idr ?? 0) - (recapNow.provisional.payable_idr ?? 0)
+    if (rough !== 0) {
+      const holder = recapNow.final.net_idr === 0 ? '.ds-notice' : '.ds-balance-est'
+      await expect(page.locator(holder)).toContainText('±')
+      await expect(page.locator(holder)).toContainText(
+        Math.abs(rough).toLocaleString('id-ID'),
+      )
     }
 
     await goRecap(page)
@@ -1069,8 +1072,8 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     const banner = page.locator('#perlu-tindakan')
     await expect(banner).toBeVisible()
     await expect(banner.locator('.banner-count')).toHaveText(String(split + pay))
-    await expect(banner).toContainText(split + ' pembagiannya belum lengkap')
-    await expect(banner).toContainText(pay + ' tinggal kamu bayar')
+    await expect(banner).toContainText(split + ' tinggal dipilih')
+    await expect(banner).toContainText(pay + ' tinggal dibayar')
 
     // tidak ada angka tindakan kedua di layar
     await expect(page.locator('#perlu-tindakan')).toHaveCount(1)
@@ -1092,6 +1095,16 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     // baris yang bukan tugas saya tidak diberi penanda apa pun
     const flagged = await page.locator('.ds-row-flag').count()
     expect(flagged, 'jumlah baris bertanda == jumlah angka tindakan').toBe(split + pay)
+
+    // blok kuning menyaring daftar tepat ke bill yang perlu dikerjakan —
+    // afordans yang ditepati, bukan panah yang menjanjikan pindah layar
+    await banner.click()
+    await page.waitForTimeout(700)
+    await expect(page.locator('.chip-filter.is-active')).toContainText('Perlu dikerjakan')
+    await expect(page.locator('.app-row')).toHaveCount(split + pay)
+    await banner.click()
+    await page.waitForTimeout(500)
+    await expect(page.locator('.chip-filter.is-active')).toContainText('Semua')
 
     // saya bayar satu bill: angkanya turun tepat satu, bukan berubah jadi angka lain
     await apiSend(page, '/api/bills/' + hostBill + '/payments/' + me.id + '/paid')

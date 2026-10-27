@@ -166,6 +166,7 @@ export function BalanceCard({
   label,
   value,
   note,
+  estimate,
   signed = false,
   tone: toneProp,
 }: {
@@ -177,6 +178,11 @@ export function BalanceCard({
    *  jadi bawaannya mati. Warna tetap membawa arah. */
   signed?: boolean
   tone?: 'neg' | 'pos'
+  /** Angka kedua: perkiraan dari bill yang pembagiannya belum selesai.
+   *  Selalu ditulis dengan "±" dan tidak pernah dijumlahkan ke angka utama —
+   *  menjumlahkan yang pasti dengan yang masih bisa berubah menghasilkan angka
+   *  yang tidak pasti tapi terlihat pasti. */
+  estimate?: { value: number; label?: string }
 }) {
   const zero = Math.round(value) === 0
   const sign = zero || !signed ? '' : value < 0 ? '−' : '+'
@@ -188,6 +194,12 @@ export function BalanceCard({
       <span className="ds-balance-cur">Rp</span>{Math.round(Math.abs(value)).toLocaleString('id-ID')}
     </strong>
     {note ? <small className="ds-balance-note">{note}</small> : null}
+    {estimate && Math.round(estimate.value) !== 0 ? (
+      <span className="ds-balance-est">
+        <span className="ds-balance-est-label">{estimate.label ?? 'Perkiraan tambahan'}</span>
+        <span className="ds-balance-est-value">± {idr(Math.abs(estimate.value))}</span>
+      </span>
+    ) : null}
   </div>
 }
 

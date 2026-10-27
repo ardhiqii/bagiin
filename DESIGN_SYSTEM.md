@@ -258,6 +258,24 @@ terbaca tanpa menebak:
 Merah hanya untuk satu arti itu. Kalau merah dipakai untuk hiasan atau untuk
 "penting", artinya luntur dan orang berhenti membacanya.
 
+### Dua angka: pasti dan kasar
+
+Beranda memikul dua pertanyaan berbeda, jadi angkanya dua — dan **tidak pernah
+dijumlahkan**:
+
+- **Angka pasti** (`Harus kamu bayar` / `Harus kamu terima`) — dari bill yang
+  pembagiannya sudah selesai. Ini yang boleh ditransfer sekarang.
+- **Angka kasar** (`Perkiraan tambahan ± Rp…`) — dari bill yang pembagiannya
+  belum selesai. Selalu berawalan `±`, warnanya lebih lembut, dan taruh di baris
+  sendiri di dalam kartu, bukan di kartu kedua yang bersaing.
+
+Menjumlahkan keduanya menghasilkan angka yang tidak pasti tapi terlihat pasti —
+persis kesalahan yang membuat orang mentransfer nominal yang salah. Angka kasar
+tetap berguna: dia memberi tahu besarannya kira-kira, tanpa berpura-pura final.
+
+Catatan di bawah angka pasti menjawab **"angka ini angka apa"** — mis.
+`Sudah dikurangi yang harus kamu terima` — bukan menambah hitungan baru.
+
 ## Satu layar, satu angka per konsep
 
 Dulu beranda punya tiga penghitung untuk hal yang mirip: `2 belum lunas` di
@@ -282,6 +300,19 @@ berteriak tidak lagi memberi tahu apa pun.
 
 Penanda aksi memakai **kata kerja**, bukan kata sifat: `Tinggal kamu bayar`,
 `Pilih 2 item lagi`. "Belum lunas" adalah keadaan; orang butuh perintah.
+
+### Kepala layar tidak menghitung
+
+Judul layar hanya menyebut siapa/apa (`Halo, Aufa`). Tidak ada jumlah bill,
+tidak ada "belum lunas", tidak ada lencana angka. Penghitung di kepala berubah
+sendiri setiap ada yang dibayar, dan angka yang berubah tanpa penjelasan membuat
+orang menebak mana yang harus dipercaya.
+
+Semua yang perlu dikerjakan tinggal di **satu blok** (kuning) berisi jumlah dan
+rinciannya dalam kata kerja (`3 tinggal dipilih · 2 tinggal dibayar`). Blok itu
+boleh diketuk untuk menyaring daftar ke bill tersebut, dan yang menandakan
+tindakan itu adalah chip saringan yang ikut aktif — **bukan panah** yang
+menjanjikan pindah layar.
 
 ## Pola layar mobile
 

@@ -11,10 +11,13 @@ import { ActionFlag, Alert, Amount, BalanceCard, Button, EmptyState, Notice, Sec
 import { MagnifyingGlass } from '@phosphor-icons/react'
 import homeEmptyArt from '../assets/home-empty.webp'
 
-type Filter = 'semua' | 'berjalan' | 'lunas'
+type Filter = 'semua' | 'perlu' | 'berjalan' | 'lunas'
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'semua', label: 'Semua' },
+  // Saringan ini hanya muncul kalau memang ada yang perlu dikerjakan: chip
+  // yang selalu ada tapi selalu kosong cuma menambah pilihan tanpa arti.
+  { key: 'perlu', label: 'Perlu dikerjakan' },
   { key: 'berjalan', label: 'Belum lunas' },
   { key: 'lunas', label: 'Lunas' },
 ]
@@ -161,23 +164,14 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('semua')
 
-  const shown = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    return rows.filter((bill) => {
-      const matchesText =
-        !needle ||
-        bill.title.toLowerCase().includes(needle) ||
-        (bill.merchant ?? '').toLowerCase().includes(needle)
-      const matchesFilter = filter === 'semua' || (filter === 'lunas' ? bill.settled : !bill.settled)
-      return matchesText && matchesFilter
-    })
-  }, [rows, query, filter])
-
-  const allOpen = rows.filter((bill) => !bill.settled)
-  const unpaid = allOpen.filter((bill) => !bill.my_paid && bill.my_total_idr > 0)
-
   const net = recap.data?.final.net_idr ?? 0
   const provisional = recap.data?.provisional
+  // Perkiraan = jumlah yang masih bisa berubah, dari bill yang pembagiannya
+  // belum selesai. Arahnya boleh berlawanan dengan angka pasti; karena itu dia
+  // tidak pernah dijumlahkan ke angka pasti, hanya ditaruh di baris sendiri.
+  const estimate = provisional
+    ? (provisional.receivable_idr ?? 0) - (provisional.payable_idr ?? 0)
+    : 0
 
   /**
    * Satu pertanyaan yang harus dijawab beranda: "apa yang harus SAYA kerjakan?"
@@ -209,9 +203,10 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
   const splitCount = [...reasons.values()].filter((kind) => kind === 'split').length
   const payCount = [...reasons.values()].filter((kind) => kind === 'pay').length
   const actionTotal = splitCount + payCount
+  // Kata kerja, bukan kata benda: blok kuning isinya yang harus DIKERJAKAN.
   const breakdown = [
-    splitCount > 0 ? splitCount + ' pembagiannya belum lengkap' : null,
-    payCount > 0 ? payCount + ' tinggal kamu bayar' : null,
+    splitCount > 0 ? splitCount + ' tinggal dipilih' : null,
+    payCount > 0 ? payCount + ' tinggal dibayar' : null,
   ]
     .filter(Boolean)
     .join(' · ')
@@ -222,6 +217,27 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
   const uncoveredByBill = new Map(
     (provisional?.bills ?? []).map((bill) => [bill.bill_id, bill.uncovered_items?.length ?? 0]),
   )
+
+  // Pencarian + saringan. "perlu" memakai alasan yang sama dengan blok kuning,
+  // jadi chip dan angka di atasnya tidak mungkin berbeda cerita.
+  const shown = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return rows.filter((bill) => {
+      const matchesText =
+        !needle ||
+        bill.title.toLowerCase().includes(needle) ||
+        (bill.merchant ?? '').toLowerCase().includes(needle)
+      const matchesFilter =
+        filter === 'semua'
+          ? true
+          : filter === 'perlu'
+            ? Boolean(reasons.get(bill.id))
+            : filter === 'lunas'
+              ? bill.settled
+              : !bill.settled
+      return matchesText && matchesFilter
+    })
+  }, [rows, query, filter, reasons])
 
   /**
    * Bill yang menunggu tindakan saya naik ke atas. Tanpa ini, angka "5 bill
@@ -256,11 +272,10 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
         // "belum lunas" harus berarti bagian SAYA belum dibayar, bukan bill-nya
         // masih terbuka. Dua hal berbeda: bill terbuka dengan bagian saya lunas
         // dulu muncul sebagai "1 belum lunas" padahal tidak ada utang saya.
-        // Jumlah bill saja. Jumlah yang butuh tindakan tinggal di satu tempat
-        // (blok "perlu dibereskan" di bawah) supaya tidak ada angka kembar.
-        rows.length > 0
-          ? rows.length + ' bill' + (unpaid.length === 0 ? ' · semua bagianmu lunas' : '')
-          : 'Semua bill kamu di satu tempat'
+        // Kepala layar tidak lagi menghitung apa pun: angka yang berubah-ubah di
+        // atas bikin orang menebak mana yang harus dipercaya. Kalau ada yang
+        // perlu dikerjakan, tempatnya di blok kuning di bawah.
+        rows.length > 0 ? '' : 'Semua bill kamu di satu tempat'
       }
       active="home"
     >
@@ -291,19 +306,22 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
           Angkanya tetap jujur — hanya tidak diteriakkan. */}
       {net === 0 && rows.length === 0 ? null : net === 0 ? (
         <Notice
-          tone={provisional && provisional.bill_count > 0 ? 'pending' : 'success'}
+          tone={estimate !== 0 ? 'pending' : 'success'}
           action={
-            provisional && provisional.bill_count > 0 ? (
+            estimate !== 0 ? (
               <Link to="/recap" className="link-quiet">
                 Bagi sekarang
               </Link>
             ) : undefined
           }
         >
-          {provisional && provisional.bill_count > 0
-            ? 'Belum ada yang harus dibayar. ' +
-              provisional.bill_count +
-              ' bill belum selesai dibagi.'
+          {/* Tanpa angka pasti, perkiraannya yang disebut — tetap dengan "±" dan
+              tetap tanpa dijumlahkan ke apa pun. */}
+          {estimate !== 0
+            ? 'Belum ada angka pasti. Perkiraan ' +
+              (estimate > 0 ? '+' : '−') +
+              formatRp(Math.abs(estimate)) +
+              ' dari bill yang pembagiannya belum selesai.'
             : 'Tidak ada utang tersisa di antara kamu dan teman-temanmu.'}
         </Notice>
       ) : (
@@ -315,27 +333,31 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
           // Minus dipakai di baris daftar, di sana tidak ada label yang
           // menjelaskan arah. Aturannya satu: tanda hanya kalau tidak ada label.
           tone={net > 0 ? 'pos' : 'neg'}
-          // Catatan ini dulu menyebut JUMLAH bill yang belum jelas, jadi angka
-          // ketiga di layar yang sama. Sekarang hanya menjelaskan cakupannya.
-          // Angka ini NET: satu baris bill bisa lebih besar dari total karena
-          // ada bill lain yang justru menagih ke kita. Tanpa kalimat ini orang
-          // mengira angkanya salah hitung.
+          // Catatan ini menjawab "angka ini angka apa", bukan menambah hitungan.
+          // Angkanya NET: satu baris bill bisa lebih besar dari total karena ada
+          // bill lain yang justru menagih ke kita.
+          // "Angka ini angka apa": angka NET, sudah dikurangi arah sebaliknya.
           note={
-            provisional && provisional.bill_count > 0
-              ? 'Bill yang sudah pasti, sudah saling dikurangi'
+            estimate !== 0
+              ? net > 0
+                ? 'Sudah dikurangi yang harus kamu bayar'
+                : 'Sudah dikurangi yang harus kamu terima'
               : 'Semua bill sudah selesai'
           }
+          estimate={estimate !== 0 ? { value: estimate } : undefined}
         />
       )}
 
-      {/* Satu angka untuk "apa yang harus saya kerjakan", dengan rincian yang
-          jumlahnya selalu cocok dengan angka itu. */}
+      {/* Blok ini isinya HANYA pekerjaan: berapa bill dan apa yang harus
+          dilakukan. Tanpa panah: panah menjanjikan pindah layar, dan dulu
+          tombolnya cuma menyaring daftar yang tepat di bawahnya. */}
       {actionTotal > 0 ? (
         <button
           id="perlu-tindakan"
           type="button"
           className="app-banner is-pending"
-          onClick={() => setFilter('berjalan')}
+          aria-label={'Saring ' + actionTotal + ' bill yang perlu kamu kerjakan'}
+          onClick={() => setFilter(filter === 'perlu' ? 'semua' : 'perlu')}
         >
           <span className="banner-count" aria-hidden="true">
             {actionTotal}
@@ -344,7 +366,10 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
             <b>bill perlu kamu bereskan</b>
             <small>{breakdown}</small>
           </span>
-          <span aria-hidden="true">→</span>
+          {/* Bukan panah: panah di blok ini dulu menjanjikan pindah layar padahal
+              cuma menyaring daftar di bawahnya. Sekarang bloknya sendiri yang
+              menyaring, dan yang menandakan itu adalah chip "Perlu dikerjakan"
+              yang ikut aktif — bukan janji yang tidak ditepati. */}
         </button>
       ) : null}
 
@@ -384,7 +409,7 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
           </div>
 
           <div className="chip-row" role="group" aria-label="Saring bill">
-            {FILTERS.map((option) => (
+            {FILTERS.filter((option) => option.key !== 'perlu' || actionTotal > 0).map((option) => (
               <button
                 key={option.key}
                 type="button"

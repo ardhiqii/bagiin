@@ -175,6 +175,24 @@ kalau dua-duanya tidak ada. "Harus kamu bayar −Rp22.000" sengaja tidak dipakai
 terbaca seperti uang kembali. Baris yang sudah menulis "Tinggal kamu bayar"
 tidak lagi menulis "−Rp22.000" — dua kali untuk hal yang sama.
 
+## Kepala layar diam, dua angka di kartu, satu blok kuning
+
+Judul layar berhenti menghitung: tidak ada `59 bill`, tidak ada `belum lunas`.
+Penghitung di kepala berubah sendiri setiap ada yang dibayar, dan angka yang
+berubah tanpa penjelasan membuat orang menebak mana yang benar.
+
+Yang dipakai sekarang:
+
+- **Kartu navy** memuat dua angka yang tidak pernah dijumlahkan: yang **pasti**
+  (`Harus kamu bayar`) dan yang **kasar** (`Perkiraan tambahan ± Rp…`). Angka
+  kasar selalu berawalan `±` dan duduk di baris sendiri di dalam kartu — bukan
+  kartu kedua yang bersaing. Catatan di bawahnya menjawab "angka ini angka apa",
+  bukan menambah hitungan.
+- **Blok kuning** isinya hanya pekerjaan: jumlah + rincian dalam kata kerja
+  (`3 tinggal dipilih · 2 tinggal dibayar`). Tanpa panah. Blok itu sendiri yang
+  menyaring daftar ke bill tersebut, dan yang menandakan itu chip saringan yang
+  ikut aktif.
+
 ## Nol tidak perlu diteriakkan
 
 Beranda dulu selalu memasang kartu saldo besar, termasuk saat nilainya Rp0.
