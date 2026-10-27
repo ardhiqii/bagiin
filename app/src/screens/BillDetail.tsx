@@ -8,7 +8,7 @@ import { startIdentity } from '../lib/identity'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { ActionGroup, ActionRow, Alert, Avatar, Button, Field, Money, Sheet, StatusBadge } from '../ds/primitives'
+import { ActionGroup, ActionRow, Alert, Avatar, Button, Field, Money, ProviderLogo, Sheet, StatusBadge } from '../ds/primitives'
 import inviteArt from '../assets/invite.webp'
 import personArt from '../assets/person.webp'
 import errorArt from '../assets/error.webp'
@@ -633,6 +633,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               <div>
                 {transferAccounts.map((account) => (
                   <div className="app-row" key={account.id}>
+                    <ProviderLogo brand={account.brand} />
                     <span className="grow">
                       <b>{account.brand}</b>
                       <small>

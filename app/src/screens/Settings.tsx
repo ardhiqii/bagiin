@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { Alert, Button, Field } from '../ds/primitives'
+import { Alert, Button, Field, ProviderLogo } from '../ds/primitives'
 import { publishIdentity, renameIdentity, resetIdentity } from '../lib/identity'
 import { endpoints } from '../lib/api'
 import { accountActions, keys, useAccounts, useBillAction, type PaymentAccount } from '../lib/queries'
@@ -126,12 +126,14 @@ export function Settings({ identity }: { identity: Identity | null }) {
           <div>
             {accounts.data.map((account) => (
               <div className="account-card" key={account.id}>
-                <div className="app-inline">
-                  <b style={{ fontSize: 14.5 }}>{account.brand}</b>
-                  {account.holder_name ? <span className="app-note">· {account.holder_name}</span> : null}
-                </div>
-                <div className="account-no">{account.account_no}</div>
-                <div className="account-actions">
+                <ProviderLogo brand={account.brand} />
+                <div className="account-main">
+                  <div className="app-inline">
+                    <b style={{ fontSize: 14.5 }}>{account.brand}</b>
+                    {account.holder_name ? <span className="app-note">· {account.holder_name}</span> : null}
+                  </div>
+                  <div className="account-no">{account.account_no}</div>
+                  <div className="account-actions">
                   <button type="button" className="link-action" onClick={() => copy(account.account_no, 'Nomor rekening disalin')}>
                     Salin nomor
                   </button>
@@ -145,6 +147,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
                   >
                     Hapus
                   </button>
+                  </div>
                 </div>
               </div>
             ))}

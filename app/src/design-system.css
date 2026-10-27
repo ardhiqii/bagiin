@@ -628,6 +628,28 @@
 }
 .ds-sheet-handle { display: block; width: 40px; height: 5px; margin: 0 auto 18px; border-radius: 999px; background: rgba(20, 47, 58, .16); }
 
+/* ---------- Provider logo ----------
+   Satu kotak untuk semua logo. Ukuran gambar di dalamnya dipatok per jenis,
+   bukan per brand: wordmark tinggi 14 px (maks 56 px), lambang persegi 22 px. */
+.ds-provider {
+  flex: none;
+  width: 72px;
+  height: 24px;
+  display: grid;
+  /* rata kiri, bukan tengah: logo yang lebih sempit tidak boleh membuat tepi
+     kirinya bergeser antar baris. Kolom teks tetap di 72 px + jarak. */
+  place-items: center start;
+}
+.ds-provider img {
+  display: block;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+.ds-provider img.is-wordmark { max-width: 72px; max-height: 24px; }
+.ds-provider img.is-mark { max-width: 24px; max-height: 24px; }
+.ds-provider-fallback { color: var(--ds-muted-soft); }
+
 /* ---------- Action list: daftar aksi di dalam sheet ----------
    Aturan (lihat DESIGN_SYSTEM.md):
    - satu grup = satu permukaan, dipisah hairline di dalam, bukan tumpukan pill

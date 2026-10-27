@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { PROVIDERS, providerKey } from '../lib/providers'
 import { Check, CheckCircle, Clock, House, Info, Plus, Receipt, UsersThree, Wallet, WarningCircle, X } from '@phosphor-icons/react'
 
 /* ---------- money ---------- */
@@ -99,6 +100,35 @@ export function Group({ children, label }: { children: ReactNode; label?: string
     {label && <span className="ds-group-label">{label}</span>}
     <div className="ds-group">{children}</div>
   </div>
+}
+
+/* ---------- provider logo ----------
+   Semua logo menempati kotak yang SAMA (56x24). Yang berbeda hanya cara
+   gambarnya mengisi kotak itu: wordmark dipatok tinggi 14 px, lambang persegi
+   22 px. Tanpa aturan ini, logo dengan rasio 5:1 dan 1:1 akan menuntut ukuran
+   berbeda dan membuat kolom kiri tiap baris bergeser. */
+
+export function ProviderLogo({ brand }: { brand: string }) {
+  const key = providerKey(brand)
+  if (!key) {
+    return (
+      <span className="ds-provider" aria-hidden="true">
+        <Wallet size={20} weight="duotone" className="ds-provider-fallback" />
+      </span>
+    )
+  }
+  const { src, ar, h } = PROVIDERS[key]
+  return (
+    <span className="ds-provider" aria-hidden="true">
+      <img
+        className={ar < 1.6 ? 'is-mark' : 'is-wordmark'}
+        src={src}
+        alt=""
+        loading="lazy"
+        style={{ height: h }}
+      />
+    </span>
+  )
 }
 
 /* ---------- action list (sheet) ----------

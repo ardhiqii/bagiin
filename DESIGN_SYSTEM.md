@@ -87,6 +87,25 @@ Dua komponen ini menggantikan kebiasaan lama "tempel beberapa pill di bawah". Ke
 - Aksi merusak (`Keluar dari bill ini`) di grup terpisah paling bawah dengan warna `--ds-danger`.
 - Larangan: jangan menumpuk tombol pill penuh di dalam sheet. Sembilan pill mint bertumpuk (kasus nyata sebelum revisi ini) boros tinggi, tidak punya hierarki, dan tidak bisa dipindai.
 
+## Logo provider pembayaran
+
+Nama brand di database adalah teks bebas, jadi logo diselesaikan lewat `providerKey()` di `lib/providers.ts` (normalisasi huruf kecil tanpa tanda baca + alias, mis. `bankbca`/`bankcentralasia` → `bca`). Brand yang belum punya logo memakai ikon dompet netral, bukan inisial berwarna.
+
+**Satu kotak untuk semua logo: 72 × 24 px, rata kiri.** Yang disesuaikan hanya tinggi gambar per brand (`h` di manifest), bukan kotaknya:
+
+- Wordmark lebar (ShopeePay 5,2:1) dipatok lebih tinggi (13,5 px) supaya bobotnya seimbang dengan wordmark padat (BCA 3,2:1, 15,5 px).
+- Lambang persegi (LinkAja 1:1) dipatok 22 px.
+- Larangan: menyerahkan ukuran ke rasio mentah. Dengan begitu logo 5:1 akan tampak jauh lebih kecil daripada 1:1 di kotak yang sama.
+
+**Sumber aset** (semua di `app/src/assets/providers/`, total ~57 KB):
+
+- GoPay — media kit resmi `gopay.co.id/media-kit` (kit "New-Update-GoPay-Logo")
+- ShopeePay — `shopeepay.co.id/logo/spp-logo.svg`
+- Bank Jago — logo baru 11 Juni 2026 (peluncuran identitas visual "Say Yellow")
+- BCA, Mandiri, OVO, LinkAja, DANA, SeaBank — artwork resmi via Wikimedia Commons
+
+**Pipeline aset logo:** render SVG di Chromium (transparan) → keyout latar terang yang menyambung ke tepi (flood fill, toleransi 232) → trim → sisi terpanjang 200 px → WebP q92. Keyout wajib: dua aset resmi datang dengan latar terang opaque, dan tanpa keyout logo tampil sebagai kotak abu di kartu putih.
+
 ## Ukuran gambar di dalam kartu
 
 Gambar ilustrasi **selalu mengikuti lebar kolom grid**, bukan atribut `width` di elemen `<img>`. Atribut itu hanya memberi ukuran intrinsik untuk mencegah layout shift.

@@ -871,10 +871,18 @@ textarea {
 
 /* Kartu rekening: info di atas, aksi di baris sendiri supaya tidak berdesakan. */
 .account-card {
+  /* logo jadi kolom kiri yang menampung seluruh isi kartu: nomor rekening dan
+     aksi ikut rata dengan nama brand, bukan menempel ke tepi kartu (dulu baris
+     kedua mulai di tepi kiri sementara baris pertama menjorok 72 px). */
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: start;
   padding: 14px 16px;
   background: var(--ds-surface);
   border-radius: var(--ds-radius-lg);
 }
+.account-main { min-width: 0; }
 .account-card + .account-card { margin-top: 8px; }
 .account-no {
   margin-top: 4px;
