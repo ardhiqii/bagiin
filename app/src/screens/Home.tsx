@@ -7,7 +7,7 @@ import { formatRp } from '../lib/money'
 import { api } from '../lib/api'
 import { useToast } from '../components/Toast'
 import { AppShell } from '../components/AppShell'
-import { Alert, BalanceCard, Button, EmptyState, SectionHead } from '../ds/primitives'
+import { Alert, BalanceCard, Button, EmptyState, Notice, SectionHead } from '../ds/primitives'
 import { MagnifyingGlass } from '@phosphor-icons/react'
 import homeEmptyArt from '../assets/home-empty.webp'
 
@@ -173,8 +173,13 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
     <AppShell
       title={'Halo, ' + (name || 'Teman')}
       subtitle={
+        // "belum lunas" harus berarti bagian SAYA belum dibayar, bukan bill-nya
+        // masih terbuka. Dua hal berbeda: bill terbuka dengan bagian saya lunas
+        // dulu muncul sebagai "1 belum lunas" padahal tidak ada utang saya.
         rows.length > 0
-          ? rows.length + ' bill · ' + allOpen.length + ' belum lunas'
+          ? rows.length +
+            ' bill · ' +
+            (unpaid.length > 0 ? unpaid.length + ' belum lunas' : 'semua bagianmu lunas')
           : 'Semua bill kamu di satu tempat'
       }
       active="home"
@@ -200,15 +205,38 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
         </section>
       ) : null}
 
-      <BalanceCard
-        label={net >= 0 ? 'Harus kamu terima' : 'Harus kamu bayar'}
-        value={Math.abs(net)}
-        note={
-          provisional && provisional.bill_count > 0
-            ? 'Belum termasuk ' + provisional.bill_count + ' bill yang pembagiannya belum jelas'
-            : 'Semua bill sudah selesai'
-        }
-      />
+      {/* Nol bukan prestasi yang perlu dipajang sebesar angka sungguhan. Kalau
+          memang belum ada uang yang pasti, kartu besar itu cuma mengaburkan hal
+          yang benar-benar perlu dibaca: undangan dan bill yang belum dipilih.
+          Angkanya tetap jujur — hanya tidak diteriakkan. */}
+      {net === 0 && rows.length === 0 ? null : net === 0 ? (
+        <Notice
+          tone={provisional && provisional.bill_count > 0 ? 'pending' : 'success'}
+          action={
+            provisional && provisional.bill_count > 0 ? (
+              <Link to="/recap" className="link-quiet">
+                Bagi sekarang
+              </Link>
+            ) : undefined
+          }
+        >
+          {provisional && provisional.bill_count > 0
+            ? 'Belum ada yang harus dibayar. ' +
+              provisional.bill_count +
+              ' bill belum selesai dibagi.'
+            : 'Tidak ada utang tersisa di antara kamu dan teman-temanmu.'}
+        </Notice>
+      ) : (
+        <BalanceCard
+          label={net > 0 ? 'Harus kamu terima' : 'Harus kamu bayar'}
+          value={Math.abs(net)}
+          note={
+            provisional && provisional.bill_count > 0
+              ? 'Belum termasuk ' + provisional.bill_count + ' bill yang pembagiannya belum jelas'
+              : 'Semua bill sudah selesai'
+          }
+        />
+      )}
 
       {unpaid.length > 0 ? (
         <button type="button" className="app-banner is-pending" onClick={() => setFilter('berjalan')}>

@@ -181,13 +181,18 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     await expect(row).toBeVisible()
     expect(await rowAmount(row)).toBe(rowApi.my_total_idr)
 
+    // "belum lunas" di kepala layar harus soal bagian saya, bukan bill terbuka:
+    // di sini pemilik sudah menalangi, jadi tidak ada bagian saya yang belum lunas
+    await expect(page.getByText(/semua bagianmu lunas/)).toBeVisible()
+
     // dua layar, satu angka: catatan di kartu saldo harus sama dengan jumlah
     // bill yang benar-benar tidak bisa dihitung pasti di rekap
     const recapNow = await apiGet(page, '/api/identities/' + me.id + '/recap')
     if (recapNow.provisional.bill_count > 0) {
-      await expect(page.locator('.ds-balance-note')).toContainText(
-        String(recapNow.provisional.bill_count),
-      )
+      // angka yang sama boleh muncul di dua tempat berbeda, tergantung ada
+      // tidaknya uang yang sudah pasti: kartu saldo kalau ada, notice kalau nol
+      const holder = recapNow.final.net_idr === 0 ? '.ds-notice' : '.ds-balance-note'
+      await expect(page.locator(holder)).toContainText(String(recapNow.provisional.bill_count))
     }
 
     await goRecap(page)

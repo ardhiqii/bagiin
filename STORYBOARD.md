@@ -108,6 +108,25 @@ Angka di tabel ini diuji dengan membandingkan **layar** dan **respons server**,
 bukan dengan angka yang ditulis di tes. Kalau server berubah, tes ikut berubah;
 kalau layar menampilkan angka lama, tes gagal.
 
+## Nol tidak perlu diteriakkan
+
+Beranda dulu selalu memasang kartu saldo besar, termasuk saat nilainya Rp0.
+Akibatnya angka nol — yang tidak perlu ditindaklanjuti — tampil lebih berat
+daripada undangan dan bill yang benar-benar menunggu keputusan.
+
+Sekarang:
+- ada uang yang pasti → kartu saldo seperti biasa;
+- nol dan masih ada bill belum dibagi → satu baris notice: "Belum ada yang harus
+  dibayar. N bill belum selesai dibagi." + tautan "Bagi sekarang";
+- nol dan semua beres → notice tenang tanpa tautan;
+- belum punya bill sama sekali → tidak ada apa-apa (empty state yang bicara).
+
+Sekalian ketemu satu kesalahan informasi: kepala beranda menulis "N belum lunas"
+dari **jumlah bill yang masih terbuka**, padahal "belum lunas" bagi pembaca
+berarti **bagian dia** belum dibayar. Bill terbuka dengan bagian saya sudah
+dibayar jadi tampak seperti utang yang tidak ada. Sekarang angkanya dari bagian
+yang benar-benar belum dibayar, dan kalau tidak ada: "semua bagianmu lunas".
+
 ## Pintu masuk kedua: /masuk
 
 Satu-satunya halaman yang boleh dibuka tanpa identitas selain beranda. Kode

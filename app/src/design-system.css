@@ -746,6 +746,9 @@
    dua blok yang saling menimpa membuat gap ikon-teks tertinggal 4 px sementara
    paragraf di atasnya 8 px, dan teks aksi meleset 4 px dari teks paragraf. */
 .ds-notice-action { grid-column: 1 / -1; display: flex; }
+/* Satu kalimat aksi, satu baris: kalau labelnya membungkus, blok notice terlihat
+   seperti dua paragraf yang tidak selesai. */
+.ds-notice-action .link-quiet { white-space: nowrap; }
 .ds-notice .link-quiet {
   display: grid;
   grid-template-columns: 15px minmax(0, 1fr);
