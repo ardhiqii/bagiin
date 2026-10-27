@@ -69,6 +69,23 @@ export function Alert({ tone, title, children }: { tone: Tone; title: string; ch
   </div>
 }
 
+/**
+ * Notice: satu-dua baris konteks di dalam alur (di atas form, di bawah judul).
+ * Bedanya dengan Alert bukan sekadar ukuran — Alert menjawab "ada yang gagal",
+ * Notice menjawab "perlu kamu tahu sebelum lanjut". Alert selebar kartu di
+ * tengah layar pendaftaran menenggelamkan tugas utamanya.
+ */
+export function Notice({ tone, children, action }: { tone: Tone; children: ReactNode; action?: ReactNode }) {
+  const Icon = TONE_ICON[tone]
+  return (
+    <div className={`ds-notice ds-tone-${tone}`} role="status">
+      <Icon size={15} weight="bold" aria-hidden="true" />
+      <p>{children}</p>
+      {action ? <span className="ds-notice-action">{action}</span> : null}
+    </div>
+  )
+}
+
 /* ---------- surfaces ---------- */
 
 export function Card({ children, tone = 'surface', pad = 'md' }: { children: ReactNode; tone?: 'surface' | 'navy' | 'mint'; pad?: 'sm' | 'md' | 'lg' }) {

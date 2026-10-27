@@ -37,7 +37,7 @@ export function useIdentity() {
 const KEY = 'bagiin_identity'
 const NAME_KEY = 'bagiin_name'
 
-type Stored = Identity & { secret?: string | null }
+export type Stored = Identity & { secret?: string | null }
 
 export function loadStored(): Stored | null {
   try {

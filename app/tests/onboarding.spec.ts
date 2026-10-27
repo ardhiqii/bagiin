@@ -19,16 +19,11 @@ test.describe('Bagiin — gerbang nama', () => {
     // tidak ada identitas yang dibuat diam-diam
     expect(await page.evaluate(() => localStorage.getItem('bagiin_identity'))).toBeNull()
 
-    for (const [path, needle] of [
-      ['/create', 'Buat bill butuh nama dulu'],
-      // /bills dialihkan ke beranda, jadi gate-nya memakai kalimat beranda
-      ['/bills', 'Isi nama kamu dulu'],
-      ['/recap', 'Isi nama dulu supaya rekap kamu'],
-      ['/settings', 'Isi nama dulu untuk membuka pengaturan'],
-    ] as const) {
+    for (const path of ['/create', '/bills', '/recap', '/settings'] as const) {
       await page.goto(path)
+      // semua alamat dalam mendarat di satu pintu yang sama: beranda
       await expect(page.getByRole('heading', { name: 'Kenalan dulu' })).toBeVisible()
-      await expect(page.getByText(needle, { exact: false })).toBeVisible()
+      await expect(page).toHaveURL(/\/$/)
       // tidak ada form bill yang bisa diisi
       await expect(page.getByLabel('Nama bill')).toHaveCount(0)
     }

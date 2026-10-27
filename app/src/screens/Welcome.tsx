@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useToast } from '../components/Toast'
-import { Alert, Button, Field } from '../ds/primitives'
+import { Alert, Button, Field, Notice } from '../ds/primitives'
 import { startIdentity } from '../lib/identity'
+import { markAuthed, takeIntent } from '../lib/session'
 import welcomeArt from '../assets/welcome.webp'
 
 /**
@@ -14,9 +15,12 @@ import welcomeArt from '../assets/welcome.webp'
 export function Welcome({
   context,
   onDone,
+  expired = false,
 }: {
   context?: string
   onDone?: () => void | Promise<void>
+  /** true kalau identitas lama sudah tidak dikenal server — bukan pengguna baru */
+  expired?: boolean
 }) {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -38,9 +42,13 @@ export function Welcome({
     setError('')
     try {
       await startIdentity(name.trim())
+      markAuthed()
       await queryClient.invalidateQueries()
       toast('Halo, ' + name.trim())
       await onDone?.()
+      // halaman yang tadi dituju sebelum ditendang ke sini, kalau ada
+      const intent = takeIntent()
+      if (intent) window.location.replace(intent)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -54,11 +62,26 @@ export function Welcome({
         <main className="app-body welcome-body">
           <section className="welcome-card">
             <img className="welcome-art" src={welcomeArt} alt="" width={200} height={200} />
-            <h1>Kenalan dulu</h1>
-            <p className="app-note" style={{ margin: 0, textAlign: 'center' }}>
-              {context ??
-                'Isi nama kamu dulu. Nama ini yang muncul ke teman waktu kamu bikin atau ikut bill. Tanpa akun, tanpa password.'}
-            </p>
+            <h1>{expired ? 'Isi nama lagi' : 'Kenalan dulu'}</h1>
+            {expired ? (
+              /* Satu baris saja: judul sudah bilang "isi nama lagi", jadi notice
+                 ini cuma menjelaskan kenapa + satu jalan keluar lain. */
+              <Notice
+                tone="pending"
+                action={
+                  <button type="button" className="link-quiet" onClick={() => navigate({ to: '/masuk' })}>
+                    Masuk pakai kode
+                  </button>
+                }
+              >
+                Identitas di perangkat ini sudah tidak ada di server.
+              </Notice>
+            ) : (
+              <p className="app-note" style={{ margin: 0, textAlign: 'center' }}>
+                {context ??
+                  'Isi nama kamu dulu. Nama ini yang muncul ke teman waktu kamu bikin atau ikut bill. Tanpa akun, tanpa password.'}
+              </p>
+            )}
             <div style={{ width: '100%', marginTop: 6 }}>
               <Field
                 id="welcome-name"
@@ -75,11 +98,15 @@ export function Welcome({
             <Button block loading={busy} disabled={!name.trim()} onClick={submit}>
               Mulai pakai Bagiin
             </Button>
-            <button type="button" className="link-quiet" onClick={() => navigate({ to: '/masuk' })}>
-              Sudah punya akun? Masuk pakai kode
-            </button>
+            {expired ? null : (
+              <button type="button" className="link-quiet" onClick={() => navigate({ to: '/masuk' })}>
+                Sudah punya akun? Masuk pakai kode
+              </button>
+            )}
             <span className="app-note" style={{ fontSize: 11.5 }}>
-              Namamu tersimpan di perangkat ini saja. Bisa diganti kapan saja di Pengaturan.
+              {expired
+                ? 'Bill lama tetap aman selama kamu punya kode pemulihan dari perangkat sebelumnya.'
+                : 'Namamu tersimpan di perangkat ini saja. Bisa diganti kapan saja di Pengaturan.'}
             </span>
           </section>
         </main>

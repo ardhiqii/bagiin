@@ -5,6 +5,7 @@ import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
 import { Alert, Button, Field, ProviderLogo } from '../ds/primitives'
 import { publishIdentity, renameIdentity, resetIdentity } from '../lib/identity'
+import { signOut } from '../lib/session'
 import { endpoints } from '../lib/api'
 import { accountActions, keys, useAccounts, useBillAction, type PaymentAccount } from '../lib/queries'
 import type { Identity } from '../lib/types'
@@ -296,8 +297,12 @@ export function Settings({ identity }: { identity: Identity | null }) {
             <Button
               variant="danger"
               onClick={() => {
+                // resetIdentity() menghapus localStorage; signOut() sekaligus
+                // memindahkan status sesi ke anonymous supaya semua layar
+                // ber-guard langsung tertutup, bukan cuma setelah reload.
                 resetIdentity()
                 publishIdentity(null)
+                signOut()
                 toast('Identitas dihapus dari perangkat ini')
                 navigate({ to: '/' })
               }}

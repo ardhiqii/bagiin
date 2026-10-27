@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import type { BillResponse } from '../lib/types'
 import { billActions, keys, useBill, useBillAction, useContacts } from '../lib/queries'
-import { api } from '../lib/api'
+import { api, isSessionError } from '../lib/api'
 import { startIdentity } from '../lib/identity'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
@@ -278,9 +278,22 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
       {bill.isError ? (
         <div className="art-empty">
           <img src={errorArt} alt="" width={160} height={160} />
-          <Alert tone="danger" title="Bill tidak bisa dibuka">
-            {(bill.error as Error).message}
-          </Alert>
+          {isSessionError(bill.error) ? (
+            /* Sesi basi bukan "bill-nya rusak": orangnya cuma perlu isi nama lagi.
+               Layar ini tidak ber-guard (link bill harus tetap bisa dibuka tamu),
+               jadi keadaannya dijelaskan di sini lengkap dengan jalan keluarnya. */
+            <>
+              <Alert tone="pending" title="Sesi kamu sudah tidak berlaku">
+                Identitas yang tersimpan di perangkat ini sudah tidak ada di server. Isi nama
+                lagi untuk melanjutkan.
+              </Alert>
+              <Button onClick={() => navigate({ to: '/' })}>Isi nama lagi</Button>
+            </>
+          ) : (
+            <Alert tone="danger" title="Bill tidak bisa dibuka">
+              {(bill.error as Error).message}
+            </Alert>
+          )}
         </div>
       ) : null}
 

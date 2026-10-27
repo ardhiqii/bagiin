@@ -87,6 +87,34 @@ Dua komponen ini menggantikan kebiasaan lama "tempel beberapa pill di bawah". Ke
 - Aksi merusak (`Keluar dari bill ini`) di grup terpisah paling bawah dengan warna `--ds-danger`.
 - Larangan: jangan menumpuk tombol pill penuh di dalam sheet. Sembilan pill mint bertumpuk (kasus nyata sebelum revisi ini) boros tinggi, tidak punya hierarki, dan tidak bisa dipindai.
 
+## Sesi: empat keadaan, satu sumber
+
+Status sesi hidup di `lib/session.ts` (`checking` · `authed` · `anonymous` · `expired`) dan divalidasi ke server lewat `GET /api/identities/{id}/me` sebelum layar mana pun dirender. "Ada id di localStorage" **bukan** bukti login: id bisa berasal dari database lama yang sudah tidak ada.
+
+Aturan yang mengikat:
+
+- **Layar yang butuh identitas wajib dibungkus `RequireIdentity`**, dan `children`-nya berupa **fungsi**, bukan elemen. `<Recap identityId={me!.id} />` dievaluasi lebih dulu, jadi null.id meledak tepat di layar yang seharusnya tidak pernah dirender.
+- **Layar bill tidak dijaga.** Link bill harus bisa dibuka orang yang belum punya identitas; mereka memakai tombol "Ikut bill ini".
+- **Error sesi diputus di satu tempat** (`api.ts` → `isSessionError`): 404 `Identitas tidak ditemukan`, 403 `Sesi tidak valid`, 403 `Identitas tidak cocok`. 403 lain (`Hanya owner bill`, `Bill sudah ditutup`) adalah soal izin, **bukan** sesi — memutus sesi karena itu akan mengeluarkan orang dari akunnya hanya karena dia menekan tombol yang bukan haknya.
+- **Jaringan bermasalah tidak mengeluarkan orang dari akunnya.** Hanya jawaban server yang tegas soal identitas yang boleh memutus sesi.
+- **Setelah daftar/masuk, kembalikan ke halaman yang tadi dituju** (`bagiin_after_login` di sessionStorage), bukan selalu ke beranda.
+- **Keluar dari akun** harus memindahkan status sesi ke `anonymous`, bukan cuma menghapus localStorage — kalau tidak, layar yang sedang terbuka tetap menampilkan data orang sebelumnya sampai reload.
+
+### Notice, bukan Alert, untuk konteks di dalam alur
+
+`Alert` menjawab "ada yang gagal" dan tampil selebar kartu. `Notice` menjawab "perlu kamu tahu sebelum lanjut": ikon 15 px sebaris teks, satu-dua baris, boleh punya satu aksi teks di kanan. Alert selebar kartu di tengah layar pendaftaran menenggelamkan tugas utamanya (judul "Isi nama lagi" kalah oleh kotak kuning besar).
+
+| Keadaan | Komponen | Nada |
+| --- | --- | --- |
+| Sesi lama berakhir di layar pendaftaran | `Notice` + aksi "Masuk pakai kode" | pending |
+| Gagal memuat data di layar penuh | `Alert` | danger |
+| Bill tidak bisa dibuka karena sesi basi | `Alert` + tombol "Isi nama lagi" | pending |
+| Bill tidak bisa dibuka karena sebab lain | `Alert` | danger |
+
+### Fokus keyboard
+
+Selama ini tidak ada aturan fokus sama sekali, jadi field yang otomatis difokus menggambar outline hitam 2 px bawaan browser — terbaca seperti keadaan error. Sekarang: `:focus-visible` memakai cincin teal 2 px untuk semua kontrol, dan field memakai `box-shadow` teal lembut + latar putih saat fokus.
+
 ## Logo provider pembayaran
 
 Katalog berisi **47 brand**: bank besar (BCA, Mandiri, BNI, BRI, BTN, CIMB Niaga, Permata, Danamon, Panin, OCBC, Maybank, Mega, BSI, Muamalat, BJB, DKI, Jateng, Jatim, Sinarmas, BTPN, KB Bukopin, QNB, Maybank, Maspion, Mayapada, Victoria, Amar, Aladin), bank digital (Jago, SeaBank, Neo Commerce, Raya, Allo, Saqu, Superbank, blu, Jenius, TMRW), dan dompet/uang elektronik (GoPay, OVO, DANA, ShopeePay, LinkAja, Grab, QRIS, Flazz, e-Money Mandiri).

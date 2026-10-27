@@ -1,9 +1,10 @@
-import { StrictMode, useEffect, useState } from 'react'
+import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
 import { router } from './router'
-import { ensureIdentity, loadStored, publishIdentity } from './lib/identity'
+import { startSession, useSession } from './lib/session'
+import { BootScreen } from './components/BootScreen'
 import { ToastProvider } from './components/Toast'
 import './design-system.css'
 import './app.css'
@@ -12,41 +13,19 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 15_000, refetchOnWindowFocus: true, retry: 1 } },
 })
 
+/**
+ * Router baru dipasang setelah status sesi jelas. Kalau dipasang lebih dulu,
+ * layar sempat memutuskan sendiri "belum ada identitas" lalu berkedip ke
+ * pendaftaran meski orangnya sudah punya akun.
+ */
 function Boot() {
-  const [ready, setReady] = useState(false)
+  const session = useSession()
 
   useEffect(() => {
-    let alive = true
-    ;(async () => {
-      const stored = loadStored()
-      if (stored) {
-        publishIdentity(stored)
-        try {
-          // pulihkan secret kalau localStorage dibersihkan sebagian
-          const identity = await ensureIdentity(stored.name)
-          if (alive) publishIdentity(identity)
-        } catch {
-          /* tanpa secret, aksi tulis akan memberi tahu sendiri */
-        }
-      }
-      // tanpa identitas tersimpan, app berhenti di layar kenalan: tidak ada
-      // identitas "Teman" yang dibuat diam-diam
-      if (alive) setReady(true)
-    })()
-    return () => {
-      alive = false
-    }
+    void startSession()
   }, [])
 
-  if (!ready) {
-    return (
-      <div className="app-shell">
-        <div className="app-frame">
-          <main className="app-body">Menyiapkan Bagiin…</main>
-        </div>
-      </div>
-    )
-  }
+  if (session.status === 'checking') return <BootScreen />
   return <RouterProvider router={router} />
 }
 

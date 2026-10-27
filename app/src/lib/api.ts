@@ -7,6 +7,27 @@ export function setApiIdentity(identity: Identity | null) {
   identityRef = identity
 }
 
+/**
+ * Error yang berarti "identitas di perangkat ini tidak berlaku lagi", bukan
+ * "kamu tidak boleh melakukan ini". Backend memakai 403 untuk dua hal yang
+ * sangat berbeda — sesi basi dan aksi yang bukan hakmu — jadi pemisahannya
+ * harus lewat pesan, bukan hanya status.
+ */
+export function isSessionError(error: unknown): boolean {
+  const err = error as { status?: number; message?: string } | null
+  if (!err || typeof err.status !== 'number') return false
+  const message = err.message ?? ''
+  if (err.status === 404 && /identitas tidak ditemukan/i.test(message)) return true
+  if (err.status === 403 && /(sesi tidak valid|identitas tidak cocok)/i.test(message)) return true
+  return false
+}
+
+let sessionErrorHandler: (() => void) | null = null
+/** Dipasang sekali oleh lib/session.ts; dipanggil saat server menolak identitas. */
+export function setSessionErrorHandler(handler: (() => void) | null) {
+  sessionErrorHandler = handler
+}
+
 export class ApiError extends Error {
   status: number
   constructor(message: string, status: number) {
@@ -75,7 +96,12 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
     } catch {
       /* body bukan JSON */
     }
-    throw new ApiError(messageFrom(res.status, parsed), res.status)
+    const error = new ApiError(messageFrom(res.status, parsed), res.status)
+    // Sesi basi harus memutus sesi di mana pun error-nya muncul, bukan cuma di
+    // layar beranda. Tanpa ini, orang bisa duduk di layar kosong berisi pesan
+    // "Identitas tidak ditemukan" tanpa pernah ditawari daftar ulang.
+    if (isSessionError(error)) sessionErrorHandler?.()
+    throw error
   }
   if (res.status === 204) return undefined as T
   const text = await res.text()

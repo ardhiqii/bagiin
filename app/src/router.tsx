@@ -6,6 +6,8 @@ import { EditBill } from './screens/EditBill'
 import { Recap } from './screens/Recap'
 import { Settings } from './screens/Settings'
 import { useIdentity } from './lib/identity'
+import { useSession } from './lib/session'
+import { RequireIdentity } from './components/RequireIdentity'
 import { Welcome } from './screens/Welcome'
 import { Restore } from './screens/Restore'
 
@@ -15,15 +17,15 @@ function useMe() {
   return useIdentity()
 }
 
+/* Beranda: tanpa identitas, layar ini sendiri yang jadi pintu pendaftaran. */
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   component: function HomeRoute() {
     const me = useMe()
-    if (!me) return <Welcome />
-    return (
-      <Home identityId={me.id} name={me.name} />
-    )
+    const session = useSession()
+    if (!me) return <Welcome expired={session.status === 'expired'} />
+    return <Home identityId={me.id} name={me.name} />
   },
 })
 
@@ -41,12 +43,15 @@ const createBillRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/create',
   component: function CreateRoute() {
-    const me = useMe()
-    if (!me) return <Welcome context="Buat bill butuh nama dulu, biar teman tahu siapa yang menalangi." />
-    return <Create identityId={me.id} />
+    return (
+      <RequireIdentity>
+        {(me) => <Create identityId={me.id} />}
+      </RequireIdentity>
+    )
   },
 })
 
+/* Layar bill sengaja tidak dijaga: penerima link belum tentu punya identitas. */
 const billRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/b/$billId',
@@ -62,8 +67,11 @@ const editBillRoute = createRoute({
   path: '/b/$billId/edit',
   component: function EditBillRoute() {
     const { billId } = editBillRoute.useParams()
-    const me = useMe()
-    return <EditBill billId={billId} identityId={me?.id ?? null} />
+    return (
+      <RequireIdentity>
+        {(me) => <EditBill billId={billId} identityId={me.id} />}
+      </RequireIdentity>
+    )
   },
 })
 
@@ -71,9 +79,11 @@ const recapRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/recap',
   component: function RecapRoute() {
-    const me = useMe()
-    if (!me) return <Welcome context="Isi nama dulu supaya rekap kamu bisa dihitung." />
-    return <Recap identityId={me.id} />
+    return (
+      <RequireIdentity>
+        {(me) => <Recap identityId={me.id} />}
+      </RequireIdentity>
+    )
   },
 })
 
@@ -81,9 +91,11 @@ const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
   component: function SettingsRoute() {
-    const me = useMe()
-    if (!me) return <Welcome context="Isi nama dulu untuk membuka pengaturan." />
-    return <Settings identity={me} />
+    return (
+      <RequireIdentity>
+        {(me) => <Settings identity={me} />}
+      </RequireIdentity>
+    )
   },
 })
 

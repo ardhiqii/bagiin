@@ -525,6 +525,21 @@
 .ds-item-discount { color: var(--ds-muted); font: 400 11px/1 var(--ds-font-body); }
 
 .ds-field label { display: block; margin-bottom: 7px; font: 800 12px/1 var(--ds-font-body); }
+/* ---------- Fokus keyboard ----------
+   Selama ini tidak ada aturan fokus sama sekali, jadi saat field otomatis
+   difokus (layar pendaftaran), browser menggambar outline hitam 2 px yang
+   terbaca seperti keadaan error. Semua kontrol memakai cincin teal tipis. */
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--ds-teal);
+  outline-offset: 2px;
+}
+
+.ds-field input:focus {
+  outline: none;
+  background: var(--ds-surface);
+  box-shadow: 0 0 0 3px rgba(8, 118, 101, .32);
+}
+
 .ds-field input {
   width: 100%;
   min-height: 50px;
@@ -627,6 +642,31 @@
   color: var(--ds-navy);
 }
 .ds-sheet-handle { display: block; width: 40px; height: 5px; margin: 0 auto 18px; border-radius: 999px; background: rgba(20, 47, 58, .16); }
+
+/* ---------- Notice: konteks ringkas di dalam alur ----------
+   Bukan Alert yang dikecilkan: ikon 15 px sebaris teks, tanpa judul tebal,
+   supaya tidak bersaing dengan judul layar. Dipakai untuk keadaan sesi
+   ("sesi lama sudah berakhir") di atas form pendaftaran. */
+.ds-notice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--ds-radius-md);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.ds-notice p { margin: 0; }
+.ds-notice-action { display: flex; }
+.ds-notice .link-quiet {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ds-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ds-notice .link-quiet:hover { color: var(--ds-navy); }
 
 /* ---------- Provider logo ----------
    Satu kotak untuk semua logo. Ukuran gambar di dalamnya dipatok per jenis,

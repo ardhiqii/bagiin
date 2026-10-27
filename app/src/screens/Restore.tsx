@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useToast } from '../components/Toast'
 import { Button, Field } from '../ds/primitives'
 import { restoreFromCode } from '../lib/identity'
+import { markAuthed, takeIntent } from '../lib/session'
 import keyArt from '../assets/welcome.webp'
 
 /**
@@ -32,8 +33,14 @@ export function Restore() {
     setError('')
     try {
       const me = await restoreFromCode(code)
+      markAuthed()
       await queryClient.invalidateQueries()
       toast('Masuk sebagai ' + me.name)
+      const intent = takeIntent()
+      if (intent) {
+        window.location.replace(intent)
+        return
+      }
       await navigate({ to: '/' })
     } catch (err) {
       const msg = (err as Error).message
