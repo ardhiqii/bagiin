@@ -108,6 +108,18 @@ Angka di tabel ini diuji dengan membandingkan **layar** dan **respons server**,
 bukan dengan angka yang ditulis di tes. Kalau server berubah, tes ikut berubah;
 kalau layar menampilkan angka lama, tes gagal.
 
+## Rincian per orang, dan pengingat yang nominalnya sama
+
+Kartu orang di rekap bisa dibuka: rinciannya per bill, dan tiap baris membawa
+nominal versi server — bukan hasil hitung ulang di layar. Kalau angkanya
+dihitung dua kali di dua tempat, cepat atau lambat keduanya berbeda.
+
+Untuk sisi piutang ada tombol "Salin pesan pengingat": satu ketukan menyalin
+teks berisi nama, daftar bill beserta nominal, total, dan nomor rekening saya
+(kalau ada). Nominal di pesan diambil dari angka rekap yang sama — menagih lewat
+WhatsApp dengan nominal berbeda dari yang ada di aplikasi adalah cara tercepat
+memulai pertengkaran. Tombol ini tidak muncul kalau justru saya yang berutang.
+
 ## Dua tombol "tutup" yang artinya beda — sekarang dibedakan
 
 Ketemu saat menguji: tombol "Tutup bill" ada di dua layar dengan **akibat uang

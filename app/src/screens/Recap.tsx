@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { CaretRight, WarningCircle } from '@phosphor-icons/react'
-import { useRecap } from '../lib/queries'
+import { useAccounts, useRecap } from '../lib/queries'
 import { invalidateMoneyViews } from '../lib/mutations'
 import { api } from '../lib/api'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
+import { useToast } from '../components/Toast'
 import { Alert, Avatar, BalanceCard, Button, EmptyState, Group, Sheet } from '../ds/primitives'
 import type { RecapBill, RecapCounterparty, RecapEdge } from '../lib/types'
 import personArt from '../assets/person.webp'
@@ -87,8 +88,44 @@ function PersonRow({ row, onOpen }: { row: RecapCounterparty; onOpen: () => void
   )
 }
 
-function PersonSheet({ row, onClose }: { row: RecapCounterparty | null; onClose: () => void }) {
+function PersonSheet({
+  row,
+  onClose,
+  identityId,
+}: {
+  row: RecapCounterparty | null
+  onClose: () => void
+  identityId: string | null
+}) {
   const twoWay = !!row && row.payable_idr > 0 && row.receivable_idr > 0
+  const accounts = useAccounts(identityId)
+  const toast = useToast()
+
+  /**
+   * Pesan pengingat disusun dari angka yang SAMA dengan yang tampil di kartu,
+   * bukan dihitung ulang: kalau orang menagih lewat WhatsApp dengan nominal
+   * berbeda dari yang ada di aplikasi, dua angka itu yang jadi pertengkaran.
+   * Hanya untuk piutang — menagih orang yang justru kita utangi itu janggal.
+   */
+  async function copyReminder() {
+    if (!row) return
+    const lines = row.bills.map((edge) => '- ' + edge.title + ': ' + formatRp(edge.amount_idr))
+    const account = accounts.data?.[0]
+    const transfer = account ? '\n\nTransfer ke ' + account.brand + ' ' + account.account_no +
+      (account.holder_name ? ' a.n. ' + account.holder_name : '') : ''
+    const text =
+      'Hai ' + row.name + ', ini tagihan kita yang belum lunas:\n' +
+      lines.join('\n') +
+      '\nTotal: ' + formatRp(row.amount_idr) +
+      transfer +
+      '\n\nKalau sudah, tandai lunas di aplikasi Bagiin ya. Makasih!'
+    try {
+      await navigator.clipboard.writeText(text)
+      toast('Pesan pengingat disalin')
+    } catch {
+      toast('Tidak bisa menyalin. Salin manual: ' + text)
+    }
+  }
   return (
     <Sheet open={row !== null} title={row?.name ?? 'Orang'} art={personArt} onClose={onClose}>
       {row ? (
@@ -143,6 +180,14 @@ function PersonSheet({ row, onClose }: { row: RecapCounterparty | null; onClose:
               </Link>
             ))}
           </div>
+
+          {/* Aksi ini berlaku untuk SEMUA baris di atasnya, jadi tempatnya di
+              bawah daftar — bukan menyela antara angka total dan rinciannya. */}
+          {row.receivable_idr > 0 ? (
+            <Button variant="quiet" block onClick={() => void copyReminder()}>
+              Salin pesan pengingat
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </Sheet>
@@ -318,7 +363,11 @@ export function Recap({ identityId }: { identityId: string | null }) {
             </EmptyState>
           ) : null}
 
-          <PersonSheet row={openPerson} onClose={() => setOpenPerson(null)} />
+          <PersonSheet
+            row={openPerson}
+            onClose={() => setOpenPerson(null)}
+            identityId={identityId}
+          />
 
           {/* Tombol ini menandai bill LUNAS (settle), bukan menutup status bill.
               Dulu labelnya "Tutup", sama dengan tombol di layar bill yang artinya

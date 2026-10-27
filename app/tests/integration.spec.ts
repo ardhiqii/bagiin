@@ -871,4 +871,158 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     const { finalIds, unclearIds } = await assertRecapShape(page)
     expect(finalIds.has(billId) || unclearIds.has(billId), 'bill terbuka harus muncul di rekap').toBe(true)
   })
+
+  test('90. rincian per orang di rekap: jumlah barisnya sama dengan angka di kartunya', async ({ page, browser }) => {
+    test.setTimeout(120_000)
+    await freshUser(page, 'Rinci A ' + stamp)
+    const guestName = 'Tamu Rinci ' + stamp
+
+    // dua bill dengan orang yang sama: angka per orang harus gabungan, bukan salah satu.
+    // Undangan saja tidak menciptakan utang — orangnya harus benar-benar memilih,
+    // jadi tamu masuk ke dua bill dan memilih di keduanya.
+    const billA = await createBill(page, { title: 'Rinci Satu ' + stamp, items: [{ name: 'Mie', price: '18000' }] })
+    const urlA = page.url() // createBill mengembalikan id, bukan URL
+    const billB = await createBill(page, { title: 'Rinci Dua ' + stamp, items: [{ name: 'Kwetiau', price: '12000' }] })
+    const urlB = page.url()
+    const guest = await guestJoins(browser, urlA, guestName, 'Mie')
+    const guestId = await identity(guest.page)
+    await guest.page.goto(urlB)
+    await guest.page.getByRole('button', { name: 'Ikut bill ini' }).click()
+    await guest.page.waitForTimeout(900)
+    await pickItem(guest.page, 'Kwetiau')
+    await guest.ctx.close()
+
+    const recap = await apiGet(page, '/api/identities/' + (await identity(page)).id + '/recap')
+    const row = recap.final.counterparties.find((c: any) => c.identity_id === guestId.id)
+    expect(row, 'tamu harus muncul sebagai pihak di rekap').toBeTruthy()
+    expect(row.bills.length).toBe(2)
+    expect(row.amount_idr).toBe(30000)
+
+    await goRecap(page)
+    await page.getByText(guestName).first().click()
+    await page.waitForTimeout(600)
+    const sheet = page.getByRole('dialog')
+    await expect(sheet).toBeVisible()
+    await expect(sheet).toContainText('2 bill belum lunas')
+
+    // jumlah bill yang bisa diklik = jumlah yang disebut kartu
+    const billRows = sheet.locator('.recap-bill-row')
+    await expect(billRows).toHaveCount(row.bills.length)
+
+    // dan tiap baris membawa nominal dari server, bukan hasil hitung di layar
+    for (const edge of row.bills) {
+      const line = sheet.locator('.recap-bill-row', { hasText: edge.title })
+      await expect(line).toContainText(Number(edge.amount_idr).toLocaleString('id-ID'))
+    }
+
+    // membuka satu baris membawa ke bill yang benar, dan angkanya cocok
+    await billRows.first().click()
+    await expect(page).toHaveURL(new RegExp('\\/b\\/'))
+    const openedId = page.url().split('/b/')[1]
+    expect([billA, billB]).toContain(openedId)
+    expect(await cardValue(page)).toBe(await (async () => {
+      const b = await apiGet(page, '/api/bills/' + openedId)
+      return b.bill.total_idr
+    })())
+  })
+
+  test('91. cari dan saring di beranda: yang tampil hanya yang cocok, angka tetap dari server', async ({ page }) => {
+    await freshUser(page, 'Cari A ' + stamp)
+    const openTitle = 'Cari Terbuka ' + stamp
+    const paidTitle = 'Cari Lunas ' + stamp
+    const openId = await createBill(page, { title: openTitle, items: [{ name: 'Sate', price: '15000' }] })
+    const paidId = await createBill(page, { title: paidTitle, items: [{ name: 'Bakso', price: '21000' }] })
+    await pickItem(page, 'Bakso')
+    await openActions(page)
+    await page.getByRole('button', { name: /Tandai semua lunas/ }).click()
+    await page.waitForTimeout(1500)
+
+    await goHome(page)
+    const search = page.getByPlaceholder(/Cari bill/)
+    await search.fill(openTitle)
+    await page.waitForTimeout(500)
+    await expect(page.locator('.app-row', { hasText: openTitle })).toBeVisible()
+    await expect(page.locator('.app-row', { hasText: paidTitle })).toHaveCount(0)
+
+    await search.fill('')
+    await page.waitForTimeout(300)
+    await page.getByRole('button', { name: 'Lunas', exact: true }).click()
+    await page.waitForTimeout(400)
+    await expect(page.locator('.app-row', { hasText: paidTitle })).toBeVisible()
+    await expect(page.locator('.app-row', { hasText: openTitle })).toHaveCount(0)
+
+    // nominal di baris tetap bagian saya versi server, apa pun filternya
+    const rows = await apiGet(page, '/api/identities/' + (await identity(page)).id + '/bills')
+    const paidRow = rows.find((r: any) => r.id === paidId)
+    expect(await rowAmount(page.locator('.app-row', { hasText: paidTitle }))).toBe(paidRow.my_total_idr)
+
+    // pencarian yang tidak ada hasilnya tidak boleh menampilkan bill apa pun
+    await search.fill('zzz-tidak-ada-' + stamp)
+    await page.waitForTimeout(500)
+    await expect(page.locator('.app-row')).toHaveCount(0)
+    expect(openId).toBeTruthy()
+  })
+
+  test('92. salin pesan pengingat: nominalnya sama dengan yang tampil di rekap', async ({ page, browser }) => {
+    test.setTimeout(120_000)
+    await freshUser(page, 'Tagih A ' + stamp)
+    const title = 'Tagih Integrasi ' + stamp
+    const billId = await createBill(page, {
+      title,
+      items: [
+        { name: 'Nasi Goreng', price: '25000' },
+        { name: 'Es Jeruk', price: '7000' },
+      ],
+    })
+    const guestName = 'Tamu Tagih ' + stamp
+    const guest = await guestJoins(browser, page.url(), guestName, 'Es Jeruk')
+    const guestId = await identity(guest.page)
+    await guest.ctx.close()
+    await pickItem(page, 'Nasi Goreng')
+
+    // rekening saya dipakai di pesan supaya orangnya tidak perlu tanya nomor
+    await page.getByRole('link', { name: /Pengaturan/ }).first().click()
+    await page.getByLabel('Bank atau e-wallet').fill('BCA')
+    await page.getByLabel('Nomor', { exact: true }).fill('9876543210')
+    await page.getByRole('button', { name: 'Tambah rekening' }).click()
+    await page.waitForTimeout(1200)
+
+    await goRecap(page)
+    await page.getByText(guestName).first().click()
+    await page.waitForTimeout(600)
+    const sheet = page.getByRole('dialog')
+    await expect(sheet).toBeVisible()
+    await sheet.getByRole('button', { name: 'Salin pesan pengingat' }).click()
+    await page.waitForTimeout(600)
+
+    const text = await page.evaluate(() => navigator.clipboard.readText())
+    const recap = await apiGet(page, '/api/identities/' + (await identity(page)).id + '/recap')
+    const row = recap.final.counterparties.find((c: any) => c.identity_id === guestId.id)
+
+    expect(text).toContain(guestName)
+    expect(text).toContain(title)
+    expect(text).toContain('9876543210')
+    // nominal di pesan harus persis angka rekap, bukan hitungan ulang di layar
+    expect(text).toContain(Number(row.amount_idr).toLocaleString('id-ID'))
+    for (const edge of row.bills) {
+      expect(text).toContain(Number(edge.amount_idr).toLocaleString('id-ID'))
+    }
+
+    // sisi sebaliknya: kalau SAYA yang berutang, tidak ada tombol menagih
+    await sheet.getByRole('button', { name: /Tutup|Kembali/ }).first().click().catch(() => {})
+    await page.keyboard.press('Escape').catch(() => {})
+    await page.waitForTimeout(400)
+    await goHome(page)
+    await page.locator('.app-row', { hasText: title }).click()
+    await page.waitForTimeout(900)
+    await openActions(page)
+    await page.getByRole('button', { name: 'Ganti yang bayar duluan' }).click()
+    await page.getByRole('button', { name: new RegExp(guestName + ' Jadikan pembayar') }).click()
+    await page.waitForTimeout(1500)
+
+    await goRecap(page)
+    await page.getByText(guestName).first().click()
+    await page.waitForTimeout(600)
+    await expect(page.getByRole('dialog').getByRole('button', { name: 'Salin pesan pengingat' })).toHaveCount(0)
+  })
 })
