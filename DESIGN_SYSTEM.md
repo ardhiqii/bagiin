@@ -42,7 +42,8 @@ Semua pasangan teks/latar status di atas memiliki rasio kontras minimal 4,5:1. T
 - **Nominal:** `font-variant-numeric: tabular-nums`. Gunakan pemisah ribuan Indonesia, `Rp62.120`; jangan singkat menjadi `62k` untuk tagihan yang perlu dibayar.
 - **Skala jarak:** kelipatan 4 px: 4, 8, 12, 16, 20, 24, 32. Jarak sisi layar mobile 20 px.
 - **Radius:** 10 px kontrol kecil, 14 px input, 20 px kartu dan kelompok baris, 28 px sheet/hero, dan pil penuh (`999px`) hanya untuk tombol, badge, dan chip. Hindari dua radius berbeda pada elemen yang sederajat.
-- **Target sentuh:** minimal 44×44 px untuk aksi utama, navigasi, ikon interaktif, dan kontrol jumlah. Seluruh baris item dapat diketuk; penanda centang hanya indikator.
+- **Target sentuh:** minimal 44×44 px untuk aksi utama, navigasi, ikon interaktif, dan kontrol jumlah; **baris aksi di dalam sheet minimal 56 px** (`--ds-touch-row`). Seluruh baris item dapat diketuk; penanda centang hanya indikator.
+- **Zona jempol:** aksi yang sering dipakai tinggal di sepertiga bawah layar. Menu tidak disembunyikan di pojok kanan atas — di ponsel itu zona paling sulit dijangkau satu tangan. Pola baku: toolbar di bawah (ikon sekunder + satu aksi utama), sheet muncul dari bawah.
 
 ## Lapisan, bukan garis
 
@@ -50,7 +51,7 @@ Kedalaman di Bagiin dibangun dari lapisan, mengikuti cara Apple HIG memisahkan *
 
 1. **Lapisan konten tidak punya garis keliling.** Kartu, panel, dan daftar memakai permukaan putih di atas latar fog dengan satu bayangan dua tingkat (`--ds-shadow-content`). Tidak ada `border: 1px` pada kartu atau baris.
 2. **Pemisah hanya hairline di dalam kelompok.** Daftar item adalah satu permukaan dengan garis rambut `rgba(20,47,58,.09)` yang menjorok dari teks, bukan tumpukan kotak berbingkai. Elemen terpilih ditandai isian mint, bukan garis tepi.
-3. **Lapisan fungsi boleh melayang.** Navigasi bawah, aksi utama, dan sheet memakai permukaan tembus pandang dengan blur (`--ds-glass`, `--ds-blur`) dan bayangan ke atas. Aksi yang melayang wajib berlatar solid bila menutupi teks padat — transparansi hanya untuk bar pendek.
+3. **Lapisan fungsi boleh melayang, tapi tidak boleh transparan di atas teks.** Navigasi bawah dan bar aksi memakai permukaan tembus pandang dengan blur (`--ds-glass`, `--ds-blur`); **sheet selalu solid** (`--ds-bg`). Alasannya bukan selera: `backdrop-filter` tidak selalu ada (headless, GPU mati, browser lama), dan di sana teks halaman tembus ke dalam sheet sehingga terbaca sebagai teks yang tertimpa. Blur hanya pemanis scrim, tidak pernah menjadi penopang kontras.
 
 Turunan lain: tombol berbentuk pil dengan tinggi minimal 50 px untuk aksi utama, tekanan (`:active`) memakai penskalaan kecil, dan cincin fokus 3 px selalu terlihat. Bayangan tidak dipakai sebagai dekorasi.
 
@@ -67,6 +68,32 @@ Turunan lain: tombol berbentuk pil dengan tinggi minimal 50 px untuk aksi utama,
 | Input | Putih, border, label terlihat, tinggi ≥44 px | Nominal memakai keyboard angka di mobile. Pesan salah menjelaskan cara membetulkan. |
 | Bottom sheet | Permukaan putih, judul, alasan, angka/tindakan, tombol tutup | Untuk konfirmasi, tujuan bayar, dan pengaturan item yang kontekstual. Sheet bisa scroll pada HP pendek. |
 | Navigasi bawah | Beranda, Bill, Buat, Rekap | Selalu punya area sendiri di luar konten scroll. Ikon dan label aktif teal. Aksi di akhir konten tidak boleh tertutup. |
+
+## Toolbar aksi dan daftar aksi
+
+Dua komponen ini menggantikan kebiasaan lama "tempel beberapa pill di bawah". Keduanya sudah ada di `ds/primitives.tsx` dan `design-system.css`.
+
+**Toolbar bawah (`.bill-action-bar`).** Satu baris 48 px di zona jempol:
+
+- Ikon sekunder 48×48 (`--ds-radius-md`, latar `rgba(20,47,58,.06)`, ikon navy). Ikon **netral**, bukan mint: dua tombol mint di samping pill hijau membuat mata membaca tiga ajakan sekaligus.
+- Satu aksi utama mengisi sisa lebar, tinggi 48 px, label memuat nominal (`Tandai lunas · Rp23.000`).
+- Kalau tidak ada aksi pribadi, sisi kanan diisi **keterangan keadaan** (`Semua lunas`, `Ada sisa yang belum diambil`), bukan dibiarkan kosong dan bukan diisi tombol normatif.
+
+**Daftar aksi (`ActionGroup` + `ActionRow`).** Isi sheet, satu grup = satu permukaan putih ber-radius 20 dengan hairline di dalam:
+
+- Baris tinggi minimal 56 px, grid `22px | 1fr | auto`, ikon Phosphor 20 px di kiri supaya mata bisa memindai tanpa membaca.
+- Label 15/700; catatan pendukung 12/400 di bawah label, satu baris dengan ellipsis.
+- Label grup 11/800 uppercase, `letter-spacing .09em`, warna `--ds-muted-soft`.
+- Aksi merusak (`Keluar dari bill ini`) di grup terpisah paling bawah dengan warna `--ds-danger`.
+- Larangan: jangan menumpuk tombol pill penuh di dalam sheet. Sembilan pill mint bertumpuk (kasus nyata sebelum revisi ini) boros tinggi, tidak punya hierarki, dan tidak bisa dipindai.
+
+## Ukuran gambar di dalam kartu
+
+Gambar ilustrasi **selalu mengikuti lebar kolom grid**, bukan atribut `width` di elemen `<img>`. Atribut itu hanya memberi ukuran intrinsik untuk mencegah layout shift.
+
+- `.art-card` / `.art-head`: kolom 120 px, gambar `width:100%; height:auto; aspect-ratio:1; object-fit:contain`.
+- Teks di kolom kedua wajib `minmax(0, 1fr)` supaya bisa menyusut dan tidak menabrak gambar.
+- Kasus nyata yang pernah terjadi: `<img width={150}>` di dalam kartu berkolom 120 px membuat ilustrasi meluber 30 px dan menimpa judul kartu.
 
 ## Bahasa status yang wajib konsisten
 
@@ -141,6 +168,16 @@ Konvensi tambahan:
   teman, ganti pembayar, atur bagian). Piring-garpu-pisau di sheet "Aksi lain"
   salah arti: aset itu untuk konsep *item*, bukan *aksi*.
 - Thumbnail struk 84×112, diketuk membuka viewer penuh dengan penanda "n dari m".
+
+## Aturan kerja: design system dulu, komponen setelahnya
+
+Setiap perubahan UI lewat urutan ini, bukan sebaliknya:
+
+1. **Cari komponen yang sudah ada.** Kalau sebuah pola muncul dua kali (`Group`, `ActionRow`, `BalanceCard`, `EmptyState`, `Button`), pakai komponennya, jangan salin CSS-nya.
+2. **Kalau belum ada, tambahkan ke design system lebih dulu** — token kalau perlu angka baru, komponen di `ds/primitives.tsx` + kelas di `design-system.css` — baru dipakai di layar.
+3. **Kalau menemukan flaw, perbaiki di design system**, bukan di satu layar. Contoh: gambar meluber karena kolom grid, bukan karena satu kartu — perbaikannya di `.art-card img`, bukan tambal per halaman.
+4. **Hapus CSS mati** setelah komponen lama diganti (`.seg`, `.recap-month`, `.ds-empty-soft`, `.bill-more` sudah dihapus dengan cara ini).
+5. **Ukur, jangan kira-kira.** Perubahan layout diverifikasi dengan rect nyata (lebar/tinggi/posisi elemen vs bar dan rail), bukan hanya screenshot yang dilihat sekilas.
 
 ## Empat larangan mahal
 

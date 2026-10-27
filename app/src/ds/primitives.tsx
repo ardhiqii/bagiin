@@ -101,6 +101,51 @@ export function Group({ children, label }: { children: ReactNode; label?: string
   </div>
 }
 
+/* ---------- action list (sheet) ----------
+   Daftar aksi di dalam sheet: satu grup = satu permukaan, dipisah hairline.
+   Tombol pill bertumpuk (sembilan pill mint) susah dipindai dan boros tinggi;
+   baris 56 px dengan ikon kiri bisa dipindai tanpa membaca labelnya. */
+
+export function ActionGroup({ label, children }: { label?: string; children: ReactNode }) {
+  return (
+    <div className="ds-action-group">
+      {label ? <span className="ds-action-group-label">{label}</span> : null}
+      <div className="ds-action-list">{children}</div>
+    </div>
+  )
+}
+
+export function ActionRow({
+  icon,
+  label,
+  note,
+  trail,
+  danger = false,
+  onClick,
+}: {
+  icon: ReactNode
+  label: string
+  note?: string
+  trail?: ReactNode
+  danger?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className={'ds-action-row' + (danger ? ' is-danger' : '')}
+      onClick={onClick}
+    >
+      <span className="ds-action-icon" aria-hidden="true">{icon}</span>
+      <span className="ds-action-copy">
+        {label}
+        {note ? <small>{note}</small> : null}
+      </span>
+      {trail ? <span className="ds-action-trail" aria-hidden="true">{trail}</span> : null}
+    </button>
+  )
+}
+
 /* ---------- item row ---------- */
 
 export type ItemState = 'idle' | 'picked' | 'shared'

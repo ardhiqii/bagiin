@@ -139,7 +139,8 @@ test.describe('Bagiin — perilaku user', () => {
     await expect(page).toHaveURL(/\/b\//)
     // bagikan sekarang di menu "Aksi lain" (ikon ⋮ di header), bukan di bar bawah
     await page.getByRole('button', { name: 'Aksi lain' }).click()
-    await page.getByRole('button', { name: 'Bagikan link', exact: true }).click()
+    // baris di sheet: namanya "Bagikan link" + catatan kecil di bawahnya
+    await page.getByRole('button', { name: /^Bagikan link/ }).click()
     await expect(page.getByText('Link disalin. Kirim ke teman kamu.')).toBeVisible()
     const clip = await page.evaluate(() => navigator.clipboard.readText())
     expect(clip).toContain('/b/')

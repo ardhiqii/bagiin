@@ -8,7 +8,7 @@ import { startIdentity } from '../lib/identity'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { Alert, Avatar, Button, Field, Money, Sheet, StatusBadge } from '../ds/primitives'
+import { ActionGroup, ActionRow, Alert, Avatar, Button, Field, Money, Sheet, StatusBadge } from '../ds/primitives'
 import inviteArt from '../assets/invite.webp'
 import personArt from '../assets/person.webp'
 import errorArt from '../assets/error.webp'
@@ -16,7 +16,20 @@ import paidArt from '../assets/paid.webp'
 import shareArt from '../assets/share.webp'
 import transferArt from '../assets/transfer.webp'
 import itemArt from '../assets/item.webp'
-import { Check, DotsThree, UsersThree } from '@phosphor-icons/react'
+import {
+  ArrowCounterClockwise,
+  ArrowsLeftRight,
+  Check,
+  CheckCircle,
+  DotsThree,
+  LockSimple,
+  LockSimpleOpen,
+  PencilSimple,
+  ShareNetwork,
+  SignOut,
+  SlidersHorizontal,
+  UsersThree,
+} from '@phosphor-icons/react'
 
 /**
  * Backend mengirim kalimat siap-tampil per kasus ("7 bagian belum terisi (total
@@ -221,30 +234,43 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
       subtitle={data?.bill.merchant ?? undefined}
       back
       active="home"
-      action={
-        data ? (
-          <button
-            type="button"
-            className="app-back"
-            aria-label="Aksi lain"
-            title="Aksi lain"
-            onClick={() => setActionsOpen(true)}
-          >
-            <DotsThree size={20} weight="bold" aria-hidden="true" />
-          </button>
-        ) : undefined
-      }
       footer={
-        /* Bar bawah hanya untuk aksi PRIBADI yang belum selesai: masuk ke bill
-           atau menandai bagian sendiri lunas. Kalau tidak ada, bar tidak
-           dirender sama sekali — dulu bar tetap muncul hanya untuk tombol
-           "bagikan", dan itu memakan ~76px tinggi layar di semua bill,
-           termasuk yang sudah lunas dan tidak butuh apa-apa. */
-        primaryAction ? (
+        /* Toolbar di bawah, di zona jempol: aksi yang sering dipakai jadi ikon
+           (bagikan, aksi lain) dan aksi pribadi jadi satu-satunya pill. Ikon
+           sekunder di kiri, aksi utama di kanan. Kalau tidak ada aksi pribadi,
+           sisi kanan diisi keterangan keadaan — bar tidak pernah kosong dan
+           menu tidak perlu disembunyikan di pojok atas yang sulit dijangkau. */
+        data ? (
           <div className="bill-action-bar">
-            <Button block onClick={primaryAction.onClick}>
-              {primaryAction.label}
-            </Button>
+            <button
+              type="button"
+              className="bill-bar-icon"
+              aria-label="Bagikan ke teman"
+              onClick={share}
+            >
+              <ShareNetwork size={20} weight="bold" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="bill-bar-icon"
+              aria-label="Aksi lain"
+              onClick={() => setActionsOpen(true)}
+            >
+              <DotsThree size={22} weight="bold" aria-hidden="true" />
+            </button>
+            {primaryAction ? (
+              <Button block onClick={primaryAction.onClick}>
+                {primaryAction.label}
+              </Button>
+            ) : (
+              <span className="bill-bar-state">
+                {data.settled
+                  ? 'Semua lunas'
+                  : summarizeUncovered(data).has
+                    ? 'Ada sisa yang belum diambil'
+                    : 'Bagian kamu sudah lunas'}
+              </span>
+            )}
           </div>
         ) : undefined
       }
@@ -640,102 +666,114 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
       {/* Tanpa ilustrasi: piring-garpu-pisau itu arti 'item', bukan 'aksi'.
           Untuk daftar aksi, judul + label sudah cukup; ilustrasi di sini cuma
           dekorasi yang menyesatkan. */}
+      {/* Aksi lain: daftar tergrup, bukan sembilan pill bertumpuk. Grup membuat
+          aksi destruktif (keluar) terpisah dan tiap baris 56 px supaya nyaman
+          dijangkau ibu jari di bagian bawah layar. */}
       <Sheet open={actionsOpen} title="Aksi lain" onClose={() => setActionsOpen(false)}>
         {data && me && me.identity_id === data.paid_by_id && !data.settled ? (
-          <p className="app-note">Bagian kamu otomatis lunas. Yang perlu ditandai lunas adalah orang lain.</p>
+          <p className="ds-sheet-copy">
+            Bagian kamu otomatis lunas. Yang perlu ditandai lunas adalah orang lain.
+          </p>
         ) : null}
-        <div className="app-stack-tight">
-          <Button variant="secondary" block onClick={() => { setActionsOpen(false); void share() }}>
-            Bagikan link
-          </Button>
-          {canManage && data?.bill.status === 'open' ? (
-            <Button variant="secondary" block onClick={() => { setActionsOpen(false); setInviteOpen(true) }}>
-              Undang teman
-            </Button>
-          ) : null}
-          {canManage && data?.bill.status === 'open' ? (
-            <Button
-              variant="secondary"
-              block
+
+        <ActionGroup label="Bagikan">
+          <ActionRow
+            icon={<ShareNetwork size={20} weight="bold" />}
+            label="Bagikan link"
+            note="Kirim ke teman supaya mereka memilih bagiannya"
+            onClick={() => { setActionsOpen(false); void share() }}
+          />
+        </ActionGroup>
+
+        {canManage && data?.bill.status === 'open' ? (
+          <ActionGroup label="Kelola bill">
+            <ActionRow
+              icon={<UsersThree size={20} weight="bold" />}
+              label="Undang teman"
+              onClick={() => { setActionsOpen(false); setInviteOpen(true) }}
+            />
+            <ActionRow
+              icon={<PencilSimple size={20} weight="bold" />}
+              label="Ubah bill"
               onClick={() => { setActionsOpen(false); navigate({ to: '/b/$billId/edit', params: { billId } }) }}
-            >
-              Ubah bill
-            </Button>
-          ) : null}
-          {canManage ? (
-            data?.bill.status === 'open' ? (
-              <Button
-                variant="secondary"
-                block
-                onClick={() => { setActionsOpen(false); void run(billActions.close(billId), 'Bill ditutup') }}
-              >
-                Tutup bill
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                block
-                onClick={() => { setActionsOpen(false); void run(billActions.reopen(billId), 'Bill dibuka lagi') }}
-              >
-                Buka lagi
-              </Button>
-            )
-          ) : null}
-          {canManage && data?.bill.status === 'open' && data.items.some((item) => item.mode === 'slot') ? (
-            <Button variant="secondary" block onClick={() => { setActionsOpen(false); setSlotOpen(true) }}>
-              Atur jumlah bagian
-            </Button>
-          ) : null}
-          {canManage && data?.bill.status === 'open' ? (
-            <Button variant="secondary" block onClick={() => { setActionsOpen(false); setPayerOpen(true) }}>
-              Ganti yang bayar duluan
-            </Button>
-          ) : null}
-          {canManage ? (
-            data?.settled_manual ? (
-              <Button
-                variant="secondary"
-                block
-                onClick={() => { setActionsOpen(false); void run(billActions.unsettle(billId), 'Tanda lunas dibatalkan') }}
-              >
-                Batalkan lunas seluruh bill
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                block
-                onClick={() => { setActionsOpen(false); void run(billActions.settle(billId), 'Bill ditandai lunas') }}
-              >
-                Tandai semua lunas
-              </Button>
-            )
-          ) : null}
-          {me && me.paid === 'paid' && me.total_idr > 0 ? (
-            // neutral, bukan hijau: ini membatalkan status, bukan konfirmasi
-            <Button
-              variant="quiet"
-              block
-              onClick={() => {
-                setActionsOpen(false)
-                void run(billActions.markUnpaid(billId, me.identity_id), 'Status lunas dibatalkan')
-              }}
-            >
-              Batalkan status lunas
-            </Button>
-          ) : null}
-          {me && !canManage ? (
-            <Button
-              variant="danger"
-              block
+            />
+            {data.items.some((item) => item.mode === 'slot') ? (
+              <ActionRow
+                icon={<SlidersHorizontal size={20} weight="bold" />}
+                label="Atur jumlah bagian"
+                onClick={() => { setActionsOpen(false); setSlotOpen(true) }}
+              />
+            ) : null}
+            <ActionRow
+              icon={<ArrowsLeftRight size={20} weight="bold" />}
+              label="Ganti yang bayar duluan"
+              onClick={() => { setActionsOpen(false); setPayerOpen(true) }}
+            />
+          </ActionGroup>
+        ) : null}
+
+        {canManage || (me && me.paid === 'paid' && me.total_idr > 0) ? (
+          <ActionGroup label="Status">
+            {canManage ? (
+              data?.bill.status === 'open' ? (
+                <ActionRow
+                  icon={<LockSimple size={20} weight="bold" />}
+                  label="Tutup bill"
+                  note="Sisa yang belum diambil ditanggung yang menalangi"
+                  onClick={() => { setActionsOpen(false); void run(billActions.close(billId), 'Bill ditutup') }}
+                />
+              ) : (
+                <ActionRow
+                  icon={<LockSimpleOpen size={20} weight="bold" />}
+                  label="Buka lagi"
+                  onClick={() => { setActionsOpen(false); void run(billActions.reopen(billId), 'Bill dibuka lagi') }}
+                />
+              )
+            ) : null}
+            {canManage ? (
+              data?.settled_manual ? (
+                <ActionRow
+                  icon={<ArrowCounterClockwise size={20} weight="bold" />}
+                  label="Batalkan lunas seluruh bill"
+                  onClick={() => { setActionsOpen(false); void run(billActions.unsettle(billId), 'Tanda lunas dibatalkan') }}
+                />
+              ) : (
+                <ActionRow
+                  icon={<CheckCircle size={20} weight="bold" />}
+                  label="Tandai semua lunas"
+                  onClick={() => { setActionsOpen(false); void run(billActions.settle(billId), 'Bill ditandai lunas') }}
+                />
+              )
+            ) : null}
+            {me && me.paid === 'paid' && me.total_idr > 0 && !canManage ? (
+              <ActionRow
+                icon={<ArrowCounterClockwise size={20} weight="bold" />}
+                label="Batalkan status lunas"
+                onClick={() => {
+                  setActionsOpen(false)
+                  void run(billActions.markUnpaid(billId, me.identity_id), 'Status lunas dibatalkan')
+                }}
+              />
+            ) : null}
+          </ActionGroup>
+        ) : null}
+
+        {me && !canManage ? (
+          <ActionGroup label="Keluar dari bill">
+            <ActionRow
+              danger
+              icon={<SignOut size={20} weight="bold" />}
+              label="Keluar dari bill ini"
+              note="Pilihanmu ikut hilang, bagianmu dibebaskan"
               onClick={() => {
                 setActionsOpen(false)
                 void run(billActions.leave(billId), 'Kamu keluar dari bill ini').then(() => navigate({ to: '/' }))
               }}
-            >
-              Keluar dari bill ini
-            </Button>
-          ) : null}
-          <div className="sheet-divider" aria-hidden="true" />
+            />
+          </ActionGroup>
+        ) : null}
+
+        <div className="ds-sheet-foot-actions">
           <Button variant="quiet" block onClick={() => { setActionsOpen(false); navigate({ to: '/' }) }}>
             Kembali ke beranda
           </Button>

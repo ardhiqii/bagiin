@@ -48,6 +48,7 @@
   --ds-space-8: 32px;
   --ds-gutter: var(--ds-space-5);
   --ds-touch: 44px;    /* target sentuh minimum */
+  --ds-touch-row: 56px; /* minimum baris aksi di dalam sheet */
 
   --ds-radius-sm: 10px;
   --ds-radius-md: 14px;
@@ -605,22 +606,83 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(16, 39, 49, .38);
+  background: rgba(16, 39, 49, .46);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
 .ds-sheet {
   position: relative;
   width: min(480px, 100%);
-  padding: 12px 22px max(22px, env(safe-area-inset-bottom));
-  background: var(--ds-glass-strong);
-  backdrop-filter: var(--ds-blur);
-  -webkit-backdrop-filter: var(--ds-blur);
+  /* Sheet memakai permukaan SOLID, bukan kaca. Dulu --ds-glass-strong (putih
+     92%) + backdrop blur; di renderer tanpa blur (headless, GPU mati, browser
+     lama) teks halaman di belakangnya tembus dan terbaca sebagai teks yang
+     tertimpa. Blur sekarang hanya lapisan scrim, bukan penopang kontras. */
+  background: var(--ds-bg);
+  max-height: min(88dvh, 760px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 20px max(20px, env(safe-area-inset-bottom));
   border-radius: var(--ds-radius-xl) var(--ds-radius-xl) 0 0;
-  box-shadow: 0 -24px 70px -24px rgba(16, 39, 49, .5);
+  box-shadow: 0 -24px 70px -24px rgba(16, 39, 49, .55);
   color: var(--ds-navy);
 }
 .ds-sheet-handle { display: block; width: 40px; height: 5px; margin: 0 auto 18px; border-radius: 999px; background: rgba(20, 47, 58, .16); }
+
+/* ---------- Action list: daftar aksi di dalam sheet ----------
+   Aturan (lihat DESIGN_SYSTEM.md):
+   - satu grup = satu permukaan, dipisah hairline di dalam, bukan tumpukan pill
+   - tinggi baris 56 px: target sentuh untuk ibu jari, bukan 44 px pas-pasan
+   - ikon kiri selalu ada supaya mata bisa memindai tanpa membaca
+   - aksi merusak di grup sendiri, warna danger, paling bawah */
+.ds-action-group { margin-top: var(--ds-space-4); }
+.ds-action-group:first-of-type { margin-top: var(--ds-space-2); }
+.ds-action-group-label {
+  display: block;
+  margin: 0 4px var(--ds-space-2);
+  color: var(--ds-muted-soft);
+  font: 800 11px/1 var(--ds-font-body);
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.ds-action-list {
+  background: var(--ds-surface);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-content);
+  overflow: hidden;
+}
+.ds-action-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: var(--ds-touch-row);
+  padding: 13px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--ds-navy);
+  font: 700 15px/1.25 var(--ds-font-body);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background .16s var(--ds-ease);
+}
+.ds-action-row + .ds-action-row { box-shadow: inset 0 1px 0 var(--ds-hairline); }
+.ds-action-row:hover { background: rgba(8, 118, 101, .05); }
+.ds-action-row:active { background: rgba(8, 118, 101, .1); }
+.ds-action-row:focus-visible { outline: 2px solid var(--ds-teal); outline-offset: -2px; }
+.ds-action-icon { display: grid; place-items: center; color: var(--ds-teal); }
+.ds-action-copy { display: grid; gap: 2px; min-width: 0; }
+.ds-action-copy small {
+  color: var(--ds-muted);
+  font: 400 12px/1.35 var(--ds-font-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ds-action-trail { color: var(--ds-muted-soft); display: grid; place-items: center; }
+.ds-action-row.is-danger, .ds-action-row.is-danger .ds-action-icon { color: var(--ds-danger); }
+.ds-action-row.is-danger:hover { background: var(--ds-danger-bg); }
+.ds-action-row.is-danger:active { background: #fadad7; }
 .ds-sheet-close {
   position: absolute;
   top: 14px;
@@ -649,6 +711,7 @@
   font: 400 12.5px/1.3 var(--ds-font-body);
 }
 .ds-sheet-row b { font-weight: 800; }
+.ds-sheet-foot-actions { margin-top: var(--ds-space-4); }
 .ds-sheet-foot { display: flex; align-items: center; gap: 6px; margin: 14px 0 0; color: var(--ds-muted); font: 400 11.5px/1.4 var(--ds-font-body); }
 
 .ds-page button:focus-visible,
