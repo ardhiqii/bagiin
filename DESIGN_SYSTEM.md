@@ -89,22 +89,50 @@ Dua komponen ini menggantikan kebiasaan lama "tempel beberapa pill di bawah". Ke
 
 ## Logo provider pembayaran
 
-Nama brand di database adalah teks bebas, jadi logo diselesaikan lewat `providerKey()` di `lib/providers.ts` (normalisasi huruf kecil tanpa tanda baca + alias, mis. `bankbca`/`bankcentralasia` → `bca`). Brand yang belum punya logo memakai ikon dompet netral, bukan inisial berwarna.
+Katalog berisi **47 brand**: bank besar (BCA, Mandiri, BNI, BRI, BTN, CIMB Niaga, Permata, Danamon, Panin, OCBC, Maybank, Mega, BSI, Muamalat, BJB, DKI, Jateng, Jatim, Sinarmas, BTPN, KB Bukopin, QNB, Maybank, Maspion, Mayapada, Victoria, Amar, Aladin), bank digital (Jago, SeaBank, Neo Commerce, Raya, Allo, Saqu, Superbank, blu, Jenius, TMRW), dan dompet/uang elektronik (GoPay, OVO, DANA, ShopeePay, LinkAja, Grab, QRIS, Flazz, e-Money Mandiri).
 
-**Satu kotak untuk semua logo: 72 × 24 px, rata kiri.** Yang disesuaikan hanya tinggi gambar per brand (`h` di manifest), bukan kotaknya:
+Nama brand di database tetap **teks bebas**. `providerKey()` di `lib/providers.ts` menormalkan ("Bank BCA", "bca mobile", "BCA" → `bca`) dan mengenali produk sebagai bank induknya: `brizzi`→BRI, `tapcash`→BNI, `isaku`/`sakuku`→BCA, `bsb`→BSI, `flazz`→BCA. Brand yang tidak dikenal memakai ikon dompet netral, bukan inisial berwarna.
 
-- Wordmark lebar (ShopeePay 5,2:1) dipatok lebih tinggi (13,5 px) supaya bobotnya seimbang dengan wordmark padat (BCA 3,2:1, 15,5 px).
-- Lambang persegi (LinkAja 1:1) dipatok 22 px.
-- Larangan: menyerahkan ukuran ke rasio mentah. Dengan begitu logo 5:1 akan tampak jauh lebih kecil daripada 1:1 di kotak yang sama.
+### Ukuran: satu kotak, tinggi dihitung
 
-**Sumber aset** (semua di `app/src/assets/providers/`, total ~57 KB):
+Semua logo menempati kotak **72 × 24 px, rata kiri**. Tinggi gambar di dalamnya **tidak didata per brand**, tapi dihitung dari rasio aslinya lewat `opticalHeight(ar)`:
 
-- GoPay — media kit resmi `gopay.co.id/media-kit` (kit "New-Update-GoPay-Logo")
-- ShopeePay — `shopeepay.co.id/logo/spp-logo.svg`
-- Bank Jago — logo baru 11 Juni 2026 (peluncuran identitas visual "Say Yellow")
-- BCA, Mandiri, OVO, LinkAja, DANA, SeaBank — artwork resmi via Wikimedia Commons
+| Rasio asli | Tinggi tampil | Contoh |
+| --- | --- | --- |
+| < 1,6 (lambang) | 22 px | TMRW, LinkAja, CIMB, Panin, BRI |
+| 1,6–2,6 | 16 px | BTPN, Mega, blu, Amar |
+| 2,6–3,6 | 15 px | BCA, Mandiri, Danamon, SeaBank |
+| 3,6–4,8 | 13,5 px | BNI, Permata, GoPay, Nobu |
+| ≥ 4,8 | 12,5 px | DKI, Superbank |
 
-**Pipeline aset logo:** render SVG di Chromium (transparan) → keyout latar terang yang menyambung ke tepi (flood fill, toleransi 232) → trim → sisi terpanjang 200 px → WebP q92. Keyout wajib: dua aset resmi datang dengan latar terang opaque, dan tanpa keyout logo tampil sebagai kotak abu di kartu putih.
+Lebar tetap dibatasi 72 px, jadi logo yang sangat lebar otomatis mengecil tingginya. Larangan: memakai tinggi yang sama untuk semua rasio — logo 12:1 akan jadi garis tipis sementara 1:1 terlihat raksasa.
+
+### Lockup sangat lebar dipotong ke lambangnya
+
+Rasio ≥ 6 berarti lockup "lambang + nama panjang" (BRI 12,9; Panin 8,0; KB Bukopin 6,8; Mayapada 10,1; Maspion 9,1; Superbank 6,3; CIMB 6,5). Pada 72 px lebar, wordmark seperti itu hanya setinggi ±6 px dan tidak terbaca. Untuk aset ini, **simpan hanya lambangnya**: potong pada celah kosong pertama setelah tinta pembuka (deteksi kolom tanpa tinta ≥ 10% tinggi gambar). Nama brand tetap ada sebagai teks di baris, jadi tidak ada informasi yang hilang.
+
+### Sumber aset (semua resmi)
+
+- **GoPay** — media kit `gopay.co.id/media-kit` (kit "New-Update-GoPay-Logo")
+- **ShopeePay** — `shopeepay.co.id/logo/spp-logo.svg`
+- **Bank Jago** — logo baru 11 Juni 2026
+- **Dari situs resmi masing-masing** — CIMB Niaga, OCBC, Nobu, Victoria, Amar, Bank Raya, Bank Saqu, blu, Jenius, TMRW, Bank Jateng
+- **Artwork resmi via Wikimedia Commons** — sisanya (BCA, Mandiri, BNI, BRI, BTN, Permata, Danamon, Panin, Mega, BSI, Muamalat, DKI, Jatim, Sinarmas, BTPN, Maspion, Mayapada, Allo, UOB, Maybank, KB Bukopin, QNB, Superbank, Aladin, Flazz, e-Money, QRIS, Grab, OVO, DANA, LinkAja)
+
+DBS sengaja **tidak** dipakai: tidak ada aset resmi yang bersih, dan satu kandidat dari Commons ternyata logo "Daimler und Benz Stiftung". Lebih baik fallback dompet daripada logo yang salah.
+
+### Pipeline aset
+
+Render SVG di Chromium (latar transparan) → keyout latar terang yang menyambung ke tepi (flood fill, toleransi 232) → potong ke lambang bila rasio ≥ 6 → trim → sisi terpanjang 200 px → WebP q92. Total 47 logo ≈ **325 KB**.
+
+Keyout wajib: beberapa aset resmi datang dengan latar terang opaque; tanpa keyout, logo tampil sebagai kotak abu di kartu putih. Putih di dalam logo (mis. tulisan "linkaja") tetap utuh karena flood fill hanya menyentuh area yang menyambung ke tepi.
+
+### Menambah brand baru
+
+1. Simpan aset ke `app/src/assets/providers/<key>.webp` (nama file = key).
+2. Tambahkan baris di `CATALOG`-nya: key, label, dan alias yang mungkin diketik.
+3. Isi `AR` dengan rasio asli aset setelah di-trim.
+4. Tidak perlu menyentuh CSS atau layar mana pun — `import.meta.glob` menemukan asetnya otomatis.
 
 ## Ukuran gambar di dalam kartu
 

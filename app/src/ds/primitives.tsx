@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { PROVIDERS, providerKey } from '../lib/providers'
+import { PROVIDERS, opticalHeight, providerKey } from '../lib/providers'
 import { Check, CheckCircle, Clock, House, Info, Plus, Receipt, UsersThree, Wallet, WarningCircle, X } from '@phosphor-icons/react'
 
 /* ---------- money ---------- */
@@ -117,7 +117,7 @@ export function ProviderLogo({ brand }: { brand: string }) {
       </span>
     )
   }
-  const { src, ar, h } = PROVIDERS[key]
+  const { src, ar } = PROVIDERS[key]
   return (
     <span className="ds-provider" aria-hidden="true">
       <img
@@ -125,7 +125,7 @@ export function ProviderLogo({ brand }: { brand: string }) {
         src={src}
         alt=""
         loading="lazy"
-        style={{ height: h }}
+        style={{ height: opticalHeight(ar) }}
       />
     </span>
   )
