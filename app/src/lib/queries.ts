@@ -77,6 +77,31 @@ export function useContacts(identityId: string | null, enabled: boolean) {
   })
 }
 
+export type PendingInviteCard = {
+  id: number
+  bill_id: string
+  invited_by: string
+  invited_by_name: string
+  bill_title: string
+  bill_total: number
+  created_at: string
+}
+
+/**
+ * Undangan yang masih menunggu jawaban. Biasanya kosong: kalau orang yang
+ * diundang punya auto_accept (bawaan), backend langsung memasukkannya ke bill
+ * tanpa kartu ini. Kartu hanya muncul kalau dia mematikan auto_accept, atau
+ * pernah menolak undangan sebelumnya — di situlah jalurnya dulu panjang:
+ * buka bill dulu, baru tekan "Ikut bill ini".
+ */
+export function useInvites(identityId: string | null) {
+  return useQuery({
+    queryKey: ['invites', identityId ?? ''],
+    queryFn: () => api<PendingInviteCard[]>('/api/identities/' + identityId + '/invites'),
+    enabled: Boolean(identityId),
+  })
+}
+
 export function useRecap(identityId: string | null) {
   return useQuery({
     queryKey: keys.recap(identityId ?? ''),
@@ -102,6 +127,15 @@ export function useBillAction(billId: string | null, identityId: string | null) 
       api<unknown>(action.path, { method: action.method ?? 'POST', body: action.body ?? {} }),
     onSuccess: () => invalidateMoneyViews(qc, { billId, identityId }),
   })
+}
+
+export const inviteActions = {
+  accept: (billId: string, inviteId: number) => ({
+    path: '/api/bills/' + billId + '/invites/' + inviteId + '/accept',
+  }),
+  decline: (billId: string, inviteId: number) => ({
+    path: '/api/bills/' + billId + '/invites/' + inviteId + '/decline',
+  }),
 }
 
 export const billActions = {

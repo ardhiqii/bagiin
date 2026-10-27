@@ -112,6 +112,17 @@ async function guestJoins(browser: Browser, billUrl: string, name: string, item?
   return { ctx, page }
 }
 
+
+async function apiSend(page: Page, path: string, body: unknown = {}) {
+  const me = await identity(page)
+  const res = await page.request.post(path, {
+    headers: { 'X-Identity-Id': me.id, 'X-Identity-Secret': me.secret },
+    data: body,
+  })
+  if (!res.ok()) throw new Error('POST ' + path + ' -> ' + res.status() + ' ' + (await res.text()).slice(0, 120))
+  return res.json().catch(() => ({}))
+}
+
 async function cardValue(page: Page) {
   return num(await page.locator('.ds-balance-value').first().textContent())
 }
@@ -378,5 +389,61 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
 
     const res = await page.request.get('/api/bills/' + billId)
     expect(res.status()).toBe(404)
+  })
+
+  test('81. undangan menunggu: satu ketukan di beranda, tanpa buka bill dulu', async ({ page, browser }) => {
+    await freshUser(page, 'Undang A ' + stamp)
+    const title1 = 'Kontak Awal ' + stamp
+    const paidFirst = await createBill(page, { title: title1, items: [{ name: 'Kopi', price: '10000' }] })
+
+    // tamu ikut bill pertama: sekarang dia jadi kontak yang sah untuk diundang
+    const guest = await guestJoins(browser, page.url(), 'Tamu Undang ' + stamp)
+    const guestId = await identity(guest.page)
+    // matikan auto_accept supaya undangan benar-benar menunggu jawaban
+    await apiSend(guest.page, '/api/identities/' + guestId.id + '/auto_accept', { auto_accept: 0 })
+
+    // pemilik membuat bill kedua lalu mengundang tamu dari daftar kontak
+    const title2 = 'Undangan Kedua ' + stamp
+    const invitedId = await createBill(page, { title: title2, items: [{ name: 'Teh', price: '8000' }] })
+    await apiSend(page, '/api/bills/' + invitedId + '/invite', { identity_id: guestId.id })
+
+    // tamu membuka beranda: kartu undangan muncul, satu tombol "Ikut"
+    await guest.page.goto('/')
+    await guest.page.waitForTimeout(1500)
+    const card = guest.page.locator('.invite-card', { hasText: title2 })
+    await expect(card).toBeVisible()
+    await expect(card).toContainText('mengundangmu')
+    await expect(card).toContainText('total')
+
+    await card.getByRole('button', { name: 'Ikut' }).click()
+    await expect(guest.page).toHaveURL(new RegExp(invitedId), { timeout: 15_000 })
+    await guest.page.waitForTimeout(1200)
+
+    // sudah jadi anggota: tidak ada lagi tawaran "Ikut bill ini"
+    await expect(guest.page.getByRole('button', { name: 'Ikut bill ini' })).toHaveCount(0)
+    const guestView = await apiGet(guest.page, '/api/bills/' + invitedId)
+    expect(guestView.people.some((person: any) => person.identity_id === guestId.id)).toBe(true)
+
+    // dan kartunya hilang dari beranda
+    await nav(guest.page, 'Beranda')
+    await guest.page.waitForTimeout(800)
+    await expect(guest.page.locator('.invite-card')).toHaveCount(0)
+
+    // tombol "Nanti" juga harus benar-benar menolak, bukan cuma menyembunyikan
+    const title3 = 'Undangan Ketiga ' + stamp
+    const thirdId = await createBill(page, { title: title3, items: [{ name: 'Roti', price: '7000' }] })
+    await apiSend(page, '/api/bills/' + thirdId + '/invite', { identity_id: guestId.id })
+    // undangan datang dari perangkat lain: tidak ada invalidasi lokal, jadi
+    // muat ulang seperti orang yang membuka aplikasi lagi
+    await guest.page.reload()
+    await guest.page.waitForTimeout(2000)
+    const third = guest.page.locator('.invite-card', { hasText: title3 })
+    await expect(third).toBeVisible()
+    await third.getByRole('button', { name: 'Tolak' }).click()
+    await expect(guest.page.locator('.invite-card', { hasText: title3 })).toHaveCount(0, { timeout: 10_000 })
+
+    const afterDecline = await apiGet(guest.page, '/api/bills/' + thirdId)
+    expect(afterDecline.people.some((person: any) => person.identity_id === guestId.id)).toBe(false)
+    await guest.ctx.close()
   })
 })

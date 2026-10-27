@@ -336,6 +336,22 @@ p, small, .app-note { text-wrap: pretty; }
 .app-list > * + * { border-top: 1px solid var(--ds-border); }
 .app-list .app-row { border-radius: 0 !important; }
 
+/* Undangan yang menunggu: satu kartu, satu keputusan. Tombolnya di kanan supaya
+   mata berhenti di nama bill dulu, bukan di tombol. */
+.invite-card {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-3) var(--ds-space-4);
+  background: var(--ds-surface);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-content);
+}
+.invite-copy { min-width: 0; flex: 1; }
+.invite-copy b { display: block; font: var(--ds-weight-strong) var(--ds-text-base)/1.25 var(--ds-font-body); }
+.invite-copy small { display: block; margin-top: 2px; color: var(--ds-muted); font: var(--ds-weight-regular) var(--ds-text-sm)/var(--ds-leading-snug) var(--ds-font-body); text-wrap: pretty; }
+.invite-actions { display: flex; align-items: center; gap: var(--ds-space-1); flex: none; }
+
 .chip-row { display: flex; flex-wrap: wrap; gap: var(--ds-space-2); }
 .chip-filter {
   padding: 8px 14px;

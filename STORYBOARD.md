@@ -88,11 +88,19 @@ Dari Rekap, bill yang pembagiannya belum jelas ditutup.
    Membaca `textContent` mentah menggabungkan keduanya, jadi pembanding angka
    harus memotong di kata "dari" — kalau tidak, tesnya membandingkan angka palsu.
 
-## Celah yang ditemukan tapi BELUM dikerjakan
+## Undangan: jalur terpendek yang tetap jujur
 
-- **Undangan belum bisa diterima sekali ketuk.** Backend sudah punya
-  `POST /api/bills/{id}/invites/{id}/accept` dan `decline`, dan rekap mengirim
-  aksi `accept_invite`. Di React belum ada UI-nya: orang yang diundang melihat
-  bill di beranda, membukanya, lalu harus menekan "Ikut bill ini". Datanya benar
-  (bill muncul, bukan anggota, tidak ada klaim uang), tapi jalurnya lebih panjang
-  dari seharusnya.
+Backend sudah memasukkan orang yang diundang ke bill tanpa bertanya kalau
+`auto_accept` menyala (bawaan). Jadi jalur normalnya **nol ketukan**.
+
+Kartu undangan hanya muncul untuk dua kasus sisa: orangnya mematikan
+`auto_accept`, atau pernah menolak undangan sebelumnya (menolak = "tidak untuk
+saat ini", bukan larangan; undangan berikutnya harus disetujui dengan sadar).
+Di dua kasus itu, beranda sekarang menampilkan kartu:
+
+- nama bill, siapa yang mengundang, dan **total** bill (bukan bagianmu — bagian
+  baru ada setelah memilih item di dalamnya),
+- tombol **Ikut** (satu ketukan, langsung masuk lalu dibuka bill-nya),
+- tombol **Tolak** — bukan "Nanti". Menekan tombol ini benar-benar menolak
+  undangan, jadi labelnya harus jujur. Keluar dari bill tetap bisa kapan saja
+  dari layar bill, dan itu yang membuat auto-accept aman.

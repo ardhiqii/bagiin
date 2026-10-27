@@ -1,7 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Link } from '@tanstack/react-router'
-import { useBills, useRecap } from '../lib/queries'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
+import { inviteActions, useBills, useInvites, useRecap } from '../lib/queries'
+import { invalidateInviteViews } from '../lib/mutations'
 import { formatRp } from '../lib/money'
+import { api } from '../lib/api'
+import { useToast } from '../components/Toast'
 import { AppShell } from '../components/AppShell'
 import { Alert, BalanceCard, Button, EmptyState, SectionHead } from '../ds/primitives'
 import { MagnifyingGlass } from '@phosphor-icons/react'
@@ -66,6 +70,52 @@ function BillRow({
 }
 
 /**
+ * Undangan yang masih menunggu: satu ketukan, bukan buka-bill-dulu.
+ *
+ * Backend biasanya sudah memasukkan orang yang diundang ke bill tanpa bertanya
+ * (auto_accept bawaan). Kartu ini muncul untuk dua kasus yang tersisa: orangnya
+ * mematikan auto_accept, atau pernah menolak undangan sebelumnya. Di situ dulu
+ * jalurnya: buka bill, tekan "Ikut bill ini", baru masuk — padahal satu tombol
+ * "Ikut" di beranda sudah cukup. Menolak tetap boleh, dan keluar dari bill juga
+ * selalu bisa dari layar bill.
+ */
+function InviteCard({
+  invite,
+  onAccept,
+  onDecline,
+  busy,
+}: {
+  invite: { id: number; bill_id: string; bill_title: string; bill_total: number; invited_by_name: string }
+  onAccept: () => void
+  onDecline: () => void
+  busy: boolean
+}) {
+  return (
+    <div className="invite-card">
+      <div className="invite-copy">
+        <b>{invite.bill_title}</b>
+        {/* "total" disebut eksplisit: angka ini total bill, bukan bagianmu —
+            bagian baru ada setelah kamu memilih item di dalamnya */}
+        <small>
+          {invite.invited_by_name} mengundangmu · total {formatRp(invite.bill_total)}
+        </small>
+      </div>
+      <div className="invite-actions">
+        <Button compact onClick={onAccept} loading={busy}>
+          Ikut
+        </Button>
+        {/* "Nanti" menyesatkan: tombol ini benar-benar menolak undangan, dan
+            mengundang ulang setelah menolak harus disetujui dengan sadar.
+            Keluar dari bill tetap bisa kapan saja dari layar bill. */}
+        <Button compact variant="quiet" onClick={onDecline} disabled={busy}>
+          Tolak
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/**
  * Satu layar untuk semua bill: ringkasan, pencarian, saringan, lalu daftar.
  * Dulu "Beranda" dan "Bill" dua layar dengan isi nyaris sama, jadi orang harus
  * menebak mana yang memuat bill lama.
@@ -73,6 +123,27 @@ function BillRow({
 export function Home({ identityId, name }: { identityId: string | null; name: string }) {
   const bills = useBills(identityId)
   const recap = useRecap(identityId)
+  const invites = useInvites(identityId)
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const toast = useToast()
+  const [inviteBusy, setInviteBusy] = useState<number | null>(null)
+
+  async function answerInvite(invite: { id: number; bill_id: string }, accept: boolean) {
+    setInviteBusy(invite.id)
+    try {
+      const action = accept
+        ? inviteActions.accept(invite.bill_id, invite.id)
+        : inviteActions.decline(invite.bill_id, invite.id)
+      await api(action.path, { method: 'POST', body: {} })
+      invalidateInviteViews(qc, identityId)
+      if (accept) navigate({ to: '/b/$billId', params: { billId: invite.bill_id } })
+    } catch (err) {
+      toast((err as Error).message)
+    } finally {
+      setInviteBusy(null)
+    }
+  }
 
   const rows = bills.data ?? []
   const [query, setQuery] = useState('')
@@ -112,6 +183,21 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
         <Alert tone="danger" title="Tidak bisa memuat bill">
           {(bills.error as Error).message}
         </Alert>
+      ) : null}
+
+      {(invites.data ?? []).length > 0 ? (
+        <section className="app-stack">
+          <SectionHead meta={<>{(invites.data ?? []).length} menunggu</>}>Undangan</SectionHead>
+          {(invites.data ?? []).map((invite) => (
+            <InviteCard
+              key={invite.id}
+              invite={invite}
+              busy={inviteBusy === invite.id}
+              onAccept={() => void answerInvite(invite, true)}
+              onDecline={() => void answerInvite(invite, false)}
+            />
+          ))}
+        </section>
       ) : null}
 
       <BalanceCard

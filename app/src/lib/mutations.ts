@@ -28,6 +28,16 @@ export function invalidateMoneyViews(qc: QueryClient, target: MoneyTarget = {}) 
 }
 
 /** Perubahan rekening pembayar ikut mengubah isi bill (tujuan transfer). */
+/**
+ * Menerima/menolak undangan mengubah tiga hal sekaligus: daftar undangan,
+ * daftar bill (bill yang tadinya "undangan" jadi bill biasa), dan rekap.
+ */
+export function invalidateInviteViews(qc: QueryClient, identityId?: string | null) {
+  if (!identityId) return
+  void qc.invalidateQueries({ queryKey: ['invites', identityId] })
+  invalidateMoneyViews(qc, { identityId })
+}
+
 export function invalidateAccountViews(qc: QueryClient, identityId?: string | null) {
   if (!identityId) return
   void qc.invalidateQueries({ queryKey: ['accounts', identityId] })
