@@ -762,6 +762,18 @@ p, small, .app-note { text-wrap: pretty; }
 .app-banner-text b { font-size: var(--ds-text-md); }
 .app-banner-text small { font-size: var(--ds-text-xs); color: var(--ds-muted); }
 .app-banner.is-pending { background: var(--ds-pending-bg); color: var(--ds-pending); }
+
+/* Angka besar di kiri banner: satu-satunya angka "perlu tindakan" di layar.
+   tabular-nums supaya lebarnya tidak melompat saat angkanya berubah. */
+.banner-count {
+  flex: none;
+  min-width: var(--ds-space-8);
+  text-align: center;
+  /* 20 px, bukan 24: kartu navy di atasnya yang memegang fokus utama. Kalau
+     angka ini sebesar itu juga, layar punya dua pusat perhatian. */
+  font: var(--ds-weight-strong) var(--ds-text-xl)/1 var(--ds-font-display);
+  font-variant-numeric: tabular-nums;
+}
 .app-banner.is-pending small { color: var(--ds-pending); opacity: .8; }
 
 .sheet-divider { border-top: 1px solid var(--ds-border); margin: 4px 0 2px; }

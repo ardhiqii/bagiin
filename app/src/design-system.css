@@ -499,6 +499,37 @@
 .ds-balance-cur { font-size: .58em; opacity: .6; margin-right: .1em; letter-spacing: 0; }
 .ds-balance-note { display: block; color: #c3d6da; font: var(--ds-weight-regular) var(--ds-text-sm)/1.45 var(--ds-font-body); }
 
+/* ---------- arah uang: tanda dulu, warna kedua ----------
+   Satu-satunya tempat warna merah dipakai di daftar: uang yang harus KELUAR.
+   Amber tetap milik "angkanya belum pasti", hijau milik "uang untukmu". Kalau
+   merah dipakai untuk hal lain, artinya luntur dan orang berhenti membacanya. */
+.ds-amount--neg { color: var(--ds-danger); }
+.ds-amount--pos { color: var(--ds-success); }
+.ds-amount--zero,
+.ds-amount--flat { color: inherit; }
+.ds-amount-sign { margin-right: .06em; }
+
+/* Di atas kartu navy, merah dan hijau harus versi terang: warna dasar terlalu
+   gelap untuk kontras teks di latar #142f3a. */
+.ds-balance-value.ds-amount--neg { color: #ffb4a8; }
+.ds-balance-value.ds-amount--pos { color: #8fe0bd; }
+.ds-balance-sign { font-size: .62em; margin-right: .08em; font-weight: var(--ds-weight-medium); }
+
+/* Penanda aksi per baris. Ukuran teks meta, bukan judul: ini keterangan, bukan
+   hal yang harus dibaca lebih dulu daripada nama bill. */
+.ds-row-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  /* Duduk di dalam baris meta, bukan baris sendiri: tinggi baris tetap seragam
+     dan kolom angka di kanan tidak melayang di tengah baris yang lebih tinggi. */
+  vertical-align: -1px;
+  font: var(--ds-weight-medium) var(--ds-text-xs)/1.35 var(--ds-font-body);
+  white-space: nowrap;
+}
+.ds-row-flag--split { color: var(--ds-pending); }
+.ds-row-flag--pay { color: var(--ds-danger); }
+
 .ds-avatar {
   display: inline-grid;
   place-items: center;

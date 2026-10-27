@@ -152,6 +152,29 @@ Diuji di e2e 88 (tandai lunas → batalkan, status uang bolak-balik utuh) dan 89
 (tutup → tidak masuk "Lunas", tetap muncul di Semua, buka lagi → kembali
 berjalan dengan total yang sama).
 
+## Satu angka tindakan, dan arah uang yang terbaca
+
+Beranda dulu punya tiga penghitung untuk hal yang mirip: `2 belum lunas` di
+kepala, `2 belum kamu selesaikan` di banner, `6 belum jelas` di kartu saldo.
+Ketiganya benar, tidak ada yang bisa dipercaya — dan begitu satu bill ditandai
+lunas, angkanya berubah sendiri tanpa penjelasan.
+
+Sekarang satu blok, satu angka, tiap bill masuk hitungan **tepat sekali**:
+
+1. bagian saya belum memilih item → `Pilih N item lagi`
+2. sudah memilih, bagian saya belum dibayar → `Tinggal kamu bayar`
+3. saya pembayar dan masih ada sisa yang tidak diambil → `Pilih N item lagi`
+
+Jumlah rincian selalu sama dengan angka besarnya. Yang bukan tugas saya
+(peserta lain belum membayar, porsi yang nanti ditanggung pembayar) tidak
+diberi penanda: daftar yang semua barisnya berteriak tidak memberi tahu apa pun.
+
+Arah uang: kata kerja/label dulu (`Harus kamu bayar`, `Tinggal kamu bayar`),
+warna kedua (merah keluar, hijau masuk, amber belum pasti), dan tanda hanya
+kalau dua-duanya tidak ada. "Harus kamu bayar −Rp22.000" sengaja tidak dipakai:
+terbaca seperti uang kembali. Baris yang sudah menulis "Tinggal kamu bayar"
+tidak lagi menulis "−Rp22.000" — dua kali untuk hal yang sama.
+
 ## Nol tidak perlu diteriakkan
 
 Beranda dulu selalu memasang kartu saldo besar, termasuk saat nilainya Rp0.

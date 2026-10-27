@@ -236,6 +236,53 @@ Tiga dimensi berikut **tidak digabung menjadi satu status**:
 
 Untuk rekap, angka utama adalah **sisa** utang dan uang masuk. Pecah `Sudah pasti` dan `Perkiraan tambahan`; setiap rincian per orang bisa dibuka sampai bill sumber. Jangan memakai satu warna untuk menggantikan penjelasan bahwa nominal masih sementara. Bayar di Bagiin berarti mencatat status, bukan transfer uang.
 
+## Arah uang: label dulu, tanda kedua, warna ketiga
+
+Satu angka uang di layar ini selalu menjawab satu hal, dan arahnya harus
+terbaca tanpa menebak:
+
+1. **Kalau ada label**, label yang menyebut arah: `Harus kamu bayar`,
+   `Harus kamu terima`. Angkanya polos. `Harus kamu bayar −Rp22.000` terbaca
+   seperti uang kembali, bukan tagihan.
+2. **Kalau tidak ada label**, arah ditulis sebagai tanda: `−Rp23.000` untuk
+   uang yang keluar dari kantong, `+Rp…` untuk uang yang masuk. Tanda tetap
+   terbaca saat warnanya tidak — buta warna, layar kotor, mode gelap.
+   Tanda **tidak** dipakai bersama kata kerja di baris yang sama: baris yang
+   sudah menulis `Tinggal kamu bayar` lalu menulis `−Rp22.000` mengatakan hal
+   yang sama dua kali, dan yang terbaca justru "saldo minus".
+3. **Warna hanya menguatkan, tidak pernah jadi satu-satunya pembeda.**
+   Merah = uang keluar. Hijau = uang masuk. Amber = angkanya belum pasti.
+   Abu/netral = tidak ada yang perlu dikerjakan. Nol tidak diberi tanda dan
+   tidak diteriakkan.
+
+Merah hanya untuk satu arti itu. Kalau merah dipakai untuk hiasan atau untuk
+"penting", artinya luntur dan orang berhenti membacanya.
+
+## Satu layar, satu angka per konsep
+
+Dulu beranda punya tiga penghitung untuk hal yang mirip: `2 belum lunas` di
+kepala, `2 belum kamu selesaikan` di banner, `6 belum jelas` di kartu. Semuanya
+benar, tidak ada yang bisa dipercaya.
+
+Aturannya sekarang: **satu konsep, satu angka, satu tempat.** Angka "perlu
+dikerjakan" hanya ada di satu blok, dan tiap bill masuk hitungan **tepat satu
+kali** dengan urutan alasan yang tegas:
+
+1. bagian saya belum memilih item → `Pilih N item lagi`
+2. sudah memilih, bagian saya belum dibayar → `Tinggal kamu bayar`
+3. saya pembayar dan masih ada sisa yang tidak diambil → `Pilih N item lagi`
+
+Konsekuensinya: **jumlah rincian selalu sama dengan angka besarnya**. Kalau
+rincian tidak bisa dijumlahkan menjadi angka utama, itu tanda konsepnya belum
+jelas — bukan tanda butuh angka tambahan.
+
+Hal yang bukan tugas saya (mis. peserta lain belum membayar, porsi yang akan
+ditanggung pembayar) **tidak** diberi penanda aksi. Daftar yang semua barisnya
+berteriak tidak lagi memberi tahu apa pun.
+
+Penanda aksi memakai **kata kerja**, bukan kata sifat: `Tinggal kamu bayar`,
+`Pilih 2 item lagi`. "Belum lunas" adalah keadaan; orang butuh perintah.
+
 ## Pola layar mobile
 
 - **Beranda:** ringkasan sisa utang dan uang masuk, bill aktif, aksi buat bill. Angka penting berada di bagian atas tanpa menutup daftar bill.

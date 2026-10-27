@@ -289,7 +289,8 @@ export function Recap({ identityId }: { identityId: string | null }) {
           {people.length > 0 ? (
             <BalanceCard
               label={heroPays ? 'Harus kamu bayar' : 'Harus kamu terima'}
-              value={heroValue}
+              value={heroPays ? -heroValue : heroValue}
+              tone={heroPays ? 'neg' : 'pos'}
               note={note}
             />
           ) : null}

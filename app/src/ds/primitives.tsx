@@ -111,11 +111,83 @@ export function Card({ children, tone = 'surface', pad = 'md' }: { children: Rea
   return <div className={`ds-card ds-card-${tone} ds-pad-${pad}`}>{children}</div>
 }
 
-export function BalanceCard({ label, value, note }: { label: string; value: number; note: string }) {
+/**
+ * Angka uang yang punya ARAH.
+ *
+ * Konvensi yang dipakai app keuangan (Splitwise dan sejenisnya): merah untuk
+ * uang yang harus keluar, hijau untuk uang yang akan masuk. Tandanya ditulis
+ * lebih dulu karena tanda tetap terbaca ketika warnanya tidak — buta warna,
+ * layar kotor, mode gelap. Nol tidak diberi tanda: nol bukan arah.
+ */
+export function Amount({
+  value,
+  signed = false,
+  tone: toneProp,
+}: {
+  value: number
+  signed?: boolean
+  /** Warna arah, tanpa menulis tanda. Dipakai di baris yang sudah punya
+   *  penanda kata kerja: menulis "Tinggal kamu bayar" DAN "−Rp22.000" untuk hal
+   *  yang sama membuat baris terbaca dua kali. */
+  tone?: 'neg' | 'pos'
+}) {
+  const zero = Math.round(value) === 0
+  const sign = zero || !signed ? '' : value < 0 ? '−' : '+'
+  const tone = toneProp ?? (zero ? 'zero' : !signed ? 'flat' : value < 0 ? 'neg' : 'pos')
+  return (
+    <span className={`ds-amount ds-amount--${tone}`}>
+      {sign ? <span className="ds-amount-sign">{sign}</span> : null}
+      {idr(Math.abs(value))}
+    </span>
+  )
+}
+
+/**
+ * Penanda bahwa satu baris butuh tindakan dari orang yang sedang melihat.
+ * Satu baris hanya boleh punya SATU penanda: kalau sebuah bill belum dibagi,
+ * menagih bayarnya belum masuk akal — angkanya masih bisa berubah.
+ */
+export function ActionFlag({
+  kind,
+  children,
+}: {
+  kind: 'pay' | 'split'
+  children: ReactNode
+}) {
+  return (
+    <span className={`ds-row-flag ds-row-flag--${kind}`}>
+      <WarningCircle size={13} weight="fill" aria-hidden="true" />
+      {children}
+    </span>
+  )
+}
+
+export function BalanceCard({
+  label,
+  value,
+  note,
+  signed = false,
+  tone: toneProp,
+}: {
+  label: string
+  value: number
+  note?: string
+  /** Tulis tanda − / + di depan angka. Di kartu yang sudah punya label arah
+   *  ("Harus kamu bayar") tanda itu jadi mubazir dan terlihat seperti coretan,
+   *  jadi bawaannya mati. Warna tetap membawa arah. */
+  signed?: boolean
+  tone?: 'neg' | 'pos'
+}) {
+  const zero = Math.round(value) === 0
+  const sign = zero || !signed ? '' : value < 0 ? '−' : '+'
+  const tone = toneProp ?? (zero ? 'zero' : !signed ? 'flat' : value < 0 ? 'neg' : 'pos')
   return <div className="ds-balance">
     <span className="ds-balance-label">{label}</span>
-    <strong className="ds-balance-value"><span className="ds-balance-cur">Rp</span>{Math.round(value).toLocaleString('id-ID')}</strong>
-    <small className="ds-balance-note">{note}</small>
+    <strong className={`ds-balance-value ds-amount--${tone}`}>
+      {sign ? <span className="ds-balance-sign">{sign}</span> : null}
+      <span className="ds-balance-cur">Rp</span>{Math.round(Math.abs(value)).toLocaleString('id-ID')}
+    </strong>
+    {note ? <small className="ds-balance-note">{note}</small> : null}
   </div>
 }
 

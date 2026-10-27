@@ -7,7 +7,7 @@ import { formatRp } from '../lib/money'
 import { api } from '../lib/api'
 import { useToast } from '../components/Toast'
 import { AppShell } from '../components/AppShell'
-import { Alert, BalanceCard, Button, EmptyState, Notice, SectionHead } from '../ds/primitives'
+import { ActionFlag, Alert, Amount, BalanceCard, Button, EmptyState, Notice, SectionHead } from '../ds/primitives'
 import { MagnifyingGlass } from '@phosphor-icons/react'
 import homeEmptyArt from '../assets/home-empty.webp'
 
@@ -35,14 +35,14 @@ function BillRow({
   meta,
   share,
   total,
-  pending,
+  flag,
 }: {
   id: string
   title: string
   meta: string
   share: number
   total: number
-  pending?: number
+  flag?: { kind: 'pay' | 'split'; text: string }
 }) {
   return (
     <Link to="/b/$billId" params={{ billId: id }} style={{ textDecoration: 'none', color: 'inherit' }}>
@@ -51,14 +51,26 @@ function BillRow({
           <b>{title}</b>
           <small>
             {meta}
-            {pending && pending > 0 ? ' · ' + pending + ' orang belum bayar' : ''}
+            {/* Penanda aksi memakai KATA KERJA dan ikut baris meta, bukan baris
+                sendiri: baris ketiga membuat tinggi tiap baris berbeda-beda dan
+                daftar jadi bergerigi. */}
+            {flag ? (
+              <>
+                {' · '}
+                <ActionFlag kind={flag.kind}>{flag.text}</ActionFlag>
+              </>
+            ) : null}
           </small>
         </span>
         <span className="amt">
           {share > 0 ? (
-            formatRp(share)
+            // Warna yang membawa arah; kata kerja di atasnya sudah menjelaskan.
+            // Baris tanpa penanda tetap netral: tidak ada yang perlu dikerjakan.
+            <Amount value={share} tone={flag?.kind === 'pay' ? 'neg' : undefined} />
           ) : (
-            <span style={{ fontWeight: 'var(--ds-weight-medium)', color: 'var(--ds-muted)' }}>Belum pilih</span>
+            // Kolom kanan isinya angka; kalau belum ada bagian, tanda pisah lebih
+            // jujur daripada kata yang menduplikasi penanda di kiri.
+            <span style={{ fontWeight: 'var(--ds-weight-medium)', color: 'var(--ds-muted-soft)' }}>—</span>
           )}
           <small style={{ display: 'block', fontWeight: 'var(--ds-weight-medium)', color: 'var(--ds-muted)' }}>
             {share === total ? 'seluruh bill' : 'dari ' + formatRp(total)}
@@ -161,13 +173,81 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
     })
   }, [rows, query, filter])
 
-  const open = shown.filter((bill) => !bill.settled)
-  const settled = shown.filter((bill) => bill.settled)
   const allOpen = rows.filter((bill) => !bill.settled)
   const unpaid = allOpen.filter((bill) => !bill.my_paid && bill.my_total_idr > 0)
 
   const net = recap.data?.final.net_idr ?? 0
   const provisional = recap.data?.provisional
+
+  /**
+   * Satu pertanyaan yang harus dijawab beranda: "apa yang harus SAYA kerjakan?"
+   *
+   * Dulu layar ini punya tiga penghitung berbeda (header "2 belum lunas",
+   * banner "2 belum kamu selesaikan", kartu "6 belum jelas") untuk himpunan yang
+   * tumpang tindih, jadi angkanya terasa gonta-ganti dan tidak ada satu pun yang
+   * bisa dipercaya. Sekarang tiap bill dapat TEPAT SATU alasan, dengan urutan
+   * yang tegas: kalau pembagiannya belum lengkap, itu alasannya — menagih
+   * pembayaran untuk angka yang masih bisa berubah tidak masuk akal.
+   * Konsekuensinya jumlah rincian selalu sama dengan angka besarnya.
+   */
+  const reasonOf = (bill: (typeof rows)[number]): 'split' | 'pay' | null => {
+    if (bill.settled) return null
+    // Belum memilih item = pekerjaan saya, titik.
+    if (!bill.has_picks) return 'split'
+    // Sudah memilih dan masih ada bagian saya yang belum dibayar: angka saya
+    // sudah pasti (bagian orang lain tidak mengubahnya), jadi ini tinggal bayar.
+    if (!bill.my_paid && bill.my_total_idr > 0) return 'pay'
+    // Sisa yang tidak diambil siapa pun jatuh ke pembayar. Kalau saya pembayar
+    // dan masih ada sisa, bill ini belum selesai menurut saya.
+    if (bill.i_am_payer && bill.uncovered_idr > 0) return 'split'
+    // Selain itu bukan urusan saya: porsi orang lain yang belum diambil akan
+    // ditanggung pembayar, dan bagian saya tidak ikut berubah. Menandainya
+    // sebagai tugas saya cuma bikin daftar terlihat penuh.
+    return null
+  }
+  const reasons = new Map(rows.map((bill) => [bill.id, reasonOf(bill)]))
+  const splitCount = [...reasons.values()].filter((kind) => kind === 'split').length
+  const payCount = [...reasons.values()].filter((kind) => kind === 'pay').length
+  const actionTotal = splitCount + payCount
+  const breakdown = [
+    splitCount > 0 ? splitCount + ' pembagiannya belum lengkap' : null,
+    payCount > 0 ? payCount + ' tinggal kamu bayar' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  // Berapa item/pori yang belum ada pengakunya, per bill. Tanpa angka ini enam
+  // baris menulis kalimat yang sama persis ("Pilih item yang belum diambil") dan
+  // mata berhenti membedakannya. Angkanya datang dari rekap yang sama.
+  const uncoveredByBill = new Map(
+    (provisional?.bills ?? []).map((bill) => [bill.bill_id, bill.uncovered_items?.length ?? 0]),
+  )
+
+  /**
+   * Bill yang menunggu tindakan saya naik ke atas. Tanpa ini, angka "5 bill
+   * perlu dibereskan" di atas tidak kelihatan cocok dengan layar: baris yang
+   * ditandai bisa saja berada di bawah lipatan.
+   */
+  const byAction = (bill: (typeof rows)[number]) => (reasons.get(bill.id) ? 0 : 1)
+  const open = shown.filter((bill) => !bill.settled).sort((a, b) => byAction(a) - byAction(b))
+  const settled = shown.filter((bill) => bill.settled)
+
+  const flagFor = (bill: (typeof rows)[number]) => {
+    const kind = reasons.get(bill.id)
+    if (kind === 'split') {
+      const left = uncoveredByBill.get(bill.id) ?? 0
+      return {
+        kind: 'split' as const,
+        text: !bill.has_picks
+          ? 'Kamu belum pilih item'
+          : left > 1
+            ? 'Pilih ' + left + ' item lagi'
+            : 'Pilih 1 item',
+      }
+    }
+    if (kind === 'pay') return { kind: 'pay' as const, text: 'Tinggal kamu bayar' }
+    return undefined
+  }
 
   return (
     <AppShell
@@ -176,10 +256,10 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
         // "belum lunas" harus berarti bagian SAYA belum dibayar, bukan bill-nya
         // masih terbuka. Dua hal berbeda: bill terbuka dengan bagian saya lunas
         // dulu muncul sebagai "1 belum lunas" padahal tidak ada utang saya.
+        // Jumlah bill saja. Jumlah yang butuh tindakan tinggal di satu tempat
+        // (blok "perlu dibereskan" di bawah) supaya tidak ada angka kembar.
         rows.length > 0
-          ? rows.length +
-            ' bill · ' +
-            (unpaid.length > 0 ? unpaid.length + ' belum lunas' : 'semua bagianmu lunas')
+          ? rows.length + ' bill' + (unpaid.length === 0 ? ' · semua bagianmu lunas' : '')
           : 'Semua bill kamu di satu tempat'
       }
       active="home"
@@ -229,20 +309,40 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
       ) : (
         <BalanceCard
           label={net > 0 ? 'Harus kamu terima' : 'Harus kamu bayar'}
-          value={Math.abs(net)}
+          value={net}
+          // Tanpa tanda minus: labelnya sudah menyebut arahnya ("Harus kamu
+          // bayar"), dan "harus bayar −Rp22.000" terbaca seperti uang kembali.
+          // Minus dipakai di baris daftar, di sana tidak ada label yang
+          // menjelaskan arah. Aturannya satu: tanda hanya kalau tidak ada label.
+          tone={net > 0 ? 'pos' : 'neg'}
+          // Catatan ini dulu menyebut JUMLAH bill yang belum jelas, jadi angka
+          // ketiga di layar yang sama. Sekarang hanya menjelaskan cakupannya.
+          // Angka ini NET: satu baris bill bisa lebih besar dari total karena
+          // ada bill lain yang justru menagih ke kita. Tanpa kalimat ini orang
+          // mengira angkanya salah hitung.
           note={
             provisional && provisional.bill_count > 0
-              ? 'Belum termasuk ' + provisional.bill_count + ' bill yang pembagiannya belum jelas'
+              ? 'Bill yang sudah pasti, sudah saling dikurangi'
               : 'Semua bill sudah selesai'
           }
         />
       )}
 
-      {unpaid.length > 0 ? (
-        <button type="button" className="app-banner is-pending" onClick={() => setFilter('berjalan')}>
+      {/* Satu angka untuk "apa yang harus saya kerjakan", dengan rincian yang
+          jumlahnya selalu cocok dengan angka itu. */}
+      {actionTotal > 0 ? (
+        <button
+          id="perlu-tindakan"
+          type="button"
+          className="app-banner is-pending"
+          onClick={() => setFilter('berjalan')}
+        >
+          <span className="banner-count" aria-hidden="true">
+            {actionTotal}
+          </span>
           <span className="app-banner-text">
-            <b>{unpaid.length} bill belum kamu selesaikan</b>
-            <small>Ketuk untuk melihat yang belum beres</small>
+            <b>bill perlu kamu bereskan</b>
+            <small>{breakdown}</small>
           </span>
           <span aria-hidden="true">→</span>
         </button>
@@ -314,18 +414,15 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
                 key={bill.id}
                 id={bill.id}
                 title={bill.title}
+                // merchant yang sama dengan judul tidak diulang: "SSB BENHIL ·
+                // SSB BENHIL" cuma memanjangkan baris tanpa menambah arti
                 meta={
                   shortDate(bill.created_at) +
-                  (bill.merchant ? ' · ' + bill.merchant : '') +
-                  (bill.my_total_idr === 0
-                    ? ' · belum pilih item'
-                    : bill.my_paid
-                      ? ' · bagianmu lunas'
-                      : ' · belum lunas')
+                  (bill.merchant && bill.merchant !== bill.title ? ' · ' + bill.merchant : '')
                 }
                 share={bill.my_total_idr}
                 total={bill.total_idr}
-                pending={bill.pending_names.length}
+                flag={flagFor(bill)}
               />
             ))}
           </div>
@@ -343,7 +440,12 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
                 key={bill.id}
                 id={bill.id}
                 title={bill.title}
-                meta={shortDate(bill.created_at) + (bill.merchant ? ' · ' + bill.merchant : '')}
+                // merchant yang sama dengan judul tidak diulang: "SSB BENHIL ·
+                // SSB BENHIL" cuma memanjangkan baris tanpa menambah arti
+                meta={
+                  shortDate(bill.created_at) +
+                  (bill.merchant && bill.merchant !== bill.title ? ' · ' + bill.merchant : '')
+                }
                 share={bill.my_total_idr}
                 total={bill.total_idr}
               />

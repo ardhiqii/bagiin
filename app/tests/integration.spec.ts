@@ -1025,4 +1025,81 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     await page.waitForTimeout(600)
     await expect(page.getByRole('dialog').getByRole('button', { name: 'Salin pesan pengingat' })).toHaveCount(0)
   })
+
+  test('93. beranda: satu angka tindakan, dan arah uang terbaca tanpa menebak', async ({ page, browser }) => {
+    test.setTimeout(120_000)
+    await freshUser(page, 'Tindakan A ' + stamp)
+
+    // (1) bill milik sendiri yang belum saya pilih -> pekerjaan: memilih
+    await createBill(page, { title: 'Belum Dipilih ' + stamp, items: [{ name: 'Roti', price: '14000' }] })
+
+    // (2) bill orang lain, saya sudah memilih dan belum bayar -> pekerjaan: membayar
+    const host = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const hostPage = await host.newPage()
+    await freshUser(hostPage, 'Tuan Rumah ' + stamp)
+    const hostTitle = 'Ditagih ' + stamp
+    const hostBill = await createBill(hostPage, { title: hostTitle, items: [{ name: 'Pizza', price: '30000' }] })
+    const hostUrl = hostPage.url()
+    const hostId = (await identity(hostPage)).id
+
+    await page.goto(hostUrl)
+    await page.getByRole('button', { name: 'Ikut bill ini' }).click()
+    await page.waitForTimeout(900)
+    await pickItem(page, 'Pizza')
+
+    const me = await identity(page)
+    const rows = await apiGet(page, '/api/identities/' + me.id + '/bills')
+
+    // harapan dihitung dari respons server, bukan dari angka yang ditulis di tes
+    let split = 0
+    let pay = 0
+    for (const row of rows) {
+      if (row.settled) continue
+      if (!row.has_picks) split += 1
+      else if (!row.my_paid && row.my_total_idr > 0) pay += 1
+      else if (row.i_am_payer && row.uncovered_idr > 0) split += 1
+    }
+    expect(split, 'satu bill belum dipilih').toBe(1)
+    expect(pay, 'satu bill tinggal dibayar').toBe(1)
+
+    await page.locator('nav[aria-label="Navigasi utama"]').getByRole('link', { name: 'Beranda' }).click()
+    await page.waitForTimeout(1500)
+
+    // SATU angka, dan rinciannya berjumlah sama
+    const banner = page.locator('#perlu-tindakan')
+    await expect(banner).toBeVisible()
+    await expect(banner.locator('.banner-count')).toHaveText(String(split + pay))
+    await expect(banner).toContainText(split + ' pembagiannya belum lengkap')
+    await expect(banner).toContainText(pay + ' tinggal kamu bayar')
+
+    // tidak ada angka tindakan kedua di layar
+    await expect(page.locator('#perlu-tindakan')).toHaveCount(1)
+    await expect(page.locator('.banner-count')).toHaveCount(1)
+
+    // kartu besar: merah untuk uang keluar, TANPA minus (labelnya sudah bilang)
+    const hero = page.locator('.ds-balance-value')
+    await expect(hero).toHaveClass(/ds-amount--neg/)
+    await expect(hero).not.toContainText('−')
+
+    // baris daftar: arah ditulis sebagai minus karena tidak ada label
+    const payRow = page.locator('.app-row', { hasText: hostTitle })
+    await expect(payRow.locator('.ds-row-flag--pay')).toContainText('Tinggal kamu bayar')
+    // arah di baris ini dibawa warna + kata kerja, bukan tanda minus: menulis
+    // keduanya untuk hal yang sama membuat baris terbaca dua kali
+    await expect(payRow.locator('.ds-amount--neg')).toBeVisible()
+    await expect(payRow.locator('.ds-amount--neg')).not.toContainText('−')
+
+    // baris yang bukan tugas saya tidak diberi penanda apa pun
+    const flagged = await page.locator('.ds-row-flag').count()
+    expect(flagged, 'jumlah baris bertanda == jumlah angka tindakan').toBe(split + pay)
+
+    // saya bayar satu bill: angkanya turun tepat satu, bukan berubah jadi angka lain
+    await apiSend(page, '/api/bills/' + hostBill + '/payments/' + me.id + '/paid')
+    await page.reload()
+    await page.waitForTimeout(1800)
+    await expect(page.locator('.banner-count')).toHaveText(String(split + pay - 1))
+    await expect(page.locator('.app-row', { hasText: hostTitle }).locator('.ds-row-flag')).toHaveCount(0)
+    expect(hostId).toBeTruthy()
+    await host.close()
+  })
 })
