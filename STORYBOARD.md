@@ -101,10 +101,23 @@ Dari Rekap, bill yang pembagiannya belum jelas ditutup.
 | Ubah harga | total baru sampai ke bill, baris beranda, dan kartu rekap |
 | Tutup bill | hilang dari daftar belum jelas, muncul di Lunas |
 | Hapus bill | hilang dari beranda dan rekap, link-nya 404 |
+| Satu item, tiga unit | dua unit diambil dua orang, satu unit sisa tetap terlihat sebagai belum jelas 10.000; baru setelah unit terakhir diambil bill boleh dianggap pasti |
+| Buka di perangkat lain | kode pemulihan mengembalikan **identitas yang sama** (bukan akun baru), dan angka di beranda/rekap sama dengan yang dilihat server |
 
 Angka di tabel ini diuji dengan membandingkan **layar** dan **respons server**,
 bukan dengan angka yang ditulis di tes. Kalau server berubah, tes ikut berubah;
 kalau layar menampilkan angka lama, tes gagal.
+
+## Pintu masuk kedua: /masuk
+
+Satu-satunya halaman yang boleh dibuka tanpa identitas selain beranda. Kode
+pemulihan adalah bukti "ini orang yang sama" — karena itu setelah masuk,
+seluruh query diinvalidasi, bukan cuma diganti nama di layar. Tanpa itu, orang
+yang memulihkan akun di perangkat baru bisa melihat daftar bill kosong sampai
+ada yang reload, dan mengira datanya hilang.
+
+Catatan untuk siapa pun yang menulis tes: rutenya `/masuk`, bukan `/restore`.
+Salah alamat berarti tes menunggu kolom yang tidak pernah muncul.
 
 ## Undangan: jalur terpendek yang tetap jujur
 

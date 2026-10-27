@@ -387,10 +387,16 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     await page.getByRole('button', { name: 'Tambah rekening' }).click()
     await page.waitForTimeout(1200)
 
+    // ganti nama juga: nama ini tersalin ke payload bill ("dibayar X")
+    await page.getByLabel('Nama kamu').fill('Transfer Ganti ' + stamp)
+    await page.getByRole('button', { name: 'Simpan nama' }).click()
+    await page.waitForTimeout(1200)
+
     await page.getByRole('button', { name: 'Kembali' }).click()
     await page.waitForTimeout(1200)
     await expect(page).toHaveURL(new RegExp(billId))
     await expect(page.locator('body')).toContainText('1234509876')
+    await expect(page.locator('body')).toContainText('Transfer Ganti ' + stamp)
   })
 
   test('80. hapus bill: hilang dari beranda dan rekap, link mati', async ({ page }) => {
@@ -638,5 +644,110 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     await expect(guest.page.locator('.invite-card', { hasText: title })).toHaveCount(0)
     await guest.ctx.close()
     expect(firstId).toBeTruthy()
+  })
+
+  test('86. satu item tiga unit: yang belum diambil tetap terlihat, bukan dibulatkan', async ({ page, browser }) => {
+    await freshUser(page, 'Unit A ' + stamp)
+    const title = 'Kopi Unit ' + stamp
+    await nav(page, 'Buat')
+    await page.getByLabel('Nama bill').fill(title)
+    await page.getByLabel('Item 1').fill('Kopi')
+    await page.getByLabel('Qty').first().fill('3')
+    await page.getByLabel('Harga satuan').nth(0).fill('10000')
+    await page.getByRole('button', { name: 'Buat bill' }).click()
+    await expect(page).toHaveURL(/\/b\//)
+    await page.waitForTimeout(700)
+    const billId = page.url().split('/b/')[1]
+
+    const guest = await guestJoins(browser, page.url(), 'Tamu Unit ' + stamp)
+    await pickItem(guest.page, 'Kopi')
+    await guest.ctx.close()
+    await pickItem(page, 'Kopi')
+
+    const bill = await apiGet(page, '/api/bills/' + billId)
+    expect(bill.bill.total_idr).toBe(30000)
+    // dua unit diambil, satu belum: 10.000 harus tetap kelihatan sebagai sisa
+    expect(bill.uncovered_idr).toBe(10000)
+    const sums = bill.people.reduce((acc: number, p: any) => acc + p.total_idr, 0)
+    expect(sums + bill.uncovered_idr).toBe(30000)
+    expect(await cardValue(page)).toBe(30000)
+
+    await goRecap(page)
+    const { finalIds, unclearIds } = await assertRecapShape(page)
+    expect(unclearIds.has(billId)).toBe(true)
+    expect(finalIds.has(billId)).toBe(false)
+    await expect(page.locator('#rekap-belum-jelas')).toContainText(title)
+
+    // ambil unit terakhir: baru sekarang bill boleh dianggap pasti
+    await goHome(page)
+    await page.locator('.app-row', { hasText: title }).click()
+    await page.waitForTimeout(900)
+    await pickItem(page, 'Kopi')
+    const done = await apiGet(page, '/api/bills/' + billId)
+    expect(done.uncovered_idr).toBe(0)
+    await goRecap(page)
+    const after = await assertRecapShape(page)
+    expect(after.finalIds.has(billId)).toBe(true)
+    expect(after.unclearIds.has(billId)).toBe(false)
+  })
+
+  test('87. buka di perangkat lain: kode pemulihan mengembalikan identitas dan angkanya', async ({ page, browser }) => {
+    // tiga konteks + pembuatan kode: lebih lambat dari tes lain
+    test.setTimeout(120_000)
+    await freshUser(page, 'Pulih A ' + stamp)
+    const title = 'Pulih Integrasi ' + stamp
+    const billId = await createBill(page, {
+      title,
+      items: [
+        { name: 'Bakso', price: '26000' },
+        { name: 'Teh', price: '4000' },
+      ],
+    })
+    const guest = await guestJoins(browser, page.url(), 'Tamu Pulih ' + stamp, 'Teh')
+    await guest.ctx.close()
+    await pickItem(page, 'Bakso')
+    const me = await identity(page)
+
+    // ambil kode pemulihan dari pengaturan
+    await page.getByRole('link', { name: /Pengaturan/ }).first().click()
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Pengaturan')
+    await page.getByRole('button', { name: /Buat kode/ }).first().click()
+    await expect(page.locator('.recovery-code code')).toBeVisible({ timeout: 10_000 })
+    const code = (await page.locator('.recovery-code code').textContent())?.trim() ?? ''
+    expect(code.length).toBeGreaterThan(4)
+
+    // perangkat lain: belum punya identitas, masuk lewat kode
+    const other = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const second = await other.newPage()
+    await second.goto('/masuk')
+    await second.getByLabel('Kode pemulihan').fill(code)
+    await second.getByRole('button', { name: 'Masuk', exact: true }).click()
+    await expect(second.getByRole('heading', { level: 1 })).toContainText('Pulih A ' + stamp, {
+      timeout: 15_000,
+    })
+    await second.waitForTimeout(1500)
+
+    // identitas yang sama, bukan akun baru
+    const restored = await second.evaluate(() => JSON.parse(localStorage.getItem('bagiin_identity') ?? '{}'))
+    expect(restored.id).toBe(me.id)
+
+    // dan angka di perangkat baru sama dengan yang dilihat server
+    const secondBill = await apiGet(second, '/api/bills/' + billId)
+    expect(secondBill.bill.total_idr).toBe(30000)
+    const secondRows = await apiGet(second, '/api/identities/' + me.id + '/bills')
+    const row = secondRows.find((r: any) => r.id === billId)
+    expect(row.my_total_idr).toBe(26000)
+    const rowUi = second.locator('.app-row', { hasText: title })
+    await expect(rowUi).toBeVisible()
+    expect(await rowAmount(rowUi)).toBe(26000)
+
+    await nav(second, 'Rekap')
+    await second.waitForTimeout(1200)
+    const recap = await apiGet(second, '/api/identities/' + me.id + '/recap')
+    const cardText = await second.locator('.ds-balance-value').first().textContent()
+    expect(num(cardText)).toBe(
+      recap.final.payable_idr > 0 ? recap.final.payable_idr : recap.final.receivable_idr,
+    )
+    await other.close()
   })
 })
