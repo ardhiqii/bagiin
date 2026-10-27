@@ -87,6 +87,62 @@ Dua komponen ini menggantikan kebiasaan lama "tempel beberapa pill di bawah". Ke
 - Aksi merusak (`Keluar dari bill ini`) di grup terpisah paling bawah dengan warna `--ds-danger`.
 - Larangan: jangan menumpuk tombol pill penuh di dalam sheet. Sembilan pill mint bertumpuk (kasus nyata sebelum revisi ini) boros tinggi, tidak punya hierarki, dan tidak bisa dipindai.
 
+## Skala tipe dan jarak
+
+Sampai 2026-10-27 ada **27 ukuran font** dan **7 ketebalan** tersebar di `app.css`, `design-system.css`, dan 33 angka `fontSize` di dalam TSX (9 / 9,5 / 10 / 10,5 / 11 / 11,5 / 12 / 12,5 / 13 / 13,5 / 14 / 14,5 / 15 …). Itu bukan keputusan desain, itu hasil tiap layar menambal sendiri-sendiri. Sekarang satu tangga, dipakai lewat token.
+
+### Ukuran
+
+| Token | px | Peran |
+| --- | --- | --- |
+| `--ds-text-2xs` | 10 | eyebrow & group label (kapital, berjarak) |
+| `--ds-text-xs` | 11 | meta satu baris yang tidak dibaca berurutan |
+| `--ds-text-sm` | 12 | label field, badge, hint, judul bagian |
+| `--ds-text-md` | 13 | teks sekunder padat, isi notice/alert |
+| `--ds-text-base` | 15 | paragraf & isi kontrol |
+| `--ds-text-input` | 16 | **semua input** |
+| `--ds-text-lg` | 17 | judul baris / judul kartu |
+| `--ds-text-xl` | 20 | judul layar |
+| `--ds-text-2xl` | 24 | judul besar |
+| `--ds-text-3xl` | 30 | angka total di kartu |
+| `--ds-text-4xl` | 34 | angka hero |
+
+Angka-angka itu bukan selera. Teks paragraf di HP praktis tidak di bawah 14 px (Material 3 menaruh body-large di 16 sp, iOS body di 17 pt, panduan Material untuk Android: paragraf 14 sp, judul baris 16 sp, tombol 14 sp medium). Karena itu 10-11 px hanya dipakai untuk huruf kapital berjarak atau meta satu baris — bukan untuk kalimat.
+
+**Input selalu 16 px.** Di bawah 16 px, iOS Safari memperbesar halaman sendiri saat input difokus dan tidak mengembalikannya. Ini bukan soal estetika, ini bug yang kelihatan seperti aplikasi rusak.
+
+### Ketebalan: tiga, bukan tujuh
+
+| Token | Nilai | Peran |
+| --- | --- | --- |
+| `--ds-weight-regular` | 400 | isi |
+| `--ds-weight-medium` | 600 | penekanan di dalam baris (nama item, label aktif) |
+| `--ds-weight-strong` | 800 | judul, angka, judul bagian |
+
+500 / 650 / 700 yang dulu dipakai bergantian untuk hal yang sama sudah dilebur. Lebih dari tiga ketebalan di satu layar membuat hierarki jadi soal selera, bukan soal struktur.
+
+### Line-height proporsional, bukan 1.5 untuk semua
+
+`--ds-leading-tight: 1.15` (angka & judul besar) · `--ds-leading-snug: 1.3` (judul baris, meta) · `--ds-leading-normal: 1.5` (paragraf). Teks besar tidak butuh 1.5 — jarak yang sama justru membuat judul terlihat renggang; teks kecil butuh lebih dari 1.2 supaya mata gampang menemukan baris berikutnya.
+
+### Judul bagian
+
+Satu kelas, `ds-section-title`: 12 px, strong, kapital, berjarak `.06em`, warna muted. Dulu tiap layar menulis `<strong style={{ fontSize: 14, fontWeight: 800 }}>` sendiri. Di daftar, yang harus menang adalah nama item dan angkanya — judul bagian yang ikut tebal-terang membuat tiga hal berebut perhatian di satu baris.
+
+### Jarak: grid 2 px
+
+Kelipatan 4 saja tidak cukup: 5/6/7 px tetap muncul sebagai angka liar, dan itu memang terjadi (gap 2/3/4/5/6/7/8/9/10/11/12/13/14/16/22/32 tersebar). Token sekarang mengikuti grid 2 px (seperti Carbon): `2 · 4 · 6 · 8 · 12 · 16 · 20 · 24 · 32`. Angka 5 → 6, 7 → 8, 9 → 8, 10 → 12, 11 → 12, 13 → 12, 14 → 16.
+
+**Larangan: menulis px langsung** untuk `font-size`, `font-weight`, `gap`, `row-gap`, `column-gap` di CSS maupun `fontSize`/`fontWeight` di TSX. Semua lewat token.
+
+### Notice: aksi di bawah, bukan di kanan
+
+Anatomi: rel ikon **15 px** + kolom teks, jarak 8 px. Kalau ada aksi lanjutan, ia jadi baris kedua **di dalam kolom teks** dan memakai rel ikon yang sama supaya ikonnya segaris dengan ikon di atasnya.
+
+Versi tiga kolom (ikon | teks | aksi) sudah dicoba dan salah: di layar 390 px teksnya tinggal ~180 px, jadi kalimat 40 karakter pecah tiga baris sementara tombolnya menggantung di tengah. Teks dan aksinya terlihat tidak satu paket. Kolom ikon juga harus **dipatok 15 px**, bukan `auto` — lebar tinta tiap ikon Phosphor beda-beda, dan dengan `auto` teks paragraf dan teks aksi mulai di titik yang berbeda.
+
+`text-wrap: pretty` dipakai untuk paragraf, `small`, dan notice: kalimat pendek di layar sempit gampang berakhir dengan satu kata menggantung di baris terakhir.
+
 ## Sesi: empat keadaan, satu sumber
 
 Status sesi hidup di `lib/session.ts` (`checking` · `authed` · `anonymous` · `expired`) dan divalidasi ke server lewat `GET /api/identities/{id}/me` sebelum layar mana pun dirender. "Ada id di localStorage" **bukan** bukti login: id bisa berasal dari database lama yang sudah tidak ada.

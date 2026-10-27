@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useToast } from '../components/Toast'
+import { Key } from '@phosphor-icons/react'
 import { Alert, Button, Field, Notice } from '../ds/primitives'
 import { startIdentity } from '../lib/identity'
 import { markAuthed, takeIntent } from '../lib/session'
@@ -70,6 +71,7 @@ export function Welcome({
                 tone="pending"
                 action={
                   <button type="button" className="link-quiet" onClick={() => navigate({ to: '/masuk' })}>
+                    <Key size={15} weight="bold" aria-hidden="true" />
                     Masuk pakai kode
                   </button>
                 }

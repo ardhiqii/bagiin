@@ -28,7 +28,7 @@ textarea {
   background: var(--ds-bg);
   color: var(--ds-navy);
   font-family: var(--ds-font-body);
-  font-size: 15px;
+  font-size: var(--ds-text-base);
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -58,7 +58,7 @@ textarea {
   z-index: 20;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--ds-space-3);
   padding: var(--ds-space-3) var(--ds-gutter);
   background: color-mix(in srgb, var(--ds-bg) 88%, transparent);
   backdrop-filter: blur(14px);
@@ -67,8 +67,8 @@ textarea {
 
 .app-top h1 {
   font-family: var(--ds-font-display);
-  font-size: 17px;
-  font-weight: 800;
+  font-size: var(--ds-text-lg);
+  font-weight: var(--ds-weight-strong);
   letter-spacing: -.02em;
   margin: 0;
   flex: 1;
@@ -80,8 +80,8 @@ textarea {
 
 .app-top .app-top-sub {
   display: block;
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-medium);
   color: var(--ds-muted);
   letter-spacing: 0;
 }
@@ -143,25 +143,25 @@ textarea {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--ds-space-1);
   min-height: 46px;
   justify-content: center;
   text-decoration: none;
   color: var(--ds-muted-soft);
-  font-size: 10.5px;
-  font-weight: 700;
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-medium);
   letter-spacing: .01em;
   border-radius: 12px;
 }
 
-.app-nav a.is-active { color: var(--ds-teal); font-weight: 800; }
+.app-nav a.is-active { color: var(--ds-teal); font-weight: var(--ds-weight-strong); }
 .app-nav a:active svg { transform: scale(.92); }
 
 
 .app-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--ds-space-3);
   padding: 14px 16px;
   background: var(--ds-surface);
   border: 0;
@@ -179,17 +179,23 @@ textarea {
 .app-row .grow { flex: 1; min-width: 0; }
 /* hindari satu kata menggantung di baris kedua ("... belum / bayar") */
 .app-row small { text-wrap: pretty; }
-.app-row b { display: block; font-size: 14.5px; font-weight: 700; letter-spacing: -.01em; }
+.app-row b { display: block; font-size: var(--ds-text-base); font-weight: var(--ds-weight-medium); letter-spacing: -.01em; }
 .app-stack > strong { font-family: var(--ds-font-display); }
-.app-row small { display: block; font-size: 11.5px; color: var(--ds-muted); margin-top: 2px; }
-.app-row .amt { text-align: right; font-variant-numeric: tabular-nums; font-weight: 800; font-size: 14.5px; }
+/* 12 px, bukan 11: meta baris ("26 Okt · 1 orang belum bayar", "dari Rp46.000")
+   dibaca sambil lewat, dan di 11 px ia jadi hiasan yang tidak terbaca. */
+.app-row small { display: block; font-size: var(--ds-text-sm); color: var(--ds-muted); margin-top: 3px; line-height: var(--ds-leading-snug); }
+.app-row .amt { text-align: right; font-variant-numeric: tabular-nums; font-weight: var(--ds-weight-strong); font-size: var(--ds-text-base); }
 
 .app-stack { display: flex; flex-direction: column; gap: var(--ds-space-3); }
 .app-inline { display: flex; align-items: center; gap: var(--ds-space-2); flex-wrap: wrap; }
 .app-spacer { flex: 1; }
 
+/* Kalimat pendek di layar sempit gampang berakhir dengan satu kata menggantung.
+   Chrome 114+ bisa menyeimbangkan sendiri; browser lain mengabaikan. */
+p, small, .app-note { text-wrap: pretty; }
+
 .app-note {
-  font-size: 12px;
+  font-size: var(--ds-text-sm);
   color: var(--ds-muted);
   line-height: 1.5;
 }
@@ -216,8 +222,8 @@ textarea {
   transform: translate(-50%, -12px);
   background: var(--ds-navy);
   color: #fff;
-  font-size: 12.5px;
-  font-weight: 650;
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-medium);
   padding: 11px 16px;
   border-radius: 999px;
   box-shadow: 0 12px 30px rgba(20, 47, 58, .3);
@@ -235,22 +241,22 @@ textarea {
 .create-dock {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--ds-space-4);
   padding: var(--ds-space-3) var(--ds-gutter);
   border-top: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
 }
-.create-dock .tot { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.create-dock .tot { flex: 1; min-width: 0; display: grid; gap: var(--ds-space-half); }
 .create-dock .tot small {
-  font-size: 10.5px;
-  font-weight: 800;
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-strong);
   color: var(--ds-muted);
   letter-spacing: .08em;
   text-transform: uppercase;
 }
 .create-dock .tot b {
   font-family: var(--ds-font-display);
-  font-size: 24px;
-  font-weight: 800;
+  font-size: var(--ds-text-2xl);
+  font-weight: var(--ds-weight-strong);
   letter-spacing: -.035em;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
@@ -264,7 +270,7 @@ textarea {
 .art-card {
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr);
-  gap: 14px;
+  gap: var(--ds-space-3);
   align-items: center;
 }
 /* Gambar WAJIB mengikuti lebar kolom grid. Dulu atribut width/height di <img>
@@ -281,14 +287,14 @@ textarea {
 .art-head {
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr);
-  gap: 12px;
+  gap: var(--ds-space-3);
   align-items: center;
 }
 
 .art-empty {
   display: grid;
   justify-items: center;
-  gap: 6px;
+  gap: var(--ds-space-1-5);
   padding: 8px 0 4px;
 }
 .art-empty img { border-radius: 20px; object-fit: cover; }
@@ -311,14 +317,14 @@ textarea {
 .welcome-card {
   display: grid;
   justify-items: center;
-  gap: 12px;
+  gap: var(--ds-space-3);
   padding: 24px 20px 22px;
   background: var(--ds-surface);
   border-radius: 24px;
   box-shadow: 0 10px 30px rgba(20, 47, 58, 0.08);
 }
 .welcome-card img { border-radius: 20px; }
-.welcome-card h1 { margin: 0; font: 800 20px/1.2 var(--ds-font-body); letter-spacing: -.02em; }
+.welcome-card h1 { margin: 0; font: var(--ds-weight-strong) var(--ds-text-xl)/1.2 var(--ds-font-body); letter-spacing: -.02em; }
 
 /* Satu kartu untuk satu daftar: baris di dalamnya berbagi sudut dan pemisah,
    bukan masing-masing jadi pill mengambang. */
@@ -330,14 +336,14 @@ textarea {
 .app-list > * + * { border-top: 1px solid var(--ds-border); }
 .app-list .app-row { border-radius: 0 !important; }
 
-.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: var(--ds-space-2); }
 .chip-filter {
   padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid var(--ds-border);
   background: var(--ds-surface);
   color: var(--ds-navy);
-  font: 700 12.5px var(--ds-font-body);
+  font: var(--ds-weight-medium) var(--ds-text-sm) var(--ds-font-body);
   cursor: pointer;
 }
 .chip-filter.is-active {
@@ -348,19 +354,19 @@ textarea {
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--ds-space-1-5);
   padding: 7px 10px 7px 12px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--ds-teal) 12%, #fff);
   color: var(--ds-teal);
-  font-size: 12.5px;
-  font-weight: 700;
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-medium);
 }
 .chip button {
   border: 0;
   background: none;
   color: inherit;
-  font-size: 15px;
+  font-size: var(--ds-text-base);
   line-height: 1;
   cursor: pointer;
   padding: 0 2px;
@@ -372,7 +378,7 @@ textarea {
 .ds-create-hero {
   display: grid;
   grid-template-columns: 120px 1fr;
-  gap: 14px;
+  gap: var(--ds-space-3);
   align-items: center;
   padding: 14px;
   background: var(--ds-surface);
@@ -385,11 +391,11 @@ textarea {
   display: block;
   flex: none;
 }
-.ds-create-hero b { display: block; font-size: 14px; font-weight: 800; letter-spacing: -.01em; }
+.ds-create-hero b { display: block; font-size: var(--ds-text-base); font-weight: var(--ds-weight-strong); letter-spacing: -.01em; }
 .ds-create-hero p { margin: 4px 0 0; }
 
 /* Foto struk: kecil, bisa diketuk untuk melihat ukuran penuh. */
-.ds-sheet-head { display: flex; align-items: center; gap: 12px; }
+.ds-sheet-head { display: flex; align-items: center; gap: var(--ds-space-3); }
 .ds-sheet-head h3 { margin: 0; }
 .ds-sheet-art { width: 54px; height: 54px; border-radius: 14px; flex: none; }
 
@@ -397,25 +403,25 @@ textarea {
 .receipt-preview {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--ds-space-3);
   padding: 12px;
   border-radius: var(--ds-radius-lg);
   background: var(--ds-surface);
   box-shadow: inset 0 0 0 1px var(--ds-border);
 }
 .receipt-preview .grow { min-width: 0; }
-.receipt-preview b { font-size: 14px; }
+.receipt-preview b { font-size: var(--ds-text-base); }
 
 /* Kartu pilihan foto: ilustrasi kecil di kiri, judul + dua tombol sebaris. */
 .ds-create-hero.is-choice {
   grid-template-columns: 64px 1fr;
   align-items: start;
-  gap: 12px;
+  gap: var(--ds-space-3);
   padding: 14px 14px 12px;
 }
 .ds-create-hero.is-choice img { width: 64px; height: 64px; }
 .ds-create-hero b { font-family: var(--ds-font-display); letter-spacing: -.01em; }
-.ds-create-hero.is-choice b { font-size: 15px; }
+.ds-create-hero.is-choice b { font-size: var(--ds-text-base); }
 
 /* Dua niat berdampingan, bukan menumpuk tiga baris tombol. */
 .photo-actions {
@@ -428,7 +434,7 @@ textarea {
   width: 100%;
   min-width: 0;
   padding-inline: 10px;
-  font-size: 12.5px;
+  font-size: var(--ds-text-sm);
   white-space: nowrap;
 }
 .link-quiet {
@@ -441,7 +447,7 @@ textarea {
   align-items: center;
   padding: 0 var(--ds-space-1);
   margin: calc(-1 * var(--ds-space-3)) calc(-1 * var(--ds-space-1));
-  font: 700 12.5px var(--ds-font-body);
+  font: var(--ds-weight-medium) var(--ds-text-sm) var(--ds-font-body);
   color: var(--ds-teal);
   cursor: pointer;
 }
@@ -453,7 +459,7 @@ textarea {
 .bill-hero-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--ds-space-1-5);
   margin-top: 12px;
 }
 .bill-hero-chips .ds-badge {
@@ -496,7 +502,7 @@ textarea {
   min-width: 0;
   text-align: right;
   color: var(--ds-muted);
-  font: 400 12.5px/1.3 var(--ds-font-body);
+  font: var(--ds-weight-regular) var(--ds-text-sm)/1.3 var(--ds-font-body);
 }
 
 /* Sheet aksi: tombol berjarak rapat, bukan menumpuk penuh. */
@@ -514,8 +520,8 @@ textarea {
 }
 .recovery-code code {
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 15px;
-  font-weight: 700;
+  font-size: var(--ds-text-base);
+  font-weight: var(--ds-weight-medium);
   letter-spacing: .06em;
   color: var(--ds-navy);
 }
@@ -557,29 +563,29 @@ textarea {
   height: 1px;
   background: var(--ds-hairline);
 }
-.recap-person-copy { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.recap-person-copy { flex: 1; min-width: 0; display: grid; gap: var(--ds-space-half); }
 .recap-person-copy b {
-  font-size: 14.5px;
-  font-weight: 700;
+  font-size: var(--ds-text-base);
+  font-weight: var(--ds-weight-medium);
   letter-spacing: -.01em;
   color: var(--ds-navy);
 }
 .recap-person-copy small {
-  font-size: 11.5px;
-  font-weight: 400;
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-regular);
   color: var(--ds-muted);
   text-wrap: pretty;
 }
 /* bruto arah sebaliknya: tetap terlihat walau angka utama memakai net */
-.recap-person-copy .recap-recip { color: var(--ds-teal); font-weight: 600; }
-.recap-person-amt { display: grid; gap: 2px; justify-items: end; text-align: right; }
+.recap-person-copy .recap-recip { color: var(--ds-teal); font-weight: var(--ds-weight-medium); }
+.recap-person-amt { display: grid; gap: var(--ds-space-half); justify-items: end; text-align: right; }
 .recap-person-amt b {
-  font-size: 14.5px;
-  font-weight: 800;
+  font-size: var(--ds-text-base);
+  font-weight: var(--ds-weight-strong);
   font-variant-numeric: tabular-nums;
   color: var(--ds-navy);
 }
-.recap-person-amt small { font-size: 11px; font-weight: 600; color: var(--ds-muted); }
+.recap-person-amt small { font-size: var(--ds-text-xs); font-weight: var(--ds-weight-medium); color: var(--ds-muted); }
 .recap-chevron { flex: none; color: var(--ds-muted-soft); }
 
 /* Baris bill yang pembagiannya belum jelas: teks di kiri (bisa dibuka),
@@ -604,20 +610,20 @@ textarea {
   flex: 1;
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: var(--ds-space-half);
   min-height: var(--ds-touch);
   align-content: center;
   text-decoration: none;
   color: inherit;
 }
 .recap-open-main b {
-  font-size: 14.5px;
-  font-weight: 700;
+  font-size: var(--ds-text-base);
+  font-weight: var(--ds-weight-medium);
   letter-spacing: -.01em;
 }
 .recap-open-main small {
-  font-size: 11.5px;
-  font-weight: 400;
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-regular);
   color: var(--ds-muted);
   text-wrap: pretty;
 }
@@ -630,8 +636,8 @@ textarea {
   border-radius: 999px;
   background: var(--ds-pending-bg);
   color: var(--ds-pending);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-medium);
   /* nama orang bisa panjang ("temen terbaik aufa"); pill tidak boleh melebar
      sampai menekan tombol di kanan, jadi dipotong dengan elipsis */
   max-width: 100%;
@@ -641,21 +647,21 @@ textarea {
 }
 
 /* Sheet per orang: angka utama di atas, rincian bill di bawah. */
-.recap-sheet-total { display: grid; gap: 2px; }
+.recap-sheet-total { display: grid; gap: var(--ds-space-half); }
 .recap-sheet-label {
-  font-size: 11px;
-  font-weight: 800;
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-strong);
   letter-spacing: .08em;
   text-transform: uppercase;
   color: var(--ds-muted);
 }
 .recap-sheet-value {
-  font: 800 24px/1.1 var(--ds-font-display);
+  font: var(--ds-weight-strong) var(--ds-text-2xl)/1.1 var(--ds-font-display);
   letter-spacing: -.04em;
   font-variant-numeric: tabular-nums;
   color: var(--ds-navy);
 }
-.recap-sheet-total small { font-size: 12px; color: var(--ds-muted); }
+.recap-sheet-total small { font-size: var(--ds-text-sm); color: var(--ds-muted); }
 .recap-bill-row { text-decoration: none; color: inherit; }
 
 /* Empty state rekap memakai aset paid.webp (stempel centang) — 150 px sesuai
@@ -696,7 +702,7 @@ textarea {
   border: 0;
   background: none;
   font: inherit;
-  font-size: 15px;
+  font-size: var(--ds-text-base);
   color: var(--ds-navy);
   outline: none;
   padding: var(--ds-space-3) 0;
@@ -712,7 +718,7 @@ textarea {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  font-size: 16px;
+  font-size: var(--ds-text-lg);
   line-height: 1;
   display: grid;
   place-items: center;
@@ -736,9 +742,9 @@ textarea {
   font: inherit;
   cursor: pointer;
 }
-.app-banner-text { display: grid; gap: 2px; flex: 1; min-width: 0; }
-.app-banner-text b { font-size: 13.5px; }
-.app-banner-text small { font-size: 11.5px; color: var(--ds-muted); }
+.app-banner-text { display: grid; gap: var(--ds-space-half); flex: 1; min-width: 0; }
+.app-banner-text b { font-size: var(--ds-text-md); }
+.app-banner-text small { font-size: var(--ds-text-xs); color: var(--ds-muted); }
 .app-banner.is-pending { background: var(--ds-pending-bg); color: var(--ds-pending); }
 .app-banner.is-pending small { color: var(--ds-pending); opacity: .8; }
 
@@ -804,7 +810,7 @@ textarea {
   border-radius: 999px;
   background: rgba(20, 47, 58, .82);
   color: #fff;
-  font: 700 10px var(--ds-font-body);
+  font: var(--ds-weight-medium) var(--ds-text-2xs) var(--ds-font-body);
   letter-spacing: .02em;
 }
 .photo-tag.is-ai { background: var(--ds-teal); }
@@ -818,7 +824,7 @@ textarea {
   border-radius: 50%;
   background: rgba(255, 255, 255, .92);
   color: var(--ds-navy);
-  font-size: 14px;
+  font-size: var(--ds-text-base);
   line-height: 1;
   display: grid;
   place-items: center;
@@ -827,13 +833,13 @@ textarea {
 .check-row {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--ds-space-2);
   padding: 12px 14px;
   border-radius: 16px;
   background: var(--ds-surface);
   box-shadow: inset 0 0 0 1px var(--ds-border);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--ds-text-md);
+  font-weight: var(--ds-weight-medium);
 }
 .check-row input {
   width: 20px;
@@ -845,12 +851,12 @@ textarea {
 .check-row small {
   display: block;
   margin-top: 2px;
-  font-weight: 500;
-  font-size: 12px;
+  font-weight: var(--ds-weight-medium);
+  font-size: var(--ds-text-sm);
   color: var(--ds-muted);
 }
 .receipt-preview img { width: 56px; height: 56px; object-fit: cover; border-radius: 12px; }
-.receipt-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+.receipt-strip { display: flex; gap: var(--ds-space-2); overflow-x: auto; padding-bottom: 2px; }
 .receipt-item { position: relative; flex: none; }
 .receipt-kill {
   position: absolute;
@@ -862,7 +868,7 @@ textarea {
   border: 2px solid var(--ds-surface);
   background: var(--ds-danger);
   color: #fff;
-  font-size: 14px;
+  font-size: var(--ds-text-base);
   line-height: 1;
   cursor: pointer;
   padding: 0;
@@ -876,26 +882,30 @@ textarea {
      kedua mulai di tepi kiri sementara baris pertama menjorok 72 px). */
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr);
-  column-gap: 12px;
+  column-gap: var(--ds-space-3);
   align-items: start;
   padding: 14px 16px;
   background: var(--ds-surface);
   border-radius: var(--ds-radius-lg);
 }
 .account-main { min-width: 0; }
+/* Kotak logo 24 px, baris pertamanya (nama brand 15 px) cuma ~18 px: tanpa
+   koreksi ini logonya duduk 3 px lebih rendah dari teksnya dan terlihat
+   menggantung di antara nama dan nomor rekening. */
+.account-card > .ds-provider { margin-top: -3px; }
 .account-card + .account-card { margin-top: 8px; }
 .account-no {
   margin-top: 4px;
-  font: 700 15px/1.3 var(--ds-font-body);
+  font: var(--ds-weight-medium) var(--ds-text-base)/1.3 var(--ds-font-body);
   font-variant-numeric: tabular-nums;
   letter-spacing: .01em;
 }
-.account-actions { display: flex; gap: 14px; margin-top: 10px; }
+.account-actions { display: flex; gap: var(--ds-space-3); margin-top: 10px; }
 .link-action {
   border: 0;
   background: none;
   padding: 6px 0;
-  font: 700 12.5px var(--ds-font-body);
+  font: var(--ds-weight-medium) var(--ds-text-sm) var(--ds-font-body);
   color: var(--ds-teal);
   cursor: pointer;
 }
@@ -918,7 +928,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 2px;
+  gap: var(--ds-space-half);
   justify-self: end;
   padding: 0 15px 12px;
 }
@@ -931,30 +941,30 @@ textarea {
   border-radius: 12px;
   background: color-mix(in srgb, var(--ds-teal) 10%, #fff);
   color: var(--ds-teal);
-  font-size: 16px;
-  font-weight: 800;
+  font-size: var(--ds-text-lg);
+  font-weight: var(--ds-weight-strong);
   line-height: 1;
   cursor: pointer;
 }
 .slot-ctl button:disabled { opacity: .35; cursor: not-allowed; }
-.slot-ctl span { min-width: 34px; text-align: center; font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.slot-ctl span { min-width: 34px; text-align: center; font-size: var(--ds-text-sm); font-weight: var(--ds-weight-strong); font-variant-numeric: tabular-nums; }
 
 /* Baris item: satu baris ringkas, bukan kartu di dalam kartu. */
 .item-row {
   display: grid;
-  gap: 9px;
+  gap: var(--ds-space-2);
   padding: 12px 14px;
 }
 .item-row + .item-row { border-top: 1px solid var(--ds-border); }
 .item-meta {
   display: grid;
   grid-template-columns: 60px 1fr 34px;
-  gap: 9px;
+  gap: var(--ds-space-2);
   align-items: end;
 }
-.item-row .ds-field { gap: 4px; }
-.item-row .ds-field label { font-size: 10.5px; letter-spacing: .02em; text-transform: uppercase; color: var(--ds-muted); }
-.item-row .ds-field input { padding: 9px 10px; font-size: 14px; }
+.item-row .ds-field { gap: var(--ds-space-1); }
+.item-row .ds-field label { font-size: var(--ds-text-2xs); letter-spacing: .02em; text-transform: uppercase; color: var(--ds-muted); }
+.item-row .ds-field input { padding: 9px 10px; font-size: var(--ds-text-base); }
 
 .item-row .kill {
   width: 34px; height: 38px; border: 0; border-radius: 10px;
@@ -1044,7 +1054,7 @@ textarea {
     height: 100dvh;
     flex-direction: column;
     justify-content: flex-start;
-    gap: 2px;
+    gap: var(--ds-space-half);
     padding: 24px 14px;
     border-top: 0;
     border-right: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
@@ -1054,8 +1064,8 @@ textarea {
     display: block;
     padding: 0 var(--ds-space-3) var(--ds-space-6);
     font-family: var(--ds-font-display);
-    font-size: 21px;
-    font-weight: 800;
+    font-size: var(--ds-text-xl);
+    font-weight: var(--ds-weight-strong);
     letter-spacing: -.035em;
     color: var(--ds-navy);
   }
@@ -1064,12 +1074,12 @@ textarea {
     flex: none;
     flex-direction: row;
     justify-content: flex-start;
-    gap: 11px;
+    gap: var(--ds-space-3);
     min-height: 56px;
     padding: 0 14px;
     border-radius: 14px;
-    font-size: 13.5px;
-    font-weight: 700;
+    font-size: var(--ds-text-md);
+    font-weight: var(--ds-weight-medium);
   }
   .app-nav a.is-active {
     background: var(--ds-mint);
@@ -1082,14 +1092,14 @@ textarea {
   .app-nav a.app-rail-extra {
     display: flex;
     align-items: center;
-    gap: 11px;
+    gap: var(--ds-space-3);
     margin-top: auto;
     padding: 9px 12px;
     border-radius: 14px;
     text-decoration: none;
     color: var(--ds-muted);
-    font-size: 12.5px;
-    font-weight: 700;
+    font-size: var(--ds-text-sm);
+    font-weight: var(--ds-weight-medium);
     min-width: 0;
   }
   .app-rail-extra:hover { background: color-mix(in srgb, var(--ds-mint) 55%, transparent); }
@@ -1103,8 +1113,8 @@ textarea {
     display: grid;
     place-items: center;
     font-family: var(--ds-font-display);
-    font-weight: 800;
-    font-size: 12px;
+    font-weight: var(--ds-weight-strong);
+    font-size: var(--ds-text-sm);
     box-shadow: var(--ds-shadow-content);
   }
   .app-rail-name {
@@ -1129,23 +1139,23 @@ textarea {
 }
 
 /* Rincian struk di layar bill: baris angka, bukan kartu di dalam kartu. */
-.bill-breakdown { display: grid; gap: 9px; }
+.bill-breakdown { display: grid; gap: var(--ds-space-2); }
 .bill-line {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 13.5px;
+  gap: var(--ds-space-3);
+  font-size: var(--ds-text-md);
   color: var(--ds-muted);
 }
-.bill-line b { color: var(--ds-navy); font-weight: 700; font-variant-numeric: tabular-nums; }
+.bill-line b { color: var(--ds-navy); font-weight: var(--ds-weight-medium); font-variant-numeric: tabular-nums; }
 .bill-line.is-credit b { color: var(--ds-success, #167354); }
 .bill-line.is-total {
   margin-top: 3px;
   padding-top: 10px;
   border-top: 1px solid var(--ds-border);
-  font-size: 14px;
-  font-weight: 800;
+  font-size: var(--ds-text-base);
+  font-weight: var(--ds-weight-strong);
   color: var(--ds-navy);
 }
-.bill-line.is-total b { font-family: var(--ds-font-display); font-size: 17px; letter-spacing: -.02em; }
+.bill-line.is-total b { font-family: var(--ds-font-display); font-size: var(--ds-text-lg); letter-spacing: -.02em; }

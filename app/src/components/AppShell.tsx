@@ -49,7 +49,7 @@ export function AppShell({
           <Link to="/settings" className="app-back" aria-label="Pengaturan" title={'Pengaturan · ' + (me?.name ?? '')}>
             <span
               aria-hidden="true"
-              style={{ fontFamily: 'var(--ds-font-display)', fontWeight: 800, fontSize: 13, letterSpacing: 0, lineHeight: 1 }}
+              style={{ fontFamily: 'var(--ds-font-display)', fontWeight: 'var(--ds-weight-strong)', fontSize: 'var(--ds-text-md)', letterSpacing: 0, lineHeight: 1 }}
             >
               {initial}
             </span>

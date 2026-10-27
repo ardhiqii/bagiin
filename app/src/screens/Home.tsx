@@ -54,9 +54,9 @@ function BillRow({
           {share > 0 ? (
             formatRp(share)
           ) : (
-            <span style={{ fontWeight: 600, color: 'var(--ds-muted)' }}>Belum pilih</span>
+            <span style={{ fontWeight: 'var(--ds-weight-medium)', color: 'var(--ds-muted)' }}>Belum pilih</span>
           )}
-          <small style={{ display: 'block', fontWeight: 600, color: 'var(--ds-muted)' }}>
+          <small style={{ display: 'block', fontWeight: 'var(--ds-weight-medium)', color: 'var(--ds-muted)' }}>
             {share === total ? 'seluruh bill' : 'dari ' + formatRp(total)}
           </small>
         </span>
@@ -193,7 +193,7 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
         <section className="app-stack">
           {filter === 'semua' ? (
           <div className="app-inline">
-            <strong style={{ fontSize: 14, fontWeight: 800 }}>Berjalan</strong>
+            <strong className="ds-section-title">Berjalan</strong>
             <span className="app-spacer" />
             <span className="app-note" style={{ margin: 0 }}>
               {open.length} bill
@@ -228,7 +228,7 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
         <section className="app-stack">
           {filter === 'semua' ? (
           <div className="app-inline">
-            <strong style={{ fontSize: 14, fontWeight: 800 }}>Lunas</strong>
+            <strong className="ds-section-title">Lunas</strong>
             <span className="app-spacer" />
             <span className="app-note" style={{ margin: 0 }}>
               {settled.length} bill

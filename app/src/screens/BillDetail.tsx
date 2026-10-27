@@ -332,7 +332,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
           {data.photos.length > 0 || (canManage && data.bill.status === 'open') ? (
             <section className="app-stack">
               <div className="app-inline">
-                <strong style={{ fontSize: 14, fontWeight: 800 }}>Foto struk</strong>
+                <strong className="ds-section-title">Foto struk</strong>
                 <span className="app-spacer" />
                 {data.photos.length > 0 ? (
                   <button
@@ -440,7 +440,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
           <section className="app-stack">
             <div className="app-inline">
-              <strong style={{ fontSize: 14, fontWeight: 800 }}>Item</strong>
+              <strong className="ds-section-title">Item</strong>
               <span className="app-spacer" />
               <span className="app-note">{joined ? 'Ketuk item yang kamu ambil' : 'Masuk untuk memilih'}</span>
             </div>
@@ -561,7 +561,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
           <section className="app-stack">
             <div className="app-inline">
-              <strong style={{ fontSize: 14, fontWeight: 800 }}>Orang</strong>
+              <strong className="ds-section-title">Orang</strong>
               <span className="app-spacer" />
               <span className="app-note">
                 <UsersThree size={13} /> {data.people.length} bergabung
@@ -617,7 +617,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
           {canManage && data.pending_invites.length > 0 ? (
             <section className="app-stack">
-              <strong style={{ fontSize: 14, fontWeight: 800 }}>Undangan menunggu</strong>
+              <strong className="ds-section-title">Undangan menunggu</strong>
               <div>
                 {data.pending_invites.map((invite) => (
                   <div className="app-row" key={invite.id}>
@@ -641,7 +641,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
           {transferAccounts.length > 0 ? (
             <section className="app-stack">
-              <strong style={{ fontSize: 14, fontWeight: 800 }}>Transfer ke {data.paid_by_name}</strong>
+              <strong className="ds-section-title">Transfer ke {data.paid_by_name}</strong>
               <p className="app-note" style={{ margin: '2px 0 0' }}>Salin nomornya, lalu bayar sesuai bagianmu.</p>
               <div>
                 {transferAccounts.map((account) => (

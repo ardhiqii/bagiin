@@ -168,7 +168,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
 
           <section className="app-stack">
             <div className="app-inline">
-              <strong style={{ fontSize: 14, fontWeight: 800 }}>Item</strong>
+              <strong className="ds-section-title">Item</strong>
               <span className="app-spacer" />
               <button
                 type="button"
@@ -234,7 +234,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
           </section>
 
           <section className="app-stack">
-            <strong style={{ fontSize: 14, fontWeight: 800 }}>Siapa saja yang ikut</strong>
+            <strong className="ds-section-title">Siapa saja yang ikut</strong>
             <p className="app-note">
               Nama yang belum diklaim bisa diganti atau dihapus di sini. Nama yang sudah bergabung dikunci — kalau mau
               mengeluarkan orangnya, pakai tombol Keluarkan di layar bill.
@@ -245,7 +245,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
                   <span className="chip" key={person}>
                     {person}
                     {claimed.has(person) ? (
-                      <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.7 }}>· bergabung</span>
+                      <span style={{ fontSize: 'var(--ds-text-xs)', fontWeight: 'var(--ds-weight-medium)', opacity: 0.7 }}>· bergabung</span>
                     ) : (
                       <button
                         type="button"
@@ -298,18 +298,18 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
 
           <div className="ds-card ds-card-mint ds-pad-md">
             <div className="app-inline">
-              <span style={{ fontSize: 13, fontWeight: 700 }}>Subtotal</span>
+              <span style={{ fontSize: 'var(--ds-text-md)', fontWeight: 700 }}>Subtotal</span>
               <span className="app-spacer" />
               <span>{formatRp(subtotal)}</span>
             </div>
             <div className="app-inline" style={{ marginTop: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>Pajak + service</span>
+              <span style={{ fontSize: 'var(--ds-text-md)', fontWeight: 700 }}>Pajak + service</span>
               <span className="app-spacer" />
               <span>{formatRp(taxIdr + serviceIdr)}</span>
             </div>
             {discountIdr > 0 ? (
               <div className="app-inline" style={{ marginTop: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>Diskon</span>
+                <span style={{ fontSize: 'var(--ds-text-md)', fontWeight: 700 }}>Diskon</span>
                 <span className="app-spacer" />
                 <span>−{formatRp(discountIdr)}</span>
               </div>
@@ -317,7 +317,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
           </div>
 
           <section className="app-stack">
-            <strong style={{ fontSize: 14, fontWeight: 800 }}>Hapus bill</strong>
+            <strong className="ds-section-title">Hapus bill</strong>
             <p className="app-note">
               Bill beserta semua item, pilihan, dan status lunasnya dihapus permanen. Tautan yang sudah kamu bagikan tidak akan bisa dibuka lagi.
             </p>

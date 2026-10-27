@@ -269,7 +269,7 @@ export function Create({ identityId }: { identityId: string | null }) {
       {photos.length > 0 ? (
         <section className="photo-block">
           <div className="app-inline">
-            <strong style={{ fontSize: 14, fontWeight: 800 }}>Foto struk</strong>
+            <strong className="ds-section-title">Foto struk</strong>
             <span className="app-spacer" />
             <span className="app-note">{photos.length} dari 10</span>
           </div>
@@ -396,7 +396,7 @@ export function Create({ identityId }: { identityId: string | null }) {
 
       <section className="app-stack">
         <div className="app-inline">
-          <strong style={{ fontSize: 14, fontWeight: 800 }}>Item</strong>
+          <strong className="ds-section-title">Item</strong>
           <span className="app-spacer" />
           <button type="button" className="ds-button ds-button-quiet" onClick={() => setItems((prev) => [...prev, newItem()])}>
             + Tambah item
@@ -444,7 +444,7 @@ export function Create({ identityId }: { identityId: string | null }) {
       </section>
 
       <section className="app-stack">
-        <strong style={{ fontSize: 14, fontWeight: 800 }}>Siapa saja yang ikut (opsional)</strong>
+        <strong className="ds-section-title">Siapa saja yang ikut (opsional)</strong>
         <p className="app-note">
           Tulis nama teman kamu sekarang. Begitu mereka buka link dan memakai nama yang sama, bagiannya langsung nyambung.
         </p>
@@ -522,12 +522,12 @@ export function Create({ identityId }: { identityId: string | null }) {
 
       <div className="ds-card ds-card-mint ds-pad-md">
         <div className="app-inline">
-          <span style={{ fontSize: 13, fontWeight: 700 }}>Subtotal</span>
+          <span style={{ fontSize: 'var(--ds-text-md)', fontWeight: 700 }}>Subtotal</span>
           <span className="app-spacer" />
           <span>{formatRp(subtotal)}</span>
         </div>
         <div className="app-inline" style={{ marginTop: 6 }}>
-          <span style={{ fontSize: 13, fontWeight: 700 }}>{taxIncluded ? 'Service' : 'Pajak + service'}</span>
+          <span style={{ fontSize: 'var(--ds-text-md)', fontWeight: 700 }}>{taxIncluded ? 'Service' : 'Pajak + service'}</span>
           <span className="app-spacer" />
           <span>{formatRp((taxIncluded ? 0 : taxIdr) + serviceIdr)}</span>
         </div>
@@ -536,7 +536,7 @@ export function Create({ identityId }: { identityId: string | null }) {
         ) : null}
         {discountIdr > 0 ? (
           <div className="app-inline" style={{ marginTop: 6 }}>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>Diskon</span>
+            <span style={{ fontSize: 'var(--ds-text-md)', fontWeight: 700 }}>Diskon</span>
             <span className="app-spacer" />
             <span>−{formatRp(discountIdr)}</span>
           </div>

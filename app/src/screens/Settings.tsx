@@ -108,7 +108,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
       {error ? <Alert tone="danger" title="Gagal menyimpan">{error}</Alert> : null}
 
       <section className="app-stack">
-        <strong style={{ fontSize: 14, fontWeight: 800 }}>Nama</strong>
+        <strong className="ds-section-title">Nama</strong>
         <Field id="settings-name" label="Nama kamu" value={name} onChange={setName} hint="Nama ini yang muncul ke teman di bill" />
         <Button block loading={busy} disabled={!identity || !name.trim() || name.trim() === identity?.name} onClick={saveName}>
           Simpan nama
@@ -117,7 +117,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
 
       <section className="app-stack">
         <div className="app-inline">
-          <strong style={{ fontSize: 14, fontWeight: 800 }}>Rekening untuk ditransfer</strong>
+          <strong className="ds-section-title">Rekening untuk ditransfer</strong>
           <span className="app-spacer" />
           <span className="app-note">{accounts.data?.length ?? 0}</span>
         </div>
@@ -203,7 +203,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
       </section>
 
       <section className="app-stack">
-        <strong style={{ fontSize: 14, fontWeight: 800 }}>Kode pemulihan</strong>
+        <strong className="ds-section-title">Kode pemulihan</strong>
         <div className="ds-card ds-card-surface ds-pad-md" style={{ display: 'grid', gap: 10 }}>
           <span className="app-note" style={{ margin: 0 }}>
             Untuk masuk ke akun ini di HP lain: buka <b>/masuk</b> lalu ketik kodenya.
@@ -251,7 +251,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
       </section>
 
       <section className="app-stack">
-        <strong style={{ fontSize: 14, fontWeight: 800 }}>Undangan</strong>
+        <strong className="ds-section-title">Undangan</strong>
         <label className="app-row" style={{ cursor: 'pointer' }}>
           <span className="grow">
             <b>Terima undangan otomatis</b>
@@ -269,7 +269,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
       </section>
 
       <section className="app-stack">
-        <strong style={{ fontSize: 14, fontWeight: 800 }}>Identitas</strong>
+        <strong className="ds-section-title">Identitas</strong>
         <div className="app-row">
           <span className="grow">
             <b>{identity?.id ?? '—'}</b>
@@ -282,7 +282,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
       </section>
 
       <section className="app-stack">
-        <strong style={{ fontSize: 14, fontWeight: 800 }}>Mulai dari nol</strong>
+        <strong className="ds-section-title">Mulai dari nol</strong>
         <p className="app-note">
           Menghapus identitas di perangkat ini. Bill yang sudah kamu buat tetap ada di server, tapi kamu tidak akan bisa membukanya lagi sebagai dirimu.
         </p>
