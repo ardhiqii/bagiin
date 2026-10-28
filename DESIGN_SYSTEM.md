@@ -402,20 +402,23 @@ yang terlihat seperti situs rusak — padahal aplikasinya baik-baik saja.
 
 ## Komponen dan state yang wajib ada
 
-Setiap komponen di bawah harus punya seluruh state-nya sebelum React dianggap siap menggantikan vanilla. Yang berjalan ada di `?view=system`.
+Daftar ini **sama dengan ekspor** `frontend/src/ds/primitives.tsx` (17 komponen; `idr` bukan komponen, dia helper angka). Komponen yang tidak dirender layar mana pun dihapus — bukan disimpan sebagai "kosakata": `BottomNav` (navigasi 4 tab yang sudah digabung jadi 3), `ItemRow` (baris item generik yang kalah oleh baris item asli ber-logika slot), dan `Card` (pembungkus tipis yang kalah oleh class `.ds-card` yang dipakai langsung) dulu tertinggal di sini dan sempat menyesatkan.
 
 | Komponen | Padanan shadcn/ui | State/varian |
 | --- | --- | --- |
 | Button | Button | primary, secondary, quiet, danger, loading, disabled, block |
 | StatusBadge | Badge | menunggu, final, sukses, butuh tindakan |
-| Card / BalanceCard | Card | permukaan, mint, navy |
-| ItemRow | Card + Checkbox | belum dipilih, dipilih, dibagi bersama, dengan diskon item |
+| BalanceCard | Card | terima, bayar, perkiraan |
+| Money / Amount | custom | bertanda, netral, flat, perkiraan |
 | Field | Input + Label | default, fokus, error, nominal rupiah |
 | Sheet | Drawer/Dialog | konfirmasi, rincian biaya, tujuan bayar |
-| BottomNav | NavigationMenu | beranda, bill, buat, rekap |
-| Alert | Alert | menunggu, final, sukses, butuh tindakan |
+| Alert / Notice | Alert | menunggu, final, sukses, butuh tindakan (Notice = versi inline) |
 | EmptyState | custom | belum ada bill, belum ada utang |
 | Avatar | Avatar | empat nada + placeholder "belum bergabung" |
+| Group / SectionHead | Card + judul bagian | tanpa judul, dengan meta |
+| ActionRow / ActionGroup | List row | biasa, danger, ikon, chevron |
+| ActionFlag | Badge (stempel) | perlu bayar, perlu pilih, lunas |
+| ProviderLogo | Avatar (gambar) | bank, e-wallet, tidak dikenal |
 
 Aturan yang mengikat semua komponen: target sentuh minimal 44×44 px, cincin fokus 3 px terlihat, radius hanya empat ukuran (8/12/16/24), dan bayangan hanya untuk lapisan yang menutup konten — kartu biasa memakai garis border.
 

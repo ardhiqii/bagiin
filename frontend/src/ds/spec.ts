@@ -118,15 +118,26 @@ export const SHADCN_MAP = [
   { token: '--radius', value: 'var(--ds-radius-md)', note: 'Radius default' },
 ]
 
+/**
+ * Komponen yang benar-benar dirender layar. Daftar ini sengaja sama dengan
+ * ekspor `ds/primitives.tsx` — kalau ada yang tidak dipakai, dia dihapus, bukan
+ * disimpan sebagai "kosakata": navigasi 4 tab dan baris item generik dulu
+ * tertinggal di sini dan sempat menyesatkan. `idr` tidak masuk daftar karena
+ * dia helper angka, bukan komponen.
+ */
 export const COMPONENT_INVENTORY = [
   { component: 'Button', shadcn: 'Button', variants: 'primary · secondary · quiet · danger · loading · disabled' },
   { component: 'StatusBadge', shadcn: 'Badge', variants: 'pending · info · success · danger' },
-  { component: 'Card / BalanceCard', shadcn: 'Card', variants: 'surface · mint · navy' },
-  { component: 'ItemRow', shadcn: 'Card + Checkbox', variants: 'idle · picked · shared · diskon' },
+  { component: 'BalanceCard', shadcn: 'Card', variants: 'terima · bayar · perkiraan' },
+  { component: 'Money / Amount', shadcn: 'custom', variants: 'bertanda · netral · flat · perkiraan' },
   { component: 'Field', shadcn: 'Input + Label', variants: 'default · fokus · error · nominal' },
   { component: 'Sheet', shadcn: 'Drawer / Dialog', variants: 'konfirmasi · rincian · tujuan bayar' },
-  { component: 'BottomNav', shadcn: 'NavigationMenu', variants: 'beranda · bill · buat · rekap' },
   { component: 'Alert', shadcn: 'Alert', variants: 'pending · info · success · danger' },
+  { component: 'Notice', shadcn: 'Alert (inline)', variants: 'info · danger · kering' },
   { component: 'EmptyState', shadcn: 'custom', variants: 'belum ada bill · belum ada utang' },
-  { component: 'Avatar', shadcn: 'Avatar', variants: 'navy · teal · mint · place-holder kosong' },
+  { component: 'Avatar', shadcn: 'Avatar', variants: 'navy · teal · mint · kosong' },
+  { component: 'Group / SectionHead', shadcn: 'Card + Section title', variants: 'tanpa judul · dengan meta' },
+  { component: 'ActionRow / ActionGroup', shadcn: 'List row', variants: 'biasa · danger · ikon · chevron' },
+  { component: 'ActionFlag', shadcn: 'Badge (stempel)', variants: 'perlu bayar · perlu pilih · lunas' },
+  { component: 'ProviderLogo', shadcn: 'Avatar (gambar)', variants: 'bank · e-wallet · tidak dikenal' },
 ]

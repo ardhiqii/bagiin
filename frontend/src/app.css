@@ -199,11 +199,10 @@ p, small, .app-note { text-wrap: pretty; }
   color: var(--ds-muted);
   line-height: 1.5;
 }
-
 /* Input di atas kartu mint butuh permukaan putih supaya tetap terbaca;
-   tanpa ini placeholder dan tombol nonaktif nyaris hilang. */
-.ds-card-mint .ds-field input,
-.ds-card-navy .ds-field input {
+   tanpa ini placeholder dan tombol nonaktif nyaris hilang. Varian navy sudah
+   dihapus bersama komponen Card. */
+.ds-card-mint .ds-field input {
   background: var(--ds-surface);
   border: 1px solid var(--ds-border);
 }
@@ -1288,10 +1287,24 @@ p, small, .app-note { text-wrap: pretty; }
   padding: 11px 5px;
   margin: -11px -3px;
 }
+/* .receipt-kill itu position:absolute (menempel di pojok foto). Padding +
+   margin negatif MENGGESER posisinya, dan fotonya punya overflow:hidden —
+   akibatnya tombol hapus terdorong keluar kotak dan tidak bisa ditekan (tes 43
+   gagal karena klik tidak pernah mendarat). Jadi lapisan ::after lagi: posisi
+   tetap, area tangkap yang membesar. */
 .search-clear,
 .receipt-kill {
-  padding: 10px;
-  margin: -10px;
+  position: relative;
+}
+.search-clear::after,
+.receipt-kill::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: max(100%, 44px);
+  height: max(100%, 44px);
 }
 
 /* Sisa target sentuh yang masih di bawah 44 px setelah pengukuran ulang.

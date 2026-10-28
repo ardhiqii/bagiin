@@ -463,7 +463,6 @@
 .ds-alert p { margin: 4px 0 0; font: var(--ds-weight-regular) var(--ds-text-sm)/1.5 var(--ds-font-body); opacity: .92; }
 
 .ds-card { background: var(--ds-surface); border-radius: var(--ds-radius-lg); box-shadow: var(--ds-shadow-content); }
-.ds-card-navy { background: var(--ds-navy); color: #fff; box-shadow: var(--ds-shadow-raise); }
 .ds-card-mint { background: var(--ds-mint); box-shadow: none; }
 .ds-pad-sm { padding: 12px; }
 .ds-pad-md { padding: 16px; }
@@ -662,30 +661,6 @@
 .ds-field-hint { color: var(--ds-muted); }
 .ds-field-error { color: var(--ds-danger); font-weight: var(--ds-weight-medium); }
 .ds-field.has-error input { box-shadow: 0 0 0 2px rgba(176, 68, 61, .28), var(--ds-shadow-content); }
-
-.ds-nav {
-  display: flex;
-  gap: var(--ds-space-half);
-  padding: 7px 6px;
-  background: var(--ds-glass);
-  backdrop-filter: var(--ds-blur);
-  -webkit-backdrop-filter: var(--ds-blur);
-  border-radius: var(--ds-radius-xl);
-  box-shadow: var(--ds-shadow-raise);
-}
-.ds-nav > span {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--ds-space-1);
-  padding: 5px 0;
-  color: var(--ds-muted-soft);
-  font: var(--ds-weight-medium) var(--ds-text-2xs)/1 var(--ds-font-body);
-}
-.ds-nav > span.is-active { color: var(--ds-teal); }
-.ds-nav-dot { width: 22px; height: 22px; border-radius: 8px; background: currentColor; opacity: .18; }
-.ds-nav > span.is-active .ds-nav-dot { opacity: 1; border-radius: 50%; }
 
 .ds-empty {
   display: grid;

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { PROVIDERS, opticalHeight, providerKey } from '../lib/providers'
-import { Check, CheckCircle, Clock, House, Info, Plus, Receipt, UsersThree, Wallet, WarningCircle, X } from '@phosphor-icons/react'
+import { Check, CheckCircle, Clock, Info, Wallet, WarningCircle, X } from '@phosphor-icons/react'
 
 /* ---------- money ---------- */
 
@@ -107,9 +107,6 @@ export function SectionHead({ children, meta }: { children: ReactNode; meta?: Re
 
 /* ---------- surfaces ---------- */
 
-export function Card({ children, tone = 'surface', pad = 'md' }: { children: ReactNode; tone?: 'surface' | 'navy' | 'mint'; pad?: 'sm' | 'md' | 'lg' }) {
-  return <div className={`ds-card ds-card-${tone} ds-pad-${pad}`}>{children}</div>
-}
 
 /**
  * Angka uang yang punya ARAH.
@@ -300,31 +297,6 @@ export function ActionRow({
 
 export type ItemState = 'idle' | 'picked' | 'shared'
 
-export function ItemRow({
-  name, note, price, discount = 0, state = 'idle', onToggle,
-}: {
-  name: string
-  note: string
-  price: number
-  discount?: number
-  state?: ItemState
-  onToggle?: () => void
-}) {
-  const picked = state === 'picked' || state === 'shared'
-  const label = state === 'shared' ? `${name}, dibagi beberapa orang, ketuk untuk mengubah` : `${name}, ketuk untuk ${picked ? 'membatalkan' : 'memilih'}`
-  return <button type="button" className={`ds-item is-${state}`} onClick={onToggle} aria-pressed={picked} aria-label={label}>
-    <span className="ds-item-check" aria-hidden="true">{picked ? <Check size={13} weight="bold" /> : null}</span>
-    <span className="ds-item-copy">
-      <b>{name}</b>
-      <small>{note}</small>
-      {state === 'shared' && <span className="ds-item-shared"><UsersThree size={11} weight="fill" /> Dibagi 3 · 1 bagian menunggu</span>}
-    </span>
-    <span className="ds-item-price">
-      <Money value={price - discount} size="small" />
-      {discount > 0 && <small className="ds-item-discount">−{idr(discount)}</small>}
-    </span>
-  </button>
-}
 
 /* ---------- inputs ---------- */
 
@@ -367,19 +339,6 @@ export function Field({
 
 /* ---------- navigation ---------- */
 
-export function BottomNav({ active = 'bill' }: { active?: 'home' | 'bill' | 'create' | 'recap' }) {
-  const entries = [
-    { id: 'home' as const, label: 'Beranda', Icon: House },
-    { id: 'bill' as const, label: 'Bill', Icon: Receipt },
-    { id: 'create' as const, label: 'Buat', Icon: Plus },
-    { id: 'recap' as const, label: 'Rekap', Icon: Wallet },
-  ]
-  return <nav className="ds-nav" aria-label="Contoh navigasi bawah">
-    {entries.map(({ id, label, Icon }) => <span key={id} className={id === active ? 'is-active' : ''} aria-current={id === active ? 'page' : undefined}>
-      <Icon size={21} weight={id === active ? 'fill' : 'regular'} aria-hidden="true" />{label}
-    </span>)}
-  </nav>
-}
 
 /* ---------- empty state ---------- */
 
