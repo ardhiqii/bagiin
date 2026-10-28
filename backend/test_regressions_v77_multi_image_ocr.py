@@ -312,10 +312,10 @@ def test_ocr_endpoint_preserves_legacy_one_file_bytes_and_photo_path(monkeypatch
 @pytest.mark.parametrize(
     "files",
     [
+        # batas sekarang 4 foto per pembacaan; yang ditolak adalah batch di atas itu
         [
-            ("file", ("one.jpg", _jpeg(b"1"), "image/jpeg")),
-            ("file", ("two.jpg", _jpeg(b"2"), "image/jpeg")),
-            ("file", ("three.jpg", _jpeg(b"3"), "image/jpeg")),
+            ("file", (f"f{i}.jpg", _jpeg(str(i).encode()), "image/jpeg"))
+            for i in range(5)
         ],
         [("file", ("bad.jpg", b"not-a-jpeg", "image/jpeg"))],
         [("file", ("bad.txt", _jpeg(b"1"), "text/plain"))],

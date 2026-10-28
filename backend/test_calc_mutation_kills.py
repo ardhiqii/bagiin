@@ -34,9 +34,13 @@ def test_purchased_quantity_multiplies_selected_and_unpicked_lines():
         fallback_id="owner",
     )
     # Kills quantity lookup and line-total mutants in split and warning paths.
-    assert person(result, "alice")["subtotal_idr"] == 10
+    # alice mengambil 1 dari 2 snack: dia bayar harga satuan (5), sisa 5 jadi
+    # "belum ada yang ambil" — bukan 10 seperti aturan lama.
+    assert person(result, "alice")["subtotal_idr"] == 5
     assert person(result, "owner")["subtotal_idr"] == 14
-    assert "Rp 14" in result["warnings"][0]
+    assert result["uncovered_idr"] == 5
+    joined = " | ".join(result["warnings"])
+    assert "Rp 14" in joined and "Rp 5" in joined, joined
     assert result["total_ok"] is True
 
 
@@ -161,7 +165,7 @@ def test_unpicked_slot_is_not_reported_as_free_item():
     )
     assert result["unassigned_items"] == []
     assert result["uncovered_idr"] == 10
-    assert any("Bagian kosong" in warning for warning in result["warnings"])
+    assert any("Belum ada yang ambil" in warning for warning in result["warnings"])
     assert result["total_ok"] is True
 
 
@@ -396,7 +400,7 @@ def test_order_discount_allocates_to_people_and_uncovered_slots_without_loss():
     assert uncovered["uncovered_slots"] == [{
         "item_id": 1, "name": "tiny", "per_slot": 2, "empty": 1, "amount_idr": 1,
     }]
-    assert uncovered["warnings"] == ["Bagian kosong: tiny 1 bagian belum terisi (total Rp 1)"]
+    assert uncovered["warnings"] == ["Belum ada yang ambil: tiny 1 porsi (total Rp 1)"]
     assert uncovered["total_ok"] is True
 
 

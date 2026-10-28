@@ -97,6 +97,17 @@ def test_reciprocal_final_bills_net_by_real_identity_with_drilldown():
     assert recap["final"]["receivable_idr"] == 100000
     assert recap["final"]["net_idr"] == 20000
     assert recap["final"]["bill_count"] == 2
+    assert len(recap["final"]["bills"]) == 2
+    # bruto per arah, bukan cuma net: dua fakta bisa terjadi sekaligus
+    counterparties = {c["name"]: c for c in recap["final"]["counterparties"]}
+    assert counterparties["Bob Recip"]["payable_idr"] == 80000
+    assert counterparties["Bob Recip"]["receivable_idr"] == 100000
+    assert counterparties["Bob Recip"]["net_idr"] == 20000
+    assert len({b["bill_id"] for b in recap["final"]["bills"]}) == 2
+    assert all(b["bill_id"] for b in recap["final"]["bills"])
+    # total bill harus ikut: tanpa ini UI menulis "dari Rp0"
+    assert all(b["total_idr"] > 0 for b in recap["final"]["bills"])
+    assert all(b["my_total_idr"] >= 0 for b in recap["final"]["bills"])
 
     assert len(recap["final"]["counterparties"]) == 1
     counterparty = recap["final"]["counterparties"][0]
@@ -351,7 +362,8 @@ def test_open_untouched_bill_stays_provisional_with_open_bill_reason():
         if bill["bill_id"] == bill_id
     )
     assert provisional["status"] == "open"
-    assert provisional["reason_codes"] == ["open_bill"]
+    # item yang belum dipilih sekarang ikut dilaporkan, bukan cuma "bill kebuka"
+    assert provisional["reason_codes"] == ["unassigned_items", "open_bill"]
 
 
 def test_open_pending_selection_stays_provisional_with_selection_reason():
@@ -366,7 +378,11 @@ def test_open_pending_selection_stays_provisional_with_selection_reason():
         bill for bill in recap["provisional"]["bills"]
         if bill["bill_id"] == bill_id
     )
-    assert provisional["reason_codes"] == ["pending_selection", "open_bill"]
+    assert provisional["reason_codes"] == [
+        "pending_selection",
+        "unassigned_items",
+        "open_bill",
+    ]
     assert not any(
         bill["bill_id"] == bill_id
         for counterparty in recap["final"]["counterparties"]
@@ -670,6 +686,7 @@ def test_empty_recap_has_stable_zero_shape_and_no_secret():
             "net_idr": 0,
             "counterparties": [],
             "bill_count": 0,
+            "bills": [],
         },
         "provisional": {
             "bill_count": 0,
@@ -724,3 +741,78 @@ def test_stranger_bill_and_invite_data_never_leaks_into_recap():
     assert "Invitee Private" not in repr(recap)
     assert all(action["bill_id"] != stranger_bill for action in recap["actions"]["current_user"])
     assert all(action["bill_id"] != stranger_bill for action in recap["actions"]["waiting_other"])
+
+
+def test_provisional_row_explains_what_blocks_finality():
+    """Rekap harus bisa membedakan final dan belum final, beserta alasannya.
+
+    Baris belum final wajib membawa nominal yang belum terbagi dan nama
+    itemnya; tanpa itu UI hanya bisa menulis kode alasan yang tidak berguna
+    bagi orang yang membaca.
+    """
+    owner = db.new_identity("Owner Blocker", role="creator")
+    guest = db.new_identity("Guest Blocker")
+
+    bill_id = _mk_bill(
+        owner,
+        title="Bill Belum Final",
+        items=[
+            # 'free' + quantity 2 = dua tiket; satu diambil, satu kosong
+            {"name": "Tiket", "price": 62000, "quantity": 2, "mode": "free"},
+            {"name": "Makan", "price": 38000, "quantity": 1, "mode": "free"},
+        ],
+        total=162000,
+    )
+    items = _item_ids(bill_id)
+    # satu dari dua tiket diambil -> satu porsi kosong; "Makan" tidak diklaim
+    # siapa pun -> item tanpa pengaku
+    _join_and_pick(bill_id, guest, [items[0]])
+
+    recap = _recap(owner)
+    assert recap["final"]["bill_count"] == 0
+    assert recap["provisional"]["bill_count"] == 1
+    row = recap["provisional"]["bills"][0]
+    assert row["bill_id"] == bill_id
+    assert row["uncovered_idr"] == 62000
+    assert row["uncovered_items"] == [{"name": "Tiket", "amount_idr": 62000}]
+    assert row["unassigned_items"] == ["Makan"]
+    assert row["paid_by_name"] == "Owner Blocker"
+    assert row["can_manage"] is True
+    assert "uncovered_slots" in row["reason_codes"]
+    assert "unassigned_items" in row["reason_codes"]
+
+
+def test_unpicked_item_is_reported_not_silently_charged():
+    """Item yang tidak dipilih siapa pun harus kelihatan di rekap.
+
+    Uangnya memang ditanggung pembayar (keputusan produk lama), tapi tanpa
+    catatan ini bill terlihat final sementara ada item yang tidak ada
+    pemiliknya — dan "bagianmu" pembayar membengkak tanpa penjelasan.
+    """
+    owner = db.new_identity("Owner Absorb", role="creator")
+    guest = db.new_identity("Guest Absorb")
+
+    bill_id = _mk_bill(
+        owner,
+        title="Bill Tanpa Pemilih",
+        items=[
+            {"name": "Kopi", "price": 49000, "quantity": 1, "mode": "free"},
+            {"name": "Teh", "price": 39000, "quantity": 1, "mode": "free"},
+        ],
+        total=88000,
+    )
+    items = _item_ids(bill_id)
+    _join_and_pick(bill_id, guest, [items[1]])
+
+    detail = c.get(f"/api/bills/{bill_id}", headers=_H(owner)).json()
+    assert detail["owner_absorbed_idr"] == 49000
+    assert detail["owner_absorbed_items"] == [{"item_id": items[0], "name": "Kopi", "amount_idr": 49000}]
+    # uangnya tetap masuk bagian pembayar: invarian tidak berubah
+    owner_row = next(p for p in detail["people"] if p["identity_id"] == owner["id"])
+    assert owner_row["total_idr"] >= 49000
+
+    recap = _recap(owner)
+    assert recap["provisional"]["bill_count"] == 1
+    row = recap["provisional"]["bills"][0]
+    assert row["owner_absorbed_idr"] == 49000
+    assert row["owner_absorbed_items"] == [{"name": "Kopi", "amount_idr": 49000}]

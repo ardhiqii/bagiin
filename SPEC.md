@@ -1221,3 +1221,46 @@ delete/set-payer/tandai lunas orang lain).
 - Test: `test_features.py` (update_bill diff, accounts CRUD+ownership, rename,
   code regenerate) + E2E browser (settings UI, edit flow, pay sheet, restore).
 - 2026-08-10: push ke GitHub — github.com/ardhiqii/bagiin (public, main).
+
+### 2026-10-26 — baris bebas: harga satuan jadi pagar
+- **Masalah**: baris mode `free` membagi total baris dengan jumlah klaim, jadi
+  satu orang yang mengambil 1 dari 2 tiket 62.000 ditagih 124.000 tanpa
+  peringatan. Enam bill di DB produksi salah total Rp 68.096 (RE Blok M
+  124.000, SSB BENHIL 88.550 → 82.502).
+- **Aturan baru**: `share = min(harga satuan, total baris // jumlah klaim)`.
+  Klaim lebih sedikit daripada unit yang dibeli → selisihnya jadi
+  `uncovered` (ditanggung yang menalangi), bukan dibebankan ke pengklaim
+  pertama. Klaim lebih banyak daripada unit → baris dibagi rata seperti biasa,
+  jadi satu piring yang dimakan berdua tetap 67.500/orang.
+- **Yang tidak berubah**: mode `slot` (bill lama), pajak proporsional, service,
+  diskon pesanan, cashback, pembulatan. 18 baris patungan di DB produksi
+  hasilnya identik; 89 baris yang jumlah klaimnya sama dengan qty juga identik.
+- **Copy**: peringatan memakai "Belum ada yang ambil: <item> N porsi" (dulu
+  "Bagian kosong …"), istilah slot hilang dari teks.
+- **Test**: `test_calc_unit_price_floor.py` (9 kasus) + 3 test lama yang
+  mengunci perilaku lama diperbarui. Suite backend 402 passed.
+
+## 2026-10-26 — batas foto OCR dinaikkan ke 4 (AI memakai 3)
+
+Struk panjang sering harus difoto dua atau tiga kali, dan screenshot pesanan
+(Gojek/ShopeeFood/Grab) juga bisa lebih dari satu halaman. Batas lama 2 foto per
+pembacaan membuat orang harus memilih: foto mana yang dibaca.
+
+**Bukti uji dengan struk asli** (SSB BENHIL, 11 item, foto 2160×2880):
+
+| masukan | item | subtotal | pajak | total | waktu |
+|---|---|---|---|---|---|
+| 1 foto utuh | 11 | 87.000 | 8.700 | 95.700 | 9,7 s |
+| 2 potongan (overlap 10%) | 11 | 87.000 | 8.700 | 95.700 | 13,5 s |
+| 3 potongan (overlap 10%) | 11 | 87.000 | 8.700 | 95.700 | 13,0 s |
+| 4 foto | — | — | — | — | 422 (kuota penyedia) |
+
+Tidak ada item dobel dan tidak ada yang hilang di ketiga kasus yang berhasil —
+prompt memang sudah menyuruh model mencocokkan baris yang muncul di lebih dari
+satu gambar. Percobaan 4 foto tidak menyimpulkan apa pun soal kualitas karena
+penyedia gratis menolak permintaan (bukan karena batas aplikasi).
+
+**Yang berubah:** `_MAX_OCR_IMAGES` 2 → 4, `_MAX_OCR_TOTAL_BYTES` 10 MB → 20 MB,
+pesan penolakan menyebut angka baru. Frontend mengirim **paling banyak 3 foto**
+ke `/api/ocr` (batas yang terbukti) dan melampirkan sisanya sebagai bukti, jadi
+tidak ada foto yang dibuang.

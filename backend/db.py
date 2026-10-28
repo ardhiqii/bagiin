@@ -369,6 +369,12 @@ def init_db():
                     "INSERT INTO bill_photo (bill_id, path, sort_order) VALUES (?, ?, 0)",
                     (row["id"], row["photo_path"]),
                 )
+    # Skema akun (device, oauth, alias kontak) dan kolom identity baru. Import
+    # di dalam fungsi supaya accounts.py tetap boleh mengimpor db di level modul
+    # tanpa lingkaran impor.
+    import accounts
+    accounts.init_accounts_schema(conn)
+    accounts.backfill_handles(conn)
     conn.commit()
     conn.close()
 
@@ -472,36 +478,56 @@ def get_contacts(identity_id: str, q: str | None = None) -> list[dict]:
         with recently first.
         """
     conn = get_db()
+    # Satu query, empat hal yang dibutuhkan picker: nama pembeda milik SAYA
+    # (alias), pembeda publik (@username / handle), kapan terakhir bareng, dan
+    # berapa bill. Sebelumnya hanya {id, name, last_shared}, jadi dua orang
+    # bernama sama tampil identik dan undangan bisa salah orang.
     query = """
-        SELECT i.id, i.name, MAX(b.created_at) AS last_shared
-        FROM identity i
-        JOIN (
+        WITH shared AS (
             -- people on a bill = creator OR anyone with a payment row there.
             -- UNION (not COALESCE): with a payment present the creator used to
             -- vanish, so contacts were one-directional (Budi saw Aufa's bill
             -- but not Aufa as a contact).
-            SELECT b.id, b.created_at, b.creator_identity_id AS person_id
+            SELECT b.id AS bill_id, b.created_at, b.title,
+                   b.creator_identity_id AS person_id
             FROM bill b
             UNION ALL
-            SELECT b.id, b.created_at, p.identity_id AS person_id
+            SELECT b.id, b.created_at, b.title, p.identity_id AS person_id
             FROM payment p
             JOIN bill b ON b.id = p.bill_id
-        ) b ON b.person_id = i.id
-        WHERE b.id IN (
+        ),
+        mine AS (
             SELECT b2.id FROM bill b2
             WHERE b2.creator_identity_id = ?
                OR b2.id IN (SELECT bill_id FROM payment WHERE identity_id = ?)
         )
-        AND i.id != ?
+        SELECT i.id, i.name, i.username, i.handle, a.alias,
+               MAX(s.created_at) AS last_shared,
+               COUNT(DISTINCT s.bill_id) AS shared_count,
+               (SELECT s2.title FROM shared s2
+                 WHERE s2.person_id = i.id AND s2.bill_id IN (SELECT id FROM mine)
+                 ORDER BY s2.created_at DESC LIMIT 1) AS last_bill_title
+        FROM identity i
+        JOIN shared s ON s.person_id = i.id AND s.bill_id IN (SELECT id FROM mine)
+        LEFT JOIN contact_alias a ON a.owner_id = ? AND a.contact_id = i.id
+        WHERE i.id != ?
     """
-    params: list = [identity_id, identity_id, identity_id]
+    params: list = [identity_id, identity_id, identity_id, identity_id]
     if q:
-        query += " AND i.name LIKE ?"
-        params.append(f"%{q}%")
-    query += " GROUP BY i.id, i.name ORDER BY last_shared DESC, i.name LIMIT 50"
+        query += " AND (i.name LIKE ? OR a.alias LIKE ? OR i.username LIKE ?)"
+        params.extend([f"%{q}%"] * 3)
+    query += " GROUP BY i.id ORDER BY last_shared DESC, i.name LIMIT 50"
     rows = conn.execute(query, params).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    import accounts
+
+    out = []
+    for row in rows:
+        item = dict(row)
+        item["handle"] = item.get("handle") or accounts.handle_for(item["id"])
+        item["display_name"] = item.get("alias") or item.get("name")
+        out.append(item)
+    return out
 
 
 def is_contact(identity_id: str, other_id: str) -> bool:

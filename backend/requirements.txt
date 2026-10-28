@@ -2,3 +2,5 @@ fastapi
 uvicorn
 slowapi
 python-multipart
+argon2-cffi
+google-auth
