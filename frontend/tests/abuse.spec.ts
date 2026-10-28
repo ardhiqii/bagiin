@@ -162,6 +162,44 @@ test.describe('Bagiin — orang tidak sabar (spam dan dobel tekan)', () => {
   })
 })
 
+  test('A-06. 2 minuman dibagi 4 orang: tiap orang bayar seperempat, layar tidak menulis "4 dari 2"', async ({ page, browser }) => {
+    await freshUser(page, 'Pemilik ' + stamp)
+    const billId = await createBill(page, 'Dua minum ' + stamp, [['Es teh', '20000', '2']])
+    const me = await identity(page)
+    const link = 'https://bagiin-react.ardhiqi.com/b/' + billId
+
+    // empat tamu, masing-masing mengambil satu porsi dari dua minuman
+    const contexts = []
+    for (let i = 0; i < 4; i++) {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
+      const p2 = await ctx.newPage()
+      await p2.goto(link)
+      await p2.getByRole('button', { name: 'Ikut bill ini' }).first().click()
+      await p2.getByLabel('Nama kamu').fill('Numpang ' + i + ' ' + stamp)
+      await p2.getByRole('button', { name: 'Simpan nama & ikut bill' }).click()
+      await p2.waitForTimeout(900)
+      await p2.locator('.ds-item').filter({ hasText: 'Es teh' }).first().click()
+      await p2.waitForTimeout(700)
+      contexts.push(ctx)
+    }
+
+    const bill = await apiBill(page, billId, me)
+    const drinkers = bill.people.filter((p: any) => p.name.startsWith('Numpang '))
+    expect(drinkers.length).toBe(4)
+    for (const d of drinkers) {
+      expect(d.total_idr, d.name + ' bayar seperempat').toBe(10000)
+    }
+    const sum = bill.people.reduce((acc: number, p: any) => acc + p.total_idr, 0)
+    expect(sum + bill.uncovered_idr).toBe(40000)
+
+    // dan layarnya harus jujur: bukan "4 dari 2 diambil"
+    await page.reload()
+    const row = page.locator('.ds-item').filter({ hasText: 'Es teh' }).first()
+    await expect(row).toContainText('dibagi 4 orang', { timeout: 10_000 })
+    await expect(row).not.toContainText('4 dari 2')
+    for (const ctx of contexts) await ctx.close()
+  })
+
 test.describe('Bagiin — dua orang, satu bagian terakhir', () => {
   test('B-01. dua tamu menekan porsi terakhir bersamaan: uang tetap utuh, tidak ada yang hilang', async ({ page, browser }) => {
     await freshUser(page, 'Pemilik ' + stamp)

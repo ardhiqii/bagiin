@@ -4,3 +4,7 @@ slowapi
 python-multipart
 argon2-cffi
 google-auth
+# google.oauth2.id_token memakai transport `requests`; tanpa paket ini login
+# Google sungguhan gagal saat verifikasi token, dan kegagalannya baru muncul
+# ketika stub dimatikan.
+requests

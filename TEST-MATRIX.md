@@ -137,6 +137,7 @@ kosong).
 | E-01 | Kembali lalu maju: angka bill tidak berubah | `abuse.spec.ts` E-01 |
 | E-02 | Muat ulang di tengah memilih: pilihan bertahan | `abuse.spec.ts` E-02 |
 | E-03 | Dua tab identitas sama: aksi tab satu terlihat di tab dua setelah muat ulang | `abuse.spec.ts` E-03 |
+| A-06 | 2 minuman dibagi 4 orang: tiap orang bayar seperempat, layar menulis "dibagi 4 orang" | `abuse.spec.ts` A-06 |
 
 ### Integritas yang tidak kelihatan
 
@@ -148,6 +149,8 @@ kosong).
 | I-04 | Angka daftar == angka halaman bill == invarian `sum(bagian) + uncovered == total`, diambil dari API | `v1-integrity.spec.ts` I-04 |
 | I-05 | Identitas tamu 0.9 (localStorage lama) dikenali 1.0 tanpa diganti identitas baru | `v1-integrity.spec.ts` I-05 |
 | I-06 | Sapuan semua layar: 0 error konsol, 0 gambar rusak, tidak melebar, tidak ada NaN | `v1-integrity.spec.ts` I-06 |
+| I-07 | Nama pembeda 0.9 di localStorage pindah ke server sekali, lalu tampil di Kontak | `v1-integrity.spec.ts` I-07 |
+| I-08 | Pembeda publik yang terpampang (#ABCD) bisa dipakai sebagai kata cari di Kontak | `auth-and-contacts.spec.ts` 120 |
 
 ## Integritas angka
 
@@ -168,26 +171,68 @@ Yang harus selalu benar di setiap layar, dan diuji ulang setelah perubahan apa p
    perubahan" menampilkan alasan di tempat yang sama saat dinonaktifkan. Diukur
    `abuse.spec.ts` D-03.
 
-## Pertanyaan terbuka (butuh keputusan produk)
+## 2 minuman dibagi 4 orang (kasus yang diminta)
 
-**Batas porsi di UI vs di server.** UI membatasi: item qty 2 hanya bisa diambil
-2 orang (ketukan ketiga mengosongkan pilihan). Server tidak membatasi: uji API
-dengan item qty 2 harga Rp20.000 dan **tiga** orang masing-masing qty 1 diterima
-semua, lalu mesin split membagi rata Rp6.667/orang — uang tetap utuh (jumlah
-bagian = total), tapi arti "qty" jadi berbeda antara layar dan server.
+Perilaku uang yang terbukti lewat API:
 
-Dua pilihan yang sama-sama masuk akal:
-1. **Porsi eksklusif** (ikut UI sekarang): server menolak klaim melebihi qty
-   dengan 409 dan pesan jelas. Butuh perubahan backend + tes.
-2. **Item boleh dibagi siapa saja** (ikut README lama): batas di UI dicabut,
-   qty hanya menentukan besar satu ketukan.
+| Klaim | Hasil |
+|---|---|
+| 1 orang klaim 1 dari 2 porsi (item Rp40.000) | bayar Rp20.000, Rp20.000 belum diambil |
+| 1 orang klaim 2 porsi | bayar Rp40.000, tidak ada sisa |
+| 2 orang masing-masing 1 | Rp20.000 + Rp20.000 |
+| 4 orang masing-masing 1 | Rp10.000 + Rp10.000 + Rp10.000 + Rp10.000 |
+| 2 orang, klaim 1 dan 2 | proporsional Rp26.666 + Rp13.334 |
 
-Belum diubah karena ini keputusan produk, bukan bug yang jelas.
+Jumlah bagian selalu == total bill, tidak pernah ada bagian negatif, dan uang
+tidak pernah lebih atau hilang. Batas di UI adalah **per orang** (satu orang
+tidak bisa mengklaim lebih dari jumlah porsi), bukan batas jumlah pengambil —
+jadi 4 orang memang boleh berbagi 2 minuman.
 
-## Cara menjalankan
+Yang dulu salah bukan hitungannya, tapi layarnya: baris item menulis
+"4 dari 2 diambil" dan menampilkan harga satu porsi (Rp20.000) padahal tiap
+orang membayar Rp10.000. Sekarang baris menulis "dibagi 4 orang" dan
+menampilkan harga baris; bagian per orang ada di daftar orang. Dijaga
+`abuse.spec.ts` A-06.
 
-```bash
-cd frontend
-npx playwright test                     # semua
-npx playwright test tests/v1-cases.spec.ts
-```
+## Uji kering migrasi database produksi
+
+Dijalankan pada **salinan** DB produksi (`sqlite3 .backup`, produksi tidak
+disentuh):
+
+- boot backend 1.0 → 3 tabel baru (`device`, `oauth_account`, `contact_alias`),
+  4 kolom baru di `identity` (`username`, `username_lower`, `password_hash`,
+  `handle`), 54 handle terisi
+- **jumlah baris semua tabel lama tidak berubah satu pun** (identity 54, bill 81,
+  item 175, selection 208, payment 140, bill_photo 27, bill_invite 51,
+  bill_participant 6)
+- boot backend 0.9 pada DB yang sudah dimigrasi → tetap membaca bill yang sama
+  (200). Artinya rollback ke 0.9 masih mungkin setelah migrasi.
+- salinan uji dihapus setelah selesai
+
+## Hasil verifikasi Google sungguhan (bukan stub)
+
+Dijalankan di Chromium headful yang sudah punya sesi Google, terhadap build live:
+
+1. Tombol Google memunculkan popup `accounts.google.com/v3/signin/accountchooser`
+   → akun dipilih → layar consent → kembali ke aplikasi.
+2. Aplikasi mengirim `id_token` asli ke `/api/auth/google`.
+3. Server live menjawab **401 "Token Google tidak valid"** karena
+   `BAGIIN_GOOGLE_STUB=1`. Ini bukan bug kode: stub memang hanya menerima token
+   `stub:`. Tapi artinya **login Google sungguhan belum hidup di situs live**.
+4. Token yang sama dikirim ke instance backend dengan stub **mati**
+   (`BAGIIN_GOOGLE_STUB=0`) → **200**, identitas dibuat dari nama akun Google,
+   `recovery_code` diberikan, sesi perangkat terbit, dan baris `oauth_account`
+   tersimpan. Login kedua dengan token yang sama → identitas yang sama (tidak
+   ada akun dobel).
+
+### Dua hal yang ketemu dari uji ini
+
+- **`requests` tidak terpasang** di lingkungan Python bersama, padahal
+  `google.oauth2.id_token` memakai transport itu untuk memeriksa tanda tangan
+  ke kunci publik Google. Selama stub menyala, kekurangan ini tidak kelihatan;
+  begitu stub dimatikan, login Google akan gagal 500. Sudah ditambahkan ke
+  `backend/requirements.txt` dan dipasang.
+- Lingkungan Python 1.0 **meminjam venv 0.9**
+  (`ExecStart=/opt/projects/bagiin/backend/venv/bin/uvicorn`). Bekerja, tapi
+  artinya perubahan paket untuk 1.0 menyentuh runtime 0.9. Sebaiknya 1.0 punya
+  venv sendiri sebelum cutover.

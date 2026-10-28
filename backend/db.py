@@ -513,9 +513,23 @@ def get_contacts(identity_id: str, q: str | None = None) -> list[dict]:
         WHERE i.id != ?
     """
     params: list = [identity_id, identity_id, identity_id, identity_id]
+    # Daftar kontak menampilkan pembeda publik "#SW9C" — jadi orang wajar
+    # mengetiknya di kotak cari. Sebelumnya pencarian hanya menyaring nama,
+    # alias, dan username, sehingga mengetik pembeda yang terpampang di layar
+    # menghasilkan "tidak ada". Pembeda tidak disimpan untuk semua baris (dia
+    # turunan id), jadi penyaringan pembeda dilakukan setelah baris terbaca.
+    handle_query: str | None = None
     if q:
-        query += " AND (i.name LIKE ? OR a.alias LIKE ? OR i.username LIKE ?)"
-        params.extend([f"%{q}%"] * 3)
+        raw = q.strip().lstrip("#").strip().upper()
+        looks_like_handle = q.strip().startswith("#") or (len(raw) == 4 and raw.isalnum() and raw == raw.upper())
+        if looks_like_handle:
+            # Jangan saring di SQL: pembeda tidak tersimpan untuk semua baris.
+            # Saring di bawah setelah pembeda tiap baris dihitung, dan tetap
+            # cocokkan nama/alias/username supaya kata 4 huruf biasa tidak mati.
+            handle_query = raw
+        else:
+            query += " AND (i.name LIKE ? OR a.alias LIKE ? OR i.username LIKE ?)"
+            params.extend([f"%{q}%"] * 3)
     query += " GROUP BY i.id ORDER BY last_shared DESC, i.name LIMIT 50"
     rows = conn.execute(query, params).fetchall()
     conn.close()
@@ -527,6 +541,16 @@ def get_contacts(identity_id: str, q: str | None = None) -> list[dict]:
         item["handle"] = item.get("handle") or accounts.handle_for(item["id"])
         item["display_name"] = item.get("alias") or item.get("name")
         out.append(item)
+    if handle_query:
+        needle = (q or '').strip().lower()
+        out = [
+            item
+            for item in out
+            if str(item.get("handle") or "").upper().startswith(handle_query)
+            or needle in str(item.get("name") or "").lower()
+            or needle in str(item.get("alias") or "").lower()
+            or needle in str(item.get("username") or "").lower()
+        ]
     return out
 
 

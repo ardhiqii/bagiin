@@ -534,4 +534,49 @@ test.describe('Bagiin — nama pembeda kontak', () => {
       page.getByRole('dialog', { name: 'Undang teman' }).getByText('Kawan Kuliah'),
     ).toBeVisible()
   })
+
+  test('120. pembeda publik yang terpampang (#ABCD) bisa dicari, bukan cuma dipajang', async ({ page }) => {
+    const me = await registerViaApi(page, {
+      username: 'cari_' + stamp,
+      password: 'rahasia123',
+      name: 'Cari ' + stamp,
+    })
+    // tamu tanpa username: baris kontaknya menampilkan pembeda "#ABCD",
+    // bukan "@username" — justru kasus yang mau diuji
+    const bill = await (
+      await page.request.post('/api/bills', {
+        headers: headers(me),
+        data: {
+          title: 'Cari bill ' + stamp,
+          subtotal: 12000, tax: 0, service: 0, order_discount: 0, cashback: 0, total: 12000,
+          items: [{ name: 'Kopi', price: 12000, quantity: 1, mode: 'free', slot_count: null }],
+        },
+      })
+    ).json()
+    // kotak cari baru muncul kalau kontak lebih dari tiga (di bawah itu tidak
+    // perlu), jadi buat empat tamu sekaligus
+    for (let i = 0; i < 4; i++) {
+      const guest = await (
+        await page.request.post('/api/identities', { data: { name: 'Dicari ' + i + ' ' + stamp } })
+      ).json()
+      await page.request.post('/api/bills/' + bill.id + '/join', {
+        headers: { 'X-Identity-Id': guest.id, 'X-Identity-Secret': guest.secret },
+        data: {},
+      })
+    }
+
+    await openAs(page, me, '/kontak')
+    const row = page.locator('.app-row.is-tappable', { hasText: 'Dicari 0 ' + stamp })
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    // pembeda yang tampil di baris itu harus bisa dipakai sebagai kata cari
+    const label = (await row.innerText()).replace(/\s+/g, ' ')
+    const handle = label.match(/#([A-Z0-9]{4})/)?.[1]
+    expect(handle, 'baris kontak harus menampilkan pembeda').toBeTruthy()
+
+    await page.getByLabel('Cari').fill('#' + handle)
+    await expect(page.locator('.app-row.is-tappable', { hasText: 'Dicari 0 ' + stamp })).toBeVisible({ timeout: 10_000 })
+    // pencarian nama tetap jalan seperti sebelumnya
+    await page.getByLabel('Cari').fill('Dicari 0 ' + stamp)
+    await expect(page.locator('.app-row.is-tappable', { hasText: 'Dicari 0 ' + stamp })).toBeVisible()
+  })
 })

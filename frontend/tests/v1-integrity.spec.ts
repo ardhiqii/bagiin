@@ -211,6 +211,49 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     test.info().annotations.push({ type: 'sapuan', description: report.join('; ') })
   })
 
+  test('I-07. nama pembeda 0.9 (localStorage) pindah ke server sekali, lalu tampil di Kontak', async ({ browser }) => {
+    const { request } = await import('@playwright/test')
+    const api = await request.newContext({ baseURL: 'https://bagiin-react.ardhiqi.com' })
+
+    // bangun satu relasi kontak: pemilik + tamu pada satu bill
+    const owner = await (await api.post('/api/identities', { data: { name: 'Migrasi ' + stamp } })).json()
+    const headers = { 'X-Identity-Id': owner.id, 'X-Identity-Secret': owner.secret ?? '' }
+    const bill = await (await api.post('/api/bills', {
+      headers,
+      data: {
+        title: 'Migrasi ' + stamp, subtotal: 10000, tax: 0, service: 0, order_discount: 0,
+        cashback: 0, total: 10000,
+        items: [{ name: 'Kopi', price: 10000, quantity: 1, mode: 'free', slot_count: null }],
+      },
+    })).json()
+    const guest = await (await api.post('/api/identities', { data: { name: 'Kawan Lama ' + stamp } })).json()
+    const guestHeaders = { 'X-Identity-Id': guest.id, 'X-Identity-Secret': guest.secret ?? '' }
+    await api.post('/api/bills/' + bill.id + '/join', { headers: guestHeaders, data: {} })
+    const contacts = await (await api.get('/api/identities/' + owner.id + '/contacts', { headers })).json()
+    const contact = contacts.find((c: any) => c.id === guest.id)
+    expect(contact, 'relasi kontak harus ada sebelum migrasi diuji').toBeTruthy()
+
+    // perangkat ini seperti habis pakai 0.9: identitas + nama pembeda lokal
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const page = await ctx.newPage()
+    await page.addInitScript((payload) => {
+      localStorage.setItem('bagiin_identity', JSON.stringify(payload.identity))
+      localStorage.setItem('bagiin_recap_aliases', JSON.stringify(payload.aliases))
+    }, { identity: { id: owner.id, name: owner.name, role: 'guest', secret: owner.secret }, aliases: { [guest.id]: 'Kawan Kantor' } })
+
+    await page.goto('/kontak')
+    await expect(page.getByText('Kawan Kantor', { exact: false }).first()).toBeVisible({ timeout: 15_000 })
+
+    // dan benar-benar tersimpan di server, bukan cuma di layar
+    const after = await (await api.get('/api/identities/' + owner.id + '/contacts', { headers })).json()
+    expect(after.find((c: any) => c.id === guest.id)?.alias).toBe('Kawan Kantor')
+    // penanda selesai dipasang supaya tidak diulang tiap muat
+    const flag = await page.evaluate(() => localStorage.getItem('bagiin_aliases_migrated_v1'))
+    expect(flag).toBe('1')
+    await ctx.close()
+    await api.dispose()
+  })
+
   test('I-05. identitas tamu 0.9 (data localStorage lama) tetap dikenali di 1.0', async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
     const page = await ctx.newPage()

@@ -375,6 +375,16 @@ Nama maksimal satu baris (ellipsis), meta satu baris (ellipsis): baris yang
 tingginya berbeda-beda membuat daftar tidak bisa dipindai dan kontrol di kanan
 jadi tidak sejajar.
 
+## Dock bawah tidak boleh berubah tinggi
+
+Kalau tombol aksi utama ada di dock bawah, tinggi dock harus sama di semua
+keadaan — termasuk saat tombolnya mati dan alasannya muncul. Alasan ditaruh di
+slot yang tingginya dipaku (`<small class="dock-reason">`, minimum 2,4 em),
+bukan dirender hanya ketika dibutuhkan. Diukur sebelum ini: tombol "Buat bill"
+bergeser 20 px antara keadaan kosong dan terisi (y 691 → 711), cukup untuk
+membuat ketukan mendarat di tempat lama — dan itu juga yang membuat tes 42
+sesekali gagal tanpa aplikasinya benar-benar rusak.
+
 ## Kontrol mati lebih baik daripada kontrol yang gagal
 
 Kalau server menolak sebuah tindakan (bill lunas, bill ditutup, bukan pemilik),
@@ -385,6 +395,12 @@ sama.
 
 Yang tetap ditawarkan pada keadaan beku hanya jalur untuk membukanya kembali
 (mis. "Batalkan lunas seluruh bill"), dan jalur itu disebut namanya.
+
+Kalau kontrol dimatikan karena **isian belum lengkap**, sebutkan apa yang kurang
+di dekat tombolnya. Tombol mati tanpa penjelasan membuat orang menebak: judulnya
+kosong, harganya nol, atau namanya belum diisi. Alasannya ditulis dengan kata
+benda yang dipakai layar itu ("Isi nama item & harga dulu", "Ada item tanpa
+nama"), bukan kode kesalahan.
 
 ## Alamat asing punya jalan pulang
 

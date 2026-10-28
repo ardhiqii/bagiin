@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { endpoints, isSessionError, setSessionErrorHandler } from './api'
 import { loadStored, publishIdentity, storeIdentity, type Stored } from './identity'
+import { migrateRecapAliases } from './legacy-aliases'
 
 /**
  * Status sesi, terpisah dari "siapa yang login".
@@ -112,6 +113,9 @@ export async function startSession(): Promise<void> {
     }
     publishIdentity(merged)
     setSession({ status: 'authed' })
+    // Nama kontak dari 0.9 dipindahkan ke server sekali per perangkat. Tidak
+    // ditunggu: layar tidak boleh tertahan oleh pekerjaan latar seperti ini.
+    void migrateRecapAliases(merged.id)
     if (!stored.secret) {
       // localStorage dibersihkan sebagian: ambil ulang secret kalau perangkat
       // ini memang masih pemilik sesi. Gagal di sini bukan alasan menendang.

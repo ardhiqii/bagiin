@@ -82,13 +82,13 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
      yang salah judulnya, harganya, atau qty-nya. */
   const blockedReason =
     parsed.length === 0
-      ? 'Bill butuh minimal satu item.'
+      ? 'Butuh minimal satu item.'
       : parsed.some((item) => !item.name)
-        ? 'Ada item yang belum punya nama.'
+        ? 'Ada item tanpa nama.'
         : parsed.some((item) => item.price <= 0)
-          ? 'Ada item yang harganya masih Rp0.'
+          ? 'Ada harga masih Rp0.'
           : total <= 0
-            ? 'Total bill tidak boleh Rp0.'
+            ? 'Total tidak boleh Rp0.'
             : ''
 
   async function save() {
@@ -147,11 +147,11 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
             <div className="tot">
               <small>Total baru</small>
               <b>{formatRp(total)}</b>
-              {blockedReason ? (
-                <small role="status" style={{ display: 'block', marginTop: 2, color: 'var(--ds-muted)' }}>
-                  {blockedReason}
-                </small>
-              ) : null}
+              {/* idem Create: tinggi dock tidak boleh berubah, kalau tidak
+                  tombol Simpan bergeser di bawah jempol. */}
+              <small className="dock-reason" role="status" aria-live="polite">
+                {blockedReason || '\u00a0'}
+              </small>
             </div>
             <Button loading={action.isPending} disabled={!valid} onClick={save}>
               Simpan perubahan

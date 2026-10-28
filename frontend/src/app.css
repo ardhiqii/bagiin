@@ -1325,3 +1325,16 @@ p, small, .app-note { text-wrap: pretty; }
 .nudge-actions button {
   min-width: 44px;
 }
+
+/* Alasan tombol simpan mati. Tingginya DIPAKU dua baris, termasuk saat kosong,
+   supaya tinggi dock tidak berubah dan tombol tidak bergeser di bawah jempol.
+   Diukur sebelum ini: tombol "Buat bill" bergeser 20 px antara keadaan kosong
+   dan terisi — cukup untuk bikin ketukan mendarat di tempat yang salah. */
+.dock-reason {
+  display: block;
+  min-height: 2.4em;
+  margin-top: 2px;
+  line-height: 1.2;
+  font-size: 11.5px;
+  color: var(--ds-muted);
+}

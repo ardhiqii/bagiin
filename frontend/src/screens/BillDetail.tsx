@@ -492,6 +492,11 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               const lineTotal = unit * item.quantity
               const perSlot = isSlot && slotTotal > 0 ? Math.floor(lineTotal / slotTotal) : 0
               const stepTotal = isSlot ? slotTotal : item.quantity
+              /* Lebih banyak pengambil daripada porsi itu sah: 2 minuman dibagi
+                 4 orang, masing-masing bayar seperempat. Yang tidak boleh adalah
+                 layar berbohong soal itu — "4 dari 2 diambil" tidak berarti apa
+                 pun, dan harga satu porsi bukan yang dibayar orangnya. */
+              const sharedBeyondPortions = !isSlot && taken > item.quantity
               // Bill yang sudah lunas itu money-final: server menolak pilihan
               // baru (409). Tombolnya dulu tetap menyala, jadi orang mengetuk
               // dan cuma dapat pesan galat — kontrol yang menyala tapi tidak
@@ -519,16 +524,25 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                             dan tanpa "1/2" yang bisa dibaca "setengah tiket" */}
                         {isSlot
                           ? formatRp(perSlot) + '/bagian · sisa ' + (slotTotal - taken)
-                          : item.quantity > 1
-                            ? taken + ' dari ' + item.quantity + ' diambil'
-                            : null}
+                          : sharedBeyondPortions
+                            ? 'dibagi ' + selectors.length + ' orang'
+                            : item.quantity > 1
+                              ? taken + ' dari ' + item.quantity + ' diambil'
+                              : null}
                         {isSlot || item.quantity > 1 ? ' · ' : ''}
                         {label || 'belum ada yang ambil'}
                       </small>
                     </span>
                     <span className="ds-item-price">
                       {/* angka di kanan = harga yang muncul saat baris ini diketuk */}
-                      <Money value={isSlot ? lineTotal : item.quantity > 1 ? unit : lineTotal} size="small" />
+                      {/* Saat dibagi lebih banyak orang daripada porsinya, harga
+                          satu porsi bukan angka yang dibayar siapa pun. Yang benar
+                          untuk seluruh baris = harga baris; bagian per orang
+                          tampil di daftar orang di bawah. */}
+                      <Money
+                        value={isSlot ? lineTotal : sharedBeyondPortions ? lineTotal : item.quantity > 1 ? unit : lineTotal}
+                        size="small"
+                      />
                     </span>
                   </button>
 

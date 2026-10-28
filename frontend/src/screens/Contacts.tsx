@@ -29,14 +29,19 @@ export function Contacts({ identityId }: { identityId: string }) {
 
   const rows = useMemo(() => {
     const list = contacts.data ?? []
-    const needle = query.trim().toLowerCase()
+    // "#" adalah cara pembeda ditulis di layar, bukan bagian dari pembedanya.
+    // Tanpa membuangnya, mengetik "#H78S" (persis seperti yang terpampang)
+    // menghasilkan daftar kosong sementara kotak cari menjanjikan "kode seperti
+    // SW9C" bisa dipakai.
+    const needle = query.trim().toLowerCase().replace(/^#/, '')
     if (!needle) return list
-    return list.filter((contact) =>
-      [contact.display_name, contact.name, contact.username ?? '', contact.handle]
+    return list.filter((contact) => {
+      const handle = String(contact.handle ?? '')
+      return [contact.display_name, contact.name, contact.username ?? '', handle, '#' + handle]
         .join(' ')
         .toLowerCase()
-        .includes(needle),
-    )
+        .includes(needle)
+    })
   }, [contacts.data, query])
 
   /* Dua orang dengan nama tampil sama dan belum diberi nama pembeda = undangan

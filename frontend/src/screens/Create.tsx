@@ -197,9 +197,9 @@ export function Create({ identityId }: { identityId: string | null }) {
   const blockedReason = !identityId
     ? ''
     : !hasNamedItem
-      ? 'Isi nama item dan harganya dulu — bill butuh minimal satu item.'
+      ? 'Isi nama item & harga dulu.'
       : total <= 0
-        ? 'Total bill masih Rp0. Isi harga item dulu.'
+        ? 'Total masih Rp0.'
         : ''
 
   async function submit() {
@@ -263,11 +263,13 @@ export function Create({ identityId }: { identityId: string | null }) {
           <div className="tot">
             <small>Total bill</small>
             <b>{formatRp(total)}</b>
-            {blockedReason ? (
-              <small role="status" style={{ display: 'block', marginTop: 2, color: 'var(--ds-muted)' }}>
-                {blockedReason}
-              </small>
-            ) : null}
+            {/* Slot ini SELALU ada, walau kosong. Sebelumnya alasan hanya
+                dirender saat tombol mati, jadi dock menyusut 40 px dan tombolnya
+                melompat tepat saat orang mau menekan — ketukan mendarat di
+                tempat lama. Diukur: tombol bergeser 20 px (y 691 -> 711). */}
+            <small className="dock-reason" role="status" aria-live="polite">
+              {blockedReason || '\u00a0'}
+            </small>
           </div>
           <Button loading={busy} disabled={!canSubmit} onClick={submit}>
             Buat bill
