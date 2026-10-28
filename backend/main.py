@@ -1825,6 +1825,12 @@ async def set_paid_by(bill_id: str, request: Request):
         raise HTTPException(403, "Hanya owner bill (yang bayar)")
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup, tidak dapat diubah")
+    # Bill yang sudah lunas itu money-final. Endpoint lain (picks, join, leave,
+    # invite, item) sudah dijaga _ensure_editable; di sini belum, jadi orang
+    # masih bisa memindahkan "siapa yang menalangi" SETELAH uangnya final —
+    # pembuat lama langsung kehilangan can_manage, dan angka yang sudah
+    # diumumkan berubah pemiliknya tanpa dibuka tanda lunasnya dulu.
+    _ensure_editable(bill_data)
     identity_id = _to_str(data.get("identity_id"), "Identity id", maxlen=64) or None
     name = _to_str(data.get("name"), "Nama", maxlen=60) or None
     if identity_id:
