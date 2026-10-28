@@ -1192,3 +1192,42 @@ p, small, .app-note { text-wrap: pretty; }
    formulir + tiga cara masuk; ilustrasi besar mendorong tombol utama keluar
    dari jangkauan jempol begitu keyboard terbuka. */
 .welcome-art--login { width: 96px; height: 96px; }
+
+/* Layar masuk/beranda-tanpa-identitas tidak punya rail navigasi, jadi frame-nya
+   juga tidak boleh menyisakan kolom rail. Dulu kolom 208 px itu tetap ada walau
+   kosong, sehingga kartu di layar PC terdorong ke kanan dan terlihat tidak
+   center. */
+@media (min-width: 900px) {
+  .app-frame--plain {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 560px;
+  }
+  .app-frame--plain .app-body {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 100dvh;
+  }
+}
+
+/* Ilustrasi di layar masuk lebih kecil daripada di layar lain: kartu ini berisi
+   tab + isian + tombol + Google, jadi ruang vertikal lebih berharga daripada
+   gambar. */
+.welcome-art--entry {
+  width: 80px;
+  height: 80px;
+}
+
+/* Tiga tab: Nama | Kode | Akun. Lebar sama supaya tidak ada tab yang terasa
+   "lebih penting" hanya karena labelnya lebih panjang. */
+.auth-modes { grid-template-columns: repeat(3, 1fr); }
+
+/* Di layar tanpa navigasi, garis tepi frame cuma terbaca sebagai sisa kolom
+   tata letak lama ("kenapa ada dua garis tegak di kiri-kanan kartu?").
+   Kartu putihnya sudah memberi batas; garis itu tidak menambah apa pun. */
+@media (min-width: 720px) {
+  .app-frame--plain {
+    border-left: 0;
+    border-right: 0;
+  }
+}

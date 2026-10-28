@@ -40,7 +40,7 @@ test.describe('Bagiin — sesi dan pagar identitas', () => {
     const { ctx, page } = await contextWithStaleIdentity(browser)
     await page.goto('/')
 
-    await expect(page.getByRole('heading', { name: 'Isi nama lagi' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible()
     await expect(page.getByText('Identitas di perangkat ini sudah tidak ada di server.')).toBeVisible()
     // bekas kesalahan: beranda tetap terbuka dengan pesan gagal memuat
     await expect(page.getByText('Tidak bisa memuat bill')).toHaveCount(0)
@@ -53,7 +53,7 @@ test.describe('Bagiin — sesi dan pagar identitas', () => {
     for (const path of ['/recap', '/settings', '/create']) {
       const { ctx, page } = await contextWithStaleIdentity(browser)
       await page.goto(path)
-      await expect(page.getByRole('heading', { name: 'Isi nama lagi' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible()
       await expect(page).toHaveURL(/\/$/)
       await ctx.close()
     }
@@ -62,8 +62,10 @@ test.describe('Bagiin — sesi dan pagar identitas', () => {
   test('70. setelah isi nama, orang kembali ke halaman yang tadi dituju', async ({ browser }) => {
     const { ctx, page } = await contextWithStaleIdentity(browser)
     await page.goto('/recap')
-    await expect(page.getByRole('heading', { name: 'Isi nama lagi' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible()
 
+    // layar identitas-basi terbuka di tab "Kode"; tab "Nama" dipilih eksplisit
+    await page.getByRole('tab', { name: 'Nama' }).click()
     await page.getByLabel('Nama kamu').fill('Sesi Baru ' + Date.now().toString().slice(-5))
     await page.getByRole('button', { name: /Mulai pakai Bagiin/ }).click()
 
@@ -90,7 +92,7 @@ test.describe('Bagiin — sesi dan pagar identitas', () => {
     const guestCtx = await browser.newContext({ viewport: { width: 390, height: 844 } })
     const guest = await guestCtx.newPage()
     await guest.goto('/settings')
-    await expect(guest.getByRole('heading', { name: 'Kenalan dulu' })).toBeVisible()
+    await expect(guest.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible()
 
     await guest.goto(billUrl)
     await expect(guest.getByRole('button', { name: 'Ikut bill ini' })).toBeVisible()
@@ -114,7 +116,7 @@ test.describe('Bagiin — sesi dan pagar identitas', () => {
     )
     await page.goto('/recap')
 
-    await expect(page.getByRole('heading', { name: 'Isi nama lagi' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible({ timeout: 15_000 })
     expect(await page.evaluate(() => localStorage.getItem('bagiin_identity'))).toBeNull()
     await ctx.close()
   })

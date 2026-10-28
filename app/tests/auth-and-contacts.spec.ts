@@ -312,7 +312,8 @@ test.describe('Bagiin — masuk dengan Google', () => {
     test.skip(!(await stubMode(page)), 'Server tidak menjalankan mode uji Google')
     const sub = 'google-baru-' + stamp
     await page.goto('/masuk')
-    await page.getByRole('button', { name: /Lanjut dengan Google \(mode uji\)/ }).click()
+    // mode uji sekarang tautan kecil di bawah tombol Google asli
+    await page.getByRole('button', { name: /Google mode uji/ }).click()
 
     const code = page.locator('.recovery-code code')
     await expect(code).toBeVisible()

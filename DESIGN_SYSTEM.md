@@ -334,17 +334,38 @@ boleh dikirim ke layar.
 Nama asli selalu ada di baris kedua saat alias dipakai — orang berhak memastikan
 dirinya tidak menamai orang yang salah.
 
-## Sakelar tiga cara masuk, bukan tiga halaman
+## Satu layar masuk, empat cara, satu hierarki
 
-Layar masuk memakai **segmented control dua tab** (Kode / Akun) plus **satu
-tombol Google** di bawah pemisah "atau". Alasan Google tidak jadi tab: tab
-berarti "ada formulir di dalamnya", sedangkan Google adalah satu tombol yang
-membuka milik Google sendiri. Menaruhnya sebagai tab membuat orang mencari
-kolom isian yang tidak ada.
+Semua cara mulai memakai Bagiin ada di **satu kartu**: tiga tab
+(**Nama | Kode | Akun**) plus **satu tombol Google** di bawah pemisah "atau".
 
-Ukuran: tiap tab ≥ 44 px, lebar sama; tombol utama selebar kartu; jalur tamu
-("Ikut bill tanpa akun") berupa tombol sekunder — bukan tautan kecil, karena itu
-jalan yang setara, bukan catatan kaki.
+- **Nama** = jalur tanpa akun, dan itu tab pertama karena mayoritas orang datang
+  dari link bill. Dulu jalur ini satu-satunya yang terlihat, sehingga Google dan
+  kode pemulihan praktis tidak pernah ditemukan orang.
+- **Kode** = kode pemulihan (jaring terakhir kalau password/Google hilang).
+- **Akun** = username + password, termasuk daftar akun baru.
+- **Google** bukan tab: tab berarti "ada formulir di dalamnya", sedangkan Google
+  satu tombol milik Google sendiri. Menaruhnya sebagai tab membuat orang mencari
+  kolom isian yang tidak ada.
+
+Aturan yang mengikat:
+
+1. **Tiap cara harus terlihat tanpa menggulir.** Kalau salah satu cara butuh
+   skrol untuk ditemukan, dia sama saja dengan tidak ada.
+2. **Tidak ada autofokus di layar masuk.** Di ponsel, fokus otomatis menaikkan
+   keyboard dan menutupi tab lain — orang dipaksa memilih satu jalur sebelum
+   sempat melihat pilihannya.
+3. **Hijau mint bukan warna navigasi.** Mint/teal di aplikasi ini berarti
+   "berhasil" atau "aksi utama yang mengubah keadaan". Tombol "Ikut bill tanpa
+   akun" berwarna mint pernah terbaca seperti konfirmasi yang baru saja
+   disetujui padahal cuma berpindah jalur; sekarang jalur tanpa akun adalah tab,
+   dan tidak ada tombol mint untuk sekadar berpindah.
+4. **Layar tanpa navigasi tetap center.** `.app-frame--plain` membuang kolom rail
+   dan garis tepi frame: tanpa itu, di layar PC kartu terdorong ke kanan dan
+   terlihat seperti sisa tata letak lama.
+5. **Satu catatan per kartu.** Subjudul sudah menjelaskan "tanpa akun pun bisa";
+   menambah catatan serupa di dasar kartu membuat layar terasa penuh dan
+   mengaburkan aksi utama.
 
 ## Baris yang bisa diketuk
 

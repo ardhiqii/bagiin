@@ -8,31 +8,56 @@ import {
   loginWithPassword,
   registerAccount,
   restoreFromCode,
+  startIdentity,
 } from '../lib/identity'
 import { googleConfig, mountGoogleButton, showStubButton } from '../lib/google'
 import { markAuthed, takeIntent } from '../lib/session'
 import keyArt from '../assets/welcome.webp'
 
-type Mode = 'kode' | 'akun'
+type Tab = 'nama' | 'kode' | 'akun'
 type AkunStep = 'masuk' | 'daftar'
 
 /**
- * Satu layar, tiga cara masuk: kode pemulihan, username+password, Google.
+ * Satu layar untuk SEMUA cara mulai memakai Bagiin: isi nama (tanpa akun),
+ * kode pemulihan, username+password, dan Google.
  *
- * Kenapa digabung di satu layar: orang yang salah ingat cara masuknya harus bisa
- * pindah cara tanpa kehilangan apa yang sudah diketik. Dua tab (Kode / Akun)
- * untuk cara yang butuh isian, lalu satu tombol Google di bawahnya — Google
- * bukan "tab isi formulir", dia tombol; menaruhnya di segmented control membuat
- * orang mengira ada formulir yang harus diisi.
+ * Kenapa digabung, bukan dua halaman terpisah:
+ * - Orang yang datang dari link bill harus bisa langsung isi nama, tapi dia juga
+ *   berhak tahu ada jalan lain. Dulu layar pertama hanya menampilkan kolom nama,
+ *   jadi Google dan kode pemulihan praktis tidak pernah ditemukan.
+ * - Orang yang salah ingat cara masuknya bisa pindah tab tanpa kehilangan yang
+ *   sudah diketik, tanpa pindah halaman, tanpa tombol "kembali".
  *
- * Kode pemulihan tetap yang pertama dan paling sederhana: satu-satunya cara yang
- * tidak bergantung pada akun Google, email, atau hafalan password.
+ * Hierarki di dalam kartu, dari atas: pilihan cara (tab) → isian cara itu →
+ * tombol utama → pemisah "atau" → Google → catatan kaki. Google sengaja di
+ * bawah pemisah, bukan di atas: dia alternatif untuk yang sudah punya akun
+ * Google, sedangkan mayoritas orang datang untuk ikut bill tanpa akun.
+ *
+ * Jalur "tanpa akun" adalah TAB, bukan tombol hijau. Tombol berwarna mint di
+ * aplikasi ini berarti "berhasil/konfirmasi"; memakainya untuk berpindah cara
+ * masuk membuat orang merasa baru saja menyetujui sesuatu.
  */
-export function Restore() {
-  const [mode, setMode] = useState<Mode>('kode')
+export function Entry({
+  initialTab = 'nama',
+  context,
+  expired = false,
+  onDone,
+}: {
+  initialTab?: Tab
+  /** kalimat pengganti di bawah judul, mis. saat datang dari link bill */
+  context?: string
+  /** true kalau identitas di perangkat sudah tidak dikenal server */
+  expired?: boolean
+  onDone?: () => void | Promise<void>
+}) {
+  /* Kalau identitas di perangkat sudah basi, tab awalnya "Kode" — bukan "Nama".
+     Mengetik nama baru di situ membuat profil kosong baru, dan bill lama orang
+     itu tidak ikut. Kode pemulihan adalah satu-satunya jalan yang mengembalikan
+     identitas lamanya, jadi itu yang dibuka lebih dulu. */
+  const [tab, setTab] = useState<Tab>(expired ? 'kode' : initialTab)
   const [step, setStep] = useState<AkunStep>('masuk')
-  const [code, setCode] = useState('')
   const [name, setName] = useState('')
+  const [code, setCode] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -45,9 +70,13 @@ export function Restore() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
+  /* Tidak ada autofokus di layar ini. Di ponsel, fokus otomatis berarti keyboard
+     langsung naik dan menutupi tab "Kode"/"Akun" serta tombol Google — orang
+     dipaksa masuk ke satu jalur sebelum sempat melihat ada jalur lain. Fokus
+     hanya dipindahkan kalau orang sendiri yang membuka tab. */
   useEffect(() => {
-    document.getElementById('restore-code')?.focus()
-  }, [])
+    if (tab === 'kode') document.getElementById('entry-code')?.focus()
+  }, [tab])
 
   useEffect(() => {
     let alive = true
@@ -63,9 +92,9 @@ export function Restore() {
     }
   }, [])
 
-  /* Tombol resmi Google dipasang setelah konfigurasi datang. Kalau tidak ada
-     client ID (server belum diisi), tombol tidak dipasang sama sekali dan yang
-     tampil kalimat penjelas — bukan tombol mati tanpa alasan. */
+  /* Tombol resmi Google baru dipasang setelah konfigurasi datang. Kalau server
+     belum punya client ID, tombol tidak dipasang sama sekali dan yang tampil
+     kalimat penjelas — bukan tombol mati tanpa alasan. */
   useEffect(() => {
     if (!google?.client_id || !googleSlot.current) return
     let cleanup = () => {}
@@ -92,12 +121,35 @@ export function Restore() {
     markAuthed()
     await queryClient.invalidateQueries()
     toast('Masuk sebagai ' + who)
+    await onDone?.()
     const intent = takeIntent()
     if (intent) {
       window.location.replace(intent)
       return
     }
     await navigate({ to: '/' })
+  }
+
+  async function submitName() {
+    if (!name.trim()) {
+      setError('Nama tidak boleh kosong')
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      await startIdentity(name.trim())
+      markAuthed()
+      await queryClient.invalidateQueries()
+      toast('Halo, ' + name.trim())
+      await onDone?.()
+      const intent = takeIntent()
+      if (intent) window.location.replace(intent)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function submitCode() {
@@ -166,7 +218,7 @@ export function Restore() {
   if (revealed) {
     return (
       <div className="app-shell">
-        <div className="app-frame">
+        <div className="app-frame app-frame--plain">
           <main className="app-body welcome-body">
             <section className="welcome-card">
               <h1>Simpan kode ini</h1>
@@ -211,48 +263,88 @@ export function Restore() {
     )
   }
 
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'nama', label: 'Nama' },
+    { id: 'kode', label: 'Kode' },
+    { id: 'akun', label: 'Akun' },
+  ]
+
   return (
     <div className="app-shell">
-      <div className="app-frame">
+      <div className="app-frame app-frame--plain">
         <main className="app-body welcome-body">
           <section className="welcome-card">
-            {/* 96 px, bukan 160: di layar masuk, ruang vertikal di atas formulir
-                adalah ruang yang harus digulir orang saat keyboard terbuka. */}
-            <img className="welcome-art welcome-art--login" src={keyArt} alt="" width={96} height={96} />
-            <h1>Masuk ke akunmu</h1>
+            <img className="welcome-art welcome-art--entry" src={keyArt} alt="" width={80} height={80} />
+            <h1>Mulai atau masuk</h1>
 
-            <div className="auth-modes" role="tablist" aria-label="Cara masuk">
-              {(
-                [
-                  { id: 'kode' as const, label: 'Kode' },
-                  { id: 'akun' as const, label: 'Akun' },
-                ] satisfies { id: Mode; label: string }[]
-              ).map((tab) => (
+            {expired ? (
+              /* Tanpa tautan aksi: tab "Kode" di bawahnya sudah terbuka dan
+                 tautan "pakai kode" tepat di atas tab "Kode" cuma membuat orang
+                 bertanya mana yang harus diklik. */
+              <Notice tone="pending">
+                Identitas di perangkat ini sudah tidak ada di server. Masukkan kode
+                pemulihanmu untuk kembali ke bill lama — isi nama baru akan membuat
+                profil kosong.
+              </Notice>
+            ) : (
+              <p className="app-note" style={{ margin: 0, textAlign: 'center' }}>
+                {context ??
+                  'Ikut bill, pilih porsi, catat siapa bayar siapa. Tanpa akun pun bisa.'}
+              </p>
+            )}
+
+            <div className="auth-modes" role="tablist" aria-label="Cara mulai">
+              {tabs.map((item) => (
                 <button
-                  key={tab.id}
+                  key={item.id}
                   type="button"
                   role="tab"
-                  aria-selected={mode === tab.id}
-                  className={'auth-mode' + (mode === tab.id ? ' is-active' : '')}
+                  aria-selected={tab === item.id}
+                  className={'auth-mode' + (tab === item.id ? ' is-active' : '')}
                   onClick={() => {
-                    setMode(tab.id)
+                    setTab(item.id)
                     setError('')
                   }}
                 >
-                  {tab.label}
+                  {item.label}
                 </button>
               ))}
             </div>
 
-            {mode === 'kode' ? (
+            {tab === 'nama' ? (
+              <>
+                <div style={{ width: '100%' }}>
+                  <Field
+                    id="entry-name"
+                    label="Nama kamu"
+                    value={name}
+                    onChange={(next) => {
+                      setName(next)
+                      setError('')
+                    }}
+                    hint="Contoh: Aufa — nama ini yang muncul ke teman di bill"
+                    error={error || undefined}
+                    autoComplete="name"
+                  />
+                </div>
+                <Button block loading={busy} disabled={!name.trim()} onClick={submitName}>
+                  Mulai pakai Bagiin
+                </Button>
+                <span className="app-note" style={{ fontSize: 11.5 }}>
+                  Tersimpan di perangkat ini saja, bisa diganti di Pengaturan.
+                </span>
+              </>
+            ) : null}
+
+            {tab === 'kode' ? (
               <>
                 <p className="app-note" style={{ margin: 0, textAlign: 'center' }}>
                   Ketik kode yang kamu simpan dari perangkat lama. Semua bill dan
                   bagianmu langsung ikut ke sini.
                 </p>
-                <div style={{ width: '100%', marginTop: 6 }}>
+                <div style={{ width: '100%' }}>
                   <Field
-                    id="restore-code"
+                    id="entry-code"
                     label="Kode pemulihan"
                     value={code}
                     onChange={(next) => {
@@ -268,7 +360,9 @@ export function Restore() {
                   Masuk
                 </Button>
               </>
-            ) : (
+            ) : null}
+
+            {tab === 'akun' ? (
               <>
                 <p className="app-note" style={{ margin: 0, textAlign: 'center' }}>
                   {step === 'masuk'
@@ -278,7 +372,7 @@ export function Restore() {
                 {step === 'daftar' ? (
                   <div style={{ width: '100%' }}>
                     <Field
-                      id="auth-name"
+                      id="entry-akun-name"
                       label="Nama kamu"
                       value={name}
                       onChange={(v) => {
@@ -292,7 +386,7 @@ export function Restore() {
                 ) : null}
                 <div style={{ width: '100%' }}>
                   <Field
-                    id="auth-username"
+                    id="entry-username"
                     label="Username"
                     value={username}
                     onChange={(v) => {
@@ -306,7 +400,7 @@ export function Restore() {
                 </div>
                 <div style={{ width: '100%' }}>
                   <Field
-                    id="auth-password"
+                    id="entry-password"
                     label="Password"
                     type="password"
                     value={password}
@@ -338,12 +432,12 @@ export function Restore() {
                   {step === 'masuk' ? 'Belum punya akun? Buat sekarang' : 'Sudah punya akun? Masuk'}
                 </button>
                 {step === 'masuk' ? (
-                  <button type="button" className="link-quiet" onClick={() => setMode('kode')}>
-                    Lupa password? Masuk pakai kode pemulihan
+                  <button type="button" className="link-quiet" onClick={() => setTab('kode')}>
+                    Lupa password? Pakai kode pemulihan
                   </button>
                 ) : null}
               </>
-            )}
+            ) : null}
 
             <div className="auth-divider" aria-hidden="true">
               <span>atau</span>
@@ -357,8 +451,8 @@ export function Restore() {
             ) : null}
             {google && !google.client_id && !google.stub ? (
               <Notice tone="pending">
-                Login Google belum diaktifkan di server. Pakai kode pemulihan atau
-                username — keduanya tetap jalan.
+                Login Google belum diaktifkan di server. Pakai nama, kode pemulihan,
+                atau username — semuanya tetap jalan.
               </Notice>
             ) : null}
             <div
@@ -367,21 +461,15 @@ export function Restore() {
               hidden={!google?.client_id}
               data-testid="google-slot"
             />
+            {/* Hanya di localhost. Sengaja tautan kecil, bukan tombol: tombol
+                penuh di sini pernah jadi aksi paling menonjol di layar dan
+                menenggelamkan tombol Google yang asli. */}
             {google && showStubButton(google) ? (
-              <Button variant="secondary" block loading={busy} onClick={withGoogleStub}>
-                Lanjut dengan Google (mode uji)
-              </Button>
+              <button type="button" className="link-quiet" onClick={withGoogleStub}>
+                Google mode uji (tanpa akun Google)
+              </button>
             ) : null}
 
-            {/* Jalur tamu dipisah sebagai tombol, bukan tautan kecil di bawah
-                tombol Google: ini jalan yang berbeda, bukan bagian dari Google. */}
-            <Button variant="secondary" block onClick={() => navigate({ to: '/' })}>
-              Ikut bill tanpa akun
-            </Button>
-            <span className="app-note" style={{ fontSize: 11.5 }}>
-              Akun cuma dibutuhkan untuk masuk dari perangkat lain. Untuk ikut satu
-              bill, isi nama saja sudah cukup.
-            </span>
           </section>
         </main>
       </div>

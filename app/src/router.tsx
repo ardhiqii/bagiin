@@ -9,7 +9,7 @@ import { useIdentity } from './lib/identity'
 import { useSession } from './lib/session'
 import { RequireIdentity } from './components/RequireIdentity'
 import { Welcome } from './screens/Welcome'
-import { Restore } from './screens/Restore'
+import { Entry } from './screens/Entry'
 import { NotFound } from './screens/NotFound'
 import { Contacts } from './screens/Contacts'
 
@@ -108,7 +108,9 @@ const settingsRoute = createRoute({
 const restoreRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/masuk',
-  component: Restore,
+  // URL yang sama, layar yang sama dengan beranda-tanpa-identitas; bedanya cuma
+  // tab yang terbuka lebih dulu (orang yang mengetik /masuk ingin masuk akun).
+  component: () => <Entry initialTab="kode" />,
 })
 
 /* Nama pembeda untuk kontak. Bukan tab utama: ini penyetelan, bukan pekerjaan

@@ -14,7 +14,7 @@ async function onboard(page: Page, name: string) {
 test.describe('Bagiin — perilaku user', () => {
   test('1. kunjungan pertama minta nama, lalu header memakai nama itu', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'Kenalan dulu' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible()
     // tombol terkunci selama nama belum diisi
     await expect(page.getByRole('button', { name: 'Mulai pakai Bagiin' })).toBeDisabled()
     await page.getByLabel('Nama kamu').fill('Aufa')

@@ -193,9 +193,16 @@ Yang dipakai sekarang:
   menyaring daftar ke bill tersebut, dan yang menandakan itu chip saringan yang
   ikut aktif.
 
-## Tiga cara masuk, satu sesi perangkat
+## Empat cara masuk di satu layar, satu sesi perangkat
 
-Layar `/masuk` punya dua tab (Kode / Akun) dan satu tombol Google.
+Layar masuk (beranda tanpa identitas dan `/masuk` memakai komponen yang sama)
+punya tiga tab — **Nama | Kode | Akun** — plus satu tombol Google di bawah
+pemisah "atau". Bedanya cuma tab yang terbuka lebih dulu: `/` membuka **Nama**
+(orang datang dari link bill), `/masuk` membuka **Kode**.
+
+- **Nama** — jalur tanpa akun. Satu isian, satu tombol, langsung masuk.
+- **Kode** — kode pemulihan dari perangkat lama.
+- **Akun** — username + password, termasuk "Belum punya akun? Buat sekarang".
 
 - **Kode pemulihan** — tetap cara pertama. Satu-satunya yang tidak bergantung
   pada akun Google, email, atau hafalan password.

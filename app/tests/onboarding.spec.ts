@@ -14,7 +14,7 @@ async function named(page: Page, name: string) {
 test.describe('Bagiin — gerbang nama', () => {
   test('50. tanpa nama tidak bisa masuk ke layar mana pun', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'Kenalan dulu' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Mulai pakai Bagiin' })).toBeDisabled()
     // tidak ada identitas yang dibuat diam-diam
     expect(await page.evaluate(() => localStorage.getItem('bagiin_identity'))).toBeNull()
@@ -22,7 +22,7 @@ test.describe('Bagiin — gerbang nama', () => {
     for (const path of ['/create', '/bills', '/recap', '/settings'] as const) {
       await page.goto(path)
       // semua alamat dalam mendarat di satu pintu yang sama: beranda
-      await expect(page.getByRole('heading', { name: 'Kenalan dulu' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible()
       await expect(page).toHaveURL(/\/$/)
       // tidak ada form bill yang bisa diisi
       await expect(page.getByLabel('Nama bill')).toHaveCount(0)
@@ -31,7 +31,7 @@ test.describe('Bagiin — gerbang nama', () => {
 
   test('51. setelah nama diisi, layar yang tadi terkunci terbuka', async ({ page }) => {
     await page.goto('/create')
-    await expect(page.getByRole('heading', { name: 'Kenalan dulu' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible()
     await page.getByLabel('Nama kamu').fill('Aufa')
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
 
@@ -90,9 +90,9 @@ test.describe('Bagiin — gerbang nama', () => {
     await page.getByRole('button', { name: 'Ya, hapus identitas' }).click()
     await expect(page.getByText('Identitas dihapus dari perangkat ini')).toBeVisible()
     await expect(page).toHaveURL(/\/$/)
-    await expect(page.getByRole('heading', { name: 'Kenalan dulu' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible()
 
     await page.goto('/create')
-    await expect(page.getByRole('heading', { name: 'Kenalan dulu' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible()
   })
 })
