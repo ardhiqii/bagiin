@@ -1,7 +1,32 @@
 # Rencana: Akun (Google + username/password) & Kontak Bernama
 
-Status: **fase 1–4 selesai & terverifikasi di sandbox; fase 5 (e2e) selesai —
-19 tes akun/kontak lulus, suite penuh sedang dijalankan**
+Status: **selesai & terverifikasi.** 19 tes akun/kontak + suite penuh 119 tes
+lulus. Google client ID sungguhan sudah terpasang dan tombolnya terverifikasi
+terbuka ke akun Google (lihat bagian Google di bawah).
+
+## Di mana kode ini hidup (v2)
+
+Repo ini satu repo, tiga worktree. Sejak fase ini selesai, **versi 2 = branch
+`react`**, berisi `app/` (frontend) dan `backend/` (akun, sesi, alias) sekaligus:
+
+- `main`      -> `/opt/projects/bagiin`      -> produksi v1, port 8082, TIDAK disentuh
+- `react`     -> `/opt/projects/bagiin-react` -> v2, service `bagiin-react-api`, port 8090,
+  DB salinan `/var/lib/bagiin-sandbox/bagiin.db`, dipakai `bagiin-react.ardhiqi.com`
+
+Worktree `/opt/projects/bagiin-auth` sudah dihapus setelah backend v2 masuk
+`react`. Jadi tidak ada lagi branch backend terpisah yang harus di-merge sendiri.
+
+## Google (keputusan final)
+
+- Client ID ada di `backend/.env` sebagai `GOOGLE_CLIENT_ID` (di worktree react),
+  dibaca server dan dikirim ke klien lewat `GET /api/auth/config`.
+- **Tidak ada redirect URI dan tidak ada client secret** yang dipakai: alurnya
+  GIS (tombol resmi di browser) -> ID token -> verifikasi di server. Redirect URI
+  hanya relevan untuk code flow (butuh akses Google API / refresh token), yang
+  tidak dilakukan Bagiin.
+- Verifikasi yang sudah dilakukan: tombol dirender di origin live, klik membuka
+  popup `accounts.google.com/v3/signin/...` tanpa error origin, halaman tidak
+  berpindah. Yang belum: login consent sungguhan (butuh akun Google manusia).
 Cabang: `bagiin-react` → `feat/auth-kontak`; backend → worktree `/opt/projects/bagiin-auth` cabang `feat/auth-kontak-be`
 
 ---
