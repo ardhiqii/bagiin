@@ -461,7 +461,11 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               const lineTotal = unit * item.quantity
               const perSlot = isSlot && slotTotal > 0 ? Math.floor(lineTotal / slotTotal) : 0
               const stepTotal = isSlot ? slotTotal : item.quantity
-              const editable = joined && data.bill.status === 'open'
+              // Bill yang sudah lunas itu money-final: server menolak pilihan
+              // baru (409). Tombolnya dulu tetap menyala, jadi orang mengetuk
+              // dan cuma dapat pesan galat — kontrol yang menyala tapi tidak
+              // bisa dipakai lebih buruk daripada kontrol yang mati.
+              const editable = joined && data.bill.status === 'open' && !data.settled
               return (
                 <div className="item-line" key={item.id}>
                   <button
@@ -713,7 +717,10 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
           />
         </ActionGroup>
 
-        {canManage && data?.bill.status === 'open' ? (
+        {/* Bill yang sudah lunas: yang tersisa hanya "batalkan lunas" dan
+            bagikan. Ubah item dan ganti pembayar sama-sama mengubah angka yang
+            sudah diumumkan, dan server menolaknya — jadi jangan ditawarkan. */}
+        {canManage && data?.bill.status === 'open' && !data?.settled ? (
           <ActionGroup label="Kelola bill">
             <ActionRow
               icon={<UsersThree size={20} weight="bold" />}

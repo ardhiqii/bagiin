@@ -314,6 +314,23 @@ boleh diketuk untuk menyaring daftar ke bill tersebut, dan yang menandakan
 tindakan itu adalah chip saringan yang ikut aktif — **bukan panah** yang
 menjanjikan pindah layar.
 
+## Kontrol mati lebih baik daripada kontrol yang gagal
+
+Kalau server menolak sebuah tindakan (bill lunas, bill ditutup, bukan pemilik),
+kontrolnya **dimatikan atau tidak ditawarkan** — bukan dibiarkan menyala lalu
+memunculkan galat setelah diketuk. Kontrol yang menyala adalah janji; janji yang
+tidak ditepati mengajari orang untuk tidak percaya tombol lain di layar yang
+sama.
+
+Yang tetap ditawarkan pada keadaan beku hanya jalur untuk membukanya kembali
+(mis. "Batalkan lunas seluruh bill"), dan jalur itu disebut namanya.
+
+## Alamat asing punya jalan pulang
+
+Halaman 404 memakai kerangka aplikasi yang sama: judul, ilustrasi, satu tombol
+aksi, dan navigasi bawah. Tanpa itu, satu salah ketik alamat berakhir di layar
+yang terlihat seperti situs rusak — padahal aplikasinya baik-baik saja.
+
 ## Pola layar mobile
 
 - **Beranda:** ringkasan sisa utang dan uang masuk, bill aktif, aksi buat bill. Angka penting berada di bagian atas tanpa menutup daftar bill.

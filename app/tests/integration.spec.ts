@@ -1115,4 +1115,177 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     expect(hostId).toBeTruthy()
     await host.close()
   })
+
+  /* ---------------------------------------------------------------- *
+   * Audit integritas: alamat asing, bill beku, nilai nol, orang luar,
+   * teks jahat, dan nominal besar. Semua di level perilaku.
+   * ---------------------------------------------------------------- */
+
+  test('94. alamat tidak dikenal tetap memakai kerangka aplikasi, bukan halaman kosong', async ({ page }) => {
+    await freshUser(page, 'Alamat ' + stamp)
+    await page.goto('/alamat-yang-tidak-ada-123')
+    await page.waitForTimeout(1000)
+
+    // dulu: teks "Not Found" telanjang tanpa navigasi dan tanpa jalan pulang
+    await expect(page.locator('nav[aria-label="Navigasi utama"]')).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Halaman tidak ditemukan')
+
+    // aksi pemulihan harus tombol aplikasi, bukan tautan telanjang ala browser
+    await page.getByRole('button', { name: 'Kembali ke beranda' }).click()
+    await expect(page).toHaveURL(/\/$/)
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Halo')
+  })
+
+  test('95. bill lunas itu beku: item mati, aksi pengubah uang hilang, server menolak juga', async ({ page, browser }) => {
+    test.setTimeout(120_000)
+    await freshUser(page, 'Beku ' + stamp)
+    const title = 'Beku ' + stamp
+    const billId = await createBill(page, { title, items: [{ name: 'Kopi Susu', price: '20000' }] })
+    const billUrl = page.url()
+
+    // tamu ikut dan memilih, tapi belum bayar -> bill belum lunas sendiri
+    const guest = await guestJoins(browser, billUrl, 'Tamu Beku ' + stamp, 'Kopi Susu')
+    await page.reload()
+    await page.waitForTimeout(1200)
+
+    await openActions(page)
+    await page.getByRole('button', { name: /Tandai semua lunas/ }).click()
+    await page.waitForTimeout(1200)
+
+    // 1) item tidak lagi bisa diketuk: kontrol mati, bukan kontrol yang gagal
+    await expect(page.getByRole('button', { name: /Kopi Susu, ketuk/ })).toBeDisabled()
+
+    // 2) aksi yang mengubah angka sudah diumumkan tidak ditawarkan lagi
+    await openActions(page)
+    await expect(page.getByText('Ganti yang bayar duluan')).toHaveCount(0)
+    await expect(page.getByText('Ubah bill')).toHaveCount(0)
+    await expect(page.getByText('Batalkan lunas seluruh bill')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(400)
+
+    // 3) server ikut menolak: pindah "yang menalangi" setelah lunas = 409
+    const me = await identity(page)
+    const res = await page.request.fetch('/api/bills/' + billId + '/paid_by', {
+      method: 'PUT',
+      headers: { 'X-Identity-Id': me.id, 'X-Identity-Secret': me.secret },
+      data: { identity_id: me.id },
+    })
+    expect(res.status(), 'bill lunas tidak boleh ganti pembayar').toBe(409)
+
+    await guest.ctx.close()
+  })
+
+  test('96. bill bernilai nol tidak menuntut pilihan yang mustahil diselesaikan', async ({ page }) => {
+    await freshUser(page, 'Nol ' + stamp)
+    const title = 'Gratis ' + stamp
+    // formulir menolak total nol (harga harus > 0), tapi data seperti ini bisa
+    // ada dari bill lama atau hasil sunting — jadi jalurnya diuji lewat API
+    const me0 = await identity(page)
+    const created = await page.request.post('/api/bills', {
+      headers: { 'X-Identity-Id': me0.id, 'X-Identity-Secret': me0.secret },
+      data: { title, items: [{ name: 'Air putih', price: 0, quantity: 1 }], subtotal: 0, total: 0 },
+    })
+    expect(created.ok()).toBe(true)
+    await page.reload()
+    await goHome(page)
+    await page.waitForTimeout(600)
+
+    const row = page.locator('.app-row', { hasText: title })
+    await expect(row).toBeVisible()
+    await expect(row.locator('.ds-row-flag')).toHaveCount(0)
+
+    // angka kuning == hitungan yang sama dari respons server (bill nol tidak ikut)
+    const me = await identity(page)
+    const rows = await apiGet(page, '/api/identities/' + me.id + '/bills')
+    let expected = 0
+    for (const bill of rows) {
+      if (bill.settled || bill.total_idr === 0) continue
+      if (!bill.has_picks) expected += 1
+      else if (!bill.my_paid && bill.my_total_idr > 0) expected += 1
+      else if (bill.i_am_payer && bill.uncovered_idr > 0) expected += 1
+    }
+    if (expected === 0) await expect(page.locator('#perlu-tindakan')).toHaveCount(0)
+    else await expect(page.locator('.banner-count')).toHaveText(String(expected))
+  })
+
+  test('97. orang luar bisa melihat link, tapi tidak bisa mengubah apa pun', async ({ page, browser }) => {
+    test.setTimeout(120_000)
+    await freshUser(page, 'Pemilik Luar ' + stamp)
+    const title = 'Rahasia ' + stamp
+    const billId = await createBill(page, { title, items: [{ name: 'Sushi', price: '40000' }] })
+    const billUrl = page.url()
+
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const outsider = await ctx.newPage()
+    await freshUser(outsider, 'Orang Luar ' + stamp)
+    await outsider.goto(billUrl)
+    await outsider.waitForTimeout(1200)
+
+    // bisa lihat isinya, tapi item mati dan ada jalan masuk
+    await expect(outsider.getByText(title).first()).toBeVisible()
+    await expect(outsider.getByRole('button', { name: /Sushi, ketuk/ })).toBeDisabled()
+    await expect(outsider.getByRole('button', { name: 'Ikut bill ini' })).toBeVisible()
+
+    // layar ubah menolak dengan kalimat, bukan formulir kosong
+    await outsider.goto(billUrl + '/edit')
+    await outsider.waitForTimeout(900)
+    await expect(outsider.getByText(/Hanya yang menalangi bisa mengubah/)).toBeVisible()
+    await expect(outsider.getByRole('button', { name: 'Simpan perubahan' })).toHaveCount(0)
+
+    expect(billId).toBeTruthy()
+    await ctx.close()
+  })
+
+  test('98. judul panjang dan karakter HTML tetap teks, dan layar tidak melebar', async ({ page }) => {
+    await freshUser(page, 'Teks ' + stamp)
+    const title = 'Pizza ' + 'X'.repeat(60) + ' <img src=x onerror="window.__xss=1"> <b>tebal</b>'
+    await createBill(page, { title, items: [{ name: 'Item <script>x</script>', price: '15000' }] })
+    await page.waitForTimeout(800)
+
+    // tidak ada elemen HTML yang lahir dari teks
+    expect(await page.locator('img[src="x"]').count()).toBe(0)
+    expect(await page.locator('b').filter({ hasText: 'tebal' }).count()).toBe(0)
+    expect(await page.evaluate(() => Boolean((window as any).__xss))).toBe(false)
+    await expect(page.getByText(/<img src=x/).first()).toBeVisible()
+
+    // 390 px: tidak ada gulir ke samping
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(overflow, 'tidak boleh melebar').toBeLessThanOrEqual(1)
+
+    // beranda juga tidak jebol oleh judul yang sama
+    await goHome(page)
+    await page.waitForTimeout(600)
+    const homeOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(homeOverflow).toBeLessThanOrEqual(1)
+  })
+
+  test('99. nominal besar tetap terbaca dan tidak memotong layout', async ({ page }) => {
+    await freshUser(page, 'Besar ' + stamp)
+    const title = 'Emas ' + stamp
+    await createBill(page, { title, items: [{ name: 'Antam', price: '9999999' }] })
+    await pickItem(page, 'Antam')
+    await page.waitForTimeout(700)
+
+    await expect(page.getByText('Rp9.999.999').first()).toBeVisible()
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(overflow).toBeLessThanOrEqual(1)
+
+    await goHome(page)
+    await page.waitForTimeout(700)
+    const row = page.locator('.app-row', { hasText: title })
+    expect(await rowAmount(row)).toBe(9999999)
+  })
+
+  test('100. bill tertutup: layar ubah menjelaskan keadaannya, bukan menyimpan lalu gagal', async ({ page }) => {
+    await freshUser(page, 'Tutup ' + stamp)
+    const billId = await createBill(page, { title: 'Tutup ' + stamp, items: [{ name: 'Roti', price: '12000' }] })
+    await openActions(page)
+    await page.getByRole('button', { name: /^Tutup bill/ }).click()
+    await page.waitForTimeout(1200)
+
+    await page.goto('/b/' + billId + '/edit')
+    await page.waitForTimeout(1000)
+    await expect(page.getByText('Bill sudah ditutup')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Simpan perubahan' })).toHaveCount(0)
+  })
 })

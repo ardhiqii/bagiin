@@ -128,8 +128,9 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
       back
       active="home"
       footer={
-        // tamu yang membuka /edit tidak boleh melihat tombol simpan sama sekali
-        data?.can_manage ? (
+        // tamu yang membuka /edit tidak boleh melihat tombol simpan sama sekali;
+        // bill lunas/tertutup juga tidak: server menolak menyimpannya
+        data?.can_manage && !data.settled && data.bill.status === 'open' ? (
           <div className="create-dock">
             <div className="tot">
               <small>Total baru</small>
@@ -151,7 +152,18 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
         </Alert>
       ) : null}
 
-      {data && data.can_manage ? (
+      {/* Bill lunas atau tertutup tidak bisa disunting: server menolak dengan
+          403/409. Formulir yang tetap terbuka lalu gagal saat disimpan bikin
+          orang mengetik ulang tanpa hasil, jadi keadaannya dijelaskan di sini. */}
+      {data && data.can_manage && (data.settled || data.bill.status !== 'open') ? (
+        <Alert tone="pending" title={data.settled ? 'Bill sudah lunas' : 'Bill sudah ditutup'}>
+          {data.settled
+            ? 'Buka tanda lunas di layar bill dulu kalau memang mau mengubah item atau nominalnya.'
+            : 'Buka lagi bill-nya di layar bill kalau memang mau mengubah isinya.'}
+        </Alert>
+      ) : null}
+
+      {data && data.can_manage && !data.settled && data.bill.status === 'open' ? (
         <>
           {error ? <Alert tone="danger" title="Perubahan gagal disimpan">{error}</Alert> : null}
 

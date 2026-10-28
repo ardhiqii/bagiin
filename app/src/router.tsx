@@ -10,8 +10,11 @@ import { useSession } from './lib/session'
 import { RequireIdentity } from './components/RequireIdentity'
 import { Welcome } from './screens/Welcome'
 import { Restore } from './screens/Restore'
+import { NotFound } from './screens/NotFound'
 
-const rootRoute = createRootRoute()
+/* Alamat tak dikenal tetap harus terlihat seperti aplikasi ini, bukan halaman
+   "Not Found" polos tanpa navigasi. */
+const rootRoute = createRootRoute({ notFoundComponent: NotFound })
 
 function useMe() {
   return useIdentity()

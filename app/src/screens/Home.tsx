@@ -186,6 +186,10 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
    */
   const reasonOf = (bill: (typeof rows)[number]): 'split' | 'pay' | null => {
     if (bill.settled) return null
+    // Bill bernilai nol tidak menuntut apa pun: tidak ada bagian untuk dipilih
+    // dan tidak ada yang bisa dibayar. Dulu bill seperti ini menulis "Kamu belum
+    // pilih item" selamanya — satu tugas yang mustahil diselesaikan.
+    if (bill.total_idr === 0) return null
     // Belum memilih item = pekerjaan saya, titik.
     if (!bill.has_picks) return 'split'
     // Sudah memilih dan masih ada bagian saya yang belum dibayar: angka saya

@@ -193,6 +193,35 @@ Yang dipakai sekarang:
   menyaring daftar ke bill tersebut, dan yang menandakan itu chip saringan yang
   ikut aktif.
 
+## Bill lunas itu beku — di layar dan di server
+
+Bill yang sudah ditandai lunas tidak boleh berubah lagi: item mati (bukan
+menyala lalu gagal), "Ubah bill" dan "Ganti yang bayar duluan" tidak ditawarkan,
+dan layar ubah menjelaskan keadaannya alih-alih membiarkan orang mengetik lalu
+ditilang server.
+
+Satu lubang yang ketemu saat audit: `PUT /paid_by` tidak memanggil
+`_ensure_editable` seperti endpoint lain. Pada bill yang sudah lunas, orang masih
+bisa memindahkan "siapa yang menalangi" — pembuat lama langsung kehilangan
+`can_manage` pada bill-nya sendiri, dan angka yang sudah diumumkan berpindah
+pemilik tanpa membuka tanda lunasnya dulu. Sekarang 409, sama seperti sunting
+item; jalur `unsettle` tetap terbuka.
+
+## Alamat asing tetap punya jalan pulang
+
+Alamat yang tidak dikenal dulu menampilkan teks `Not Found` telanjang: tanpa
+kerangka aplikasi, tanpa navigasi, tanpa jalan pulang, hurufnya bukan huruf
+aplikasi. Sekarang memakai layar 404 milik aplikasi — ilustrasi, satu tombol
+"Kembali ke beranda", navigasi bawah tanpa tab tersorot (halaman ini bukan
+Beranda).
+
+## Bill bernilai nol tidak menuntut apa pun
+
+Bill dengan total Rp0 sempat menulis "Kamu belum pilih item" selamanya: satu
+tugas yang mustahil diselesaikan karena tidak ada bagian yang bisa dipilih dan
+tidak ada yang bisa dibayar. Sekarang bill seperti itu tidak masuk hitungan
+tindakan.
+
 ## Nol tidak perlu diteriakkan
 
 Beranda dulu selalu memasang kartu saldo besar, termasuk saat nilainya Rp0.

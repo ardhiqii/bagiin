@@ -244,15 +244,24 @@ export function Recap({ identityId }: { identityId: string | null }) {
 
   const payable = data?.final.payable_idr ?? 0
   const receivable = data?.final.receivable_idr ?? 0
+  // Angka kasar, sama seperti di beranda: dari bill yang pembagiannya belum
+  // selesai. Tidak pernah dijumlahkan ke angka pasti.
+  const estimate = data
+    ? (data.provisional.receivable_idr ?? 0) - (data.provisional.payable_idr ?? 0)
+    : 0
   const heroPays = payable > 0
   const heroValue = heroPays ? payable : receivable
   const otherDirection = heroPays ? receivable : payable
 
+  // Catatan di bawah angka besar menjawab "angka ini angka apa", bukan
+  // menambah penghitung. Versi lama menulis "1 bill belum lunas" — angka kedua
+  // di layar yang sama, persis yang bikin orang ragu mana yang harus dipercaya.
+  // Arah sebaliknya tetap disebut karena itu uang, bukan hitungan: orang perlu
+  // tahu ada piutang yang belum masuk angka ini.
   const note =
     outstandingBills === 0
       ? 'tidak ada sisa tagihan yang pembagiannya sudah jelas'
-      : outstandingBills +
-        ' bill belum lunas' +
+      : 'dari bill yang pembagiannya sudah pasti' +
         (otherDirection > 0
           ? ' · kamu juga ' + (heroPays ? 'terima' : 'bayar') + ' ' + formatRp(otherDirection)
           : '')
@@ -292,6 +301,7 @@ export function Recap({ identityId }: { identityId: string | null }) {
               value={heroPays ? -heroValue : heroValue}
               tone={heroPays ? 'neg' : 'pos'}
               note={note}
+              estimate={estimate !== 0 ? { value: estimate } : undefined}
             />
           ) : null}
 
@@ -299,9 +309,11 @@ export function Recap({ identityId }: { identityId: string | null }) {
             <button type="button" className="app-banner is-pending" onClick={jumpToUnclear}>
               <WarningCircle size={19} weight="bold" aria-hidden="true" />
               <span className="app-banner-text">
-                {/* kalimat aksi, bukan pengulangan label seksi di bawahnya */}
-                <b>{unclear.length} bill perlu dibereskan</b>
-                <small>pembagiannya belum jelas, angkanya masih bisa berubah</small>
+                {/* Jumlahnya cuma disebut di judul seksi di bawah; di sini
+                    kalimat aksinya saja. Dua kali "6 bill" di satu layar
+                    membuat orang mengira ada dua himpunan berbeda. */}
+                <b>Ada bill yang pembagiannya belum jelas</b>
+                <small>Angkanya masih bisa berubah — buka untuk memberi tahu siapa ambil apa</small>
               </span>
               <CaretRight size={16} aria-hidden="true" />
             </button>

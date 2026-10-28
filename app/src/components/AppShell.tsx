@@ -25,7 +25,8 @@ export function AppShell({
   title: string
   subtitle?: string
   back?: boolean
-  active?: Tab
+  /** 'none' = navigasi tampil tanpa menyorot tab mana pun (mis. halaman 404). */
+  active?: Tab | 'none'
   /** Bar ringkasan yang menempel di bawah isi, di atas navigasi. */
   footer?: ReactNode
   children: ReactNode
