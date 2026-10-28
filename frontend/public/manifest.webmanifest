@@ -1,0 +1,19 @@
+{
+  "name": "Bagiin — bagi bill bareng",
+  "short_name": "Bagiin",
+  "description": "Foto struk, bagikan tautan, semua memilih itemnya sendiri. Pajak terbagi proporsional. Tanpa akun.",
+  "lang": "id",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f2f6f6",
+  "theme_color": "#f2f6f6",
+  "categories": ["finance", "utilities", "productivity"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

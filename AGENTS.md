@@ -1,14 +1,16 @@
-# AGENTS.md — Bagiin React line
+# AGENTS.md — Bagiin 1.0
 
-This file governs work on the **`react` branch only**. `main` is the live vanilla
-app (`bagiin.ardhiqi.com`) and must not be touched from here.
+This file governs work on the **`react` branch only** — that branch is **versi 1.0**.
+`main` is **versi 0.9**, the live vanilla app (`bagiin.ardhiqi.com`), and must not
+be touched from here.
 
-## Two lines, one repo
+## Dua jalur, satu repo
 
-| Line | Branch | What it is |
+| Versi | Branch | Isi |
 | --- | --- | --- |
-| Live | `main` | Vanilla JS frontend (`frontend/static/*.js`), FastAPI backend, production at bagiin.ardhiqi.com |
-| Rebuild | `react` | React 19 + TypeScript + Vite rebuild. Product/UX decisions first, prototype second |
+| **0.9** | `main` | Vanilla JS (`frontend/static/*.js`), FastAPI menyajikan HTML, produksi di bagiin.ardhiqi.com. Hanya perbaikan, tanpa fitur baru |
+| **1.0** | `react` | React 19 + TypeScript + Vite, design system Seimbang/Saldo, FastAPI terpisah, akun berlapis + kontak ber-alias. Semua pengembangan terjadi di sini |
+
 
 Rules:
 
@@ -40,12 +42,12 @@ Rules:
 - All rupiah are integers. Keep the invariant
   `sum(people totals) + uncovered_idr + remaining_to_creator == bill.total_idr`.
 
-## Struktur versi 2
+## Struktur versi 1
 
-Branch `react` adalah **versi 2** dan berisi aplikasi utuh:
+Branch `react` adalah **versi 1** dan berisi aplikasi utuh:
 
 - `frontend/` — React + TypeScript + Vite (satu-satunya frontend; versi vanilla
-  sudah dihapus dari branch ini, dan tetap hidup di branch `main` sebagai versi 0.x)
+  sudah dihapus dari branch ini, dan tetap hidup di branch `main` sebagai versi 0.9)
 - `backend/` — FastAPI (akun, sesi perangkat, alias kontak, split bill)
 
 `prototype/` sudah dihapus: itu lab desain versi lama, dan membawa dua sumber
@@ -65,11 +67,16 @@ Backend:
 
 ```bash
 cd backend
-venv/bin/python -m pytest -q
+# Worktree ini tidak punya venv sendiri; venv dipakai bersama dari worktree 0.9
+/opt/projects/bagiin/backend/venv/bin/python -m pytest -q
 ```
 
+Nomor versi disimpan di `frontend/package.json` (1.0.0) dan di README bagian
+**Versi**. Kalau menyebut versi di commit atau dokumen, pakai `0.9` (vanilla,
+branch `main`) atau `1.0` (React, branch `react`).
+
 Live: https://bagiin-react.ardhiqi.com menyajikan `frontend/dist` (root
-`/var/www/bagiin-react`), dengan `/api/` diteruskan nginx ke instance v2 di port
+`/var/www/bagiin-react`), dengan `/api/` diteruskan nginx ke instance v1 di port
 8090 (`bagiin-react-api.service`, DB salinan `/var/lib/bagiin-sandbox/bagiin.db`).
 Redeploy = `npm run build` lalu salin `dist/.` ke root itu dan reload nginx.
 

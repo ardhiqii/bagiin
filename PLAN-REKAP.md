@@ -1,4 +1,4 @@
-# Rekap v2 — rencana (belum diimplementasikan)
+# Rekap v1 — rencana (belum diimplementasikan)
 
 Status: disetujui arahnya, menunggu implementasi. Tidak ada perubahan kode.
 

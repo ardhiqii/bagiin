@@ -4,16 +4,16 @@ Status: **selesai & terverifikasi.** 19 tes akun/kontak + suite penuh 119 tes
 lulus. Google client ID sungguhan sudah terpasang dan tombolnya terverifikasi
 terbuka ke akun Google (lihat bagian Google di bawah).
 
-## Di mana kode ini hidup (v2)
+## Di mana kode ini hidup (v1)
 
-Repo ini satu repo, tiga worktree. Sejak fase ini selesai, **versi 2 = branch
+Repo ini satu repo, tiga worktree. Sejak fase ini selesai, **versi 1 = branch
 `react`**, berisi `frontend/` (React) dan `backend/` (akun, sesi, alias) sekaligus:
 
 - `main`      -> `/opt/projects/bagiin`      -> produksi v1, port 8082, TIDAK disentuh
-- `react`     -> `/opt/projects/bagiin-react` -> v2, service `bagiin-react-api`, port 8090,
+- `react`     -> `/opt/projects/bagiin-react` -> v1, service `bagiin-react-api`, port 8090,
   DB salinan `/var/lib/bagiin-sandbox/bagiin.db`, dipakai `bagiin-react.ardhiqi.com`
 
-Worktree `/opt/projects/bagiin-auth` sudah dihapus setelah backend v2 masuk
+Worktree `/opt/projects/bagiin-auth` sudah dihapus setelah backend v1 masuk
 `react`. Jadi tidak ada lagi branch backend terpisah yang harus di-merge sendiri.
 
 ## Google (keputusan final)

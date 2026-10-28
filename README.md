@@ -3,20 +3,30 @@
 Bagi bill bareng jadi gak ribet. Split bills with friends — no accounts, no payment
 gateway, just a link.
 
-**Live:** https://bagiin.ardhiqi.com
+**Live:** https://bagiin-react.ardhiqi.com (v1) · https://bagiin.ardhiqi.com (v0.9)
 
-## Version lines
+## Versi
 
-`main` is the vanilla JavaScript release line served from `/opt/projects/bagiin`.
-There is no active React branch or worktree. When the rebuild starts, create a
-new branch and separate worktree from the then-current `main`; do not develop it
-in the live checkout. Use short-lived feature branches and pull requests for
-changes to `main`. Tag deployed commits so rollback points are unambiguous.
+Ada dua jalur rilis. Nomornya dipakai di commit, dokumen, dan percakapan — jadi
+sebut "0.9" atau "1.0", bukan "yang lama" dan "yang baru".
 
-The running service reads files from `/opt/projects/bagiin`; a GitHub push alone
-does not deploy anything. Update that checkout from `main` only after reviewing
-and testing the release. Frontend files are served directly from disk, so do not
-edit them in the live checkout while users are loading the site.
+| Versi | Isi | Branch | Worktree | Live |
+|---|---|---|---|---|
+| **0.9** | Vanilla JS: `app.js` + `bill.js` satu file besar, HTML disajikan backend | `main` | `/opt/projects/bagiin` | bagiin.ardhiqi.com |
+| **1.0** | React + TypeScript, design system Seimbang/Saldo, FastAPI terpisah, akun berlapis (kode pemulihan / username / Google), kontak ber-alias | `react` | `/opt/projects/bagiin-react` | bagiin-react.ardhiqi.com |
+
+Aturan main:
+
+- **0.9 = garis perbaikan.** Tidak ada fitur baru di sana; hanya bug produksi
+  yang mendesak. Dia yang sedang melayani pengguna sungguhan.
+- **1.0 = tempat semua pengembangan.** Fitur, perbaikan, dan eksperimen masuk ke
+  branch `react`, bukan ke `main`.
+- Perubahan 1.0 yang perlu ikut ke 0.9 di-cherry-pick manual dan sebaliknya —
+  jangan merge dua arah, kode frontendnya beda total.
+- Deploy **bukan** hasil `git push`. 0.9 dibaca langsung dari
+  `/opt/projects/bagiin`; 1.0 dibangun ke `frontend/dist` lalu disalin ke
+  `/var/www/bagiin-react`. Jangan menyunting file di checkout yang sedang hidup.
+
 
 ## How it works
 

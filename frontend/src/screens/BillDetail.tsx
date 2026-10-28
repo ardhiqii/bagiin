@@ -7,6 +7,8 @@ import { invalidateMoneyViews } from '../lib/mutations'
 import { api, endpoints, isSessionError } from '../lib/api'
 import { startIdentity } from '../lib/identity'
 import { formatRp } from '../lib/money'
+import { buzz } from '../lib/haptics'
+import { shareLink } from '../lib/share'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
 import { ActionGroup, ActionRow, Alert, Avatar, Button, Field, Money, ProviderLogo, Sheet, StatusBadge } from '../ds/primitives'
@@ -126,7 +128,10 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
     if (owes && !data.settled) {
       return {
         label: 'Tandai lunas · ' + formatRp(me!.total_idr),
-        onClick: () => run(billActions.markPaid(billId, me!.identity_id), 'Ditandai lunas'),
+        onClick: () => {
+          buzz(20)
+          void run(billActions.markPaid(billId, me!.identity_id), 'Ditandai lunas')
+        },
       }
     }
     return null
@@ -203,6 +208,9 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
     const room = item.mode === 'slot' ? (item.slot_count ?? 1) - taken : item.quantity
     if (mine >= room) next.delete(itemId)
     else next.set(itemId, mine + 1)
+    // 8 ms saat melepas, 10 ms saat mengambil: beda getaran jadi konfirmasi
+    // tanpa perlu melihat layar.
+    buzz(mine >= room ? 8 : 10)
     await savePicks(next, itemId)
   }
 
@@ -242,14 +250,16 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
     await run(billActions.join(billId), 'Kamu sudah masuk ke bill ini')
   }
 
+  /* Share sheet sistem dulu (WhatsApp ada di sana), clipboard sebagai cadangan.
+     Menutup sheet = batal, bukan gagal — jadi tidak ada toast menyusul. */
   async function share() {
     const url = window.location.origin + '/b/' + billId
-    try {
-      await navigator.clipboard.writeText(url)
-      toast('Link disalin. Kirim ke teman kamu.')
-    } catch {
-      toast(url)
-    }
+    const title = data?.bill.title ?? 'bill'
+    const text = `Yuk isi bagian kamu di ${title}: ${url}`
+    const result = await shareLink(text, url)
+    if (result === 'shared') buzz(12)
+    else if (result === 'copied') toast('Link disalin. Kirim ke teman kamu.')
+    else if (result === 'failed') toast('Tidak bisa membagikan. Salin manual: ' + url)
   }
 
   return (
