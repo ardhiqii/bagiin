@@ -70,10 +70,11 @@ export function Entry({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  /* Tidak ada autofokus di layar ini. Di ponsel, fokus otomatis berarti keyboard
-     langsung naik dan menutupi tab "Kode"/"Akun" serta tombol Google — orang
-     dipaksa masuk ke satu jalur sebelum sempat melihat ada jalur lain. Fokus
-     hanya dipindahkan kalau orang sendiri yang membuka tab. */
+  /* Tab "Nama" sengaja TIDAK difokuskan otomatis: di ponsel, keyboard yang naik
+     sendiri menutupi tab "Kode"/"Akun" dan tombol Google, jadi orang dipaksa
+     masuk ke satu jalur sebelum sempat melihat ada jalur lain. Tab "Kode" (termasuk
+     /masuk) justru difokuskan — orang yang membuka jalur itu memang berniat
+     mengetik kode, jadi keyboard yang muncul menghemat satu ketukan. */
   useEffect(() => {
     if (tab === 'kode') document.getElementById('entry-code')?.focus()
   }, [tab])
