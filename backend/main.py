@@ -1427,6 +1427,12 @@ async def update_name(identity_id: str, request: Request):
 # klien baru memakai token yang bisa dicabut satu per satu.
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+# Batas laju per IP. Bisa dilonggarkan lewat env untuk pengujian end-to-end dan
+# untuk jaringan kantor/kampus yang berbagi satu IP (banyak orang mendaftar dari
+# alamat yang sama). Nilai bawaan tetap ketat.
+RL_REGISTER = os.environ.get("BAGIIN_RL_REGISTER", "10/minute")
+RL_LOGIN = os.environ.get("BAGIIN_RL_LOGIN", "10/minute")
+RL_GOOGLE = os.environ.get("BAGIIN_RL_GOOGLE", "20/minute")
 _GOOGLE_STUB = os.environ.get("BAGIIN_GOOGLE_STUB") == "1"
 _APP_ENV = os.environ.get("BAGIIN_ENV", "development").strip().lower()
 if _GOOGLE_STUB and _APP_ENV in ("production", "prod"):
@@ -1495,7 +1501,7 @@ def _session_payload(ident: dict, token: str, recovery_code: str | None = None) 
 
 
 @app.post("/api/auth/register")
-@limiter.limit("5/minute")
+@limiter.limit(RL_REGISTER)
 async def auth_register(request: Request):
     data = await _read_json(request)
     username = accounts.normalize_username(_to_str(data.get("username"), "Username", maxlen=30) or "")
@@ -1516,7 +1522,7 @@ async def auth_register(request: Request):
 
 
 @app.post("/api/auth/login")
-@limiter.limit("10/minute")
+@limiter.limit(RL_LOGIN)
 async def auth_login(request: Request):
     data = await _read_json(request)
     username = _to_str(data.get("username"), "Username", maxlen=30) or ""
@@ -1532,7 +1538,7 @@ async def auth_login(request: Request):
 
 
 @app.post("/api/auth/google")
-@limiter.limit("20/minute")
+@limiter.limit(RL_GOOGLE)
 async def auth_google(request: Request):
     data = await _read_json(request)
     info = _verify_google_id_token(_to_str(data.get("id_token"), "Token Google", maxlen=4096) or "")
@@ -1635,6 +1641,20 @@ def auth_logout(request: Request):
     # Secret lama tidak bisa dicabut (bukan token perangkat). Klien tetap
     # menghapusnya dari perangkat ini.
     return {"ok": True, "revoked": bool(device_id)}
+
+
+@app.get("/api/auth/config")
+def auth_config():
+    """Konfigurasi publik untuk layar masuk.
+
+    Client ID Google memang publik (dipakai browser untuk meminta ID token),
+    jadi tidak ada rahasia di sini. Yang tidak pernah dikirim: client secret,
+    daftar username, atau apa pun tentang akun tertentu.
+    """
+    return {
+        "google_client_id": GOOGLE_CLIENT_ID or None,
+        "google_stub": _GOOGLE_STUB,
+    }
 
 
 @app.get("/api/auth/state")
