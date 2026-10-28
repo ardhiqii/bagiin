@@ -48,6 +48,21 @@ declare global {
 
 export type GoogleConfig = { client_id: string | null; stub: boolean }
 
+/**
+ * Kapan tombol "mode uji" boleh tampil.
+ *
+ * Server uji mengizinkan token `stub:` supaya jalur Google bisa diuji tanpa akun
+ * Google sungguhan. Tapi tombol uji di domain publik itu memalukan dan
+ * menyesatkan: orang bisa mengira itu fitur. Jadi tombol uji hanya muncul kalau
+ * (a) tidak ada client ID sungguhan sama sekali, atau (b) dibuka dari localhost.
+ */
+export function showStubButton(config: GoogleConfig): boolean {
+  if (!config.stub) return false
+  if (!config.client_id) return true
+  const host = window.location.hostname
+  return host === 'localhost' || host === '127.0.0.1'
+}
+
 let scriptPromise: Promise<void> | null = null
 
 function loadScript(): Promise<void> {

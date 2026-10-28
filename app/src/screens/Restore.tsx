@@ -9,7 +9,7 @@ import {
   registerAccount,
   restoreFromCode,
 } from '../lib/identity'
-import { googleConfig, mountGoogleButton } from '../lib/google'
+import { googleConfig, mountGoogleButton, showStubButton } from '../lib/google'
 import { markAuthed, takeIntent } from '../lib/session'
 import keyArt from '../assets/welcome.webp'
 
@@ -367,7 +367,7 @@ export function Restore() {
               hidden={!google?.client_id}
               data-testid="google-slot"
             />
-            {google?.stub ? (
+            {google && showStubButton(google) ? (
               <Button variant="secondary" block loading={busy} onClick={withGoogleStub}>
                 Lanjut dengan Google (mode uji)
               </Button>

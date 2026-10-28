@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useToast } from './Toast'
 import { Alert, Button, Field, SectionHead, Sheet } from '../ds/primitives'
 import { endpoints } from '../lib/api'
-import { googleConfig, mountGoogleButton } from '../lib/google'
+import { googleConfig, mountGoogleButton, showStubButton } from '../lib/google'
 import { logoutDevice } from '../lib/identity'
 import { signOut } from '../lib/session'
 import type { Identity } from '../lib/types'
@@ -362,7 +362,7 @@ export function AccountSecurity({ identity }: { identity: Identity | null }) {
             </span>
             {error ? <Alert tone="danger" title="Google gagal">{error}</Alert> : null}
             <div className="google-slot" ref={googleSlot} data-testid="google-link-slot" />
-            {googleConfigState?.stub && !googleConfigState.client_id ? (
+            {googleConfigState && showStubButton(googleConfigState) ? (
               <Button
                 variant="secondary"
                 block
