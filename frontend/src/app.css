@@ -1258,3 +1258,57 @@ p, small, .app-note { text-wrap: pretty; }
    semudah menuruti, kalau tidak ini jadi iklan. */
 .nudge-actions { display: flex; align-items: center; gap: var(--ds-space-3); }
 .nudge-actions .link-quiet { margin: 0; }
+
+/* ============================================================
+   Target sentuh minimum
+   Diukur di 390 px: .app-back 36x36, .kill 34x38, .receipt-kill 24x24,
+   .search-clear 24x24, tombol di dalam .chip ±16 px. Apple HIG minta 44x44.
+   Yang dibesarkan hanya AREA TANGKAP, bukan bentuknya: lapisan transparan
+   (::after) supaya tata letak dan tampilan tidak bergeser satu piksel pun.
+   Untuk tombol yang berdesakan (chip, silang pencarian, silang foto) dipakai
+   padding + margin negatif — bukan lapisan 44 px — karena lapisan sebesar itu
+   akan menutupi tombol sebelahnya dan ketukan mendarat di tempat yang salah.
+   ============================================================ */
+.app-back,
+.kill {
+  position: relative;
+}
+.app-back::after,
+.kill::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+}
+
+.chip button {
+  padding: 11px 5px;
+  margin: -11px -3px;
+}
+.search-clear,
+.receipt-kill {
+  padding: 10px;
+  margin: -10px;
+}
+
+/* Sisa target sentuh yang masih di bawah 44 px setelah pengukuran ulang.
+   Chip saringan memang boleh tumbuh (dia aksi utama di beranda), sedangkan
+   .link-action di Pengaturan dinaikkan area tangkapnya lalu dikompensasi margin
+   vertikal negatif supaya baris rekening tidak melar. */
+.chip-filter {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.link-action {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  margin-block: -8px;
+}
+.nudge-actions button {
+  min-width: 44px;
+}

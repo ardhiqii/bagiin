@@ -91,6 +91,7 @@ kosong).
 | X-05 | Identitas basi (server tidak kenal) → tab Kode, bukan Nama | `v1-cases.spec.ts` V-05 |
 | X-06 | Ganti password mencabut sesi perangkat lain | `auth-and-contacts.spec.ts` 108 |
 | X-07 | Nama pembeda dobel ditolak (tidak ada dua "Amel" yang sama) | `auth-and-contacts.spec.ts` 116 |
+| X-08 | Net nol **tapi** masih ada bill yang menunggu: kalimat "tidak ada utang tersisa" tidak boleh muncul di samping banner "1 bill perlu kamu bereskan" | audit data (2 identitas di DB produksi: *deandra*, *temen terbaik aufa*), perbaikan copy di `Home.tsx` |
 
 ### Edge
 
@@ -117,16 +118,31 @@ kosong).
 | G-07 | Alamat asing (404) memberi jalan pulang, bukan layar putih | `integration.spec.ts` 94 |
 | G-08 | Perangkat lain tidak bisa memakai token perangkat ini | `v1-cases.spec.ts` V-09 |
 
+### Integritas yang tidak kelihatan
+
+| ID | Kasus | Tes |
+|---|---|---|
+| I-01 | Pratinjau tautan + PWA: `og:image`, `manifest.webmanifest` (MIME `application/manifest+json`), ikon 192/512/maskable | `v1-integrity.spec.ts` I-01 |
+| I-02 | Tombol bagikan menyalin tautan bill; tanpa `navigator.share` jatuh ke clipboard, bukan diam | `v1-integrity.spec.ts` I-02 |
+| I-03 | Getaran menyala saat item dipilih/dilepas (stub `navigator.vibrate`) | `v1-integrity.spec.ts` I-03 |
+| I-04 | Angka daftar == angka halaman bill == invarian `sum(bagian) + uncovered == total`, diambil dari API | `v1-integrity.spec.ts` I-04 |
+| I-05 | Identitas tamu 0.9 (localStorage lama) dikenali 1.0 tanpa diganti identitas baru | `v1-integrity.spec.ts` I-05 |
+
 ## Integritas angka
 
 Yang harus selalu benar di setiap layar, dan diuji ulang setelah perubahan apa pun:
 
 1. `sum(bagian orang) + uncovered + remaining_to_creator == total` — dijaga backend,
-   diuji `integration.spec.ts` 73–74 dan audit 59 bill.
+   diuji `integration.spec.ts` 73–74, `v1-integrity.spec.ts` I-04, dan audit mesin
+   split (`calc.compute`) atas **seluruh 81 bill** di salinan DB produksi: 0 pelanggaran.
 2. Angka di beranda adalah **bagian saya**, bukan total bill.
 3. Rekap: `sum(counterparties) == payable + receivable`.
 4. Perkiraan (`±`) ditampilkan terpisah, tidak dijumlahkan ke angka pasti.
 5. Saldo nol tidak menampilkan kartu besar.
+6. **Lintas endpoint:** angka di daftar bill == angka di halaman bill == angka di
+   rekap. Audit terakhir: 54 identitas × 162 pemeriksaan, 81 bill, 0 pelanggaran.
+7. **Buku besar seimbang:** jumlah `net_idr` semua identitas = 0 (uang tidak
+   muncul atau hilang dari perhitungan). Audit terakhir: tepat 0.
 
 ## Cara menjalankan
 

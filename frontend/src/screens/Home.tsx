@@ -311,7 +311,7 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
           Angkanya tetap jujur — hanya tidak diteriakkan. */}
       {net === 0 && rows.length === 0 ? null : net === 0 ? (
         <Notice
-          tone={estimate !== 0 ? 'pending' : 'success'}
+          tone={estimate !== 0 || actionTotal > 0 ? 'pending' : 'success'}
           action={
             estimate !== 0 ? (
               <Link to="/recap" className="link-quiet">
@@ -327,7 +327,16 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
               (estimate > 0 ? '+' : '−') +
               formatRp(Math.abs(estimate)) +
               ' dari bill yang pembagiannya belum selesai.'
-            : 'Tidak ada utang tersisa di antara kamu dan teman-temanmu.'}
+            : actionTotal > 0
+              ? // Net nol BUKAN berarti selesai: di data nyata ada orang yang
+                // utangnya nol tapi satu bill-nya masih menunggu pilihan atau
+                // konfirmasi. Kalimat "tidak ada utang tersisa" di samping
+                // banner "1 bill perlu kamu bereskan" terbaca seperti aplikasi
+                // salah hitung.
+                'Utangmu nol. Masih ada ' +
+                actionTotal +
+                ' bill yang perlu kamu kerjakan.'
+              : 'Tidak ada utang tersisa di antara kamu dan teman-temanmu.'}
         </Notice>
       ) : (
         <BalanceCard
