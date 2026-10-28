@@ -1,6 +1,6 @@
 # Storyboard integrasi Beranda · Bill · Rekap
 
-Dokumen ini yang diuji `app/tests/integration.spec.ts`. Tiga layar menampilkan uang
+Dokumen ini yang diuji `frontend/tests/`. Tiga layar menampilkan uang
 yang sama dari tiga sudut; yang dijaga bukan "tiap layar jalan", tapi **ketiganya
 menceritakan angka yang sama setelah setiap perubahan**, tanpa reload.
 

@@ -49,7 +49,7 @@ Satu bill mempunyai orang yang **nalangin**: orang yang mengeluarkan uang lebih 
 - **Bill yang realitanya sudah selesai di luar aplikasi ditutup oleh pembuatnya**, bukan dibiarkan menunggu di rekap. Tombol "Tutup bill" di rekap memakai `POST /api/bills/{id}/settle`; sisa yang belum ada pengakunya ditanggung pembayar, dan kalimat di sheet menyebut nominal serta akibatnya sebelum dikonfirmasi.
 - Orang yang masuk bill diharapkan mengambil setidaknya satu item. Tidak perlu tindakan khusus "Aku tidak ambil item" dalam alur utama. Jika seseorang bergabung tanpa sengaja atau tidak jadi ikut, ia boleh keluar; **pilihannya di bill tersebut dihapus** dan nominal dihitung ulang. Catatan bahwa ia pernah menandai bayar tetap perlu dipertahankan sebagai riwayat tindakan, terpisah dari pilihan aktif.
 - Peserta harus bisa memahami mana item yang mereka pilih sendiri dan mana yang ditetapkan pembayar, lalu mengubah pilihan yang tidak sesuai. Pembayar dapat mengelola peserta yang salah masuk.
-- UI saat ini akan dirombak. Setelah meninjau prototype, pemilik produk memilih **layout Seimbang dengan warna Saldo** sebagai arah utama. Aturan visual dan komponen ada di [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md). Varian Langkah dibuang. Halaman bill masih perlu pendalaman alur dan desain.
+- UI saat ini akan dirombak. Setelah meninjau konsep desain, pemilik produk memilih **layout Seimbang dengan warna Saldo** sebagai arah utama. Aturan visual dan komponen ada di [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md). Varian Langkah dibuang. Halaman bill masih perlu pendalaman alur dan desain.
 
 ## Batasan migrasi
 

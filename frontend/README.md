@@ -20,5 +20,6 @@ BAGIIN_DB=/tmp/bagiin-e2e.db BAGIIN_UPLOAD_DIR=/tmp/bagiin-e2e-uploads \
 Deploy: `rsync dist/ /var/www/bagiin-react/`; nginx host itu meneruskan `/api/`
 ke instance 8090 supaya preview ini punya data sendiri.
 
-`../prototype/` adalah lab desain (bukan aplikasi) — dipakai untuk mencoba
-bentuk, ilustrasi, dan komponen sebelum masuk ke sini.
+Tidak ada lagi lab desain terpisah: `prototype/` sudah dihapus bersama frontend
+vanilla. Bentuk, ilustrasi, dan komponen dikerjakan langsung di sini, dan
+aturannya hidup di `DESIGN_SYSTEM.md`.

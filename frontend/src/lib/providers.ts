@@ -1,5 +1,5 @@
 /* Katalog logo provider pembayaran Indonesia.
-   Aset: app/src/assets/providers/*.webp (WebP q92, sisi terpanjang 200 px).
+   Aset: frontend/src/assets/providers/*.webp (WebP q92, sisi terpanjang 200 px).
 
    Sumber aset (semua resmi, bukan stok):
    - GoPay: media kit gopay.co.id · ShopeePay: shopeepay.co.id/logo/spp-logo.svg

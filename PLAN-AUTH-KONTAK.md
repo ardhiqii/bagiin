@@ -7,7 +7,7 @@ terbuka ke akun Google (lihat bagian Google di bawah).
 ## Di mana kode ini hidup (v2)
 
 Repo ini satu repo, tiga worktree. Sejak fase ini selesai, **versi 2 = branch
-`react`**, berisi `app/` (frontend) dan `backend/` (akun, sesi, alias) sekaligus:
+`react`**, berisi `frontend/` (React) dan `backend/` (akun, sesi, alias) sekaligus:
 
 - `main`      -> `/opt/projects/bagiin`      -> produksi v1, port 8082, TIDAK disentuh
 - `react`     -> `/opt/projects/bagiin-react` -> v2, service `bagiin-react-api`, port 8090,

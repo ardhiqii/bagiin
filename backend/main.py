@@ -2873,6 +2873,12 @@ def serve_photo(filename: str):
 #   * No more manual version bumps (v57 etc.) - the hash IS the version.
 
 STATIC_DIR = FRONTEND_DIR / "static"
+# Versi 2: frontend React dilayani nginx dari `frontend/dist`, jadi backend ini
+# TIDAK lagi membawa bundle vanilla (index.html/manifest/static). Mount dan
+# template hanya dipakai kalau bundle itu benar-benar ada — di branch `main`
+# (versi 0.x) dia ada, di branch `react` tidak. Tanpa penjagaan ini server
+# menolak start sama sekali: StaticFiles melempar RuntimeError saat import.
+HAS_VANILLA_BUNDLE = (FRONTEND_DIR / "index.html").is_file() and STATIC_DIR.is_dir()
 _HASH_RE = re.compile(rb"@HASH:([a-zA-Z0-9._-]+)@")
 
 
@@ -2904,6 +2910,8 @@ def _no_cache_response(content: bytes, media_type: str, request: Request) -> Res
 
 @app.api_route("/static/manifest.json", methods=["GET", "HEAD"])
 def manifest(request: Request):
+    if not HAS_VANILLA_BUNDLE:
+        raise HTTPException(404, "Frontend dilayani terpisah oleh nginx")
     return _no_cache_response(
         _render_template(FRONTEND_DIR / "manifest.json"),
         "application/manifest+json", request,
@@ -2912,10 +2920,13 @@ def manifest(request: Request):
 
 @app.api_route("/", methods=["GET", "HEAD"])
 def index(request: Request):
+    if not HAS_VANILLA_BUNDLE:
+        raise HTTPException(404, "Frontend dilayani terpisah oleh nginx")
     return _no_cache_response(
         _render_template(FRONTEND_DIR / "index.html"),
         "text/html; charset=utf-8", request,
     )
 
 
-app.mount("/static", ImmutableStaticFiles(directory=str(STATIC_DIR)), name="static")
+if HAS_VANILLA_BUNDLE:
+    app.mount("/static", ImmutableStaticFiles(directory=str(STATIC_DIR)), name="static")

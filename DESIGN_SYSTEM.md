@@ -1,6 +1,6 @@
 # Bagiin Design System — arah v0.3 (hybrid, berlapis)
 
-**Keputusan pemilik produk:** struktur/layout konsep **Seimbang**, palet konsep **Saldo**. Dokumen ini adalah acuan visual dan interaksi untuk migrasi React + TypeScript + shadcn/ui. Alur bisnis tetap mengikuti [PRODUCT.md](PRODUCT.md). Komponen hidup dan seluruh state-nya ada di [Design Lab](prototype/README.md) melalui `?view=system`.
+**Keputusan pemilik produk:** struktur/layout konsep **Seimbang**, palet konsep **Saldo**. Dokumen ini adalah acuan visual dan interaksi untuk migrasi React + TypeScript + shadcn/ui. Alur bisnis tetap mengikuti [PRODUCT.md](PRODUCT.md). Komponen hidup dan seluruh state-nya ada di kode `frontend/src/ds/` dan `frontend/src/design-system.css`.
 
 Istilah "hybrid" di sini berarti satu hal yang spesifik: **urutan informasi dan bentuk layar dari Seimbang, warna dari Saldo.** Bukan gabungan dua konsep, dan bukan varian Saldo utuh — pada Saldo, angka kewajiban menjadi pintu masuk utama; di sini item tetap menjadi isi utama dan angka mengikuti konteksnya.
 
@@ -213,7 +213,7 @@ Keyout wajib: beberapa aset resmi datang dengan latar terang opaque; tanpa keyou
 
 ### Menambah brand baru
 
-1. Simpan aset ke `app/src/assets/providers/<key>.webp` (nama file = key).
+1. Simpan aset ke `frontend/src/assets/providers/<key>.webp` (nama file = key).
 2. Tambahkan baris di `CATALOG`-nya: key, label, dan alias yang mungkin diketik.
 3. Isi `AR` dengan rasio asli aset setelah di-trim.
 4. Tidak perlu menyentuh CSS atau layar mana pun — `import.meta.glob` menemukan asetnya otomatis.
@@ -421,7 +421,7 @@ Aturan yang mengikat semua komponen: target sentuh minimal 44×44 px, cincin fok
 
 ## Implementasi token (react)
 
-Skala di atas sudah jadi variabel CSS di `app/src/design-system.css`. Pakai
+Skala di atas sudah jadi variabel CSS di `frontend/src/design-system.css`. Pakai
 nama ini, jangan angka mentah:
 
 | token | nilai | untuk |
@@ -488,7 +488,9 @@ Aturan pakai: ilustrasi hanya untuk empty state dan layar pembuka; tidak untuk m
 
 ## Pemetaan ke shadcn/ui
 
-`prototype/src/design-system.css` adalah sumber token visual prototype. Variabel `--background`, `--foreground`, `--card`, `--primary`, `--secondary`, `--muted`, `--border`, `--input`, `--ring`, `--destructive`, dan `--radius` sudah dipetakan sebagai titik awal theme shadcn/ui. Saat migrasi produksi, pindahkan token ini ke theme aplikasi; jangan membuat warna hex baru di komponen. Komponen shadcn/ui yang paling relevan: Button, Card, Badge, Input, Dialog/Drawer, Tabs, dan NavigationMenu. Struktur dan copy tetap mengikuti aturan Bagiin di atas, bukan default library.
+`frontend/src/design-system.css` adalah **satu-satunya** sumber token visual.
+Tidak ada lagi lab desain terpisah (prototype sudah dihapus): kalau butuh nilai
+baru, tambahkan sebagai variabel di file itu, jangan menulis hex di komponen.
 
 ## Status pekerjaan
 

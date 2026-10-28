@@ -40,28 +40,38 @@ Rules:
 - All rupiah are integers. Keep the invariant
   `sum(people totals) + uncovered_idr + remaining_to_creator == bill.total_idr`.
 
+## Struktur versi 2
+
+Branch `react` adalah **versi 2** dan berisi aplikasi utuh:
+
+- `frontend/` — React + TypeScript + Vite (satu-satunya frontend; versi vanilla
+  sudah dihapus dari branch ini, dan tetap hidup di branch `main` sebagai versi 0.x)
+- `backend/` — FastAPI (akun, sesi perangkat, alias kontak, split bill)
+
+`prototype/` sudah dihapus: itu lab desain versi lama, dan membawa dua sumber
+token visual justru membuat orang menyalin nilai dari tempat yang salah.
+
 ## Commands
 
-Prototype (the React design lab):
-
 ```bash
-cd prototype
+cd frontend
 npm install
-npm run dev            # http://localhost:5173
-npm run build          # tsc -b && vite build  -> prototype/dist
+npm run dev            # http://localhost:5199
+npm run build          # tsc -b && vite build  -> frontend/dist
+npx playwright test    # e2e (butuh API di 8090)
 ```
 
-Backend (unchanged from vanilla):
+Backend:
 
 ```bash
 cd backend
-venv/bin/python -m pytest -q          # ~140 tests
+venv/bin/python -m pytest -q
 ```
 
-Public preview: https://react.bagiin.ardhiqi.com serves `prototype/dist`,
-installed to `/var/www/bagiin-react`. Redeploy = `npm run build`, copy `dist/.`
-to that root, reload nginx. It is a preview, not production; it reads no real data
-and has no backend.
+Live: https://bagiin-react.ardhiqi.com menyajikan `frontend/dist` (root
+`/var/www/bagiin-react`), dengan `/api/` diteruskan nginx ke instance v2 di port
+8090 (`bagiin-react-api.service`, DB salinan `/var/lib/bagiin-sandbox/bagiin.db`).
+Redeploy = `npm run build` lalu salin `dist/.` ke root itu dan reload nginx.
 
 ## Conventions
 
