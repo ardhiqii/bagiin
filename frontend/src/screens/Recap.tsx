@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { CaretRight, WarningCircle } from '@phosphor-icons/react'
@@ -8,7 +8,8 @@ import { api } from '../lib/api'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { Alert, Avatar, BalanceCard, Button, EmptyState, Group, Sheet } from '../ds/primitives'
+import { Alert, Avatar, Button, EmptyState, Group, Sheet } from '../ds/primitives'
+import { SaldoCard } from '../components/SaldoCard'
 import type { RecapBill, RecapCounterparty, RecapEdge } from '../lib/types'
 import personArt from '../assets/person.webp'
 import paidArt from '../assets/paid.webp'
@@ -241,37 +242,17 @@ export function Recap({ identityId }: { identityId: string | null }) {
   const receives = people.filter((row) => row.net_idr > 0)
   const unclear = data?.provisional.bills ?? []
 
-  const outstandingBills = useMemo(() => {
-    const ids = new Set<string>()
-    for (const row of people) for (const edge of row.bills) ids.add(edge.bill_id)
-    return ids.size
-  }, [people])
-
-  const payable = data?.final.payable_idr ?? 0
-  const receivable = data?.final.receivable_idr ?? 0
-  // Angka kasar, sama seperti di beranda: dari bill yang pembagiannya belum
-  // selesai. Tidak pernah dijumlahkan ke angka pasti.
-  const estimate = data
-    ? (data.provisional.receivable_idr ?? 0) - (data.provisional.payable_idr ?? 0)
-    : 0
-  const heroPays = payable > 0
-  const heroValue = heroPays ? payable : receivable
-  const otherDirection = heroPays ? receivable : payable
-
-  // Catatan di bawah angka besar menjawab "angka ini angka apa", bukan
-  // menambah penghitung. Versi lama menulis "1 bill belum lunas" — angka kedua
-  // di layar yang sama, persis yang bikin orang ragu mana yang harus dipercaya.
-  // Arah sebaliknya tetap disebut karena itu uang, bukan hitungan: orang perlu
-  // tahu ada piutang yang belum masuk angka ini.
-  const note =
-    outstandingBills === 0
-      ? 'tidak ada sisa bill yang pembagiannya sudah jelas'
-      : 'dari bill yang pembagiannya sudah pasti' +
-        (otherDirection > 0
-          ? ' · kamu juga ' + (heroPays ? 'terima' : 'bayar') + ' ' + formatRp(otherDirection)
-          : '')
-
   const nothingToDo = people.length === 0 && unclear.length === 0
+
+  // Beranda bisa mengirim orang ke sini lewat pop-up rincian saldo dengan
+  // penanda #rekap-belum-jelas. Tanpa ini, tombolnya cuma membuka Rekap dari
+  // atas dan orangnya harus mencari sendiri daftar yang tadi disebut.
+  useEffect(() => {
+    if (!data || window.location.hash !== '#rekap-belum-jelas') return
+    const timer = setTimeout(() => jumpToUnclear(), 80)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
 
   function jumpToUnclear() {
     const target = document.getElementById('rekap-belum-jelas')
@@ -301,13 +282,7 @@ export function Recap({ identityId }: { identityId: string | null }) {
       {data ? (
         <>
           {people.length > 0 ? (
-            <BalanceCard
-              label={heroPays ? 'Harus kamu bayar' : 'Harus kamu terima'}
-              value={heroPays ? -heroValue : heroValue}
-              tone={heroPays ? 'neg' : 'pos'}
-              note={note}
-              estimate={estimate !== 0 ? { value: estimate } : undefined}
-            />
+            <SaldoCard recap={data} onOpenUnclear={jumpToUnclear} />
           ) : null}
 
           {unclear.length > 0 ? (

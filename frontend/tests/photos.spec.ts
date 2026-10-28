@@ -18,6 +18,10 @@ test.describe('Bagiin — foto struk setelah bill jadi', () => {
     await page.getByLabel('Nama bill').fill('Foto ' + stamp)
     await page.getByLabel('Item 1').fill('Nasi uduk')
     await page.getByLabel('Harga satuan').first().fill('18000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
 

@@ -34,6 +34,10 @@ test.describe('Bagiin v2 — akun yang naik dari tamu', () => {
     await page.getByLabel('Nama bill').fill('Bill Naik ' + stamp)
     await page.getByLabel('Item 1').fill('Kopi')
     await page.getByLabel('Harga satuan').first().fill('20000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
 
@@ -216,6 +220,10 @@ test.describe('Bagiin v2 — pengingat amankan akun', () => {
     await page.getByLabel('Nama bill').fill('Nudge ' + stamp)
     await page.getByLabel('Item 1').fill('Kopi')
     await page.getByLabel('Harga satuan').first().fill('20000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
 

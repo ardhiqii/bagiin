@@ -66,6 +66,10 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     await page.getByLabel('Nama bill').fill('Bagikan ' + stamp)
     await page.getByLabel('Item 1').fill('Kopi')
     await page.getByLabel('Harga satuan').first().fill('20000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
 
@@ -97,6 +101,10 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     await page.getByLabel('Nama bill').fill('Getar ' + stamp)
     await page.getByLabel('Item 1').fill('Kopi')
     await page.getByLabel('Harga satuan').first().fill('20000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
 
@@ -121,6 +129,10 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     await page.getByRole('button', { name: 'Tambah item' }).click()
     await page.getByLabel('Item 2').fill('Es Teh')
     await page.getByLabel('Harga satuan').nth(1).fill('7000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
     const billId = page.url().split('/b/')[1]
@@ -149,6 +161,10 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     await page.getByLabel('Nama bill').fill('Sapu ' + stamp)
     await page.getByLabel('Item 1').fill('Kopi')
     await page.getByLabel('Harga satuan').first().fill('15000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
     const billId = page.url().split('/b/')[1]

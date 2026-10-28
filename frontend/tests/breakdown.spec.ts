@@ -22,6 +22,10 @@ test.describe('Bagiin — rincian struk di layar bill', () => {
     await page.getByLabel('Pajak', { exact: true }).fill('10000')
     await page.getByLabel('Service').fill('5000')
     await page.getByLabel('Diskon pesanan').fill('15000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await page.waitForURL(/\/b\//)
 
@@ -47,6 +51,10 @@ test.describe('Bagiin — rincian struk di layar bill', () => {
     await page.getByLabel('Nama bill').fill('Polos ' + stamp)
     await page.getByLabel('Item 1').fill('Kopi')
     await page.getByLabel('Harga satuan').first().fill('18000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await page.waitForURL(/\/b\//)
 

@@ -43,6 +43,10 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     await page.getByLabel('Nama bill').fill('Bukti manual ' + stamp)
     await page.getByLabel('Item 1').fill('Nasi uduk')
     await page.getByLabel('Harga satuan').fill('25.000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
     await expect(page.getByText('Rp25.000').first()).toBeVisible()
@@ -76,6 +80,10 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
 
     await page.getByLabel('Item 1').fill('Sate ayam')
     await page.getByLabel('Harga satuan').fill('30.000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
     await expect(page.getByText('Rp30.000').first()).toBeVisible()
@@ -139,6 +147,10 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     await expect(page.getByText(/Pajak sudah nempel di harga item/)).toBeVisible()
 
     await page.getByLabel('Nama bill').fill('Pajak termasuk ' + stamp)
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
 
@@ -167,6 +179,10 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     await page.getByLabel('Nama bill').fill('Pesanan panjang ' + stamp)
     await page.getByLabel('Item 1').fill('Paket hemat')
     await page.getByLabel('Harga satuan').fill('55.000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
     await expect(page.getByAltText('Foto struk bill')).toHaveCount(2)

@@ -56,6 +56,10 @@ test.describe('Bagiin — baca struk dari foto', () => {
     await expect(page.getByAltText('Foto struk yang dibaca')).toBeVisible()
 
     await page.getByLabel('Nama bill').fill('Struk ' + stamp)
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
     await expect(page.getByText('Rp96.800').first()).toBeVisible()

@@ -8,7 +8,8 @@ import { api } from '../lib/api'
 import { useToast } from '../components/Toast'
 import { AppShell } from '../components/AppShell'
 import { SecureNudge } from '../components/SecureNudge'
-import { ActionFlag, Alert, Amount, BalanceCard, Button, EmptyState, Notice, SectionHead } from '../ds/primitives'
+import { ActionFlag, Alert, Amount, Button, EmptyState, Notice, SectionHead } from '../ds/primitives'
+import { SaldoCard } from '../components/SaldoCard'
 import { MagnifyingGlass } from '@phosphor-icons/react'
 import homeEmptyArt from '../assets/home-empty.webp'
 
@@ -339,26 +340,9 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
               : 'Tidak ada utang tersisa di antara kamu dan teman-temanmu.'}
         </Notice>
       ) : (
-        <BalanceCard
-          label={net > 0 ? 'Harus kamu terima' : 'Harus kamu bayar'}
-          value={net}
-          // Tanpa tanda minus: labelnya sudah menyebut arahnya ("Harus kamu
-          // bayar"), dan "harus bayar −Rp22.000" terbaca seperti uang kembali.
-          // Minus dipakai di baris daftar, di sana tidak ada label yang
-          // menjelaskan arah. Aturannya satu: tanda hanya kalau tidak ada label.
-          tone={net > 0 ? 'pos' : 'neg'}
-          // Catatan ini menjawab "angka ini angka apa", bukan menambah hitungan.
-          // Angkanya NET: satu baris bill bisa lebih besar dari total karena ada
-          // bill lain yang justru menagih ke kita.
-          // "Angka ini angka apa": angka NET, sudah dikurangi arah sebaliknya.
-          note={
-            estimate !== 0
-              ? net > 0
-                ? 'Sudah dikurangi yang harus kamu bayar'
-                : 'Sudah dikurangi yang harus kamu terima'
-              : 'Semua bill sudah selesai'
-          }
-          estimate={estimate !== 0 ? { value: estimate } : undefined}
+        <SaldoCard
+          recap={{ final: recap.data!.final, provisional: recap.data!.provisional }}
+          onOpenUnclear={() => navigate({ to: '/recap', hash: 'rekap-belum-jelas' })}
         />
       )}
 

@@ -22,7 +22,11 @@ async function createBill(page: Page, title: string, item: string) {
   await page.getByLabel('Nama bill').fill(title)
   await page.getByLabel('Item 1').fill(item)
   await page.getByLabel('Harga satuan').first().fill('20000')
-  await page.getByRole('button', { name: 'Buat bill' }).click()
+  // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
+    await page.getByRole('button', { name: 'Buat bill' }).click()
   await expect(page).toHaveURL(/\/b\//)
 }
 

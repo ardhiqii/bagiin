@@ -194,8 +194,12 @@ export function Create({ identityId }: { identityId: string | null }) {
   const canSubmit = Boolean(identityId) && hasNamedItem && total > 0 && !busy
   /* Tombol mati tanpa penjelasan bikin orang menebak. Kalau memang belum bisa
      disimpan, sebut apa yang kurang — di tempat yang sama dengan tombolnya. */
+  // Identitas belum siap = tombol mati TANPA alasan. Itu yang terjadi kalau
+  // layar dibuka terlalu cepat: tombolnya tidak bisa ditekan dan tidak ada satu
+  // kata pun yang menjelaskan kenapa. Alasannya sekarang disebut, sekalian
+  // memberi tahu bahwa ini soal waktu, bukan isian yang salah.
   const blockedReason = !identityId
-    ? ''
+    ? 'Menyiapkan… sebentar.'
     : !hasNamedItem
       ? 'Isi nama item & harga dulu.'
       : total <= 0

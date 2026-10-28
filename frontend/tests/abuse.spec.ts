@@ -30,7 +30,11 @@ async function createBill(page: Page, title: string, items: [string, string, str
     await page.getByLabel('Harga satuan').nth(index).fill(price)
     if (qty) await page.getByLabel('Qty').nth(index).fill(qty)
   }
-  await page.getByRole('button', { name: 'Buat bill' }).click()
+  // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
+    await page.getByRole('button', { name: 'Buat bill' }).click()
   await expect(page).toHaveURL(/\/b\//)
   return page.url().split('/b/')[1]
 }
@@ -314,6 +318,10 @@ test.describe('Bagiin — isian nakal', () => {
       expect(text, 'input ' + bad).not.toMatch(/NaN|Infinity|undefined/)
     }
     await price.fill('25000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
     const text = await page.locator('body').innerText()
@@ -331,6 +339,10 @@ test.describe('Bagiin — isian nakal', () => {
     expect(typed, 'tidak boleh menampung 400 karakter lalu menunggu server menolak').toBeLessThanOrEqual(120)
     await page.getByLabel('Item 1').fill('Satu')
     await page.getByLabel('Harga satuan').first().fill('10000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//, { timeout: 15_000 })
 

@@ -22,7 +22,11 @@ async function createBill(page: Page, title: string) {
   await page.getByLabel('Nama bill').fill(title)
   await page.getByLabel('Item 1').fill('Ayam')
   await page.getByLabel('Harga satuan').fill('30000')
-  await page.getByRole('button', { name: 'Buat bill' }).click()
+  // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
+    await page.getByRole('button', { name: 'Buat bill' }).click()
   await expect(page).toHaveURL(/\/b\//)
   return page.url()
 }
@@ -70,6 +74,10 @@ test.describe('Bagiin — pembayar, undangan, keluar', () => {
     await page.getByLabel('Nama bill').fill('Undang ' + stamp)
     await page.getByLabel('Item 1').fill('Sate')
     await page.getByLabel('Harga satuan').fill('20000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
 
@@ -116,6 +124,10 @@ test.describe('Bagiin — pembayar, undangan, keluar', () => {
     await page.getByLabel('Nama bill').fill('Nunggu ' + stamp)
     await page.getByLabel('Item 1').fill('Kopi')
     await page.getByLabel('Harga satuan').fill('12000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
 

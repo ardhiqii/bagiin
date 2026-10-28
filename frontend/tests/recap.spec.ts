@@ -16,7 +16,11 @@ async function createBill(page: import('@playwright/test').Page, title: string, 
   await page.getByLabel('Nama bill').fill(title)
   await page.getByLabel('Item 1').fill('Sate')
   await page.getByLabel('Harga satuan').fill(price)
-  await page.getByRole('button', { name: 'Buat bill' }).click()
+  // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
+    await page.getByRole('button', { name: 'Buat bill' }).click()
   await expect(page).toHaveURL(/\/b\//)
   return page.url()
 }
@@ -141,5 +145,147 @@ test.describe('Bagiin — rekap berisi pekerjaan, bukan arsip', () => {
     // tidak ada kartu angka dan tidak ada seksi orang saat semuanya kosong
     await expect(page.locator('.ds-balance')).toHaveCount(0)
     await expect(page.locator('.recap-person')).toHaveCount(0)
+  })
+})
+
+test.describe('Bagiin — satu angka untuk uang yang sama', () => {
+  test('125. terima Rp230.000 dan bayar Rp22.000: Beranda dan Rekap menyebut angka yang sama', async ({ page, browser }) => {
+    test.setTimeout(180_000)
+    // Kasus nyata: orang punya piutang Rp230.000 di satu bill, dan utang
+    // Rp22.000 di bill lain. Sebelum ini Beranda menulis "terima Rp208.000"
+    // sementara Rekap menulis "bayar Rp22.000" untuk uang yang sama.
+    await onboard(page, 'Aufa Saldo ' + stamp)
+    const linkTerima = await createBill(page, 'Piutang ' + stamp, '230000')
+
+    // tamu mengambil item di bill pertama -> pemilik menerima Rp230.000
+    const tamu = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const t = await tamu.newPage()
+    await onboard(t, 'Tamu Piutang ' + stamp)
+    await t.goto(linkTerima)
+    await t.getByRole('button', { name: 'Ikut bill ini' }).click()
+    await t.getByRole('button', { name: /Sate, ketuk/ }).click()
+    await t.waitForTimeout(1000)
+
+    // bill kedua: tamu jadi pembayar, Aufa mengambil item Rp22.000
+    const pemilik2 = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const p2 = await pemilik2.newPage()
+    await onboard(p2, 'Pembayar ' + stamp)
+    const linkBayar = await createBill(p2, 'Utang ' + stamp, '22000')
+
+    await page.goto(linkBayar)
+    await page.getByRole('button', { name: 'Ikut bill ini' }).first().click()
+    const namaField = page.getByLabel('Nama kamu')
+    if (await namaField.isVisible().catch(() => false)) {
+      await namaField.fill('Aufa Saldo ' + stamp)
+      await page.getByRole('button', { name: 'Simpan nama & ikut bill' }).click()
+    }
+    await page.locator('.ds-item').filter({ hasText: 'Sate' }).first().click()
+    await page.waitForTimeout(1200)
+
+    // Beranda
+    await page.goto('/')
+    const kartuBeranda = page.locator('.ds-balance')
+    await expect(kartuBeranda).toBeVisible({ timeout: 15_000 })
+    const labelBeranda = (await kartuBeranda.locator('.ds-balance-label').innerText()).trim()
+    const angkaBeranda = (await kartuBeranda.locator('.ds-balance-value').innerText()).replace(/[^0-9]/g, '')
+    const rincianBeranda = (await kartuBeranda.locator('.ds-balance-row').allInnerTexts())
+      .join(' | ')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    // Rekap
+    await page.goto('/recap')
+    const kartuRekap = page.locator('.ds-balance')
+    await expect(kartuRekap).toBeVisible({ timeout: 15_000 })
+    const labelRekap = (await kartuRekap.locator('.ds-balance-label').innerText()).trim()
+    const angkaRekap = (await kartuRekap.locator('.ds-balance-value').innerText()).replace(/[^0-9]/g, '')
+    const rincianRekap = (await kartuRekap.locator('.ds-balance-row').allInnerTexts())
+      .join(' | ')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    // angka besar = NET di kedua layar, dan kalimatnya sama
+    expect(angkaBeranda, 'Beranda harus menampilkan net Rp208.000').toBe('208000')
+    expect(angkaRekap, 'Rekap harus menampilkan angka yang sama dengan Beranda').toBe(angkaBeranda)
+    expect(labelBeranda).toBe(labelRekap)
+    // dua komponennya tertulis dengan tanda, di kedua layar, sama persis
+    expect(rincianBeranda).toBe(rincianRekap)
+    expect(rincianBeranda).toContain('Terima +Rp230.000')
+    expect(rincianBeranda).toContain('Bayar −Rp22.000')
+    // kedua bill di skenario ini sudah terbagi semua, jadi tidak ada baris
+    // "belum pasti" — kalau ada, dia harus muncul terpisah (dijaga tes 126)
+    await expect(kartuBeranda.getByText('Belum dipastikan')).toHaveCount(0)
+
+    // daftar orangnya tetap memisahkan arah: yang saya utangi dan yang mengutangi
+    await expect(page.getByText('Kamu bayar').first()).toBeVisible()
+    await expect(page.getByText('Kamu tagih').first()).toBeVisible()
+
+    await tamu.close()
+    await pemilik2.close()
+  })
+})
+
+test.describe('Bagiin — angka besar bisa ditanya', () => {
+  test('126. mengetuk angka besar membuka rincian: terima − bayar = selisih, dan yang belum pasti terpisah', async ({ page, browser }) => {
+    test.setTimeout(180_000)
+    await onboard(page, 'Aufa Tanya ' + stamp)
+    const linkTerima = await createBill(page, 'Piutang Tanya ' + stamp, '230000')
+
+    const tamu = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const t = await tamu.newPage()
+    await onboard(t, 'Tamu Tanya ' + stamp)
+    await t.goto(linkTerima)
+    await t.getByRole('button', { name: 'Ikut bill ini' }).click()
+    await t.getByRole('button', { name: /Sate, ketuk/ }).click()
+    await t.waitForTimeout(1000)
+
+    const pemilik2 = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const p2 = await pemilik2.newPage()
+    await onboard(p2, 'Pembayar Tanya ' + stamp)
+    const linkBayar = await createBill(p2, 'Utang Tanya ' + stamp, '22000')
+
+    await page.goto(linkBayar)
+    await page.getByRole('button', { name: 'Ikut bill ini' }).first().click()
+    const namaField = page.getByLabel('Nama kamu')
+    if (await namaField.isVisible().catch(() => false)) {
+      await namaField.fill('Aufa Tanya ' + stamp)
+      await page.getByRole('button', { name: 'Simpan nama & ikut bill' }).click()
+    }
+    await page.locator('.ds-item').filter({ hasText: 'Sate' }).first().click()
+    await page.waitForTimeout(1200)
+
+    // bill ketiga sengaja dibiarkan belum dibagi: ada item yang tidak diaku
+    // siapa pun, jadi angkanya masih bisa berubah dan harus muncul terpisah
+    await createBill(page, 'Belum Dibagi Tanya ' + stamp, '45000')
+
+    await page.goto('/recap')
+    const kartu = page.locator('.ds-balance').first()
+    await expect(kartu).toBeVisible({ timeout: 15_000 })
+
+    // angka besar adalah tombol, dan punya nama untuk pembaca layar
+    const tombol = kartu.locator('.ds-balance-tap')
+    await expect(tombol).toBeVisible()
+    await expect(tombol).toHaveAttribute('aria-haspopup', 'dialog')
+    await tombol.click()
+
+    const sheet = page.getByRole('dialog', { name: 'Rincian saldo' })
+    await expect(sheet).toBeVisible()
+    // aritmetika yang bisa diperiksa sendiri
+    await expect(sheet.getByText('Kamu terima', { exact: true })).toBeVisible()
+    await expect(sheet.getByText('+Rp230.000')).toBeVisible()
+    await expect(sheet.getByText('Kamu bayar', { exact: true })).toBeVisible()
+    await expect(sheet.getByText('−Rp22.000')).toBeVisible()
+    await expect(sheet.getByText('Rp208.000')).toBeVisible()
+    // yang belum pasti dipisah dan dinyatakan tidak ikut dijumlah
+    await expect(sheet.getByText('BELUM PASTI')).toBeVisible()
+    await expect(sheet.getByText(/tidak akan pernah\s+dijumlahkan/)).toBeVisible()
+
+    // tombol di dalam rincian membawa ke daftar bill yang belum pasti
+    await sheet.getByRole('button', { name: /Lihat .* bill itu/ }).click()
+    await expect(sheet).toBeHidden()
+    await expect(page.locator('#rekap-belum-jelas')).toBeVisible()
+
+    await tamu.close()
+    await pemilik2.close()
   })
 })

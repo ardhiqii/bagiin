@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { PROVIDERS, opticalHeight, providerKey } from '../lib/providers'
-import { Check, CheckCircle, Clock, Info, Wallet, WarningCircle, X } from '@phosphor-icons/react'
+import { CaretRight, Check, CheckCircle, Clock, Info, Wallet, WarningCircle, X } from '@phosphor-icons/react'
 
 /* ---------- money ---------- */
 
@@ -164,6 +164,8 @@ export function BalanceCard({
   value,
   note,
   estimate,
+  rows,
+  onOpenDetail,
   signed = false,
   tone: toneProp,
 }: {
@@ -175,6 +177,17 @@ export function BalanceCard({
    *  jadi bawaannya mati. Warna tetap membawa arah. */
   signed?: boolean
   tone?: 'neg' | 'pos'
+  /** Rincian dua arah di bawah angka besar: "Terima +Rp230.000" dan
+   *  "Bayar −Rp22.000". Angka besar itu NET, dan net tidak sama dengan salah
+   *  satu komponennya — tanpa dua baris ini orang harus menebak dari mana
+   *  angkanya datang. Tanda + / − dipakai DI SINI karena baris ini aritmetika,
+   *  bukan label; di angka besar tidak dipakai karena labelnya sudah menyebut
+   *  arah. */
+  rows?: { label: string; value: number; tone: 'pos' | 'neg' }[]
+  /** Kalau diisi, angka besar jadi tombol yang membuka rincian (pop-up).
+   *  Angka besar adalah hal pertama yang dilihat orang, jadi di situlah
+   *  pertanyaan "kok segini?" muncul. */
+  onOpenDetail?: () => void
   /** Angka kedua: perkiraan dari bill yang pembagiannya belum selesai.
    *  Selalu ditulis dengan "±" dan tidak pernah dijumlahkan ke angka utama —
    *  menjumlahkan yang pasti dengan yang masih bisa berubah menghasilkan angka
@@ -184,12 +197,44 @@ export function BalanceCard({
   const zero = Math.round(value) === 0
   const sign = zero || !signed ? '' : value < 0 ? '−' : '+'
   const tone = toneProp ?? (zero ? 'zero' : !signed ? 'flat' : value < 0 ? 'neg' : 'pos')
+  const angka = (
+    <>
+      {sign ? <span className="ds-balance-sign">{sign}</span> : null}
+      <span className="ds-balance-cur">Rp</span>
+      {Math.round(Math.abs(value)).toLocaleString('id-ID')}
+    </>
+  )
   return <div className="ds-balance">
     <span className="ds-balance-label">{label}</span>
-    <strong className={`ds-balance-value ds-amount--${tone}`}>
-      {sign ? <span className="ds-balance-sign">{sign}</span> : null}
-      <span className="ds-balance-cur">Rp</span>{Math.round(Math.abs(value)).toLocaleString('id-ID')}
-    </strong>
+    {onOpenDetail ? (
+      <button
+        type="button"
+        className={`ds-balance-value ds-balance-tap ds-amount--${tone}`}
+        onClick={onOpenDetail}
+        aria-haspopup="dialog"
+      >
+        {angka}
+        <CaretRight size={18} weight="bold" className="ds-balance-caret" aria-hidden="true" />
+      </button>
+    ) : (
+      <strong className={`ds-balance-value ds-amount--${tone}`}>{angka}</strong>
+    )}
+    {rows && rows.length > 0 ? (
+      <>
+        <span className="ds-balance-cap">sudah pasti</span>
+        <dl className="ds-balance-rows">
+        {rows.map((row) => (
+          <div className="ds-balance-row" key={row.label}>
+            <dt>{row.label}</dt>
+            <dd className={`ds-amount--${row.tone}`}>
+              <span className="ds-balance-row-sign">{row.value < 0 ? '−' : '+'}</span>
+              {idr(Math.abs(row.value))}
+            </dd>
+          </div>
+        ))}
+        </dl>
+      </>
+    ) : null}
     {note ? <small className="ds-balance-note">{note}</small> : null}
     {estimate && Math.round(estimate.value) !== 0 ? (
       <span className="ds-balance-est">

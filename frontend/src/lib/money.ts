@@ -10,6 +10,27 @@ export function formatRp(value: number): string {
   return 'Rp' + nf.format(Math.round(value))
 }
 
+/**
+ * Kalimat di bawah angka saldo: dari mana angka itu datang.
+ *
+ * Beranda dan Rekap dulu menyusunnya sendiri-sendiri, dan hasilnya berbeda:
+ * Beranda menampilkan NET (Rp208.000) sementara Rekap menampilkan satu arah
+ * saja (Rp22.000) dengan catatan "kamu juga terima Rp230.000". Dua layar, dua
+ * angka untuk uang yang sama — orangnya wajar bingung apakah dia menerima
+ * Rp208.000 atau membayar Rp22.000. Sekarang keduanya memakai fungsi ini.
+ *
+ * "terima Rp230.000 − bayar Rp22.000" dipilih karena orang bisa memeriksa
+ * pengurangannya sendiri; kata "masuk/keluar" tidak sejelas tanda minus di sini.
+ */
+export function saldoNote(receivable: number, payable: number): string {
+  const terima = Math.round(receivable)
+  const bayar = Math.round(payable)
+  // Dua arah sekaligus = satu-satunya keadaan yang perlu dijelaskan, karena
+  // angka besarnya NET dan tidak sama dengan salah satu komponennya.
+  if (terima > 0 && bayar > 0) return 'terima ' + formatRp(terima) + ' − bayar ' + formatRp(bayar)
+  return ''
+}
+
 /** 96.000 — untuk input yang sudah punya prefix Rp. */
 export function formatDigits(value: number): string {
   return nf.format(Math.round(value))

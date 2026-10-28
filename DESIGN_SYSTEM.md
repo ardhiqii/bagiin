@@ -263,18 +263,65 @@ Merah hanya untuk satu arti itu. Kalau merah dipakai untuk hiasan atau untuk
 Beranda memikul dua pertanyaan berbeda, jadi angkanya dua — dan **tidak pernah
 dijumlahkan**:
 
-- **Angka pasti** (`Harus kamu bayar` / `Harus kamu terima`) — dari bill yang
-  pembagiannya sudah selesai. Ini yang boleh ditransfer sekarang.
-- **Angka kasar** (`Perkiraan tambahan ± Rp…`) — dari bill yang pembagiannya
-  belum selesai. Selalu berawalan `±`, warnanya lebih lembut, dan taruh di baris
-  sendiri di dalam kartu, bukan di kartu kedua yang bersaing.
+- **Angka pasti** (`Harus kamu terima` / `Harus kamu bayar`) — dari bill yang
+  pembagiannya sudah selesai. Angka besar di kartu adalah NET dari kelompok ini.
+- **Angka belum pasti** (`Belum dipastikan ± Rp…`) — dari bill yang
+  pembagiannya belum selesai. Selalu berawalan `±`, warnanya lebih lembut, dan
+  duduk di baris sendiri di dalam kartu, bukan di kartu kedua yang bersaing.
+  Namanya menyebut ketidakpastiannya; "Perkiraan tambahan" tidak.
 
 Menjumlahkan keduanya menghasilkan angka yang tidak pasti tapi terlihat pasti —
-persis kesalahan yang membuat orang mentransfer nominal yang salah. Angka kasar
-tetap berguna: dia memberi tahu besarannya kira-kira, tanpa berpura-pura final.
+persis kesalahan yang membuat orang mentransfer nominal yang salah.
 
-Catatan di bawah angka pasti menjawab **"angka ini angka apa"** — mis.
-`Sudah dikurangi yang harus kamu terima` — bukan menambah hitungan baru.
+Rincian yang menjawab **"angka ini angka apa"** adalah dua baris `Terima +Rp…` /
+`Bayar −Rp…` di bawah angka besar, dengan caption `SUDAH PASTI` di atasnya.
+
+## Kartu saldo: satu angka besar, rincian di bawahnya, rincian penuh saat diketuk
+
+Beranda dan Rekap memakai **satu komponen** (`components/SaldoCard.tsx`). Dua
+layar tidak boleh menyusun kartunya sendiri-sendiri: dulu Beranda menampilkan
+net Rp208.000 sementara Rekap menampilkan satu arah Rp22.000 untuk uang yang
+sama, dan orangnya wajar bertanya "230 apa 22?".
+
+Anatomi kartu, urutan tetap:
+
+1. **Label arah** — "Harus kamu terima" / "Harus kamu bayar" / "Saldonya nol".
+2. **Angka besar** — NET dari bill yang pembagiannya sudah pasti. Ini
+   satu-satunya angka besar di layar. Bisa diketuk (lihat di bawah).
+3. **Caption `SUDAH PASTI`** lalu dua baris rincian **hanya kalau ada uang dua
+   arah**: `Terima +Rp230.000` dan `Bayar −Rp22.000`.
+4. **Baris `Belum dipastikan`** dengan `±` — selalu dipisah garis, tidak pernah
+   dijumlahkan ke angka besar.
+
+### Tanda + / − hanya di baris rincian
+
+Di angka besar tidak ada tanda: labelnya sudah menyebut arah, dan "Harus kamu
+bayar −Rp22.000" terbaca seperti uang kembali. Di baris rincian tanda dipakai
+karena di sana memang aritmetika — orang bisa memeriksa 230.000 − 22.000 sendiri.
+
+### Angka besar bisa diketuk
+
+Angka besar adalah hal pertama yang dilihat orang, jadi di situlah pertanyaan
+"kok segini?" muncul. Angka itu adalah tombol (`aria-haspopup="dialog"`) yang
+membuka sheet **Rincian saldo**: terima, bayar, ringkasan selisih, lalu kelompok
+**BELUM PASTI** yang menyebut jumlah bill dan bahwa angkanya tidak pernah
+dijumlahkan. Kalau ada bill belum dibagi, sheet punya tombol "Lihat N bill itu"
+yang menutup sheet dan menggulir ke daftarnya.
+
+### Jangan mengarang angka nol
+
+Kalau ada bill belum dibagi tapi perkiraannya kebetulan nol (mis. sisa yang
+jatuh ke pembayar tidak mengubah arah), jumlah billnya tetap disebut: "3 bill
+belum dibagi · angkanya belum bisa dipastikan". Menyembunyikannya membuat layar
+terlihat bersih padahal ada yang menggantung.
+
+### Tinggi huruf menentukan siapa yang menang
+
+Angka besar 34 px (`--ds-text-4xl`). Baris rincian 17 px (`--ds-text-lg`), label
+baris 13 px, caption 10 px kapital. Tidak ada yang boleh menyamai angka besar:
+begitu dua angka sama besar, tidak ada lagi pusat perhatian dan orang berhenti
+tahu mana yang harus dibaca dulu. Rincian yang lebih besar dari angka besar
+adalah kesalahan, bukan selera.
 
 ## Satu layar, satu angka per konsep
 
@@ -396,6 +443,12 @@ sama.
 Yang tetap ditawarkan pada keadaan beku hanya jalur untuk membukanya kembali
 (mis. "Batalkan lunas seluruh bill"), dan jalur itu disebut namanya.
 
+Tombol mati karena **aplikasinya belum siap** juga wajib punya alasan ("Menyiapkan…
+sebentar."). Slot alasan yang kosong membuat tombolnya mati tanpa penjelasan, dan
+di layar sentuh ketukan ke tombol mati hilang tanpa jejak — orang mengira
+aplikasinya rusak. Slot alasan itu juga harus setinggi tetap, supaya tombolnya
+tidak bergeser tepat saat orang mau menekan.
+
 Kalau kontrol dimatikan karena **isian belum lengkap**, sebutkan apa yang kurang
 di dekat tombolnya. Tombol mati tanpa penjelasan membuat orang menebak: judulnya
 kosong, harganya nol, atau namanya belum diisi. Alasannya ditulis dengan kata
@@ -424,7 +477,7 @@ Daftar ini **sama dengan ekspor** `frontend/src/ds/primitives.tsx` (17 komponen;
 | --- | --- | --- |
 | Button | Button | primary, secondary, quiet, danger, loading, disabled, block |
 | StatusBadge | Badge | menunggu, final, sukses, butuh tindakan |
-| BalanceCard | Card | terima, bayar, perkiraan |
+| BalanceCard | Card | terima, bayar, saldonya nol, dua arah, bisa diketuk (rincian) |
 | Money / Amount | custom | bertanda, netral, flat, perkiraan |
 | Field | Input + Label | default, fokus, error, nominal rupiah |
 | Sheet | Drawer/Dialog | konfirmasi, rincian biaya, tujuan bayar |

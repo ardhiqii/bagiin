@@ -83,6 +83,7 @@ test.describe('Bagiin — sesi dan pagar identitas', () => {
     await owner.getByLabel('Nama bill').fill('Bill Tamu ' + Date.now().toString().slice(-5))
     await owner.getByLabel('Item 1').fill('Kopi')
     await owner.getByLabel('Harga satuan').fill('12000')
+    await expect(owner.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await owner.getByRole('button', { name: 'Buat bill' }).click()
     await expect(owner).toHaveURL(/\/b\//)
     const billUrl = owner.url()

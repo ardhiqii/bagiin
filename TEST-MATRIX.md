@@ -151,6 +151,9 @@ kosong).
 | I-06 | Sapuan semua layar: 0 error konsol, 0 gambar rusak, tidak melebar, tidak ada NaN | `v1-integrity.spec.ts` I-06 |
 | I-07 | Nama pembeda 0.9 di localStorage pindah ke server sekali, lalu tampil di Kontak | `v1-integrity.spec.ts` I-07 |
 | I-08 | Pembeda publik yang terpampang (#ABCD) bisa dipakai sebagai kata cari di Kontak | `auth-and-contacts.spec.ts` 120 |
+| I-09 | Terima Rp230.000 + bayar Rp22.000: Beranda dan Rekap menampilkan angka NET yang sama beserta rincian `Terima +…` / `Bayar −…` | `recap.spec.ts` 125 |
+| — | Tombol "Buat bill" ditunggu sampai `enabled` sebelum diklik (41 tempat): klik ke tombol mati hilang tanpa jejak dan di mesin lambat terbaca sebagai "aplikasi tidak berpindah" | semua spec |
+| I-10 | Angka besar bisa diketuk: sheet Rincian saldo menunjukkan terima − bayar = selisih, memisahkan yang belum pasti, dan tombolnya menggulir ke daftar bill | `recap.spec.ts` 126 |
 
 ## Integritas angka
 

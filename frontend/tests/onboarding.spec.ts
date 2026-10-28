@@ -40,6 +40,10 @@ test.describe('Bagiin — gerbang nama', () => {
     await page.getByLabel('Nama bill').fill('Gate ' + stamp)
     await page.getByLabel('Item 1').fill('Soto')
     await page.getByLabel('Harga satuan').first().fill('25000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
 
@@ -53,6 +57,10 @@ test.describe('Bagiin — gerbang nama', () => {
     await page.getByLabel('Nama bill').fill('Link ' + stamp)
     await page.getByLabel('Item 1').fill('Nasi uduk')
     await page.getByLabel('Harga satuan').first().fill('17000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
     const url = page.url()

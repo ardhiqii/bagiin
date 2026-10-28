@@ -25,7 +25,11 @@ async function createTwoItemBill(page: Page, title: string) {
   await page.getByRole('button', { name: '+ Tambah item' }).click()
   await page.getByLabel('Item 2').fill('Ayam bakar')
   await page.getByLabel('Harga satuan').nth(1).fill('30000')
-  await page.getByRole('button', { name: 'Buat bill' }).click()
+  // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
+    await page.getByRole('button', { name: 'Buat bill' }).click()
   await expect(page).toHaveURL(/\/b\//)
   return page.url()
 }
@@ -95,6 +99,10 @@ test.describe('Bagiin — mengubah bill', () => {
       await page.getByLabel('Nama teman').fill(person)
       await page.getByRole('button', { name: 'Tambah', exact: true }).click()
     }
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
     const url = page.url()

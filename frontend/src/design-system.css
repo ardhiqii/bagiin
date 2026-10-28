@@ -496,6 +496,106 @@
   font-variant-numeric: tabular-nums;
 }
 .ds-balance-cur { font-size: .58em; opacity: .6; margin-right: .1em; letter-spacing: 0; }
+
+/* Angka besar bisa diketuk. Tombol, bukan <strong>, karena di sinilah orang
+   bertanya "kok segini?"; pop-up-nya menjelaskan dari mana angkanya datang.
+   Tampilannya harus tetap persis seperti angka biasa: tidak ada garis, tidak ada
+   latar, tidak ada bingkai — hanya caret kecil yang menandakan bisa dibuka. */
+.ds-balance-tap {
+  width: 100%;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.ds-balance-tap:active { opacity: .85; }
+.ds-balance-caret {
+  vertical-align: middle;
+  margin-left: 6px;
+  opacity: .45;
+}
+
+/* Rincian dua arah. Ukurannya SETENGAH angka besar (17 vs 34): cukup besar
+   untuk dibaca tanpa menggeser angka besar sebagai pusat perhatian. Kalau
+   keduanya sama besar, mata tidak tahu mana angka utama. */
+.ds-balance-cap {
+  display: block;
+  margin-top: 6px;
+  color: #9fb6bc;
+  font: var(--ds-weight-strong) var(--ds-text-2xs)/1.4 var(--ds-font-body);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.ds-balance-rows {
+  display: grid;
+  gap: 3px;
+  margin: 2px 0 0;
+}
+.ds-balance-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+}
+.ds-balance-row dt {
+  color: #c3d6da;
+  font: var(--ds-weight-regular) var(--ds-text-md)/1.35 var(--ds-font-body);
+}
+.ds-balance-row dd {
+  margin: 0;
+  font: var(--ds-weight-medium) var(--ds-text-lg)/1.2 var(--ds-font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+.ds-balance-row dd.ds-amount--pos { color: #8fe0bd; }
+.ds-balance-row dd.ds-amount--neg { color: #ffb4a8; }
+.ds-balance-row-sign { margin-right: 2px; opacity: .9; }
+
+/* ---------- pop-up rincian saldo ----------
+   Muncul saat angka besar diketuk. Isinya aritmetika yang sama dengan kartu,
+   tapi dengan ruang untuk menjelaskan: dari mana angkanya, dan bahwa selisih
+   itu bukan satu transfer. Hierarki: angka baris 17 px, total 20 px, keterangan
+   13 px — tidak ada yang menyaingi angka besar di kartu (34 px). */
+.saldo-detail { display: grid; gap: 18px; }
+.saldo-detail-group { display: grid; gap: 6px; }
+.saldo-detail-cap {
+  color: var(--ds-muted);
+  font: var(--ds-weight-strong) var(--ds-text-2xs)/1.4 var(--ds-font-body);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.saldo-detail-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+  padding: 7px 0;
+  border-bottom: 1px solid var(--ds-hairline);
+}
+.saldo-detail-row span { color: var(--ds-navy); font: var(--ds-weight-regular) var(--ds-text-base)/1.35 var(--ds-font-body); }
+.saldo-detail-row b {
+  font: var(--ds-weight-medium) var(--ds-text-lg)/1.2 var(--ds-font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+.saldo-detail-row.is-total { border-bottom: 0; border-top: 1px solid var(--ds-border); margin-top: 2px; }
+.saldo-detail-row.is-total span { font-weight: var(--ds-weight-medium); }
+.saldo-detail-row.is-total b { font-size: var(--ds-text-xl); }
+.saldo-detail-est { color: var(--ds-pending); }
+.saldo-detail-hint {
+  margin: 2px 0 0;
+  color: var(--ds-muted);
+  font: var(--ds-weight-regular) var(--ds-text-md)/1.55 var(--ds-font-body);
+}
+.saldo-detail-foot {
+  margin: 0;
+  color: var(--ds-muted);
+  font: var(--ds-weight-regular) var(--ds-text-sm)/1.5 var(--ds-font-body);
+}
 .ds-balance-note { display: block; color: #c3d6da; font: var(--ds-weight-regular) var(--ds-text-sm)/1.45 var(--ds-font-body); }
 
 /* Angka kedua di kartu saldo: perkiraan, bukan janji. Dipisah garis supaya

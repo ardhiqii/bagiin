@@ -56,6 +56,10 @@ test.describe('Bagiin — rekening dan undangan', () => {
     await page.getByLabel('Nama bill').fill('Transfer ' + stamp)
     await page.getByLabel('Item 1').fill('Bakso')
     await page.getByLabel('Harga satuan').fill('25000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
     const url = page.url()
@@ -79,6 +83,10 @@ test.describe('Bagiin — rekening dan undangan', () => {
     await page.getByLabel('Nama bill').fill('Kenalan ' + stamp)
     await page.getByLabel('Item 1').fill('Kopi')
     await page.getByLabel('Harga satuan').fill('15000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
     const firstUrl = page.url()
@@ -101,6 +109,10 @@ test.describe('Bagiin — rekening dan undangan', () => {
     await page.getByLabel('Nama bill').fill('Undang kedua ' + stamp)
     await page.getByLabel('Item 1').fill('Sate')
     await page.getByLabel('Harga satuan').fill('20000')
+    // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
+    // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
+    // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
 
