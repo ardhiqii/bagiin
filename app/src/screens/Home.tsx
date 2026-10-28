@@ -7,6 +7,7 @@ import { formatRp } from '../lib/money'
 import { api } from '../lib/api'
 import { useToast } from '../components/Toast'
 import { AppShell } from '../components/AppShell'
+import { SecureNudge } from '../components/SecureNudge'
 import { ActionFlag, Alert, Amount, BalanceCard, Button, EmptyState, Notice, SectionHead } from '../ds/primitives'
 import { MagnifyingGlass } from '@phosphor-icons/react'
 import homeEmptyArt from '../assets/home-empty.webp'
@@ -351,6 +352,13 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
           estimate={estimate !== 0 ? { value: estimate } : undefined}
         />
       )}
+
+      {/* Pengingat "amankan akun" hanya untuk tamu murni (tanpa username,
+          password, dan Google). Komponennya sendiri yang memutuskan; di sini
+          cuma tempatnya — tepat di bawah saldo, sebelum daftar bill. */}
+      {identityId ? (
+        <SecureNudge identityId={identityId} hasBills={(bills.data ?? []).length > 0} />
+      ) : null}
 
       {/* Blok ini isinya HANYA pekerjaan: berapa bill dan apa yang harus
           dilakukan. Tanpa panah: panah menjanjikan pindah layar, dan dulu

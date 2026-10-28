@@ -1231,3 +1231,30 @@ p, small, .app-note { text-wrap: pretty; }
     border-right: 0;
   }
 }
+
+/* Pengingat "amankan akun": satu kartu tenang, bukan spanduk kuning besar.
+   Amber hanya dipakai sebagai garis tepi tipis, karena isinya informasi, bukan
+   peringatan yang menuntut tindakan sebelum layar ini bisa dipakai. */
+.nudge-card {
+  display: grid;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-4);
+  background: var(--ds-surface);
+  border-radius: var(--ds-radius-lg);
+  border: 1px solid color-mix(in srgb, var(--ds-pending) 26%, transparent);
+  box-shadow: var(--ds-shadow-card, none);
+}
+.nudge-copy { display: grid; gap: 4px; }
+.nudge-copy b {
+  font: var(--ds-weight-strong) var(--ds-text-base)/1.3 var(--ds-font-body);
+  color: var(--ds-navy);
+}
+.nudge-copy small {
+  font-size: var(--ds-text-sm);
+  color: var(--ds-muted);
+  line-height: 1.45;
+}
+/* Tombol aksi dan "Nanti" duduk dalam satu baris: menutup pengingat harus
+   semudah menuruti, kalau tidak ini jadi iklan. */
+.nudge-actions { display: flex; align-items: center; gap: var(--ds-space-3); }
+.nudge-actions .link-quiet { margin: 0; }
