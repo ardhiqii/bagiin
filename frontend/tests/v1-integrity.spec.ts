@@ -141,6 +141,76 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     expect(sum + detail.uncovered_idr).toBe(detail.bill.total_idr)
   })
 
+  test('I-06. setiap layar: nol error konsol, nol gambar rusak, tidak melebar', async ({ page }) => {
+    await page.goto('/')
+    await page.getByLabel('Nama kamu').fill('Sapu ' + stamp)
+    await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
+    await page.goto('/create')
+    await page.getByLabel('Nama bill').fill('Sapu ' + stamp)
+    await page.getByLabel('Item 1').fill('Kopi')
+    await page.getByLabel('Harga satuan').first().fill('15000')
+    await page.getByRole('button', { name: 'Buat bill' }).click()
+    await expect(page).toHaveURL(/\/b\//)
+    const billId = page.url().split('/b/')[1]
+
+    const paths = ['/', '/recap', '/settings', '/kontak', '/create', '/masuk', '/b/' + billId, '/tidak-ada']
+    const report: string[] = []
+    for (const path of paths) {
+      const errors: string[] = []
+      const badResponses: string[] = []
+      const onError = (e: Error) => errors.push(String(e).slice(0, 100))
+      const onResponse = (r: import('@playwright/test').Response) => {
+        if (r.status() >= 400) badResponses.push(r.status() + ' ' + r.url())
+      }
+      const onConsole = (m: import('@playwright/test').ConsoleMessage) => {
+        // "Failed to load resource" adalah cermin dari respons >= 400 yang sudah
+        // dicatat di badResponses; memeriksanya dua kali cuma bikin pesan ganda
+        // tanpa URL.
+        if (m.type() === 'error' && !/Failed to load resource/i.test(m.text())) {
+          errors.push(m.text().slice(0, 100))
+        }
+      }
+      page.on('pageerror', onError)
+      page.on('console', onConsole)
+      page.on('response', onResponse)
+      await page.goto(path)
+      await page.waitForTimeout(700)
+      page.off('pageerror', onError)
+      page.off('console', onConsole)
+      page.off('response', onResponse)
+      // Google Identity Services memanggil accounts.google.com dari layar masuk;
+      // di origin dev (127.0.0.1) Google menolak origin itu, dan itu bukan
+      // kesalahan aplikasi. Selain host itu, respons gagal tetap dihitung.
+      for (const bad of badResponses) {
+        if (/accounts\.google\.com/.test(bad)) continue
+        errors.push('respons: ' + bad.slice(0, 120))
+      }
+
+      const checks = await page.evaluate(() => ({
+        broken: [...document.images].filter((i) => i.complete && i.naturalWidth === 0).length,
+        overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+        nan: /NaN|Infinity|undefined|\[object Object\]/.test(document.body.innerText),
+      }))
+      // Yang tidak dihitung: 404 yang memang diminta tes, dan noise dari skrip
+      // Google Identity Services. GSI memasang iframe accounts.google.com dan
+      // memeriksa origin-nya sendiri; di dev (127.0.0.1) origin itu memang tidak
+      // terdaftar, dan pesan CSP-nya datang dari dalam iframe Google, bukan dari
+      // aplikasi ini. Kalau GSI suatu hari benar-benar rusak, gejalanya terlihat
+      // di layar masuk (tombol Google tidak muncul), bukan di daftar ini.
+      const real = errors.filter(
+        (e) =>
+          !/status of 404|404 \(Not Found\)/i.test(e) &&
+          !/GSI_LOGGER|accounts\.google\.com/i.test(e),
+      )
+      report.push(`${path} error=${real.length} gambar=${checks.broken} melebar=${checks.overflow} nan=${checks.nan}`)
+      expect(real, path + ' konsol: ' + real.join(' | ')).toHaveLength(0)
+      expect(checks.broken, path + ' gambar rusak').toBe(0)
+      expect(checks.overflow, path + ' melebar').toBeFalsy()
+      expect(checks.nan, path + ' ada NaN/undefined').toBeFalsy()
+    }
+    test.info().annotations.push({ type: 'sapuan', description: report.join('; ') })
+  })
+
   test('I-05. identitas tamu 0.9 (data localStorage lama) tetap dikenali di 1.0', async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
     const page = await ctx.newPage()

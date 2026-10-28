@@ -118,6 +118,26 @@ kosong).
 | G-07 | Alamat asing (404) memberi jalan pulang, bukan layar putih | `integration.spec.ts` 94 |
 | G-08 | Perangkat lain tidak bisa memakai token perangkat ini | `v1-cases.spec.ts` V-09 |
 
+### Abuse & ketahanan (orang tidak sabar, jaringan jelek, isian nakal)
+
+| ID | Kasus | Tes |
+|---|---|---|
+| A-01 | Ketuk item 6x cepat: porsi bertambah tepat, satu baris pilihan, uang pas | `abuse.spec.ts` A-01 |
+| A-02 | Tiga ketukan "Buat bill": hanya satu bill lahir | `abuse.spec.ts` A-02 |
+| A-03 | Spam "Tandai lunas": status akhir lunas, total tidak bergeser | `abuse.spec.ts` A-03 |
+| A-04 | Spam tombol tambah porsi berhenti di qty item | `abuse.spec.ts` A-04 |
+| A-05 | Satu tamu menekan "Ikut bill" berkali-kali: tetap satu peserta | `abuse.spec.ts` A-05 |
+| B-01 | Dua tamu menekan item terakhir bersamaan: uang tetap utuh, tidak ada bagian negatif | `abuse.spec.ts` B-01 |
+| C-01 | Pilih item gagal karena jaringan: pesan "Koneksi bermasalah", server tidak berubah | `abuse.spec.ts` C-01 |
+| C-02 | Daftar bill lambat 2,5 detik: tidak mengklaim "tidak ada utang" sebelum data datang | `abuse.spec.ts` C-02 |
+| C-03 | Server menolak simpan nama: pesan muncul, nama di perangkat tidak berubah | `abuse.spec.ts` C-03 |
+| D-01 | Harga diisi huruf/minus/angka raksasa: tidak ada NaN di layar, bill tetap bisa dibuat | `abuse.spec.ts` D-01 |
+| D-02 | Judul 400 karakter: klien menahan di 120, layar tidak melebar | `abuse.spec.ts` D-02 |
+| D-03 | Item tanpa nama: tombol mati **dan** alasannya tertulis | `abuse.spec.ts` D-03 |
+| E-01 | Kembali lalu maju: angka bill tidak berubah | `abuse.spec.ts` E-01 |
+| E-02 | Muat ulang di tengah memilih: pilihan bertahan | `abuse.spec.ts` E-02 |
+| E-03 | Dua tab identitas sama: aksi tab satu terlihat di tab dua setelah muat ulang | `abuse.spec.ts` E-03 |
+
 ### Integritas yang tidak kelihatan
 
 | ID | Kasus | Tes |
@@ -127,6 +147,7 @@ kosong).
 | I-03 | Getaran menyala saat item dipilih/dilepas (stub `navigator.vibrate`) | `v1-integrity.spec.ts` I-03 |
 | I-04 | Angka daftar == angka halaman bill == invarian `sum(bagian) + uncovered == total`, diambil dari API | `v1-integrity.spec.ts` I-04 |
 | I-05 | Identitas tamu 0.9 (localStorage lama) dikenali 1.0 tanpa diganti identitas baru | `v1-integrity.spec.ts` I-05 |
+| I-06 | Sapuan semua layar: 0 error konsol, 0 gambar rusak, tidak melebar, tidak ada NaN | `v1-integrity.spec.ts` I-06 |
 
 ## Integritas angka
 
@@ -143,6 +164,25 @@ Yang harus selalu benar di setiap layar, dan diuji ulang setelah perubahan apa p
    rekap. Audit terakhir: 54 identitas × 162 pemeriksaan, 81 bill, 0 pelanggaran.
 7. **Buku besar seimbang:** jumlah `net_idr` semua identitas = 0 (uang tidak
    muncul atau hilang dari perhitungan). Audit terakhir: tepat 0.
+8. **Tombol mati harus menjelaskan alasannya.** Tombol "Buat bill" dan "Simpan
+   perubahan" menampilkan alasan di tempat yang sama saat dinonaktifkan. Diukur
+   `abuse.spec.ts` D-03.
+
+## Pertanyaan terbuka (butuh keputusan produk)
+
+**Batas porsi di UI vs di server.** UI membatasi: item qty 2 hanya bisa diambil
+2 orang (ketukan ketiga mengosongkan pilihan). Server tidak membatasi: uji API
+dengan item qty 2 harga Rp20.000 dan **tiga** orang masing-masing qty 1 diterima
+semua, lalu mesin split membagi rata Rp6.667/orang — uang tetap utuh (jumlah
+bagian = total), tapi arti "qty" jadi berbeda antara layar dan server.
+
+Dua pilihan yang sama-sama masuk akal:
+1. **Porsi eksklusif** (ikut UI sekarang): server menolak klaim melebihi qty
+   dengan 409 dan pesan jelas. Butuh perubahan backend + tes.
+2. **Item boleh dibagi siapa saja** (ikut README lama): batas di UI dicabut,
+   qty hanya menentukan besar satu ketukan.
+
+Belum diubah karena ini keputusan produk, bukan bug yang jelas.
 
 ## Cara menjalankan
 

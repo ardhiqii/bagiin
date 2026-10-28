@@ -78,6 +78,18 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
   const discountIdr = parseRupiah(discountValue)
   const total = subtotal + taxIdr + serviceIdr - discountIdr
   const valid = parsed.length > 0 && parsed.every((item) => item.name && item.price > 0) && total > 0
+  /* Alasan tombol Simpan mati harus kelihatan. Tanpa ini orang menebak apakah
+     yang salah judulnya, harganya, atau qty-nya. */
+  const blockedReason =
+    parsed.length === 0
+      ? 'Bill butuh minimal satu item.'
+      : parsed.some((item) => !item.name)
+        ? 'Ada item yang belum punya nama.'
+        : parsed.some((item) => item.price <= 0)
+          ? 'Ada item yang harganya masih Rp0.'
+          : total <= 0
+            ? 'Total bill tidak boleh Rp0.'
+            : ''
 
   async function save() {
     if (!data || !valid) return
@@ -135,6 +147,11 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
             <div className="tot">
               <small>Total baru</small>
               <b>{formatRp(total)}</b>
+              {blockedReason ? (
+                <small role="status" style={{ display: 'block', marginTop: 2, color: 'var(--ds-muted)' }}>
+                  {blockedReason}
+                </small>
+              ) : null}
             </div>
             <Button loading={action.isPending} disabled={!valid} onClick={save}>
               Simpan perubahan

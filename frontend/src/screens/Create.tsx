@@ -11,6 +11,13 @@ import createHeroArt from '../assets/create-hero.webp'
 import scanArt from '../assets/scan.webp'
 import { invalidateMoneyViews } from '../lib/mutations'
 
+/**
+ * Backend menolak judul, nama tempat, dan nama item di atas 120 karakter.
+ * Angka yang sama dipakai di sini supaya orang tidak mengetik 400 karakter lalu
+ * menunggu perjalanan ke server hanya untuk diberi tahu.
+ */
+const MAX_TEXT = 120
+
 type DraftItem = { key: string; name: string; qty: string; price: string }
 
 const newItem = (): DraftItem => ({ key: Math.random().toString(36).slice(2), name: '', qty: '1', price: '' })
@@ -183,7 +190,17 @@ export function Create({ identityId }: { identityId: string | null }) {
   const discountIdr = parseRupiah(discount)
   const total = subtotal + taxIdr + serviceIdr - discountIdr
 
-  const canSubmit = identityId && parsed.some((i) => i.name && i.price > 0) && total > 0 && !busy
+  const hasNamedItem = parsed.some((i) => i.name && i.price > 0)
+  const canSubmit = Boolean(identityId) && hasNamedItem && total > 0 && !busy
+  /* Tombol mati tanpa penjelasan bikin orang menebak. Kalau memang belum bisa
+     disimpan, sebut apa yang kurang — di tempat yang sama dengan tombolnya. */
+  const blockedReason = !identityId
+    ? ''
+    : !hasNamedItem
+      ? 'Isi nama item dan harganya dulu — bill butuh minimal satu item.'
+      : total <= 0
+        ? 'Total bill masih Rp0. Isi harga item dulu.'
+        : ''
 
   async function submit() {
     if (!canSubmit) return
@@ -246,6 +263,11 @@ export function Create({ identityId }: { identityId: string | null }) {
           <div className="tot">
             <small>Total bill</small>
             <b>{formatRp(total)}</b>
+            {blockedReason ? (
+              <small role="status" style={{ display: 'block', marginTop: 2, color: 'var(--ds-muted)' }}>
+                {blockedReason}
+              </small>
+            ) : null}
           </div>
           <Button loading={busy} disabled={!canSubmit} onClick={submit}>
             Buat bill
@@ -388,8 +410,25 @@ export function Create({ identityId }: { identityId: string | null }) {
 
       {error ? <Alert tone="danger" title="Bill gagal dibuat">{error}</Alert> : null}
 
-      <Field id="bill-title" label="Nama bill" value={title} onChange={setTitle} hint="Contoh: Makan malam di Warteg" />
-      <Field id="bill-merchant" label="Merchant (opsional)" value={merchant} onChange={setMerchant} />
+      <Field
+        id="bill-title"
+        label="Nama bill"
+        value={title}
+        maxLength={MAX_TEXT}
+        onChange={setTitle}
+        hint={
+          title.length >= MAX_TEXT - 20
+            ? 'Sisa ' + (MAX_TEXT - title.length) + ' karakter'
+            : 'Contoh: Makan malam di Warteg'
+        }
+      />
+      <Field
+        id="bill-merchant"
+        label="Merchant (opsional)"
+        value={merchant}
+        maxLength={MAX_TEXT}
+        onChange={setMerchant}
+      />
 
       <section className="app-stack">
         <div className="app-inline">
@@ -407,6 +446,12 @@ export function Create({ identityId }: { identityId: string | null }) {
                 id={'item-name-' + index}
                 label={'Item ' + (index + 1)}
                 value={item.name}
+                maxLength={MAX_TEXT}
+                hint={
+                  item.name.length >= MAX_TEXT - 20
+                    ? 'Sisa ' + (MAX_TEXT - item.name.length) + ' karakter'
+                    : undefined
+                }
                 onChange={(v) => setItems((prev) => prev.map((it) => (it.key === item.key ? { ...it, name: v } : it)))}
               />
               <div className="item-meta">

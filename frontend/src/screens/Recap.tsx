@@ -116,7 +116,10 @@ function PersonSheet({
     const transfer = account ? '\n\nTransfer ke ' + account.brand + ' ' + account.account_no +
       (account.holder_name ? ' a.n. ' + account.holder_name : '') : ''
     const text =
-      'Hai ' + row.name + ', ini tagihan kita yang belum lunas:\n' +
+      // "bill" adalah kata yang dipakai seluruh aplikasi; "tagihan" cuma muncul
+      // di sini dan bikin orang bertanya apakah ini hal yang sama. Rinciannya
+      // juga lebih dari satu bill, jadi kalimatnya menyebut rincian.
+      'Hai ' + row.name + ', ini rincian bill kita yang belum lunas:\n' +
       lines.join('\n') +
       '\nTotal: ' + formatRp(row.amount_idr) +
       transfer +
@@ -262,7 +265,7 @@ export function Recap({ identityId }: { identityId: string | null }) {
   // tahu ada piutang yang belum masuk angka ini.
   const note =
     outstandingBills === 0
-      ? 'tidak ada sisa tagihan yang pembagiannya sudah jelas'
+      ? 'tidak ada sisa bill yang pembagiannya sudah jelas'
       : 'dari bill yang pembagiannya sudah pasti' +
         (otherDirection > 0
           ? ' · kamu juga ' + (heroPays ? 'terima' : 'bayar') + ' ' + formatRp(otherDirection)
