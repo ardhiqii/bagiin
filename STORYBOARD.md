@@ -193,6 +193,40 @@ Yang dipakai sekarang:
   menyaring daftar ke bill tersebut, dan yang menandakan itu chip saringan yang
   ikut aktif.
 
+## Tiga cara masuk, satu sesi perangkat
+
+Layar `/masuk` punya dua tab (Kode / Akun) dan satu tombol Google.
+
+- **Kode pemulihan** — tetap cara pertama. Satu-satunya yang tidak bergantung
+  pada akun Google, email, atau hafalan password.
+- **Akun (username + password)** — daftar langsung dari layar yang sama; kode
+  pemulihan diberikan sekali di akhir dan wajib ditampilkan sebelum lanjut.
+- **Google** — ID token diverifikasi di server (aud, iss, email terverifikasi).
+  Akun Google yang baru pertama masuk tetap dapat kode pemulihan: kehilangan
+  akses Google tidak boleh berarti kehilangan bill.
+
+Ketiganya berakhir di hal yang sama: **token perangkat**. Token bisa dicabut
+satu-satu dari Pengaturan → Perangkat, dan mengganti password otomatis
+mengeluarkan semua perangkat lain — kalau tidak, mengganti password gara-gara
+curiga tidak mengeluarkan siapa pun.
+
+Jalur tamu tidak pernah dipaksa akun: buka link, isi nama, pilih item.
+
+## Nama pembeda untuk kontak
+
+Di lapangan, nama orang tidak unik. Di DB uji ada 245 identity bernama "Aufa".
+
+- Pengaturan → **Kontak**: daftar orang yang pernah bareng bill, dengan
+  `@username` atau kode `#SW9C`, jumlah bill bareng, dan bill terakhir.
+- Ketuk baris → beri nama pembeda (`Amel Kampus`). Nama asli tetap terlihat di
+  baris kedua.
+- Nama pembeda **privat dan satu arah**: hanya penampil yang melihatnya, dan
+  tidak pernah dipakai di pesan yang dikirim ke orangnya.
+- Sheet undangan memakai pembeda yang sama + punya tombol pensil, jadi memberi
+  nama tidak memaksa keluar dari alur mengundang.
+- Kalau dua kontak bernama sama belum diberi nama pembeda, daftar undangan
+  menampilkan peringatan — bukan diam-diam menaruh dua baris identik.
+
 ## Bill lunas itu beku — di layar dan di server
 
 Bill yang sudah ditandai lunas tidak boleh berubah lagi: item mati (bukan

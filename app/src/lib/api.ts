@@ -114,7 +114,7 @@ export const endpoints = {
   /* Endpoint restore menerima KODE pemulihan, bukan id+secret. Versi lama di
      sini salah bentuk dan tidak pernah dipakai layar mana pun. */
   restoreByCode: (code: string) =>
-    api<Identity & { secret?: string | null }>('/api/identities/restore', {
+    api<Identity & { secret?: string | null; token?: string }>('/api/identities/restore', {
       method: 'POST',
       body: { code },
     }),
@@ -124,4 +124,62 @@ export const endpoints = {
   me: (id: string) => api<Identity & { stats?: unknown }>(`/api/identities/${id}/me`),
   rename: (id: string, name: string) =>
     api<Identity>(`/api/identities/${id}/name`, { method: 'POST', body: { name } }),
+
+  /* ---------- akun ----------
+     Semua jalur masuk mengembalikan `token` (sesi perangkat yang bisa dicabut)
+     dan, untuk akun baru, `recovery_code` yang wajib ditampilkan sekali. */
+  authState: () => api<AuthState>('/api/auth/state'),
+  register: (input: { username: string; password: string; name: string }) =>
+    api<AuthSession>('/api/auth/register', { method: 'POST', body: input }),
+  login: (input: { username: string; password: string }) =>
+    api<AuthSession>('/api/auth/login', { method: 'POST', body: input }),
+  googleLogin: (idToken: string) =>
+    api<AuthSession>('/api/auth/google', { method: 'POST', body: { id_token: idToken, mode: 'login' } }),
+  googleLink: (idToken: string) =>
+    api<{ linked: boolean; email?: string | null }>('/api/auth/google', {
+      method: 'POST',
+      body: { id_token: idToken, mode: 'link' },
+    }),
+  googleUnlink: () => api<{ linked: boolean }>('/api/auth/google/unlink', { method: 'POST', body: {} }),
+  setPassword: (input: { current_password?: string; new_password: string }) =>
+    api<{ ok: boolean }>('/api/auth/password', { method: 'POST', body: input }),
+  setUsername: (username: string) =>
+    api<{ username: string }>('/api/auth/username', { method: 'POST', body: { username } }),
+  /* kode pemulihan untuk identitas yang sedang login (beda dari endpoint lama
+     yang butuh id di URL) */
+  regenerateRecoveryCode: () => api<{ code: string }>('/api/auth/recovery', { method: 'POST', body: {} }),
+  logout: () => api<{ ok: boolean }>('/api/auth/logout', { method: 'POST', body: {} }),
+  revokeDevice: (deviceId: string) =>
+    api<{ ok: boolean }>(`/api/auth/devices/${deviceId}`, { method: 'DELETE' }),
+
+  /* ---------- kontak ---------- */
+  setAlias: (identityId: string, contactId: string, alias: string) =>
+    api<{ alias: string; display_name: string }>(
+      `/api/identities/${identityId}/contacts/${contactId}/alias`,
+      { method: 'PUT', body: { alias } },
+    ),
+  clearAlias: (identityId: string, contactId: string) =>
+    api<{ alias: null; display_name: string | null }>(
+      `/api/identities/${identityId}/contacts/${contactId}/alias`,
+      { method: 'DELETE' },
+    ),
+}
+
+export type AuthSession = { identity: Identity; token: string; recovery_code?: string }
+
+export type AuthDevice = {
+  id: string
+  label: string
+  last_seen_at: string | null
+  current: boolean
+}
+
+export type AuthState = {
+  username: string | null
+  handle: string
+  has_password: boolean
+  has_recovery_code: boolean
+  google: { linked: boolean; email: string | null }
+  google_configured: boolean
+  devices: AuthDevice[]
 }

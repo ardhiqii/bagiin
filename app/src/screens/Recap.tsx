@@ -65,9 +65,11 @@ function PersonRow({ row, onOpen }: { row: RecapCounterparty; onOpen: () => void
       : row.bills.length + ' bill · belum dia transfer'
   return (
     <button type="button" className="recap-person" onClick={onOpen}>
-      <Avatar label={initial(row.name)} tone={pays ? 'navy' : 'mint'} />
+      <Avatar label={initial(row.display_name ?? row.name)} tone={pays ? 'navy' : 'mint'} />
       <span className="recap-person-copy">
-        <b>{row.name}</b>
+        {/* nama pembeda milik penampil; pesan yang dikirim ke dia tetap
+            memakai nama aslinya (lihat copyReminder) */}
+        <b>{row.display_name ?? row.name}</b>
         <small>{meta}</small>
         {/* dua arah sekaligus: jangan sembunyikan yang satunya di balik net */}
         {twoWay ? (
@@ -127,7 +129,7 @@ function PersonSheet({
     }
   }
   return (
-    <Sheet open={row !== null} title={row?.name ?? 'Orang'} art={personArt} onClose={onClose}>
+    <Sheet open={row !== null} title={(row?.display_name ?? row?.name) || 'Orang'} art={personArt} onClose={onClose}>
       {row ? (
         <div className="app-stack">
           <div className="recap-sheet-total">

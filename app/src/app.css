@@ -1187,3 +1187,8 @@ p, small, .app-note { text-wrap: pretty; }
   color: var(--ds-navy);
 }
 .bill-line.is-total b { font-family: var(--ds-font-display); font-size: var(--ds-text-lg); letter-spacing: -.02em; }
+
+/* Layar masuk: ilustrasi lebih kecil dari layar kenalan. Halaman ini punya
+   formulir + tiga cara masuk; ilustrasi besar mendorong tombol utama keluar
+   dari jangkauan jempol begitu keyboard terbuka. */
+.welcome-art--login { width: 96px; height: 96px; }

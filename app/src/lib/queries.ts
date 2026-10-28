@@ -67,7 +67,19 @@ export const accountActions = {
   }),
 }
 
-export type Contact = { id: string; name: string; last_shared: string }
+export type Contact = {
+  id: string
+  name: string
+  /** nama pembeda yang SAYA beri (privat) */
+  alias: string | null
+  /** alias ?? name — pakai ini di semua teks */
+  display_name: string
+  username: string | null
+  handle: string
+  last_shared: string
+  last_bill_title: string | null
+  shared_count: number
+}
 
 export function useContacts(identityId: string | null, enabled: boolean) {
   return useQuery({

@@ -330,15 +330,20 @@ export function ItemRow({
 
 export function Field({
   label, value, onChange, hint, error, inputMode, id, disabled,
+  type = 'text', autoComplete, maxLength,
 }: {
   label: string
   value: string
   onChange: (next: string) => void
   hint?: string
   error?: string
-  inputMode?: 'text' | 'numeric'
+  inputMode?: 'text' | 'numeric' | 'email'
   id: string
   disabled?: boolean
+  /** password dipakai di layar masuk; default teks biasa */
+  type?: 'text' | 'password' | 'email'
+  autoComplete?: string
+  maxLength?: number
 }) {
   const describedBy = [hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined
   return <div className={`ds-field${error ? ' has-error' : ''}`}>
@@ -346,7 +351,10 @@ export function Field({
     <input
       id={id}
       value={value}
+      type={type}
       inputMode={inputMode}
+      autoComplete={autoComplete}
+      maxLength={maxLength}
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
       aria-invalid={error ? true : undefined}

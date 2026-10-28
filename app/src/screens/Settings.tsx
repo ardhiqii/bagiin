@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
 import { Alert, Button, Field, ProviderLogo, SectionHead } from '../ds/primitives'
+import { AccountSecurity } from '../components/AccountSecurity'
 import { publishIdentity, renameIdentity, resetIdentity } from '../lib/identity'
 import { signOut } from '../lib/session'
 import { endpoints } from '../lib/api'
@@ -116,6 +117,8 @@ export function Settings({ identity }: { identity: Identity | null }) {
           Simpan nama
         </Button>
       </section>
+
+      <AccountSecurity identity={identity} />
 
       <section className="app-stack">
         <SectionHead meta={<>{accounts.data?.length ?? 0}</>}>Rekening untuk ditransfer</SectionHead>
@@ -271,7 +274,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
         <div className="app-row">
           <span className="grow">
             <b>{identity?.id ?? '—'}</b>
-            <small>Tanpa akun. ID ini yang menyimpan siapa kamu di semua bill.</small>
+            <small>ID ini yang menyimpan siapa kamu di semua bill. Jangan dibagikan.</small>
           </span>
           <button type="button" className="ds-button ds-button-quiet" onClick={() => identity && copy(identity.id, 'ID identitas disalin')}>
             Salin

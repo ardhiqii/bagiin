@@ -1261,3 +1261,164 @@
   .ds-phone { box-shadow: var(--ds-shadow-content); }
   .ds-avatars small { display: none; }
 }
+
+/* ---------- segmented control (cara masuk) ----------
+   Tiga pilihan di satu baris, masing-masing 44 px: ukuran target sentuh
+   minimum, dan cukup lebar untuk jempol tanpa salah tekan tab sebelah.
+   Wadahnya sendiri yang berlatar, bukan tiga tombol terpisah — supaya terbaca
+   sebagai satu pilihan, bukan tiga aksi. */
+.auth-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--ds-space-1);
+  width: 100%;
+  padding: var(--ds-space-1);
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-fill);
+}
+.auth-mode {
+  min-height: var(--ds-touch);
+  padding: 0 var(--ds-space-2);
+  border: 0;
+  border-radius: var(--ds-radius-pill);
+  background: transparent;
+  color: var(--ds-muted);
+  font-family: inherit;
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-medium);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .16s ease, color .16s ease;
+}
+.auth-mode.is-active {
+  background: var(--ds-surface);
+  color: var(--ds-navy);
+  box-shadow: 0 1px 2px rgba(20, 47, 58, .10);
+}
+.auth-mode:focus-visible { outline: 2px solid var(--ds-teal); outline-offset: 2px; }
+
+/* Tombol resmi Google dirender GIS ke dalam slot ini. Tingginya dijaga supaya
+   tata letak tidak melompat saat skrip Google selesai dimuat. */
+.google-slot {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: var(--ds-touch);
+}
+.google-slot[hidden] { display: none; }
+
+/* ---------- baris yang bisa diketuk (Pengaturan, Kontak, daftar undangan) ----------
+   Seluruh baris jadi target sentuh (≥ 56 px), bukan cuma tautan kecil di kanan:
+   di HP, teks 11 px di ujung baris hampir mustahil ditekan dengan jempol. */
+.app-row.is-tappable {
+  width: 100%;
+  min-height: var(--ds-touch-row);
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.app-row.is-tappable:active { background: var(--ds-fill); }
+.app-row.is-tappable:focus-visible { outline: 2px solid var(--ds-teal); outline-offset: -2px; border-radius: var(--ds-radius-sm); }
+.app-row.is-tappable:disabled { cursor: default; opacity: .55; }
+
+.row-chevron {
+  flex: none;
+  color: var(--ds-muted-soft);
+  font-size: 20px;
+  line-height: 1;
+  padding-right: var(--ds-space-1);
+}
+
+/* penanda "nama sama" di daftar kontak: menyebut masalahnya di baris yang
+   bermasalah, bukan di banner yang harus diingat orang */
+.contact-twin {
+  margin-left: var(--ds-space-2);
+  padding: 2px 7px;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-pending-bg);
+  color: var(--ds-pending);
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-strong);
+  vertical-align: 2px;
+  white-space: nowrap;
+}
+
+/* orang yang sedang diganti namanya: nama asli + @username, supaya tidak
+   menamai orang yang salah */
+.alias-target {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-3);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-fill);
+}
+.alias-target span { display: grid; gap: 2px; min-width: 0; }
+.alias-target b { font-size: var(--ds-text-md); color: var(--ds-navy); }
+.alias-target small { color: var(--ds-muted); font-size: var(--ds-text-sm); }
+
+/* tombol ikon di baris: 44 px supaya bisa ditekan, tanpa label yang memakan
+   ruang baris */
+.ds-icon-button {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--ds-touch);
+  height: var(--ds-touch);
+  border: 0;
+  border-radius: var(--ds-radius-pill);
+  background: transparent;
+  color: var(--ds-muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.ds-icon-button:hover { background: var(--ds-fill); color: var(--ds-navy); }
+.ds-icon-button:focus-visible { outline: 2px solid var(--ds-teal); outline-offset: 2px; }
+
+/* pemisah "atau" sebelum tombol Google: dua cara yang setara, tapi tidak
+   sederajat — yang atas butuh isian, yang bawah satu ketukan */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  width: 100%;
+  color: var(--ds-muted-soft);
+  font-size: var(--ds-text-sm);
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--ds-hairline);
+}
+
+/* dua tab (bukan tiga): labelnya lebih panjang, jadi min-width per tab
+   dinaikkan supaya "Kode pemulihan" tidak terpotong di 390 px */
+.auth-modes { grid-template-columns: repeat(2, 1fr); }
+
+/* Baris kontak/undangan: satu baris nama (maks 2 baris) + satu baris meta.
+   Tanpa ini, meta yang panjang membungkus dan menyisakan "· Gutik" di baris
+   baru dengan titik menggantung — terlihat seperti salah ketik, dan tinggi baris
+   jadi berbeda-beda sehingga daftar tidak bisa dipindai. */
+.row-name {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Dua selektor: `.app-row small` di app.css menang spesifisitas, jadi kelas
+   tunggal tidak cukup untuk memaksa satu baris. */
+.row-meta,
+.app-row .row-meta,
+.app-row small.row-meta {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}

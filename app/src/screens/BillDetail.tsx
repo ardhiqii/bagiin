@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import type { BillResponse } from '../lib/types'
-import { billActions, useBill, useBillAction, useContacts } from '../lib/queries'
+import { billActions, useBill, useBillAction, useContacts, type Contact } from '../lib/queries'
 import { invalidateMoneyViews } from '../lib/mutations'
-import { api, isSessionError } from '../lib/api'
+import { api, endpoints, isSessionError } from '../lib/api'
 import { startIdentity } from '../lib/identity'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
@@ -74,7 +74,28 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
   const [actionsOpen, setActionsOpen] = useState(false)
   /** indeks foto yang sedang dilihat penuh; null = viewer tertutup */
   const [viewer, setViewer] = useState<number | null>(null)
+  /** kontak yang nama pembedanya sedang diubah (dari sheet undangan) */
+  const [aliasTarget, setAliasTarget] = useState<Contact | null>(null)
+  const [aliasDraft, setAliasDraft] = useState('')
+  const [aliasError, setAliasError] = useState('')
+  const [aliasBusy, setAliasBusy] = useState(false)
   const contacts = useContacts(identityId, inviteOpen)
+
+  /* Nama yang dipakai lebih dari satu orang dan belum diberi nama pembeda:
+     inilah momen ketika "Undang" bisa jatuh ke orang yang salah. Dihitung dari
+     daftar yang sama dengan yang dirender, jadi tidak mungkin berbeda. */
+  const twinNames = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const contact of contacts.data ?? []) {
+      const key = contact.name.trim().toLowerCase()
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    return new Set(
+      (contacts.data ?? [])
+        .filter((c) => !c.alias && (counts.get(c.name.trim().toLowerCase()) ?? 0) > 1)
+        .map((c) => c.name),
+    )
+  }, [contacts.data])
 
   const data: BillResponse | undefined = bill.data
   const me = useMemo(() => data?.people.find((p) => p.identity_id === identityId), [data, identityId])
@@ -598,9 +619,12 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                 const removable = canManage && data.bill.status === 'open' && !isMe
                 return (
                   <div className="app-row" key={person.identity_id}>
-                    <Avatar label={initials(person.name)} tone={isMe ? 'teal' : 'navy'} />
+                    <Avatar label={initials(person.display_name ?? person.name)} tone={isMe ? 'teal' : 'navy'} />
                     <span className="grow">
-                      <b>{person.name}{isMe ? ' (kamu)' : ''}</b>
+                      {/* display_name = alias milik penampil. Nama asli tetap
+                          dipakai untuk aria-label aksi supaya yang dikeluarkan
+                          tidak pernah ambigu. */}
+                      <b>{(isMe ? person.name : person.display_name ?? person.name)}{isMe ? ' (kamu)' : ''}</b>
                       {/* Pembayar yang belum memilih item bukan "belum memilih" —
                           dia sudah menalangi dan menanggung sisa yang tidak diambil
                           siapa pun. Menulis "belum memilih" di sebelah lencana
@@ -622,7 +646,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                         type="button"
                         className="link-action is-danger"
                         aria-label={'Keluarkan ' + person.name}
-                        onClick={() => run(billActions.removePerson(billId, person.identity_id), person.name + ' dikeluarkan')}
+                        onClick={() => run(billActions.removePerson(billId, person.identity_id), (person.display_name ?? person.name) + ' dikeluarkan')}
                       >
                         Keluarkan
                       </button>
@@ -639,9 +663,9 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               <div>
                 {data.pending_invites.map((invite) => (
                   <div className="app-row" key={invite.id}>
-                    <Avatar label={initials(invite.name)} tone="muted" />
+                    <Avatar label={initials(invite.display_name ?? invite.name)} tone="muted" />
                     <span className="grow">
-                      <b>{invite.name}</b>
+                      <b>{invite.display_name ?? invite.name}</b>
                       <small>Belum menerima undangan</small>
                     </span>
                     <button
@@ -862,9 +886,9 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                 setPayerOpen(false)
               }}
             >
-              <Avatar label={initials(person.name)} tone={person.identity_id === data.paid_by_id ? 'teal' : 'navy'} />
+              <Avatar label={initials(person.display_name ?? person.name)} tone={person.identity_id === data.paid_by_id ? 'teal' : 'navy'} />
               <span className="grow">
-                <b>{person.name}</b>
+                <b>{person.display_name ?? person.name}</b>
                 <small>{person.identity_id === data.paid_by_id ? 'Sedang tercatat sebagai pembayar' : 'Jadikan pembayar'}</small>
               </span>
             </button>
@@ -935,17 +959,42 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
         <p className="app-note">Yang bisa diundang cuma orang yang pernah berbagi bill dengan kamu.</p>
         {contacts.isPending ? <div className="app-note">Memuat kontak…</div> : null}
         {contacts.isError ? <Alert tone="danger" title="Kontak gagal dimuat">{(contacts.error as Error).message}</Alert> : null}
+        {twinNames.size > 0 ? (
+          <Alert tone="pending" title="Ada nama yang sama">
+            {twinNames.size === 1 ? 'Ada dua orang' : 'Ada beberapa orang'} bernama{' '}
+            {[...twinNames].join(', ')}. Bedakan lewat nama pembeda atau @username
+            sebelum mengundang.
+          </Alert>
+        ) : null}
         {contacts.data && contacts.data.length === 0 ? (
           <div className="app-note">Belum ada kontak. Buat bill bareng dulu, nanti mereka muncul di sini.</div>
         ) : null}
         <div>
           {contacts.data?.map((contact) => (
             <div className="app-row" key={contact.id}>
-              <Avatar label={initials(contact.name)} tone="navy" />
+              <Avatar label={initials(contact.display_name)} tone={contact.alias ? 'mint' : 'navy'} />
               <span className="grow">
-                <b>{contact.name}</b>
-                <small>Terakhir bareng {contact.last_shared.slice(0, 10)}</small>
+                <b className="row-name">{contact.display_name}</b>
+                <small className="row-meta">
+                  {/* Nama asli selalu ikut kalau ada nama pembeda: tanpa itu,
+                      orang bisa mengundang orang yang salah dan tidak sadar. */}
+                  {contact.alias ? contact.name + ' · ' : ''}
+                  {contact.username ? '@' + contact.username : '#' + contact.handle}
+                  {contact.last_bill_title ? ' · ' + contact.last_bill_title : ''}
+                </small>
               </span>
+              <button
+                type="button"
+                className="ds-icon-button"
+                aria-label={'Ganti nama pembeda ' + contact.display_name}
+                onClick={() => {
+                  setAliasTarget(contact)
+                  setAliasDraft(contact.alias ?? '')
+                  setAliasError('')
+                }}
+              >
+                <PencilSimple size={17} aria-hidden="true" />
+              </button>
               <button
                 type="button"
                 className="ds-button ds-button-quiet"
@@ -953,7 +1002,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                   try {
                     const result = await action.mutateAsync(billActions.invite(billId, contact.id))
                     const status = (result as { status?: string })?.status
-                    toast(status === 'joined' ? contact.name + ' langsung masuk' : 'Undangan dikirim ke ' + contact.name)
+                    toast(status === 'joined' ? contact.display_name + ' langsung masuk' : 'Undangan dikirim ke ' + contact.display_name)
                   } catch (err) {
                     toast((err as Error).message)
                   }
@@ -964,6 +1013,80 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
             </div>
           ))}
         </div>
+      </Sheet>
+
+      {/* Sheet nama pembeda dipakai dari daftar undangan: mengubah nama tidak
+          boleh memaksa keluar dari alur mengundang lalu mencari lagi. */}
+      <Sheet open={Boolean(aliasTarget)} title="Nama pembeda" onClose={() => setAliasTarget(null)}>
+        {aliasTarget ? (
+          <>
+            <div className="alias-target">
+              <Avatar label={initials(aliasTarget.name)} tone="navy" />
+              <span>
+                <b>{aliasTarget.name}</b>
+                <small>{aliasTarget.username ? '@' + aliasTarget.username : '#' + aliasTarget.handle}</small>
+              </span>
+            </div>
+            <Field
+              id="invite-alias"
+              label="Kamu mengenalnya sebagai"
+              value={aliasDraft}
+              onChange={(next) => {
+                setAliasDraft(next)
+                setAliasError('')
+              }}
+              hint="Hanya kamu yang melihat nama ini"
+              error={aliasError || undefined}
+              maxLength={40}
+            />
+            <Button
+              block
+              loading={aliasBusy}
+              disabled={!aliasDraft.trim() || aliasDraft.trim() === (aliasTarget.alias ?? '')}
+              onClick={async () => {
+                if (!identityId) return
+                setAliasBusy(true)
+                try {
+                  await endpoints.setAlias(identityId, aliasTarget.id, aliasDraft.trim())
+                  await queryClient.invalidateQueries({ queryKey: ['contacts', identityId] })
+                  await queryClient.invalidateQueries({ queryKey: ['bill', billId] })
+                  toast('Nama pembeda disimpan')
+                  setAliasTarget(null)
+                } catch (err) {
+                  setAliasError((err as Error).message)
+                } finally {
+                  setAliasBusy(false)
+                }
+              }}
+            >
+              Simpan nama
+            </Button>
+            {aliasTarget.alias ? (
+              <Button
+                variant="quiet"
+                block
+                disabled={aliasBusy}
+                onClick={async () => {
+                  if (!identityId) return
+                  setAliasBusy(true)
+                  try {
+                    await endpoints.clearAlias(identityId, aliasTarget.id)
+                    await queryClient.invalidateQueries({ queryKey: ['contacts', identityId] })
+                    await queryClient.invalidateQueries({ queryKey: ['bill', billId] })
+                    toast('Nama pembeda dihapus')
+                    setAliasTarget(null)
+                  } catch (err) {
+                    setAliasError((err as Error).message)
+                  } finally {
+                    setAliasBusy(false)
+                  }
+                }}
+              >
+                Hapus nama pembeda
+              </Button>
+            ) : null}
+          </>
+        ) : null}
       </Sheet>
     </AppShell>
   )

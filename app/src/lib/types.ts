@@ -8,6 +8,12 @@ export type Identity = {
   secret?: string | null
   auto_accept?: number
   created_at?: string
+  /** @username global (null kalau belum dibuat) */
+  username?: string | null
+  /** 4 huruf turunan id — pembeda saat nama sama dan username belum ada */
+  handle?: string | null
+  has_password?: boolean
+  google_linked?: boolean
 }
 
 export type BillItem = {
@@ -25,6 +31,8 @@ export type BillItem = {
 export type Person = {
   identity_id: string
   name: string
+  /** alias milik penampil, kalau ada. Selalu pakai ini untuk teks di layar. */
+  display_name?: string
   item_subtotal_idr: number
   order_discount_idr: number
   subtotal_idr: number
@@ -62,6 +70,8 @@ export type BillCore = {
 }
 
 export type PendingInvite = {
+  /** alias milik penampil, kalau ada */
+  display_name?: string
   id: string
   identity_id: string
   name: string
@@ -164,6 +174,10 @@ export type RecapEdge = {
 export type RecapCounterparty = {
   identity_id: string
   name: string
+  /** alias milik penampil / nama asli */
+  display_name?: string
+  username?: string | null
+  handle?: string | null
   /** bruto: satu orang bisa sekaligus piutang dan utang */
   payable_idr: number
   receivable_idr: number

@@ -11,6 +11,7 @@ import { RequireIdentity } from './components/RequireIdentity'
 import { Welcome } from './screens/Welcome'
 import { Restore } from './screens/Restore'
 import { NotFound } from './screens/NotFound'
+import { Contacts } from './screens/Contacts'
 
 /* Alamat tak dikenal tetap harus terlihat seperti aplikasi ini, bukan halaman
    "Not Found" polos tanpa navigasi. */
@@ -110,7 +111,21 @@ const restoreRoute = createRoute({
   component: Restore,
 })
 
-const routeTree = rootRoute.addChildren([homeRoute, billsRoute, createBillRoute, billRoute, editBillRoute, recapRoute, settingsRoute, restoreRoute])
+/* Nama pembeda untuk kontak. Bukan tab utama: ini penyetelan, bukan pekerjaan
+   harian, jadi jalan masuknya dari Pengaturan. */
+const contactsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/kontak',
+  component: function ContactsRoute() {
+    return (
+      <RequireIdentity>
+        {(me) => <Contacts identityId={me.id} />}
+      </RequireIdentity>
+    )
+  },
+})
+
+const routeTree = rootRoute.addChildren([homeRoute, billsRoute, createBillRoute, billRoute, editBillRoute, recapRoute, settingsRoute, restoreRoute, contactsRoute])
 
 export const router = createRouter({ routeTree })
 

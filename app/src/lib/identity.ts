@@ -78,6 +78,63 @@ export function storedName(): string {
  * lalu mengembalikan identitas beserta secret-nya, jadi HP baru langsung punya
  * sesi yang sama. Kode lama tetap berlaku sampai dibuat ulang.
  */
+/**
+ * Terapkan sesi hasil login akun (username/password atau Google).
+ *
+ * Token perangkat disimpan di kolom `secret` yang sama dengan yang dipakai app
+ * sejak awal: header `X-Identity-Secret` menerima keduanya di server, dan
+ * dengan begitu tidak ada dua jalur auth yang harus dirawat di sisi klien.
+ */
+function storeSession(session: { identity: Identity; token: string }): Stored {
+  const stored: Stored = {
+    id: session.identity.id,
+    name: session.identity.name,
+    role: session.identity.role,
+    auto_accept: session.identity.auto_accept,
+    username: session.identity.username ?? null,
+    handle: session.identity.handle ?? null,
+    secret: session.token,
+  } as Stored
+  storeIdentity(stored)
+  return stored
+}
+
+export async function loginWithPassword(username: string, password: string): Promise<Stored> {
+  const clean = username.trim()
+  if (!clean) throw new Error('Username belum diisi')
+  if (!password) throw new Error('Password belum diisi')
+  return storeSession(await endpoints.login({ username: clean, password }))
+}
+
+export async function registerAccount(input: {
+  username: string
+  password: string
+  name: string
+}): Promise<{ stored: Stored; code: string }> {
+  if (!input.name.trim()) throw new Error('Nama belum diisi')
+  const session = await endpoints.register({
+    username: input.username.trim(),
+    password: input.password,
+    name: input.name.trim(),
+  })
+  return { stored: storeSession(session), code: session.recovery_code ?? '' }
+}
+
+export async function loginWithGoogle(idToken: string): Promise<{ stored: Stored; code?: string }> {
+  const session = await endpoints.googleLogin(idToken)
+  return { stored: storeSession(session), code: session.recovery_code }
+}
+
+/** Keluar: cabut sesi perangkat ini di server, lalu lupakan di perangkat. */
+export async function logoutDevice(): Promise<void> {
+  try {
+    await endpoints.logout()
+  } catch {
+    /* jaringan bermasalah bukan alasan menahan orang di dalam akun */
+  }
+  resetIdentity()
+}
+
 export async function restoreFromCode(code: string): Promise<Stored> {
   const clean = code.trim().toUpperCase()
   if (!clean) throw new Error('Kode belum diisi')
@@ -89,7 +146,9 @@ export async function restoreFromCode(code: string): Promise<Stored> {
     name: ident.name,
     role: ident.role,
     auto_accept: ident.auto_accept,
-    secret: ident.secret ?? null,
+    // `token` = sesi perangkat yang bisa dicabut; `secret` cuma dikirim server
+    // untuk klien lama. Klien ini selalu memilih token kalau ada.
+    secret: ident.token ?? ident.secret ?? null,
   } as Stored
   storeIdentity(stored)
   return stored

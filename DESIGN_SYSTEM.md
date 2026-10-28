@@ -314,6 +314,46 @@ boleh diketuk untuk menyaring daftar ke bill tersebut, dan yang menandakan
 tindakan itu adalah chip saringan yang ikut aktif — **bukan panah** yang
 menjanjikan pindah layar.
 
+## Nama adalah tampilan, bukan identitas
+
+Di data, orang selalu dikenali dari `identity.id`. Di layar, yang dibaca orang
+adalah nama — dan nama itu bisa sama persis untuk dua orang berbeda (di DB uji:
+245 identity bernama "Aufa"). Karena itu setiap tempat yang meminta orang
+memilih manusia harus memberi **pembeda**, bukan cuma nama:
+
+1. **Nama pembeda milik penampil** (alias) — privat, satu arah. Tidak pernah
+   dikirim ke orang yang diberi nama, dan tidak pernah dipakai di teks yang
+   dikirim kepadanya.
+2. **@username** kalau ada, atau **kode 4 huruf** turunan id (`#SW9C`).
+3. **Konteks**: jumlah bill bareng + judul bill terakhir.
+
+Aturannya satu: **kalau dua baris bisa membingungkan, itu kegagalan desain, bukan
+kegagalan orang.** Daftar yang menampilkan dua "Amel" identik tanpa pembeda tidak
+boleh dikirim ke layar.
+
+Nama asli selalu ada di baris kedua saat alias dipakai — orang berhak memastikan
+dirinya tidak menamai orang yang salah.
+
+## Sakelar tiga cara masuk, bukan tiga halaman
+
+Layar masuk memakai **segmented control dua tab** (Kode / Akun) plus **satu
+tombol Google** di bawah pemisah "atau". Alasan Google tidak jadi tab: tab
+berarti "ada formulir di dalamnya", sedangkan Google adalah satu tombol yang
+membuka milik Google sendiri. Menaruhnya sebagai tab membuat orang mencari
+kolom isian yang tidak ada.
+
+Ukuran: tiap tab ≥ 44 px, lebar sama; tombol utama selebar kartu; jalur tamu
+("Ikut bill tanpa akun") berupa tombol sekunder — bukan tautan kecil, karena itu
+jalan yang setara, bukan catatan kaki.
+
+## Baris yang bisa diketuk
+
+Baris pengaturan dan kontak memakai pola **kartu + baris + chevron** dengan
+seluruh baris sebagai target sentuh (≥ 56 px), bukan hanya teks di ujung kanan.
+Nama maksimal satu baris (ellipsis), meta satu baris (ellipsis): baris yang
+tingginya berbeda-beda membuat daftar tidak bisa dipindai dan kontrol di kanan
+jadi tidak sejajar.
+
 ## Kontrol mati lebih baik daripada kontrol yang gagal
 
 Kalau server menolak sebuah tindakan (bill lunas, bill ditutup, bukan pemilik),
