@@ -227,9 +227,12 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     test.info().annotations.push({ type: 'sapuan', description: report.join('; ') })
   })
 
-  test('I-07. nama pembeda 0.9 (localStorage) pindah ke server sekali, lalu tampil di Kontak', async ({ browser }) => {
+  test('I-07. nama pembeda 0.9 (localStorage) pindah ke server sekali, lalu tampil di Kontak', async ({ browser, baseURL }) => {
     const { request } = await import('@playwright/test')
-    const api = await request.newContext({ baseURL: 'https://bagiin-react.ardhiqi.com' })
+    // baseURL dari config tes, BUKAN domain live: sebelumnya tes ini menembak
+    // situs produksi, jadi dia menguji DB lain dan "lulus" hanya selama DB-nya
+    // kebetulan sama dengan yang dipakai tes.
+    const api = await request.newContext({ baseURL })
 
     // bangun satu relasi kontak: pemilik + tamu pada satu bill
     const owner = await (await api.post('/api/identities', { data: { name: 'Migrasi ' + stamp } })).json()

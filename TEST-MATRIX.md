@@ -212,6 +212,47 @@ disentuh):
   (200). Artinya rollback ke 0.9 masih mungkin setelah migrasi.
 - salinan uji dihapus setelah selesai
 
+## DB 0.9 dipakai 1.0 (migrasi + data lama)
+
+Dijalankan dengan `MIGRATION_DB=<salinan db 0.9> MIGRATION_SOURCE=<db 0.9 asli>`.
+Spec: `tests/migration.spec.ts`.
+
+| Kode | Yang dijaga | Hasil |
+|---|---|---|
+| M-01 | migrasi menambah 3 tabel + 4 kolom + 4 index; kolom lama utuh; kolom baru **nullable** (0.9 masih menulis ke tabel yang sama); semua identitas 0.9 dapat pembeda | lulus |
+| M-02 | sapuan semua bill 0.9: total tidak berubah, `sum(orang) + uncovered == total`, `total_ok` benar, tak ada bagian negatif | lulus |
+| M-03 | struk lama (`bill.photo_path` 0.9) ikut jadi `bill_photo` dan filenya benar-benar terambil (200, `image/*`, > 1 KB) | lulus |
+| M-04 | rekap identitas 0.9 dihitung 1.0: `net = terima − bayar`, punya lawan transaksi | lulus |
+| M-05 | identitas 0.9 bisa naik jadi akun 1.0 (username + password) lalu masuk lagi ke identitas yang sama | lulus |
+| M-06 | bill 0.9 masih bisa disunting pemiliknya; total tidak bergeser | lulus |
+| M-07 | tamu baru bisa ikut bill 0.9; uang tetap utuh setelah orang bertambah | lulus |
+| M-08 | tiga bill 0.9 terbuka di layar: judul, total, nama orang sama dengan server; struk termuat; nol error konsol/4xx | lulus |
+| M-09 | Beranda dan Rekap identitas 0.9 menampilkan angka yang sama, dan angka besar bisa diketuk jadi rincian | lulus |
+
+Bukti migrasi (salinan DB produksi 0.9, boot backend 1.0):
+
+| | 0.9 | setelah boot 1.0 |
+|---|---|---|
+| tabel | 10 | 13 (`+device, oauth_account, contact_alias`) |
+| kolom `identity` | 7 | 11 (`+username, username_lower, password_hash, handle`) |
+| index | 7 | 11 |
+| baris | 54/81/175/208/140/27/51/6/10 | **sama persis** |
+| pembeda kosong | – | 0 |
+
+Catatan yang lahir dari run ini (belum diperbaiki, sengaja tidak diubah):
+
+- `POST /api/bills` dibatasi **10/menit per IP** dan angkanya hardcode. Suite penuh
+  kadang menembusnya (11 bill dalam satu menit) → tes gagal karena 429, bukan
+  karena aplikasi. Dijalankan sendiri, tesnya lulus. Di produksi ini juga berarti
+  banyak orang di satu IP (Wi-Fi kantor/kafe/NAT operator) berbagi jatah 10 bill
+  per menit. UI sudah menjelaskan: "Terlalu banyak permintaan, tunggu sebentar ya".
+- `POST /api/bills/{id}/join` yang dipanggil dengan identitas **pemilik** menjawab
+  200 tetapi tidak menambah siapa pun (join adalah aksi tamu). Sebaiknya menolak
+  dengan 403 supaya tidak terlihat berhasil.
+- `identity.handle` hanya diisi `backfill_handles()` saat boot; `new_identity()`
+  tidak menulisnya. Tidak terasa di UI/pencarian karena pembeda dihitung dari id
+  saat dibaca, tapi kolomnya praktis cache yang basi sampai restart berikutnya.
+
 ## Hasil verifikasi Google sungguhan (bukan stub)
 
 Dijalankan di Chromium headful yang sudah punya sesi Google, terhadap build live:

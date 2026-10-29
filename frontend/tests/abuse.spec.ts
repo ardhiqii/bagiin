@@ -142,7 +142,7 @@ test.describe('Bagiin — orang tidak sabar (spam dan dobel tekan)', () => {
   test('A-05. satu tamu menekan Ikut bill berkali-kali: tetap satu peserta', async ({ page, context }) => {
     await freshUser(page, 'Host ' + stamp)
     const billId = await createBill(page, 'Ikut ' + stamp, [['Nasi', '12000']])
-    const link = 'https://bagiin-react.ardhiqi.com/b/' + billId
+    const link = '/b/' + billId
 
     // satu perangkat, tiga ketukan cepat. Nama sama di perangkat BERBEDA bukan
     // kasus ini: itu dua orang berbeda yang kebetulan senama, dan aplikasi
@@ -170,7 +170,7 @@ test.describe('Bagiin — orang tidak sabar (spam dan dobel tekan)', () => {
     await freshUser(page, 'Pemilik ' + stamp)
     const billId = await createBill(page, 'Dua minum ' + stamp, [['Es teh', '20000', '2']])
     const me = await identity(page)
-    const link = 'https://bagiin-react.ardhiqi.com/b/' + billId
+    const link = '/b/' + billId
 
     // empat tamu, masing-masing mengambil satu porsi dari dua minuman
     const contexts = []
@@ -208,7 +208,7 @@ test.describe('Bagiin — dua orang, satu bagian terakhir', () => {
   test('B-01. dua tamu menekan porsi terakhir bersamaan: uang tetap utuh, tidak ada yang hilang', async ({ page, browser }) => {
     await freshUser(page, 'Pemilik ' + stamp)
     const billId = await createBill(page, 'Slot ' + stamp, [['Tiket', '50000', '1']])
-    const link = 'https://bagiin-react.ardhiqi.com/b/' + billId
+    const link = '/b/' + billId
 
     const ctxA = await browser.newContext({ viewport: { width: 390, height: 844 } })
     const ctxB = await browser.newContext({ viewport: { width: 390, height: 844 } })
@@ -402,7 +402,7 @@ test.describe('Bagiin — pindah layar tanpa kehilangan jejak', () => {
     await tab2.addInitScript((ident) => {
       localStorage.setItem('bagiin_identity', JSON.stringify(ident))
     }, me)
-    await tab2.goto('https://bagiin-react.ardhiqi.com/b/' + billId)
+    await tab2.goto('/b/' + billId)
     await tab2.waitForTimeout(1200)
 
     await page.locator('.ds-item').filter({ hasText: 'Jus' }).first().click()
