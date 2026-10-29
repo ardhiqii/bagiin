@@ -196,3 +196,38 @@ test.describe('Bagiin — kasus pinggir', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Halo')
   })
 })
+
+test.describe('Bagiin — join hanya untuk diri sendiri', () => {
+  test('J-01. pemilik yang menekan join tidak menambah peserta, dan join atas nama orang lain ditolak', async ({ page, request }) => {
+    test.setTimeout(120_000)
+    await freshUser(page, 'Pemilik Join ' + stamp)
+    const link = await createBill(page, { title: 'Join ' + stamp, items: [{ name: 'Kopi', price: '10000' }] })
+    const billId = link.split('/b/')[1]
+
+    const me = await page.evaluate(() => JSON.parse(localStorage.getItem('bagiin_identity') || '{}'))
+    expect(me.id).toBeTruthy()
+    const headers = { 'X-Identity-Id': me.id, 'X-Identity-Secret': me.secret ?? '' }
+
+    const before = await (await request.get('/api/bills/' + billId)).json()
+    const jumlahSebelum = before.people.length
+
+    // 1. pemilik menekan join di bill-nya sendiri: jawabannya tetap 200 (idempoten),
+    //    tapi tidak boleh ada peserta baru dan tidak boleh ada baris pembayaran
+    //    untuk pembuat bill.
+    const sendiri = await request.post('/api/bills/' + billId + '/join', { headers })
+    expect(sendiri.status(), await sendiri.text()).toBe(200)
+    const sesudah = await (await request.get('/api/bills/' + billId)).json()
+    expect(sesudah.people.length, 'pemilik tidak menambah peserta').toBe(jumlahSebelum)
+    expect(sesudah.people.filter((p: any) => p.identity_id === me.id).length).toBe(1)
+
+    // 2. join atas nama orang lain harus ditolak, bukan 200 tanpa perubahan
+    const lain = await (await request.post('/api/identities', { data: { name: 'Orang Lain ' + stamp } })).json()
+    const curang = await request.post('/api/bills/' + billId + '/join', {
+      headers,
+      data: { name: 'Orang Lain ' + stamp, identity_id: lain.id },
+    })
+    expect(curang.status(), 'join atas nama orang lain harus ditolak').toBe(403)
+    const akhir = await (await request.get('/api/bills/' + billId)).json()
+    expect(akhir.people.some((p: any) => p.identity_id === lain.id), 'orang lain tidak ikut').toBe(false)
+  })
+})

@@ -2250,12 +2250,36 @@ def close_bill(bill_id: str, request: Request):
 
 
 @app.post("/api/bills/{bill_id}/join")
-def join_bill_via_link(bill_id: str, request: Request):
+async def join_bill_via_link(bill_id: str, request: Request):
+    """Tamu bergabung lewat link. Yang didaftarkan selalu PEMANGGIL.
+
+    Body lama (0.9) masih mengirim `identity_id`. Dulu field itu diabaikan
+    diam-diam: pemanggil yang mengira sedang mendaftarkan orang lain tetap
+    mendapat 200 tanpa ada yang berubah — kelihatan seperti berhasil (temuan
+    waktu menguji DB 0.9 di 1.0). Sekarang nama orang lain ditolak terang-terangan.
+    """
     bill_data = _bill_or_404(bill_id)
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
     _ensure_editable(bill_data)
     ident = _identity_from_request(request)
+    raw = await request.body()
+    if raw:
+        try:
+            body = json.loads(raw)
+        except Exception:
+            raise HTTPException(400, "Format JSON tidak valid")
+        if not isinstance(body, dict):
+            raise HTTPException(400, "Isi permintaan harus objek")
+        diklaim = _to_str(body.get("identity_id"), "Identity id", maxlen=64)
+        if diklaim and diklaim != ident["id"]:
+            raise HTTPException(403, "Join hanya untuk diri sendiri")
+    # Pembuat bill sudah ada di bill ini secara implisit (dia muncul di daftar
+    # orang tanpa baris payment). Tanpa penjagaan ini, menekan join di bill
+    # sendiri membuat baris payment untuknya — baris yang tidak dibutuhkan siapa
+    # pun dan membuat "siapa yang ikut" jadi tidak jujur.
+    if ident["id"] == bill_data["bill"]["creator_identity_id"] and not bill_data["bill"].get("creator_left"):
+        return _compute_response(bill_data, ident["id"])
     db.join_bill(bill_id, ident["id"], ident["name"])
     # joining through the link is accepting — void any pending invite for this
     # pair so the home card doesn't keep saying "Gabung" for someone already in
