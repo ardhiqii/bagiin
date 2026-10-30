@@ -8,7 +8,7 @@ import { api } from '../lib/api'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { Alert, Avatar, Button, EmptyState, Group, Sheet, SkeletonCard, SkeletonList } from '../ds/primitives'
+import { Alert, Avatar, Button, EmptyState, Group, LoadingState, Sheet, SkeletonList } from '../ds/primitives'
 import { SaldoCard } from '../components/SaldoCard'
 import type { RecapBill, RecapCounterparty, RecapEdge } from '../lib/types'
 import personArt from '../assets/person.webp'
@@ -282,7 +282,7 @@ export function Recap({ identityId }: { identityId: string | null }) {
       ) : null}
       {recap.isPending ? (
         <>
-          <SkeletonCard label="Memuat rekap" />
+          <LoadingState label="Menyusun rekap" rows={2} />
           <SkeletonList rows={3} label="Memuat rekap" />
         </>
       ) : null}
@@ -305,6 +305,22 @@ export function Recap({ identityId }: { identityId: string | null }) {
               </span>
               <CaretRight size={16} aria-hidden="true" />
             </button>
+          ) : null}
+
+          {pays.length > 0 ? (
+            <Group label="Perlu kamu bayar">
+              {pays.map((row) => (
+                <PersonRow key={row.identity_id} row={row} onOpen={() => setOpenPerson(row)} />
+              ))}
+            </Group>
+          ) : null}
+
+          {receives.length > 0 ? (
+            <Group label="Belum dibayar ke kamu">
+              {receives.map((row) => (
+                <PersonRow key={row.identity_id} row={row} onOpen={() => setOpenPerson(row)} />
+              ))}
+            </Group>
           ) : null}
 
           {unclear.length > 0 ? (
@@ -341,21 +357,6 @@ export function Recap({ identityId }: { identityId: string | null }) {
             </div>
           ) : null}
 
-          {pays.length > 0 ? (
-            <Group label="Perlu kamu bayar">
-              {pays.map((row) => (
-                <PersonRow key={row.identity_id} row={row} onOpen={() => setOpenPerson(row)} />
-              ))}
-            </Group>
-          ) : null}
-
-          {receives.length > 0 ? (
-            <Group label="Belum dibayar ke kamu">
-              {receives.map((row) => (
-                <PersonRow key={row.identity_id} row={row} onOpen={() => setOpenPerson(row)} />
-              ))}
-            </Group>
-          ) : null}
 
           {nothingToDo ? (
             <EmptyState

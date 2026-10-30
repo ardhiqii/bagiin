@@ -352,6 +352,32 @@ Baris `Kamu terima +Rp0` **tetap ditampilkan** saat tidak ada piutang. Dia
 menjawab pertanyaan "aku nggak nerima apa-apa ya?" secara eksplisit, bukan lewat
 baris yang hilang — dan tanda `+` di depan nol tidak membingungkan siapa pun.
 
+### Gerak: satu aset, banyak lapisan, transform saja
+
+Animasi yang patah-patah hampir selalu masalah **jumlah frame**, bukan kualitas
+gambar: dua frame yang diputar 5 fps akan selalu kelihatan berhenti-henti, dan
+menambah frame hasil generate tidak memperbaikinya (konsistensi antar frame
+mulai goyah setelah 4–6 frame).
+
+Yang dipakai: satu aset per bagian, digerakkan dengan `transform` saja.
+
+- **Lapisan dipisah kalau geraknya beda.** Struk dan koin adalah dua file
+  terpisah supaya koin bisa memantul lebih cepat dari goyangan struk. Satu file
+  gabungan hanya bisa bergerak sebagai satu blok.
+- **Durasi berbeda = hidup.** Struk 3,4 detik (pelan, `ease-in-out`), koin 1,55
+  detik (`cubic-bezier(.33,1.4,.5,1)` untuk overshoot), titik-titik 1,2 detik
+  dengan jeda 150 ms. Semua kelipatan yang tidak saling kunci, jadi tidak pernah
+  terlihat berulang.
+- **Squash dan stretch di titik kontak.** Koin mengecil-melebar (1.08/0.9) saat
+  mendarat, memanjang (0.96/1.05) saat naik. Tanpa ini, benda terlihat seperti
+  gambar yang digeser, bukan benda yang bergerak.
+- **Jangan animasikan `box-shadow`, `filter`, atau `width`.** Itu memaksa
+  layout/paint ulang tiap frame. `transform` dan `opacity` saja.
+- **Semua dimatikan saat `prefers-reduced-motion`.** Bukan diperlambat —
+  dimatikan.
+- **Umpan balik tekan untuk semua yang bisa diketuk**: `transform: scale(.975)`
+  selama 130 ms. Ini yang membuat aplikasi terasa hidup tanpa animasi per layar.
+
 ### Saat memuat: kerangka, bukan teks
 
 Layar yang menunggu data menampilkan kerangka berbentuk isinya (`SkeletonCard`,

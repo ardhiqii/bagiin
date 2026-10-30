@@ -8,7 +8,7 @@ import { api } from '../lib/api'
 import { useToast } from '../components/Toast'
 import { AppShell } from '../components/AppShell'
 import { SecureNudge } from '../components/SecureNudge'
-import { ActionFlag, Alert, Amount, Button, EmptyState, Notice, SectionHead, SkeletonCard, SkeletonList } from '../ds/primitives'
+import { ActionFlag, Alert, Amount, Button, EmptyState, LoadingState, Notice, SectionHead, SkeletonList } from '../ds/primitives'
 import { SaldoCard } from '../components/SaldoCard'
 import { MagnifyingGlass } from '@phosphor-icons/react'
 import homeEmptyArt from '../assets/home-empty.webp'
@@ -315,7 +315,7 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
           `net` masih 0 bawaan, lalu berubah begitu data masuk. Kerangka lebih
           jujur: dia tidak mengklaim angka apa pun. */}
       {recap.isPending ? (
-        <SkeletonCard label="Memuat tagihan" />
+        <LoadingState label="Menghitung tagihan" rows={2} />
       ) : net === 0 && rows.length === 0 ? null : net === 0 ? (
         <Notice
           tone={actionTotal > 0 ? 'pending' : 'success'}

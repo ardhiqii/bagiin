@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import loadingReceipt from '../assets/anim/receipt-app.webp'
+import loadingCoin from '../assets/anim/coin-app.webp'
 import { PROVIDERS, opticalHeight, providerKey } from '../lib/providers'
 import { CaretRight, Check, CheckCircle, Clock, Info, Wallet, WarningCircle, X } from '@phosphor-icons/react'
 
@@ -472,6 +474,44 @@ export function SkeletonList({ rows = 3, label = 'Memuat' }: { rows?: number; la
           <Skeleton width={58} height={13} />
         </div>
       ))}
+    </div>
+  )
+}
+
+/**
+ * Layar menunggu: karakter bergerak + kerangka isi.
+ *
+ * Karakternya dua lapisan aset terpisah (struk dan koin) supaya bisa bergerak
+ * sendiri-sendiri — struk bergoyang pelan 3,4 detik, koin memantul 1,55 detik
+ * dengan squash. Semua lewat transform, jadi compositor yang mengerjakan (60
+ * fps) dan asetnya cuma ~22 KB. Animasi 2-frame hasil generate dulu terbaca
+ * patah-patah karena hanya 5 fps; jumlah frame bukan jawabannya, memisahkan
+ * lapisan dan memberi easing yang benar itu jawabannya.
+ */
+export function LoadingState({
+  label = 'Memuat',
+  rows = 2,
+}: {
+  label?: string
+  rows?: number
+}) {
+  return (
+    <div className="ds-loading" role="status" aria-live="polite">
+      <div className="ds-loading-art" aria-hidden="true">
+        <span className="ds-loading-receipt" style={{ backgroundImage: `url(${loadingReceipt})` }} />
+        <span className="ds-loading-coin" style={{ backgroundImage: `url(${loadingCoin})` }} />
+      </div>
+      <div className="ds-loading-copy">
+        <b style={{ fontSize: 15 }}>{label}…</b>
+        {Array.from({ length: rows }).map((_, index) => (
+          <Skeleton key={index} width={index === 0 ? '86%' : '58%'} height={11} />
+        ))}
+        <span className="ds-loading-dots" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+      </div>
     </div>
   )
 }
