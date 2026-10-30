@@ -379,7 +379,7 @@ test.describe('Bagiin 1.0 di atas DB 0.9', () => {
     await expect(sheet).toBeVisible()
     if (Math.round(recap.final.receivable_idr) > 0 && Math.round(recap.final.payable_idr) > 0) {
       await expect(sheet.getByText('Kamu terima', { exact: true })).toBeVisible()
-      await expect(sheet.getByText('Kamu bayar', { exact: true })).toBeVisible()
+      await expect(sheet.getByText('Utang kamu', { exact: true })).toBeVisible()
     }
   })
 })

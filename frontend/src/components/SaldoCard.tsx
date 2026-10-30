@@ -38,6 +38,9 @@ export function SaldoCard({
   const utang = final.counterparties.filter((row) => row.net_idr < 0)
   const billsOf = (rows: typeof tagih) =>
     new Set(rows.flatMap((row) => row.bills.map((edge) => edge.bill_id))).size
+  /** Jumlah bill yang sudah pasti — dihitung dari gabungan, bukan dijumlah per arah:
+   *  satu bill bisa muncul di dua arah kalau lawannya lebih dari satu orang. */
+  const billsPasti = new Set([...tagih, ...utang].flatMap((row) => row.bills.map((edge) => edge.bill_id))).size
 
   const label = net > 0 ? 'Harus kamu terima' : net < 0 ? 'Harus kamu bayar' : 'Saldonya nol'
 
@@ -82,18 +85,27 @@ export function SaldoCard({
               <span>Kamu terima</span>
               <b className="ds-amount--pos">+{idr(terima)}</b>
             </div>
+            {/* "Utang kamu", bukan "Kamu bayar": orang langsung tahu itu kewajiban,
+                bukan sekadar angka yang keluar. Harganya, kata ini tidak sepasang
+                dengan "Kamu terima" (kata benda vs kata kerja) — kata yang langsung
+                dipahami menang atas simetri. */}
             <div className="saldo-detail-row">
-              <span>Kamu bayar</span>
+              <span>Utang kamu</span>
               <b className="ds-amount--neg">−{idr(bayar)}</b>
             </div>
-            <div className="saldo-detail-row is-total">
-              <span>Ringkasan selisih</span>
-              <b>{net < 0 ? '−' : ''}{idr(Math.abs(net))}</b>
-            </div>
+            {/* Baris ringkasan hanya kalau ada DUA arah. Di satu arah nilainya sama
+                persis dengan baris di atasnya, jadi menampilkannya membuat angka
+                yang sama muncul dua kali dan terbaca seperti salah hitung. */}
+            {duaArah ? (
+              <div className="saldo-detail-row is-total">
+                <span>{net > 0 ? 'Kamu terima lebih' : 'Kamu bayar lebih'}</span>
+                <b>{idr(Math.abs(net))}</b>
+              </div>
+            ) : null}
             <p className="saldo-detail-hint">
               {duaArah
-                ? 'Uangnya tidak benar-benar bertemu: yang kamu tagih dan yang kamu bayar adalah orang yang berbeda. Selisih di atas cuma ringkasan, bukan satu transfer.'
-                : 'Semua bill yang pembagiannya sudah pasti mengarah ke arah yang sama.'}
+                ? 'Angka terakhir cuma selisih, bukan satu transfer: yang menagih dan yang kamu bayar adalah orang yang berbeda.'
+                : 'Dari ' + billsPasti + ' bill yang pembagiannya sudah pasti.'}
             </p>
           </div>
 
@@ -127,9 +139,13 @@ export function SaldoCard({
             </div>
           ) : null}
 
+          {/* Pembagian per arah cuma berguna kalau memang ada dua arah. Di satu
+              arah baris ini mengulang kalimat di atasnya, dan versi pertamanya
+              sempat menulis "Dari 0 bill kamu terima" — angka nol yang tidak
+              perlu disebut. */}
           <p className="saldo-detail-foot">
-            {billsOf(tagih) > 0 || billsOf(utang) > 0
-              ? 'Dari ' + billsOf(tagih) + ' bill yang menagih dan ' + billsOf(utang) + ' bill yang harus kamu bayar.'
+            {billsOf(tagih) > 0 && billsOf(utang) > 0
+              ? 'Dari ' + billsOf(tagih) + ' bill kamu terima, ' + billsOf(utang) + ' bill jadi utangmu.'
               : ''}
           </p>
         </div>

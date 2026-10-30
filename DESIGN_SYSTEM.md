@@ -289,7 +289,8 @@ Anatomi kartu, urutan tetap:
 2. **Angka besar** — NET dari bill yang pembagiannya sudah pasti. Ini
    satu-satunya angka besar di layar. Bisa diketuk (lihat di bawah).
 3. **Caption `SUDAH PASTI`** lalu dua baris rincian **hanya kalau ada uang dua
-   arah**: `Terima +Rp230.000` dan `Bayar −Rp22.000`.
+   arah**: `Terima +Rp230.000` dan `Bayar −Rp22.000` (di sheet rincian baris
+   kewajiban disebut `Utang kamu`).
 4. **Baris `Belum dipastikan`** dengan `±` — selalu dipisah garis, tidak pernah
    dijumlahkan ke angka besar.
 
@@ -303,10 +304,35 @@ karena di sana memang aritmetika — orang bisa memeriksa 230.000 − 22.000 sen
 
 Angka besar adalah hal pertama yang dilihat orang, jadi di situlah pertanyaan
 "kok segini?" muncul. Angka itu adalah tombol (`aria-haspopup="dialog"`) yang
-membuka sheet **Rincian saldo**: terima, bayar, ringkasan selisih, lalu kelompok
-**BELUM PASTI** yang menyebut jumlah bill dan bahwa angkanya tidak pernah
-dijumlahkan. Kalau ada bill belum dibagi, sheet punya tombol "Lihat N bill itu"
-yang menutup sheet dan menggulir ke daftarnya.
+membuka sheet **Rincian saldo**, dengan urutan tetap:
+
+1. `Kamu terima +Rp230.000` dan `Utang kamu −Rp22.000`.
+2. **Baris ringkasan hanya kalau ada dua arah** (`Kamu terima lebih` / `Kamu
+   bayar lebih`). Satu arah tidak punya baris ini: isinya akan sama persis
+   dengan baris di atasnya, dan angka yang muncul dua kali terbaca seperti
+   salah hitung. Ini yang dulu terjadi ("Kamu bayar −Rp22.000" lalu "Ringkasan
+   selisih −Rp22.000").
+3. Kelompok **BELUM PASTI** yang menyebut jumlah bill dan bahwa angkanya tidak
+   pernah dijumlahkan.
+4. Kalau ada bill belum dibagi, tombol "Lihat N bill itu" yang menutup sheet dan
+   menggulir ke daftarnya.
+
+### "Utang", bukan "selisih"
+
+Baris kewajiban memakai kata **`Utang kamu`**, bukan "Kamu bayar" dan bukan
+"Ringkasan selisih". "Selisih" itu bahasa pembukuan: orang tidak pernah bertanya
+"berapa selisihku", mereka bertanya "aku utang berapa". Harganya, "Utang kamu"
+tidak sepasang dengan "Kamu terima" (kata benda vs kata kerja) — kata yang
+langsung dipahami menang atas simetri.
+
+Kata `utang` tetap dipakai walau lawannya lebih dari satu orang, karena itu
+*jumlah* utang, bukan janji satu transfer. Yang tidak boleh: menulis seolah
+angkanya satu transfer. Karena itu kalimat penjelas di bawahnya wajib ada saat
+dua arah: "Angka terakhir cuma selisih, bukan satu transfer".
+
+Baris `Kamu terima +Rp0` **tetap ditampilkan** saat tidak ada piutang. Dia
+menjawab pertanyaan "aku nggak nerima apa-apa ya?" secara eksplisit, bukan lewat
+baris yang hilang — dan tanda `+` di depan nol tidak membingungkan siapa pun.
 
 ### Jangan mengarang angka nol
 

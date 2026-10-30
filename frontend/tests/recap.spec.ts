@@ -273,8 +273,11 @@ test.describe('Bagiin — angka besar bisa ditanya', () => {
     // aritmetika yang bisa diperiksa sendiri
     await expect(sheet.getByText('Kamu terima', { exact: true })).toBeVisible()
     await expect(sheet.getByText('+Rp230.000')).toBeVisible()
-    await expect(sheet.getByText('Kamu bayar', { exact: true })).toBeVisible()
+    // "Utang kamu" — kata yang orang pakai sendiri, bukan "ringkasan selisih"
+    await expect(sheet.getByText('Utang kamu', { exact: true })).toBeVisible()
     await expect(sheet.getByText('−Rp22.000')).toBeVisible()
+    // dua arah: baris selisih muncul, dan menyebut arahnya dengan kata
+    await expect(sheet.getByText('Kamu terima lebih', { exact: true })).toBeVisible()
     await expect(sheet.getByText('Rp208.000')).toBeVisible()
     // yang belum pasti dipisah dan dinyatakan tidak ikut dijumlah
     await expect(sheet.getByText('BELUM PASTI')).toBeVisible()
@@ -287,5 +290,42 @@ test.describe('Bagiin — angka besar bisa ditanya', () => {
 
     await tamu.close()
     await pemilik2.close()
+  })
+
+  test('127. satu arah: rincian menyebut utang dan angkanya cuma muncul sekali', async ({ page, browser }) => {
+    test.setTimeout(120_000)
+    await onboard(page, 'Aufa Satu Arah ' + stamp)
+    // bill milik orang lain yang itemnya saya ambil -> saya cuma punya utang
+    const pemilik = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const p = await pemilik.newPage()
+    await onboard(p, 'Pemilik Satu Arah ' + stamp)
+    const link = await createBill(p, 'Utang Satu Arah ' + stamp, '22000')
+
+    await page.goto(link)
+    await page.getByRole('button', { name: 'Ikut bill ini' }).first().click()
+    const namaField = page.getByLabel('Nama kamu')
+    if (await namaField.isVisible().catch(() => false)) {
+      await namaField.fill('Aufa Satu Arah ' + stamp)
+      await page.getByRole('button', { name: 'Simpan nama & ikut bill' }).click()
+    }
+    await page.locator('.ds-item').filter({ hasText: 'Sate' }).first().click()
+    await page.waitForTimeout(1200)
+
+    await page.goto('/recap')
+    const kartu = page.locator('.ds-balance').first()
+    await expect(kartu).toBeVisible({ timeout: 15_000 })
+    await kartu.locator('.ds-balance-tap').click()
+
+    const sheet = page.getByRole('dialog', { name: 'Rincian saldo' })
+    await expect(sheet).toBeVisible()
+    await expect(sheet.getByText('Utang kamu', { exact: true })).toBeVisible()
+    // hanya satu arah: tidak ada baris ringkasan, karena isinya akan sama persis
+    // dengan baris utang di atasnya dan terbaca seperti salah hitung
+    await expect(sheet.getByText(/terima lebih|bayar lebih/)).toHaveCount(0)
+    // angkanya muncul sekali saja di blok SUDAH PASTI
+    const isi = (await sheet.innerText()).split('BELUM PASTI')[0]
+    expect(isi.split('Rp22.000').length - 1, 'Rp22.000 tidak boleh tampil dua kali').toBe(1)
+
+    await pemilik.close()
   })
 })
