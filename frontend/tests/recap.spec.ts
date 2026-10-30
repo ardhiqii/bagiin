@@ -86,16 +86,16 @@ test.describe('Bagiin — rekap berisi pekerjaan, bukan arsip', () => {
     await page.goto('/recap')
     // per orang: siapa yang berutang dan berapa, bukan daftar bill
     // label seksi, bukan label kecil di baris (dua-duanya berbunyi "Kamu tagih")
-    await expect(page.locator('.ds-group-label', { hasText: 'Kamu tagih' })).toBeVisible()
+    await expect(page.locator('.ds-group-label', { hasText: 'Belum dibayar ke kamu' })).toBeVisible()
     await expect(page.getByText('Bima').first()).toBeVisible()
     await expect(page.getByText('Rp30.000').first()).toBeVisible()
-    await expect(page.getByText(/1 bill · belum dia transfer/)).toBeVisible()
+    await expect(page.getByText(/1 bill · belum dia bayar/)).toBeVisible()
 
     // buka sheet: rinciannya per bill, dan bill-nya bisa dibuka
     await page.locator('.recap-person').first().click()
     const sheet = page.locator('.ds-sheet')
     await expect(sheet.getByText(/1 bill belum lunas/)).toBeVisible()
-    await expect(sheet.getByText(/belum dia transfer/).first()).toBeVisible()
+    await expect(sheet.getByText(/belum dia bayar/).first()).toBeVisible()
     await page.locator('.ds-sheet-close').click()
 
     await guest.getByRole('button', { name: /Tandai lunas/ }).click()
@@ -127,7 +127,7 @@ test.describe('Bagiin — rekap berisi pekerjaan, bukan arsip', () => {
 
     await page.goto('/recap')
     // net = dia masih berutang Rp10.000 ke saya, tapi dua brutonya tetap terlihat
-    await expect(page.locator('.ds-group-label', { hasText: 'Kamu tagih' })).toBeVisible()
+    await expect(page.locator('.ds-group-label', { hasText: 'Belum dibayar ke kamu' })).toBeVisible()
     await expect(page.getByText('kamu bayar Rp20.000')).toBeVisible()
     await expect(page.getByText('dia bayar Rp30.000')).toBeVisible()
 
@@ -141,7 +141,7 @@ test.describe('Bagiin — rekap berisi pekerjaan, bukan arsip', () => {
     await onboard(page, 'Orang Baru ' + stamp)
     await page.goto('/recap')
     await expect(page.getByText('Semua bill beres')).toBeVisible()
-    await expect(page.getByText(/Tidak ada utang, piutang/)).toBeVisible()
+    await expect(page.getByText(/Tidak ada tagihan, tidak ada yang menunggu/)).toBeVisible()
     // tidak ada kartu angka dan tidak ada seksi orang saat semuanya kosong
     await expect(page.locator('.ds-balance')).toHaveCount(0)
     await expect(page.locator('.recap-person')).toHaveCount(0)
@@ -217,8 +217,8 @@ test.describe('Bagiin — satu angka untuk uang yang sama', () => {
     await expect(kartuBeranda.getByText('Belum dipastikan')).toHaveCount(0)
 
     // daftar orangnya tetap memisahkan arah: yang saya utangi dan yang mengutangi
-    await expect(page.getByText('Kamu bayar').first()).toBeVisible()
-    await expect(page.getByText('Kamu tagih').first()).toBeVisible()
+    await expect(page.getByText('Perlu kamu bayar').first()).toBeVisible()
+    await expect(page.getByText('Belum dibayar ke kamu').first()).toBeVisible()
 
     await tamu.close()
     await pemilik2.close()
@@ -274,14 +274,14 @@ test.describe('Bagiin — angka besar bisa ditanya', () => {
     await expect(sheet.getByText('Kamu terima', { exact: true })).toBeVisible()
     await expect(sheet.getByText('+Rp230.000')).toBeVisible()
     // "Utang kamu" — kata yang orang pakai sendiri, bukan "ringkasan selisih"
-    await expect(sheet.getByText('Utang kamu', { exact: true })).toBeVisible()
+    await expect(sheet.getByText('Tagihan kamu', { exact: true })).toBeVisible()
     await expect(sheet.getByText('−Rp22.000')).toBeVisible()
     // dua arah: baris selisih muncul, dan menyebut arahnya dengan kata
     await expect(sheet.getByText('Kamu terima lebih', { exact: true })).toBeVisible()
     await expect(sheet.getByText('Rp208.000')).toBeVisible()
     // yang belum pasti dipisah dan dinyatakan tidak ikut dijumlah
-    await expect(sheet.getByText('BELUM PASTI')).toBeVisible()
-    await expect(sheet.getByText(/tidak akan pernah\s+dijumlahkan/)).toBeVisible()
+    await expect(sheet.getByText('BILL BELUM SELESAI')).toBeVisible()
+    await expect(sheet.getByText(/ditanggung yang nalangin/)).toBeVisible()
 
     // tombol di dalam rincian membawa ke daftar bill yang belum pasti
     await sheet.getByRole('button', { name: /Lihat .* bill itu/ }).click()
@@ -318,12 +318,12 @@ test.describe('Bagiin — angka besar bisa ditanya', () => {
 
     const sheet = page.getByRole('dialog', { name: 'Rincian saldo' })
     await expect(sheet).toBeVisible()
-    await expect(sheet.getByText('Utang kamu', { exact: true })).toBeVisible()
+    await expect(sheet.getByText('Tagihan kamu', { exact: true })).toBeVisible()
     // hanya satu arah: tidak ada baris ringkasan, karena isinya akan sama persis
     // dengan baris utang di atasnya dan terbaca seperti salah hitung
     await expect(sheet.getByText(/terima lebih|bayar lebih/)).toHaveCount(0)
     // angkanya muncul sekali saja di blok SUDAH PASTI
-    const isi = (await sheet.innerText()).split('BELUM PASTI')[0]
+    const isi = (await sheet.innerText()).split('BILL BELUM SELESAI')[0]
     expect(isi.split('Rp22.000').length - 1, 'Rp22.000 tidak boleh tampil dua kali').toBe(1)
 
     await pemilik.close()

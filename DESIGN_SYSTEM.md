@@ -306,33 +306,60 @@ Angka besar adalah hal pertama yang dilihat orang, jadi di situlah pertanyaan
 "kok segini?" muncul. Angka itu adalah tombol (`aria-haspopup="dialog"`) yang
 membuka sheet **Rincian saldo**, dengan urutan tetap:
 
-1. `Kamu terima +Rp230.000` dan `Utang kamu −Rp22.000`.
+1. `Kamu terima +Rp230.000` dan `Tagihan kamu −Rp22.000`.
 2. **Baris ringkasan hanya kalau ada dua arah** (`Kamu terima lebih` / `Kamu
    bayar lebih`). Satu arah tidak punya baris ini: isinya akan sama persis
    dengan baris di atasnya, dan angka yang muncul dua kali terbaca seperti
    salah hitung. Ini yang dulu terjadi ("Kamu bayar −Rp22.000" lalu "Ringkasan
    selisih −Rp22.000").
-3. Kelompok **BELUM PASTI** yang menyebut jumlah bill dan bahwa angkanya tidak
-   pernah dijumlahkan.
+3. Kelompok **BILL BELUM SELESAI** — jumlah bill, **tanpa angka rupiah**, karena
+   yang belum diputuskan di sana adalah porsi orang lain, bukan tagihan penampil.
 4. Kalau ada bill belum dibagi, tombol "Lihat N bill itu" yang menutup sheet dan
    menggulir ke daftarnya.
 
-### "Utang", bukan "selisih"
+### Angka besar = semua yang belum kamu bayar
 
-Baris kewajiban memakai kata **`Utang kamu`**, bukan "Kamu bayar" dan bukan
-"Ringkasan selisih". "Selisih" itu bahasa pembukuan: orang tidak pernah bertanya
-"berapa selisihku", mereka bertanya "aku utang berapa". Harganya, "Utang kamu"
-tidak sepasang dengan "Kamu terima" (kata benda vs kata kerja) — kata yang
-langsung dipahami menang atas simetri.
+Termasuk bagianmu di bill yang pembagiannya belum selesai. Dulu bagian itu
+diparkir di baris "± belum pasti" dan tidak pernah dijumlahkan ke angka besar;
+begitu datanya diperiksa, "± Rp23.000 dari 6 bill" ternyata **satu bill yang
+memang belum dibayar** dan lima bill lain yang uangnya sudah beres. Angka yang
+sudah pasti tidak boleh disembunyikan di baris "perkiraan": itu tagihan, bukan
+tebakan.
 
-Kata `utang` tetap dipakai walau lawannya lebih dari satu orang, karena itu
-*jumlah* utang, bukan janji satu transfer. Yang tidak boleh: menulis seolah
-angkanya satu transfer. Karena itu kalimat penjelas di bawahnya wajib ada saat
-dua arah: "Angka terakhir cuma selisih, bukan satu transfer".
+Yang tetap tidak masuk angka besar: bagian yang belum kamu pilih (belum tentu
+kamu) dan sisa yang kamu nalangin sebagai pembayar (itu uang yang sudah keluar,
+bukan tagihan).
+
+### "Tagihan", bukan "utang" dan bukan "selisih"
+
+Kartu dan baris kewajiban memakai **`Tagihan kamu`**. Dua kata yang ditolak, dan
+alasannya:
+
+- **"Selisih"** itu bahasa pembukuan. Orang tidak bertanya "berapa selisihku".
+- **"Utang"** selalu ambigu arah: bisa yang kamu pinjam, bisa yang orang pinjam
+  darimu. UI fintech Indonesia tidak memakainya sama sekali — GoPay Later menulis
+  *"Tagihan Perlu Dibayar"*, Kredivo *"sisa tagihan"*, SPayLater *"cek tagihan"*.
+  Dan di produk ini "tagihan" nyambung dengan domainnya sendiri, bill.
+
+Pasangan labelnya: `Tagihan kamu` (yang kamu bayar) dan `Belum dibayar ke kamu`
+(yang orang lain bayar). Label kartu memakai keduanya; baris rincian memakai
+`Kamu terima` / `Tagihan kamu`.
+
+Penjelas wajib saat dua arah: "Angka terakhir cuma selisih, bukan satu transfer"
+— jumlah tagihan bukan janji satu transfer ke satu orang.
 
 Baris `Kamu terima +Rp0` **tetap ditampilkan** saat tidak ada piutang. Dia
 menjawab pertanyaan "aku nggak nerima apa-apa ya?" secara eksplisit, bukan lewat
 baris yang hilang — dan tanda `+` di depan nol tidak membingungkan siapa pun.
+
+### Saat memuat: kerangka, bukan teks
+
+Layar yang menunggu data menampilkan kerangka berbentuk isinya (`SkeletonCard`,
+`SkeletonList` di `ds/primitives.tsx`), bukan tulisan "Memuat…". Alasannya bukan
+keindahan: teks kosong membuat tinggi halaman melompat saat data datang, dan di
+Beranda sempat menulis kesimpulan ("Tidak ada utang tersisa") karena angka
+bawaannya nol — kesimpulan yang salah, ditampilkan sebelum data ada. Kerangka
+tidak mengklaim apa pun. Gerakannya dimatikan saat `prefers-reduced-motion`.
 
 ### Jangan mengarang angka nol
 

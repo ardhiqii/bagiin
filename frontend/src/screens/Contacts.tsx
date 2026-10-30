@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { Alert, Avatar, Button, EmptyState, Field, Sheet } from '../ds/primitives'
+import { Alert, Avatar, Button, EmptyState, Field, Sheet, SkeletonList } from '../ds/primitives'
 import { endpoints } from '../lib/api'
 import { useContacts, type Contact } from '../lib/queries'
 import { useQueryClient } from '@tanstack/react-query'
@@ -122,7 +122,7 @@ export function Contacts({ identityId }: { identityId: string }) {
         </Alert>
       ) : null}
 
-      {contacts.isPending ? <div className="app-note">Memuat kontak…</div> : null}
+      {contacts.isPending ? <SkeletonList rows={4} label="Memuat kontak" /> : null}
       {contacts.isError ? (
         <Alert tone="danger" title="Kontak gagal dimuat">
           {(contacts.error as Error).message}

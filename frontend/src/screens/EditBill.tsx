@@ -6,7 +6,7 @@ import { useToast } from '../components/Toast'
 import { billActions, useBill, useBillAction } from '../lib/queries'
 import { invalidateMoneyViews } from '../lib/mutations'
 import { formatRp, parseRupiah } from '../lib/money'
-import { Alert, Button, Field, SectionHead } from '../ds/primitives'
+import { Alert, Button, Field, SectionHead, SkeletonCard, SkeletonList } from '../ds/primitives'
 import manualArt from '../assets/manual.webp'
 import type { BillItem } from '../lib/types'
 
@@ -160,7 +160,12 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
         ) : null
       }
     >
-      {bill.isPending ? <div className="app-note">Memuat bill…</div> : null}
+      {bill.isPending ? (
+        <>
+          <SkeletonCard label="Memuat bill" />
+          <SkeletonList rows={3} label="Memuat bill" />
+        </>
+      ) : null}
       {bill.isError ? <Alert tone="danger" title="Bill tidak bisa dibuka">{(bill.error as Error).message}</Alert> : null}
 
       {data && !data.can_manage ? (

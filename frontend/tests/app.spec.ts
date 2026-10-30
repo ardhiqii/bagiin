@@ -132,7 +132,7 @@ test.describe('Bagiin — perilaku user', () => {
 
     await page.goto('/recap')
     // bill baru tanpa pilihan: pembagiannya belum jelas, jadi masuk daftar kerja
-    await expect(page.getByText(/Pembagian belum jelas/i)).toBeVisible()
+    await expect(page.locator('.ds-group-label', { hasText: 'Belum selesai dibagi' })).toBeVisible()
     await expect(page.getByText(title)).toBeVisible()
   })
 

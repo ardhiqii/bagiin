@@ -277,7 +277,7 @@ test.describe('Bagiin — jaringan tidak bersahabat', () => {
     await page.goto('/')
     // selama memuat: kerangka/placeholder boleh, tapi jangan "Rp0" atau "tidak ada utang"
     const early = await page.locator('body').innerText()
-    expect(early, 'jangan mengklaim nol sebelum data datang').not.toMatch(/Tidak ada utang tersisa/i)
+    expect(early, 'jangan mengklaim nol sebelum data datang').not.toMatch(/Tidak ada tagihan/i)
     await expect(page.locator('a').filter({ hasText: 'Lambat ' + stamp }).first()).toBeVisible({
       timeout: 15_000,
     })

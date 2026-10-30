@@ -538,7 +538,7 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     const row = page.locator('.app-row', { hasText: title })
     expect(await rowAmount(row)).toBe(rowApi.my_total_idr)
     // arah berbalik: dulu "harus kamu terima", sekarang "harus kamu bayar"
-    await expect(page.locator('.ds-balance-label').first()).toContainText('Harus kamu bayar')
+    await expect(page.locator('.ds-balance-label').first()).toContainText('Tagihan kamu')
     expect(await cardValue(page)).toBe(myShare)
 
     await goRecap(page)

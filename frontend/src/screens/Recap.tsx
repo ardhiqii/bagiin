@@ -8,7 +8,7 @@ import { api } from '../lib/api'
 import { formatRp } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { Alert, Avatar, Button, EmptyState, Group, Sheet } from '../ds/primitives'
+import { Alert, Avatar, Button, EmptyState, Group, Sheet, SkeletonCard, SkeletonList } from '../ds/primitives'
 import { SaldoCard } from '../components/SaldoCard'
 import type { RecapBill, RecapCounterparty, RecapEdge } from '../lib/types'
 import personArt from '../assets/person.webp'
@@ -45,7 +45,7 @@ function blockers(bill: RecapBill) {
 /** "belum kamu transfer" vs "belum dia transfer" — dari arah sisanya. */
 function edgeLabel(edge: RecapEdge) {
   if (edge.status === 'closed') return 'bill ditutup, sisa belum dibayar'
-  return edge.direction === 'pay' ? 'belum kamu transfer' : 'belum dia transfer'
+  return edge.direction === 'pay' ? 'belum kamu bayar' : 'belum dia bayar'
 }
 
 function initial(name: string) {
@@ -62,8 +62,8 @@ function PersonRow({ row, onOpen }: { row: RecapCounterparty; onOpen: () => void
   const meta = twoWay
     ? row.bills.length + ' bill'
     : pays
-      ? row.bills.length + ' bill · belum kamu transfer'
-      : row.bills.length + ' bill · belum dia transfer'
+      ? row.bills.length + ' bill · belum kamu bayar'
+      : row.bills.length + ' bill · belum dia bayar'
   return (
     <button type="button" className="recap-person" onClick={onOpen}>
       <Avatar label={initial(row.display_name ?? row.name)} tone={pays ? 'navy' : 'mint'} />
@@ -84,7 +84,7 @@ function PersonRow({ row, onOpen }: { row: RecapCounterparty; onOpen: () => void
       </span>
       <span className="recap-person-amt">
         <b>{formatRp(row.amount_idr)}</b>
-        <small>{pays ? 'kamu bayar' : 'kamu tagih'}</small>
+        <small>{pays ? 'perlu kamu bayar' : 'belum dibayar'}</small>
       </span>
       <CaretRight size={16} className="recap-chevron" aria-hidden="true" />
     </button>
@@ -201,13 +201,16 @@ function PersonSheet({
 }
 
 /**
- * Rekap menjawab dua pertanyaan yang tidak boleh dicampur:
- *   1. berapa utang/piutang yang pembagiannya SUDAH JELAS — angkanya tidak
- *      berubah lagi, boleh langsung ditransfer;
- *   2. bill mana yang pembagiannya BELUM JELAS, dan apa yang membuatnya belum
- *      jelas.
- * Angka dari keduanya tidak pernah dijumlahkan; kalau dicampur, orang
- * mentransfer nominal yang salah.
+ * Rekap menjawab dua pertanyaan:
+ *   1. berapa TAGIHAN kamu — semua bagian yang sudah kamu ambil dan belum kamu
+ *      bayar, termasuk dari bill yang pembagiannya belum selesai. Angka ini
+ *      yang muncul di kartu, dan dia satu-satunya angka besar di layar;
+ *   2. bill mana yang pembagiannya belum selesai, dan apa yang membuatnya
+ *      begitu. Ini daftar KERJAAN, bukan angka: sisanya ditanggung yang
+ *      nalangin, jadi tidak menambah tagihanmu.
+ * Dulu keduanya dipisah sebagai "pasti" vs "belum pasti", dan akibatnya
+ * tagihan yang jelas-jelas harus dibayar (bagian sendiri di bill yang belum
+ * selesai) disembunyikan di baris "±", bukan dijumlahkan ke angka besar.
  *
  * Yang sudah lunas tidak muncul sama sekali: backend hanya mengirim sisa
  * (`_recap_edges_for_viewer`), jadi rekap berisi pekerjaan, bukan arsip.
@@ -277,7 +280,12 @@ export function Recap({ identityId }: { identityId: string | null }) {
           {(recap.error as Error).message}
         </Alert>
       ) : null}
-      {recap.isPending ? <div className="app-note">Memuat…</div> : null}
+      {recap.isPending ? (
+        <>
+          <SkeletonCard label="Memuat rekap" />
+          <SkeletonList rows={3} label="Memuat rekap" />
+        </>
+      ) : null}
 
       {data ? (
         <>
@@ -292,8 +300,8 @@ export function Recap({ identityId }: { identityId: string | null }) {
                 {/* Jumlahnya cuma disebut di judul seksi di bawah; di sini
                     kalimat aksinya saja. Dua kali "6 bill" di satu layar
                     membuat orang mengira ada dua himpunan berbeda. */}
-                <b>Ada bill yang pembagiannya belum jelas</b>
-                <small>Angkanya masih bisa berubah — buka untuk memberi tahu siapa ambil apa</small>
+                <b>Ada bill yang belum selesai dibagi</b>
+                <small>Bagianmu sudah masuk tagihan. Sisanya ditanggung yang nalangin.</small>
               </span>
               <CaretRight size={16} aria-hidden="true" />
             </button>
@@ -301,7 +309,7 @@ export function Recap({ identityId }: { identityId: string | null }) {
 
           {unclear.length > 0 ? (
             <div id="rekap-belum-jelas">
-              <Group label={'Pembagian belum jelas · ' + unclear.length + ' bill'}>
+              <Group label={'Belum selesai dibagi · ' + unclear.length + ' bill'}>
                 {unclear.map((bill) => (
                   <div className="recap-open" key={bill.bill_id}>
                     <Link
@@ -312,7 +320,9 @@ export function Recap({ identityId }: { identityId: string | null }) {
                       <b>{bill.title}</b>
                       <small>{blockers(bill)}</small>
                       <span className="recap-payer">
-                        sisa ditanggung {bill.paid_by_name ?? 'pembayar'}
+                        {bill.estimated_payable_idr > 0
+                          ? formatRp(bill.estimated_payable_idr) + ' bagianmu, belum kamu bayar'
+                          : 'sisa ditanggung ' + (bill.paid_by_name ?? 'pembayar')}
                       </span>
                     </Link>
                     {bill.can_manage ? (
@@ -332,7 +342,7 @@ export function Recap({ identityId }: { identityId: string | null }) {
           ) : null}
 
           {pays.length > 0 ? (
-            <Group label="Kamu bayar">
+            <Group label="Perlu kamu bayar">
               {pays.map((row) => (
                 <PersonRow key={row.identity_id} row={row} onOpen={() => setOpenPerson(row)} />
               ))}
@@ -340,7 +350,7 @@ export function Recap({ identityId }: { identityId: string | null }) {
           ) : null}
 
           {receives.length > 0 ? (
-            <Group label="Kamu tagih">
+            <Group label="Belum dibayar ke kamu">
               {receives.map((row) => (
                 <PersonRow key={row.identity_id} row={row} onOpen={() => setOpenPerson(row)} />
               ))}
@@ -352,7 +362,7 @@ export function Recap({ identityId }: { identityId: string | null }) {
               title="Semua bill beres"
               art={<img className="recap-empty-art" src={paidArt} alt="" width={150} height={150} />}
             >
-              Tidak ada utang, piutang, atau bill yang menunggu dipilih.
+              Tidak ada tagihan, tidak ada yang menunggu dibayar, dan semua bill sudah dibagi.
             </EmptyState>
           ) : null}
 

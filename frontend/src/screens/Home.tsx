@@ -8,7 +8,7 @@ import { api } from '../lib/api'
 import { useToast } from '../components/Toast'
 import { AppShell } from '../components/AppShell'
 import { SecureNudge } from '../components/SecureNudge'
-import { ActionFlag, Alert, Amount, Button, EmptyState, Notice, SectionHead } from '../ds/primitives'
+import { ActionFlag, Alert, Amount, Button, EmptyState, Notice, SectionHead, SkeletonCard, SkeletonList } from '../ds/primitives'
 import { SaldoCard } from '../components/SaldoCard'
 import { MagnifyingGlass } from '@phosphor-icons/react'
 import homeEmptyArt from '../assets/home-empty.webp'
@@ -166,14 +166,14 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('semua')
 
-  const net = recap.data?.final.net_idr ?? 0
+  // Angka beranda = angka kartu = angka rekap: bagian yang belum dibayar di
+  // SEMUA bill, termasuk yang pembagiannya belum selesai. Dulu bagian dari bill
+  // yang belum selesai diparkir di "± perkiraan" dan tidak pernah dijumlahkan,
+  // padahal itu tagihan yang jelas (lihat catatan di SaldoCard).
   const provisional = recap.data?.provisional
-  // Perkiraan = jumlah yang masih bisa berubah, dari bill yang pembagiannya
-  // belum selesai. Arahnya boleh berlawanan dengan angka pasti; karena itu dia
-  // tidak pernah dijumlahkan ke angka pasti, hanya ditaruh di baris sendiri.
-  const estimate = provisional
-    ? (provisional.receivable_idr ?? 0) - (provisional.payable_idr ?? 0)
-    : 0
+  const net =
+    (recap.data?.final.net_idr ?? 0) +
+    (provisional ? (provisional.receivable_idr ?? 0) - (provisional.payable_idr ?? 0) : 0)
 
   /**
    * Satu pertanyaan yang harus dijawab beranda: "apa yang harus SAYA kerjakan?"
@@ -310,34 +310,32 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
           memang belum ada uang yang pasti, kartu besar itu cuma mengaburkan hal
           yang benar-benar perlu dibaca: undangan dan bill yang belum dipilih.
           Angkanya tetap jujur — hanya tidak diteriakkan. */}
-      {net === 0 && rows.length === 0 ? null : net === 0 ? (
+      {/* Selama rekap belum datang, jangan menyimpulkan apa pun: dulu layar ini
+          menulis "Tidak ada utang tersisa" (sekarang "Tagihanmu nol") karena
+          `net` masih 0 bawaan, lalu berubah begitu data masuk. Kerangka lebih
+          jujur: dia tidak mengklaim angka apa pun. */}
+      {recap.isPending ? (
+        <SkeletonCard label="Memuat tagihan" />
+      ) : net === 0 && rows.length === 0 ? null : net === 0 ? (
         <Notice
-          tone={estimate !== 0 || actionTotal > 0 ? 'pending' : 'success'}
+          tone={actionTotal > 0 ? 'pending' : 'success'}
           action={
-            estimate !== 0 ? (
+            actionTotal > 0 ? (
               <Link to="/recap" className="link-quiet">
-                Bagi sekarang
+                Lihat rekap
               </Link>
             ) : undefined
           }
         >
           {/* Tanpa angka pasti, perkiraannya yang disebut — tetap dengan "±" dan
               tetap tanpa dijumlahkan ke apa pun. */}
-          {estimate !== 0
-            ? 'Belum ada angka pasti. Perkiraan ' +
-              (estimate > 0 ? '+' : '−') +
-              formatRp(Math.abs(estimate)) +
-              ' dari bill yang pembagiannya belum selesai.'
-            : actionTotal > 0
-              ? // Net nol BUKAN berarti selesai: di data nyata ada orang yang
-                // utangnya nol tapi satu bill-nya masih menunggu pilihan atau
-                // konfirmasi. Kalimat "tidak ada utang tersisa" di samping
-                // banner "1 bill perlu kamu bereskan" terbaca seperti aplikasi
-                // salah hitung.
-                'Utangmu nol. Masih ada ' +
-                actionTotal +
-                ' bill yang perlu kamu kerjakan.'
-              : 'Tidak ada utang tersisa di antara kamu dan teman-temanmu.'}
+          {actionTotal > 0
+            ? // Net nol BUKAN berarti selesai: di data nyata ada orang yang
+              // tagihannya nol tapi satu bill-nya masih menunggu pilihan atau
+              // konfirmasi. Kalimat "tidak ada tagihan" di samping banner "1
+              // bill perlu kamu bereskan" terbaca seperti aplikasi salah hitung.
+              'Tagihanmu nol. Masih ada ' + actionTotal + ' bill yang perlu kamu kerjakan.'
+            : 'Tidak ada tagihan di antara kamu dan teman-temanmu.'}
         </Notice>
       ) : (
         <SaldoCard
@@ -378,7 +376,7 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
         </button>
       ) : null}
 
-      {bills.isPending && rows.length === 0 ? <div className="app-note">Memuat…</div> : null}
+      {bills.isPending && rows.length === 0 ? <SkeletonList rows={4} label="Memuat bill" /> : null}
 
       {!bills.isPending && rows.length === 0 ? (
         <EmptyState

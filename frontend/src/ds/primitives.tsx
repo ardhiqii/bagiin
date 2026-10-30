@@ -424,3 +424,54 @@ export function Sheet({
     </section>
   </div>
 }
+
+/**
+ * Kerangka isi saat data belum datang.
+ *
+ * Pengganti "Memuat…" yang cuma teks: bentuknya mengikuti isi aslinya, jadi
+ * halaman tidak melompat saat data masuk dan orang sudah tahu apa yang akan
+ * muncul. Semua bagian dekoratif ditandai aria-hidden; satu kalimat untuk
+ * pembaca layar tetap disediakan lewat .ds-skel-sr.
+ */
+export function Skeleton({
+  width = '100%',
+  height = 14,
+  radius = 8,
+}: {
+  width?: number | string
+  height?: number | string
+  radius?: number
+}) {
+  return <span className="ds-skel" style={{ width, height, borderRadius: radius }} aria-hidden="true" />
+}
+
+/** Kerangka kartu saldo: label, angka besar, satu baris keterangan. */
+export function SkeletonCard({ label = 'Memuat' }: { label?: string }) {
+  return (
+    <div className="ds-skel-card" role="status" aria-live="polite">
+      <span className="ds-skel-sr">{label}…</span>
+      <Skeleton width={104} height={10} />
+      <Skeleton width="58%" height={30} radius={12} />
+      <Skeleton width={168} height={12} />
+    </div>
+  )
+}
+
+/** Kerangka daftar: avatar, dua baris teks, satu angka di kanan. */
+export function SkeletonList({ rows = 3, label = 'Memuat' }: { rows?: number; label?: string }) {
+  return (
+    <div className="ds-skel-list" role="status" aria-live="polite">
+      <span className="ds-skel-sr">{label}…</span>
+      {Array.from({ length: rows }).map((_, index) => (
+        <div className="ds-skel-row" key={index} aria-hidden="true">
+          <Skeleton width={40} height={40} radius={14} />
+          <span style={{ flex: 1, display: 'grid', gap: 7 }}>
+            <Skeleton width={index % 2 === 0 ? '58%' : '44%'} height={13} />
+            <Skeleton width={index % 2 === 0 ? '36%' : '52%'} height={11} />
+          </span>
+          <Skeleton width={58} height={13} />
+        </div>
+      ))}
+    </div>
+  )
+}

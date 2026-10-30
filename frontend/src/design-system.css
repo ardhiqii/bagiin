@@ -444,6 +444,50 @@
   .ds-button { transition: none; }
 }
 
+/* ---------- Kerangka memuat (skeleton) ----------
+   Layar yang masih memuat dulu cuma menulis "Memuat…": satu baris teks di
+   tengah layar kosong, dan tinggi halamannya melompat begitu data datang.
+   Kerangka mengambil bentuk isi aslinya, jadi tidak ada lompatan dan orang
+   sudah tahu apa yang akan muncul. */
+.ds-skel {
+  display: block;
+  background: linear-gradient(90deg, #e7eeee 25%, #f4f9f9 37%, #e7eeee 63%);
+  background-size: 400% 100%;
+  animation: ds-skel 1.5s ease-in-out infinite;
+}
+@keyframes ds-skel {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+.ds-skel-card {
+  display: grid;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-5);
+  border-radius: var(--ds-radius-lg);
+  background: var(--ds-surface);
+}
+.ds-skel-list { display: grid; gap: var(--ds-space-2); }
+.ds-skel-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-3) var(--ds-space-4);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-surface);
+}
+.ds-skel-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* tanpa gerak: kerangkanya tetap, bukan berkedip */
+  .ds-skel { animation: none; background: #e9f0f0; }
+}
+
 .ds-badge {
   display: inline-flex;
   align-items: center;

@@ -27,12 +27,18 @@ export function SaldoCard({
   const [detailOpen, setDetailOpen] = useState(false)
   const { final, provisional } = recap
 
-  const net = Math.round(final.net_idr)
-  const terima = Math.round(final.receivable_idr)
-  const bayar = Math.round(final.payable_idr)
+  // Angka besar = yang BELUM kamu bayar, di semua bill — termasuk bill yang
+  // pembagiannya belum selesai. Dulu bagian dari bill yang belum selesai
+  // diparkir di baris "belum pasti", padahal itu bukan tebakan: itu bagian yang
+  // sudah kamu ambil dan belum kamu bayar (temuan saat membuka data 0.9 asli:
+  // "± Rp23.000 dari 6 bill" ternyata satu bill yang memang belum dibayar).
+  const provPayable = Math.round(provisional?.payable_idr ?? 0)
+  const provReceivable = Math.round(provisional?.receivable_idr ?? 0)
+  const net = Math.round(final.net_idr) + provReceivable - provPayable
+  const terima = Math.round(final.receivable_idr) + provReceivable
+  const bayar = Math.round(final.payable_idr) + provPayable
   const duaArah = terima > 0 && bayar > 0
-  const belumPasti = Math.round((provisional?.receivable_idr ?? 0) - (provisional?.payable_idr ?? 0))
-  const billBelumPasti = provisional?.bill_count ?? 0
+  const billBelumSelesai = provisional?.bill_count ?? 0
 
   const tagih = final.counterparties.filter((row) => row.net_idr > 0)
   const utang = final.counterparties.filter((row) => row.net_idr < 0)
@@ -42,7 +48,10 @@ export function SaldoCard({
    *  satu bill bisa muncul di dua arah kalau lawannya lebih dari satu orang. */
   const billsPasti = new Set([...tagih, ...utang].flatMap((row) => row.bills.map((edge) => edge.bill_id))).size
 
-  const label = net > 0 ? 'Harus kamu terima' : net < 0 ? 'Harus kamu bayar' : 'Saldonya nol'
+  // Istilah mengikuti aplikasi tagihan/paylater (GoPay Later "Tagihan Perlu
+  // Dibayar", Kredivo "sisa tagihan"): "tagihan" selalu satu arah, sedangkan
+  // "utang" bisa berarti yang kamu pinjam atau yang orang pinjam darimu.
+  const label = net > 0 ? 'Belum dibayar ke kamu' : net < 0 ? 'Tagihan kamu' : 'Tidak ada tagihan'
 
   return (
     <>
@@ -67,13 +76,12 @@ export function SaldoCard({
         note={
           duaArah
             ? undefined
-            : billBelumPasti > 0 && belumPasti === 0
-              ? billBelumPasti + ' bill belum dibagi · angkanya belum bisa dipastikan'
+            : billBelumSelesai > 0
+              ? billBelumSelesai + ' bill belum selesai · bagianmu sudah dihitung'
               : net === 0
-                ? 'tidak ada sisa bill yang pembagiannya sudah jelas'
-                : 'dari bill yang pembagiannya sudah pasti'
+                ? 'tidak ada yang menunggu dibayar'
+                : 'dari ' + billsPasti + ' bill'
         }
-        estimate={belumPasti !== 0 ? { value: belumPasti, label: 'Belum dipastikan' } : undefined}
         onOpenDetail={() => setDetailOpen(true)}
       />
 
@@ -90,7 +98,7 @@ export function SaldoCard({
                 dengan "Kamu terima" (kata benda vs kata kerja) — kata yang langsung
                 dipahami menang atas simetri. */}
             <div className="saldo-detail-row">
-              <span>Utang kamu</span>
+              <span>Tagihan kamu</span>
               <b className="ds-amount--neg">−{idr(bayar)}</b>
             </div>
             {/* Baris ringkasan hanya kalau ada DUA arah. Di satu arah nilainya sama
@@ -105,27 +113,25 @@ export function SaldoCard({
             <p className="saldo-detail-hint">
               {duaArah
                 ? 'Angka terakhir cuma selisih, bukan satu transfer: yang menagih dan yang kamu bayar adalah orang yang berbeda.'
-                : 'Dari ' + billsPasti + ' bill yang pembagiannya sudah pasti.'}
+                : 'Dari ' + (billsPasti + billBelumSelesai) + ' bill, termasuk yang belum selesai dibagi.'}
             </p>
           </div>
 
-          {billBelumPasti > 0 ? (
+          {billBelumSelesai > 0 ? (
             <div className="saldo-detail-group">
-              <span className="saldo-detail-cap">belum pasti</span>
+              <span className="saldo-detail-cap">bill belum selesai</span>
               <div className="saldo-detail-row">
-                <span>
-                  {billBelumPasti} bill belum dibagi
-                </span>
-                <b className="saldo-detail-est">
-                  {belumPasti !== 0 ? '± ' + idr(Math.abs(belumPasti)) : 'belum bisa dihitung'}
-                </b>
+                {/* Tanpa angka rupiah: yang belum diputuskan pemiliknya adalah
+                    porsi orang lain, dan itu bukan tagihan penampil. Dulu di sini
+                    ada "± Rp23.000" yang justru bagian penampil sendiri. */}
+                <span>{billBelumSelesai} bill belum dibagi habis</span>
+                <b className="saldo-detail-est">bagianmu sudah dihitung</b>
               </div>
               <p className="saldo-detail-hint">
-                Angka ini belum masuk hitungan di atas dan tidak akan pernah
-                dijumlahkan ke sana. Ada item yang belum dipilih atau belum ada
-                yang mengaku, jadi bagiannya masih bisa pindah ke kamu.
+                Yang belum ada pengakunya ditanggung yang nalangin bill-nya, bukan
+                kamu. Kalau kamu ikut memilih di sana, tagihanmu di atas ikut naik.
               </p>
-              {onOpenUnclear && billBelumPasti > 0 ? (
+              {onOpenUnclear ? (
                 <Button
                   variant="secondary"
                   onClick={() => {
@@ -133,7 +139,7 @@ export function SaldoCard({
                     onOpenUnclear()
                   }}
                 >
-                  Lihat {billBelumPasti} bill itu
+                  Lihat {billBelumSelesai} bill itu
                 </Button>
               ) : null}
             </div>
@@ -145,7 +151,7 @@ export function SaldoCard({
               perlu disebut. */}
           <p className="saldo-detail-foot">
             {billsOf(tagih) > 0 && billsOf(utang) > 0
-              ? 'Dari ' + billsOf(tagih) + ' bill kamu terima, ' + billsOf(utang) + ' bill jadi utangmu.'
+              ? 'Dari ' + billsOf(tagih) + ' bill kamu terima, ' + billsOf(utang) + ' bill masuk tagihanmu.'
               : ''}
           </p>
         </div>
