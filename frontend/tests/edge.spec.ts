@@ -84,6 +84,10 @@ test.describe('Bagiin — kasus pinggir', () => {
     await page.getByRole('button', { name: /Ayam, ketuk/ }).click()
 
     await expect(page.getByText(/Rp15\.000/).first()).toBeVisible()
+    // Kalimat baris item harus utuh: "dibagi 2 orang · Aufa, Bima". Dulu pemisah
+    // ini hilang untuk item qty 1 yang dibagi ke lebih dari satu orang, jadi
+    // layarnya menulis "2 orangAufa, Bima" — ketahuan saat membuka data 0.9 asli.
+    await expect(page.getByRole('button', { name: /Ayam, ketuk/ })).toContainText('dibagi 2 orang · ')
     await ctx.close()
   })
 

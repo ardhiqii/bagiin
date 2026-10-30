@@ -529,7 +529,11 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                             : item.quantity > 1
                               ? taken + ' dari ' + item.quantity + ' diambil'
                               : null}
-                        {isSlot || item.quantity > 1 ? ' · ' : ''}
+                        {/* Pemisah hanya kalau memang ada status di depannya. Item
+                            qty 1 yang diambil lebih dari satu orang dulu tidak
+                            dapat pemisah, jadi layarnya menulis "2 orangAufa,
+                            Bima" — satu kalimat yang tidak bisa dibaca. */}
+                        {isSlot || sharedBeyondPortions || item.quantity > 1 ? ' · ' : ''}
                         {label || 'belum ada yang ambil'}
                       </small>
                     </span>
