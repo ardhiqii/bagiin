@@ -228,6 +228,7 @@ Spec: `tests/migration.spec.ts`.
 | M-07 | tamu baru bisa ikut bill 0.9; uang tetap utuh setelah orang bertambah | lulus |
 | M-08 | tiga bill 0.9 terbuka di layar: judul, total, nama orang sama dengan server; struk termuat; nol error konsol/4xx | lulus |
 | M-09 | Beranda dan Rekap identitas 0.9 menampilkan angka yang sama, dan angka besar bisa diketuk jadi rincian | lulus |
+| M-10 | identitas baru langsung menyimpan pembedanya, tanpa menunggu restart | lulus |
 
 Bukti migrasi (salinan DB produksi 0.9, boot backend 1.0):
 
@@ -239,19 +240,22 @@ Bukti migrasi (salinan DB produksi 0.9, boot backend 1.0):
 | baris | 54/81/175/208/140/27/51/6/10 | **sama persis** |
 | pembeda kosong | – | 0 |
 
-Catatan yang lahir dari run ini (belum diperbaiki, sengaja tidak diubah):
+Temuan yang lahir dari run ini:
 
-- `POST /api/bills` dibatasi **10/menit per IP** dan angkanya hardcode. Suite penuh
-  kadang menembusnya (11 bill dalam satu menit) → tes gagal karena 429, bukan
-  karena aplikasi. Dijalankan sendiri, tesnya lulus. Di produksi ini juga berarti
-  banyak orang di satu IP (Wi-Fi kantor/kafe/NAT operator) berbagi jatah 10 bill
-  per menit. UI sudah menjelaskan: "Terlalu banyak permintaan, tunggu sebentar ya".
-- `POST /api/bills/{id}/join` yang dipanggil dengan identitas **pemilik** menjawab
-  200 tetapi tidak menambah siapa pun (join adalah aksi tamu). Sebaiknya menolak
-  dengan 403 supaya tidak terlihat berhasil.
-- `identity.handle` hanya diisi `backfill_handles()` saat boot; `new_identity()`
-  tidak menulisnya. Tidak terasa di UI/pencarian karena pembeda dihitung dari id
-  saat dibaca, tapi kolomnya praktis cache yang basi sampai restart berikutnya.
+- `POST /api/bills` tadinya dibatasi 10/menit per IP dengan angka hardcode. Suite
+  penuh kadang menembusnya (11 bill dalam satu menit) → tes gagal karena 429, bukan
+  karena aplikasi. Sekarang batasnya bisa dituning lewat `BAGIIN_RL_BILL` /
+  `BAGIIN_RL_ACCOUNT` / `BAGIIN_RL_UPLOAD` (bawaan tetap `10/minute`), dan instance
+  uji memakai `60/minute`. Efek produksinya dicatat di `API_CONTRACT.md` §0.5: banyak
+  orang di satu IP (Wi-Fi kantor/kafe/NAT operator) berbagi jatah yang sama.
+- `POST /api/bills/{id}/join` dulu menerima `identity_id` di body lalu
+  mengabaikannya: pemanggil yang mengira mendaftarkan orang lain tetap dapat 200
+  tanpa ada yang berubah. Sekarang ditolak 403 "Join hanya untuk diri sendiri", dan
+  pemilik yang menekan join di bill-nya sendiri tidak lagi dibuatkan baris
+  `payment` (dia sudah ada di bill secara implisit). Dijaga tes **J-01**.
+- `identity.handle` dulu hanya diisi `backfill_handles()` saat boot, jadi identitas
+  baru menyimpan kolom kosong sampai restart berikutnya. Sekarang ditulis saat
+  identitas dibuat. Dijaga tes **M-10**.
 
 ## Hasil verifikasi Google sungguhan (bukan stub)
 

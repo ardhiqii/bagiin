@@ -301,6 +301,19 @@ test.describe('Bagiin 1.0 di atas DB 0.9', () => {
     expect(orang + Math.round(after.uncovered_idr)).toBe(total)
   })
 
+  test('M-10. identitas baru langsung menyimpan pembedanya, tanpa menunggu restart', async ({ request }) => {
+    const res = await request.post('/api/identities', { data: { name: 'Pembeda baru ' + stamp } })
+    expect(res.status(), await res.text()).toBe(200)
+    const dibuat = await res.json()
+    expect(dibuat.handle, 'pembeda ada di respons').toMatch(/^[A-Z0-9]{4}$/)
+
+    // Inti masalahnya dulu: kolom `identity.handle` cuma diisi `backfill_handles()`
+    // saat server start, jadi identitas baru menyimpan kolom kosong sampai boot
+    // berikutnya. Sekarang harus sudah terisi saat barisnya lahir.
+    const [row] = rows<any>('SELECT handle FROM identity WHERE id = ?', dibuat.id)
+    expect(row?.handle, 'pembeda tersimpan saat identitas dibuat').toBe(dibuat.handle)
+  })
+
   test('M-08. tiga bill 0.9 terbuka di layar dengan angka dan struk yang sama', async ({ page, request }) => {
     test.setTimeout(150_000)
     const bills = rows<any>(

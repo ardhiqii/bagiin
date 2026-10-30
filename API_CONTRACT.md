@@ -94,9 +94,23 @@ Legacy client handling to mirror (`app.js` `api()`): read `detail` when it's a s
 ### 0.5 Rate limits (slowapi, per client IP)
 
 5/min: `POST /api/identities/{id}/code/generate`.
-10/min: `POST /api/identities/restore`, `POST /api/bills`, `POST /api/bills/{id}/photo`, `POST /api/photos`, `POST /api/ocr`.
+
+Angka di bawah adalah **bawaan**; semuanya dihitung per IP, jadi orang-orang di satu
+Wi-Fi/NAT berbagi jatah yang sama. Empat yang paling mungkin perlu dituning bisa
+diubah lewat env tanpa menyentuh kode:
+
+| Env | Bawaan | Untuk |
+|---|---|---|
+| `BAGIIN_RL_BILL` | `10/minute` | `POST /api/bills` |
+| `BAGIIN_RL_ACCOUNT` | `10/minute` | restore, set password, set username, unlink Google |
+| `BAGIIN_RL_UPLOAD` | `10/minute` | `POST /api/bills/{id}/photo`, `POST /api/photos`, `POST /api/ocr` |
+| `BAGIIN_RL_REGISTER` / `BAGIIN_RL_LOGIN` / `BAGIIN_RL_GOOGLE` | `10` / `10` / `20` per minute | daftar, masuk, Google |
+
 20/min: `POST /api/identities/{id}/bind`, `POST /api/identities/{id}/auto_accept`, `POST /api/bills/{id}/invite`, accept, decline, `DELETE .../invites/{id}`, `POST .../leave`.
 30/min: `POST /api/identities`, `POST /api/identities/{id}/accounts`, `PUT /api/accounts/{id}`.
+
+Instance uji memakai `60/minute` untuk tiga env pertama: suite e2e membuat lebih dari
+10 bill dalam satu menit, dan 429-nya dulu terbaca sebagai "tombol tidak berfungsi".
 
 All other routes are unlimited.
 

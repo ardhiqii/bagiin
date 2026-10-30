@@ -389,6 +389,8 @@ def hash_code(code: str) -> str:
 
 
 def new_identity(name: str, role: str = "guest") -> dict:
+    import accounts  # impor lokal: accounts mengimpor db, jadi tidak boleh di atas
+
     conn = get_db()
     ident_id = new_id()
     conn.execute(
@@ -397,6 +399,19 @@ def new_identity(name: str, role: str = "guest") -> dict:
     )
     conn.commit()
     row = conn.execute("SELECT * FROM identity WHERE id = ?", (ident_id,)).fetchone()
+    # Pembeda publik ditulis saat orangnya dibuat, bukan menunggu boot berikutnya.
+    # Dulu kolom ini hanya diisi `backfill_handles()` saat server start, jadi
+    # identitas baru menyimpan kolom kosong — tidak terasa di UI (pembeda dihitung
+    # dari id saat dibaca) tapi bikin kolomnya tidak bisa dipercaya.
+    # Kolomnya belum tentu ada: DB 0.9 baru mendapatkannya lewat migrasi, dan
+    # `new_identity` bisa dipanggil sebelum itu. Karena itu dicek dulu.
+    if "handle" in row.keys():
+        conn.execute(
+            "UPDATE identity SET handle = ? WHERE id = ?",
+            (accounts.handle_for(ident_id), ident_id),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM identity WHERE id = ?", (ident_id,)).fetchone()
     conn.close()
     return dict(row)
 

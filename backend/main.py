@@ -39,6 +39,16 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
+
+# Semua batas laju dihitung per IP, jadi orang-orang di satu Wi-Fi/NAT berbagi
+# jatah yang sama. Karena itu semuanya bisa dituning lewat env tanpa mengubah
+# kode; nilai bawaan tetap ketat.
+RL_REGISTER = os.environ.get("BAGIIN_RL_REGISTER", "10/minute")
+RL_LOGIN = os.environ.get("BAGIIN_RL_LOGIN", "10/minute")
+RL_GOOGLE = os.environ.get("BAGIIN_RL_GOOGLE", "20/minute")
+RL_BILL = os.environ.get("BAGIIN_RL_BILL", "10/minute")
+RL_ACCOUNT = os.environ.get("BAGIIN_RL_ACCOUNT", "10/minute")
+RL_UPLOAD = os.environ.get("BAGIIN_RL_UPLOAD", "10/minute")
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
@@ -1339,7 +1349,7 @@ async def create_identity(request: Request):
 
 
 @app.post("/api/identities/restore")
-@limiter.limit("10/minute")
+@limiter.limit(RL_ACCOUNT)
 async def restore_identity(request: Request):
     data = await _read_json(request)
     # unauthenticated endpoint (no identity/secret needed to restore) -- a
@@ -1427,12 +1437,6 @@ async def update_name(identity_id: str, request: Request):
 # klien baru memakai token yang bisa dicabut satu per satu.
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
-# Batas laju per IP. Bisa dilonggarkan lewat env untuk pengujian end-to-end dan
-# untuk jaringan kantor/kampus yang berbagi satu IP (banyak orang mendaftar dari
-# alamat yang sama). Nilai bawaan tetap ketat.
-RL_REGISTER = os.environ.get("BAGIIN_RL_REGISTER", "10/minute")
-RL_LOGIN = os.environ.get("BAGIIN_RL_LOGIN", "10/minute")
-RL_GOOGLE = os.environ.get("BAGIIN_RL_GOOGLE", "20/minute")
 _GOOGLE_STUB = os.environ.get("BAGIIN_GOOGLE_STUB") == "1"
 _APP_ENV = os.environ.get("BAGIIN_ENV", "development").strip().lower()
 if _GOOGLE_STUB and _APP_ENV in ("production", "prod"):
@@ -1575,7 +1579,7 @@ async def auth_google(request: Request):
 
 
 @app.post("/api/auth/password")
-@limiter.limit("10/minute")
+@limiter.limit(RL_ACCOUNT)
 async def auth_set_password(request: Request):
     ident = _identity_from_request(request)
     data = await _read_json(request)
@@ -1595,7 +1599,7 @@ async def auth_set_password(request: Request):
 
 
 @app.post("/api/auth/username")
-@limiter.limit("10/minute")
+@limiter.limit(RL_ACCOUNT)
 async def auth_set_username(request: Request):
     ident = _identity_from_request(request)
     data = await _read_json(request)
@@ -1616,7 +1620,7 @@ async def auth_new_recovery_code(request: Request):
 
 
 @app.post("/api/auth/google/unlink")
-@limiter.limit("10/minute")
+@limiter.limit(RL_ACCOUNT)
 async def auth_google_unlink(request: Request):
     ident = _identity_from_request(request)
     # Jangan sampai orang mengunci dirinya sendiri: harus tersisa satu cara masuk.
@@ -1943,7 +1947,7 @@ def identity_recap(identity_id: str, request: Request):
 # ---------- bills ----------
 
 @app.post("/api/bills")
-@limiter.limit("10/minute")
+@limiter.limit(RL_BILL)
 async def create_bill(request: Request):
     data = await _read_json(request)
     ident = _identity_from_request(request)
@@ -2668,7 +2672,7 @@ def unsettle_bill(bill_id: str, request: Request):
 
 
 @app.post("/api/bills/{bill_id}/photo")
-@limiter.limit("10/minute")
+@limiter.limit(RL_UPLOAD)
 async def upload_photo(bill_id: str, request: Request, file: UploadFile = File(...)):
     """Attach another receipt photo (v61: multi-photo, no longer a single
     replace). Legacy URL kept; the payload no longer carries photo_path
@@ -2725,7 +2729,7 @@ def delete_photo(bill_id: str, photo_id: int, request: Request):
 
 
 @app.post("/api/photos")
-@limiter.limit("10/minute")
+@limiter.limit(RL_UPLOAD)
 async def upload_photo_standalone(request: Request, file: UploadFile = File(...)):
     """Upload a receipt photo WITHOUT scanning (v61) — for the manual create
     flow. Returns the saved path so the client can attach it to a bill."""
@@ -2776,7 +2780,7 @@ def delete_photo_standalone(filename: str, request: Request):
 
 
 @app.post("/api/ocr")
-@limiter.limit("10/minute")
+@limiter.limit(RL_UPLOAD)
 async def ocr_upload(request: Request, file: list[UploadFile] = File(...)):
     """OCR one or two receipt photos as one draft request.
 
