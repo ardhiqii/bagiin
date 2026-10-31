@@ -91,18 +91,23 @@ pengguna cuma tombol mati. Karena itu `/api/auth/config` mengirim
 tombol Google kalau `location.hostname` ada di daftar itu (kosong = tanpa
 batas, untuk pengembangan lokal).
 
-Saat ini isinya `bagiin-react.ardhiqi.com` saja. Untuk menyalakan Google di
-domain utama:
+Per 31 Okt 2026 OAuth client sudah mendaftarkan `http://localhost:5199`,
+`https://bagiin-react.ardhiqi.com`, dan `https://bagiin.ardhiqi.com`; env berisi
+dua domain produksi, dan tombol Google terverifikasi render (1 iframe, 44 px,
+nol respons 4xx) di domain utama.
+
+Kalau nanti ada domain baru, urutannya:
 
 1. Google Cloud Console → APIs & Services → Credentials → OAuth client
    `9976223407401-…apps.googleusercontent.com` (Web application).
-2. **Authorized JavaScript origins** → tambahkan `https://bagiin.ardhiqi.com`.
+2. **Authorized JavaScript origins** → tambahkan `https://<domain-baru>`.
 3. Save, tunggu beberapa menit.
-4. `sudo sed -i 's/^Environment=BAGIIN_GOOGLE_ORIGINS=.*/Environment=BAGIIN_GOOGLE_ORIGINS=bagiin-react.ardhiqi.com,bagiin.ardhiqi.com/' /etc/systemd/system/bagiin-v1.service`
-   lalu `sudo systemctl daemon-reload && sudo systemctl restart bagiin-v1`.
+4. Tambahkan domain itu ke `BAGIIN_GOOGLE_ORIGINS` di
+   `/etc/systemd/system/bagiin-v1.service`, lalu
+   `sudo systemctl daemon-reload && sudo systemctl restart bagiin-v1`.
 
-Tanpa langkah itu, user di domain utama tetap bisa masuk lewat nama, kode
-pemulihan, atau username/password — hanya tombol Google yang tidak tampil.
+Tanpa langkah itu, user di domain tersebut tetap bisa masuk lewat nama, kode
+pemulihan, atau username/password — hanya tombol Google yang disembunyikan.
 
 ## Catatan yang masih menggantung
 
