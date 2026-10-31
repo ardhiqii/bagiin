@@ -368,6 +368,13 @@ Yang dipakai: satu aset per bagian, digerakkan dengan `transform` saja.
   detik (`cubic-bezier(.33,1.4,.5,1)` untuk overshoot), titik-titik 1,2 detik
   dengan jeda 150 ms. Semua kelipatan yang tidak saling kunci, jadi tidak pernah
   terlihat berulang.
+- **Bayangan tidak boleh ikut aset.** Bayangan kontak yang tergambar di dalam
+  PNG akan terbang bersama bendanya saat melompat. Bayangan digambar terpisah di
+  titik tanah, lalu menyusut dan memudar saat benda naik (skala .66, opasitas
+  .24) dan membesar saat mendarat. Dua kesalahan yang sempat terjadi: (1)
+  bayangan menempel di aset, (2) bayangan dipindah ke CSS tapi diletakkan tepat
+  di pita sobekan gelap struk — diukur memang menggelap, tapi mata tidak bisa
+  memisahkannya. Taruh di atas permukaan terang, bukan di atas bayangan lain.
 - **Squash dan stretch di titik kontak.** Koin mengecil-melebar (1.08/0.9) saat
   mendarat, memanjang (0.96/1.05) saat naik. Tanpa ini, benda terlihat seperti
   gambar yang digeser, bukan benda yang bergerak.

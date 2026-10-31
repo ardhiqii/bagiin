@@ -1570,13 +1570,15 @@
 }
 .ds-loading-receipt {
   inset: 0;
+  z-index: 0;
   transform-origin: 50% 92%;
   animation: ds-wobble 3.4s cubic-bezier(.45, 0, .55, 1) infinite, ds-pop-in .5s cubic-bezier(.2, 1.05, .3, 1) both;
 }
 .ds-loading-coin {
-  width: 44%;
-  right: -3%;
-  bottom: 8%;
+  width: 42%;
+  right: -2%;
+  bottom: 17%;
+  z-index: 1;
   aspect-ratio: 1;
   transform-origin: 50% 100%;
   animation: ds-coin-bounce 1.55s cubic-bezier(.33, 1.4, .5, 1) infinite .3s;
@@ -1590,8 +1592,8 @@
 @keyframes ds-coin-bounce {
   0%, 100% { transform: translateY(0) scale(1, 1); }
   14% { transform: translateY(1px) scale(1.08, .9); }
-  46% { transform: translateY(-13px) scale(.96, 1.05); }
-  64% { transform: translateY(-13px) scale(1, 1); }
+  46% { transform: translateY(-18px) scale(.96, 1.05); }
+  64% { transform: translateY(-18px) scale(1, 1); }
   90% { transform: translateY(0) scale(1.02, .98); }
 }
 @keyframes ds-pop-in {
@@ -1623,4 +1625,39 @@
 @media (prefers-reduced-motion: reduce) {
   .ds-loading-receipt, .ds-loading-coin, .ds-loading-dots i { animation: none; }
   .ds-button, .recap-person, .recap-open-main, .bill-row, .app-banner { transition: none; }
+}
+
+
+/* Bayangan koin dipisah dari asetnya.
+   Sebelumnya bayangan itu ikut tergambar di dalam PNG koin, jadi saat koin
+   melompat bayangannya ikut terbang — benda yang meninggalkan tanah tidak
+   boleh membawa bayangannya. Sekarang bayangan digambar CSS di titik tanah dan
+   menyusut/transparan saat koin naik, dengan easing dan jeda yang sama. */
+.ds-loading-coin-shadow {
+  position: absolute;
+  /* duduk DI BAWAH tepi koin, bukan di dalam kotaknya: aset koin penuh sampai
+     tepi frame, jadi bayangan yang ditaruh di dalam kotak akan tertutup
+     koinnya sendiri dan tidak pernah terlihat */
+  /* di atas pita sobekan bawah struk, bukan di dalamnya: bayangan yang jatuh
+     tepat di pita gelap struk tidak terlihat sama sekali (diukur: kotaknya
+     memang menggelap, tapi mata tidak bisa memisahkannya dari pita) */
+  right: 3%;
+  bottom: 13%;
+  width: 26%;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(20, 47, 58, .62), rgba(20, 47, 58, .26) 60%, rgba(20, 47, 58, 0));
+  transform-origin: 50% 50%;
+  z-index: 1;
+  animation: ds-coin-shadow 1.55s cubic-bezier(.33, 1.4, .5, 1) infinite .3s;
+}
+@keyframes ds-coin-shadow {
+  0%, 100% { transform: scale(1, 1); opacity: .6; }
+  14% { transform: scale(1.1, 1); opacity: .66; }
+  46% { transform: scale(.66, 1); opacity: .24; }
+  64% { transform: scale(.66, 1); opacity: .24; }
+  90% { transform: scale(1.03, 1); opacity: .55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-loading-coin-shadow { animation: none; }
 }

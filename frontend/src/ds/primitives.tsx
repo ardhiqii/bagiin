@@ -499,6 +499,9 @@ export function LoadingState({
     <div className="ds-loading" role="status" aria-live="polite">
       <div className="ds-loading-art" aria-hidden="true">
         <span className="ds-loading-receipt" style={{ backgroundImage: `url(${loadingReceipt})` }} />
+        {/* bayangan digambar di sini, bukan di dalam PNG koin: yang di PNG ikut
+            terbang saat koin melompat */}
+        <span className="ds-loading-coin-shadow" />
         <span className="ds-loading-coin" style={{ backgroundImage: `url(${loadingCoin})` }} />
       </div>
       <div className="ds-loading-copy">
