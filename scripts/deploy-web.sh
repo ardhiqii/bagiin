@@ -19,6 +19,26 @@ echo "== salin ke $TARGET =="
 sudo rsync -a --delete dist/ "$TARGET/"
 sudo systemctl reload nginx
 
+# Backend WAJIB ikut di-restart, walaupun deploy ini cuma soal tampilan.
+# Pernah terjadi: frontend baru sudah live, endpoint baru masih 404 karena
+# proses uvicorn menjalankan kode lama -- "deploy sah" tapi fiturnya tidak ada.
+# Restart satu worker ini makan ~1 detik, jauh lebih murah daripada satu jam
+# mencari bug yang sebenarnya cuma proses basi.
+echo "== restart backend v1 (kode lama tidak hilang sendiri) =="
+sudo systemctl restart bagiin-v1
+code="000"
+for _ in $(seq 1 20); do
+  code="$(curl -s -o /dev/null -m 3 -w '%{http_code}' http://127.0.0.1:8096/api/auth/config || true)"
+  [[ "$code" == "200" ]] && break
+  sleep 1
+done
+if [[ "$code" != "200" ]]; then
+  echo "  GAGAL backend tidak menjawab 200 setelah restart (HTTP $code)"
+  journalctl -u bagiin-v1 -n 20 --no-pager || true
+  exit 1
+fi
+echo "  ok    backend v1 hidup"
+
 echo "== bukti sesudah deploy =="
 fail=0
 check() { # path, harapan content-type (substring), boleh 404?

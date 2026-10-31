@@ -32,8 +32,9 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     expect(head.ogImage, 'og:image harus ada').toContain('og-cover.png')
     expect(head.ogTitle).toBeTruthy()
     expect(head.twitter).toBe('summary_large_image')
-    expect(head.manifest).toBe('/manifest.webmanifest')
-    expect(head.appleIcon).toBe('/icon-180.png')
+    // ?v=2 disengaja: aset identitas lama terlanjur di-cache setahun.
+    expect(head.manifest).toContain('/manifest.webmanifest')
+    expect(head.appleIcon).toContain('/icon-180.png')
 
     // manifest harus benar-benar bisa dipasang, bukan cuma ada file-nya
     const manifest = await request.get('/manifest.webmanifest')
