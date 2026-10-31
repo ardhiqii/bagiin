@@ -15,13 +15,19 @@ set -euo pipefail
 
 PROD_CONF=/etc/nginx/sites-enabled/bagiin.ardhiqi.com.conf
 BETA_CONF=/etc/nginx/sites-enabled/bagiin-react.ardhiqi.com.conf
+# Cadangan disimpan DI LUAR sites-enabled: nginx.conf memuat
+# `include /etc/nginx/sites-enabled/*`, jadi berkas .pre-v1 di sana ikut
+# dimuat dan bentrok server_name dengan konfigurasi yang aktif.
+BACKUP_DIR=/etc/nginx/backups
+PROD_BAK="$BACKUP_DIR/bagiin.ardhiqi.com.conf.pre-v1"
+BETA_BAK="$BACKUP_DIR/bagiin-react.ardhiqi.com.conf.pre-v1"
 
-for f in "$PROD_CONF.pre-v1" "$BETA_CONF.pre-v1"; do
+for f in "$PROD_BAK" "$BETA_BAK"; do
   [ -f "$f" ] || { echo "GAGAL: cadangan $f tidak ada - jangan lanjut, cek manual"; exit 1; }
 done
 
-cp "$PROD_CONF.pre-v1" "$PROD_CONF"
-cp "$BETA_CONF.pre-v1" "$BETA_CONF"
+cp "$PROD_BAK" "$PROD_CONF"
+cp "$BETA_BAK" "$BETA_CONF"
 
 nginx -t
 systemctl reload nginx

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Bagiin">
+<rect width="512" height="512" rx="112" fill="#FBFAF6"/>
+<g transform="translate(0 0) scale(1.0)">
+<path d="M 104 128 a 44 44 0 0 1 44 -44 h 122 a 44 44 0 0 1 44 44 v 246 L 314 374 L 104 374 Z" fill="#142F3A"/>
+<path d="M 220 214 a 44 44 0 0 1 44 -44 h 118 a 44 44 0 0 1 44 44 v 228 L 426 442 L 220 442 Z" fill="#C98A2E"/>
+</g>
+</svg>

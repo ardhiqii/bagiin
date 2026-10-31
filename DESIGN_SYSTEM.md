@@ -693,3 +693,39 @@ Halaman ini memuat delapan bagian: fondasi warna + token status, tipografi dan a
 Prototype utama (`?v=seimbang`) memakai palet ini pada beranda, bill, rekap, editor, kontrol varian, dan navigasi. Varian Saldo/Teman/Struk tetap menjadi pembanding visual.
 
 Iterasi berikutnya tetap **merancang ulang halaman bill**. Dua keputusan yang masih terbuka: kontrol "siapa ikut makan" (sheet per item dengan tombol "Tambah yang ikut makan" versus kontrol jumlah pemakan), dan cara menampilkan unit barang pada satu baris struk.
+
+## Mark dan favicon
+
+Mark Bagiin **dua kartu struk bertumpuk**: kartu belakang navy, kartu depan amber,
+keduanya bersudut membulat dengan tepi bawah bergerigi. Artinya satu bill yang
+dilihat dua orang — satu bentuk, dua warna, bukan dua benda lepas.
+
+Aturan yang mengikat setiap perubahan mark:
+
+1. **Tidak ada bayangan, gradien, outline, atau teks.** Bentuknya harus lolos
+   dibaca sebagai siluet dua kartu.
+2. **Jangan menaruh bidang berisi di dalam bentuk tertutup.** Lingkaran tertutup
+   dengan titik di tengah terbaca sebagai telur ceplok di wajan — itu kesalahan
+   yang sudah ditolak dan tidak boleh kembali.
+3. **Detail adalah keputusan ukuran.** Gerigi tepi bawah hanya ada di 32 px ke
+   atas. Di 16 px gerigi cuma jadi piksel kotor dan tumpang tindih kartu
+   terbaca menyatu, jadi geometri 16 px memakai tepi rata dengan kartu depan
+   digeser 18/14 (`frontend/brand/favicon-16.svg`). Warna, proporsi, dan siluet
+   tetap satu keluarga.
+4. **Aset identitas tidak boleh `immutable`.** `favicon.*`, `icon-*.png`,
+   `manifest.webmanifest`, dan `og-cover.png` di-cache 10 menit dengan
+   `must-revalidate`; kalau di-`immutable` setahun, logo baru tidak akan pernah
+   muncul di browser maupun Cloudflare.
+
+Berkas dan pembuatnya:
+
+- `frontend/public/favicon.svg` — sumber tunggal (viewBox 512), versi bergerigi.
+- `frontend/public/logo.svg` — mark transparan tanpa tile, untuk dipakai di UI.
+- `frontend/public/icon-maskable-src.svg` — versi safe-area 72% untuk Android.
+- `frontend/brand/build-marks.py` — satu-satunya sumber geometri; menulis
+  keempat SVG di atas. Jangan mengedit SVG hasilnya langsung.
+- `frontend/rasterize-icons.mjs` — merender semua PNG (32/180/192/512 + maskable)
+  dan PNG 16/32/48 untuk `.ico` memakai Chromium; tidak butuh ImageMagick.
+- `favicon.ico` dibangun dari PNG itu (16 px = geometri rata, 32/48 = bergerigi).
+
+Palet mark: navy `#142F3A`, amber `#C98A2E`, kertas `#FBFAF6`.
