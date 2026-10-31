@@ -19,3 +19,6 @@ backend/.env
 
 # agent scratch (handoff plans, not project source)
 .hermes/
+
+# artefak build TypeScript
+frontend/tsconfig.tsbuildinfo
