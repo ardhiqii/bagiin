@@ -46,7 +46,27 @@ declare global {
   }
 }
 
-export type GoogleConfig = { client_id: string | null; stub: boolean }
+export type GoogleConfig = {
+  client_id: string | null
+  stub: boolean
+  /** origin yang terdaftar di OAuth client Google; kosong = tanpa batas */
+  origins?: string[]
+}
+
+/**
+ * Apakah tombol Google boleh dirender di halaman ini.
+ *
+ * Google menolak origin yang tidak terdaftar di OAuth client (403 pada
+ * accounts.google.com/gsi/button). Tanpa pemeriksaan ini, domain baru yang
+ * belum didaftarkan menampilkan tombol yang tidak bereaksi apa-apa — lebih
+ * buruk daripada tidak menampilkan tombolnya sama sekali.
+ */
+export function googleAllowed(config: GoogleConfig): boolean {
+  if (!config.client_id) return false
+  const origins = config.origins ?? []
+  if (origins.length === 0) return true
+  return origins.includes(window.location.hostname)
+}
 
 /**
  * Kapan tombol "mode uji" boleh tampil.
@@ -88,8 +108,16 @@ function loadScript(): Promise<void> {
 }
 
 export async function googleConfig(): Promise<GoogleConfig> {
-  const config = await api<{ google_client_id: string | null; google_stub: boolean }>('/api/auth/config')
-  return { client_id: config.google_client_id, stub: config.google_stub }
+  const config = await api<{
+    google_client_id: string | null
+    google_stub: boolean
+    google_origins?: string[]
+  }>('/api/auth/config')
+  return {
+    client_id: config.google_client_id,
+    stub: config.google_stub,
+    origins: config.google_origins ?? [],
+  }
 }
 
 /**

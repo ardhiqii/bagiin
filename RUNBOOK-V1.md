@@ -82,6 +82,28 @@ Cadangan DB sebelum migrasi: `/opt/projects/bagiin/backend/bagiin.db.bak-v1-2026
 (md5 `cf3830…`, skema 0.9, 10 tabel). Memulihkannya berarti kehilangan semua
 transaksi setelah 2026-10-31 13:56 — pakai hanya kalau rollback nginx tidak cukup.
 
+## Login Google hanya di domain yang terdaftar
+
+OAuth client Google hanya mengizinkan origin yang terdaftar. Halaman di origin
+lain ditolak (403 pada `accounts.google.com/gsi/button`) dan yang terlihat
+pengguna cuma tombol mati. Karena itu `/api/auth/config` mengirim
+`google_origins` dari env `BAGIIN_GOOGLE_ORIGINS`, dan frontend hanya merender
+tombol Google kalau `location.hostname` ada di daftar itu (kosong = tanpa
+batas, untuk pengembangan lokal).
+
+Saat ini isinya `bagiin-react.ardhiqi.com` saja. Untuk menyalakan Google di
+domain utama:
+
+1. Google Cloud Console → APIs & Services → Credentials → OAuth client
+   `9976223407401-…apps.googleusercontent.com` (Web application).
+2. **Authorized JavaScript origins** → tambahkan `https://bagiin.ardhiqi.com`.
+3. Save, tunggu beberapa menit.
+4. `sudo sed -i 's/^Environment=BAGIIN_GOOGLE_ORIGINS=.*/Environment=BAGIIN_GOOGLE_ORIGINS=bagiin-react.ardhiqi.com,bagiin.ardhiqi.com/' /etc/systemd/system/bagiin-v1.service`
+   lalu `sudo systemctl daemon-reload && sudo systemctl restart bagiin-v1`.
+
+Tanpa langkah itu, user di domain utama tetap bisa masuk lewat nama, kode
+pemulihan, atau username/password — hanya tombol Google yang tidak tampil.
+
 ## Catatan yang masih menggantung
 
 - `bagiin-v1` masih meminjam venv 0.9 (`/opt/projects/bagiin/backend/venv`).

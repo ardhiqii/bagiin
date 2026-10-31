@@ -10,7 +10,7 @@ import {
   restoreFromCode,
   startIdentity,
 } from '../lib/identity'
-import { googleConfig, mountGoogleButton, showStubButton } from '../lib/google'
+import { googleAllowed, googleConfig, mountGoogleButton, showStubButton, type GoogleConfig } from '../lib/google'
 import { markAuthed, takeIntent } from '../lib/session'
 import keyArt from '../assets/welcome.webp'
 
@@ -63,7 +63,7 @@ export function Entry({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [revealed, setRevealed] = useState('')
-  const [google, setGoogle] = useState<{ client_id: string | null; stub: boolean } | null>(null)
+  const [google, setGoogle] = useState<GoogleConfig | null>(null)
   const [googleError, setGoogleError] = useState('')
   const googleSlot = useRef<HTMLDivElement | null>(null)
   const toast = useToast()
@@ -97,12 +97,13 @@ export function Entry({
      belum punya client ID, tombol tidak dipasang sama sekali dan yang tampil
      kalimat penjelas — bukan tombol mati tanpa alasan. */
   useEffect(() => {
-    if (!google?.client_id || !googleSlot.current) return
+    const clientId = google?.client_id
+    if (!google || !clientId || !googleAllowed(google) || !googleSlot.current) return
     let cleanup = () => {}
     let alive = true
     mountGoogleButton(
       googleSlot.current,
-      google.client_id,
+      clientId,
       (token) => void withGoogle(token),
       (message) => setGoogleError(message),
     )
@@ -440,9 +441,14 @@ export function Entry({
               </>
             ) : null}
 
-            <div className="auth-divider" aria-hidden="true">
-              <span>atau</span>
-            </div>
+            {/* Pembatas "atau" dan tombol Google hanya kalau origin halaman ini
+                terdaftar di OAuth client. Di domain yang belum terdaftar Google
+                menolak render (403) dan yang tampil cuma tombol mati. */}
+            {google && googleAllowed(google) ? (
+              <div className="auth-divider" aria-hidden="true">
+                <span>atau</span>
+              </div>
+            ) : null}
 
             {googleError ? <Notice tone="danger">{googleError}</Notice> : null}
             {google === null ? (
@@ -459,7 +465,7 @@ export function Entry({
             <div
               className="google-slot"
               ref={googleSlot}
-              hidden={!google?.client_id}
+              hidden={!google || !googleAllowed(google)}
               data-testid="google-slot"
             />
             {/* Hanya di localhost. Sengaja tautan kecil, bukan tombol: tombol

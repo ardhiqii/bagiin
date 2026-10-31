@@ -1438,6 +1438,15 @@ async def update_name(identity_id: str, request: Request):
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
 _GOOGLE_STUB = os.environ.get("BAGIIN_GOOGLE_STUB") == "1"
+# Origin yang terdaftar di OAuth client. Kosong = jangan batasi (perilaku lama,
+# untuk pengembangan lokal). Di produksi diisi supaya tombol Google tidak
+# dirender di domain yang belum terdaftar — Google menolaknya dengan 403 dan
+# pengguna hanya melihat tombol mati.
+_GOOGLE_ORIGINS = [
+    item.strip()
+    for item in os.environ.get("BAGIIN_GOOGLE_ORIGINS", "").split(",")
+    if item.strip()
+]
 _APP_ENV = os.environ.get("BAGIIN_ENV", "development").strip().lower()
 if _GOOGLE_STUB and _APP_ENV in ("production", "prod"):
     # Stub Google menerima token buatan sendiri. Di produksi itu sama dengan
@@ -1658,6 +1667,11 @@ def auth_config():
     return {
         "google_client_id": GOOGLE_CLIENT_ID or None,
         "google_stub": _GOOGLE_STUB,
+        # Origin yang terdaftar di OAuth client Google. Tombol Google dirender
+        # hanya kalau hostname halaman ada di daftar ini: kalau tidak, Google
+        # menolak (403 di accounts.google.com/gsi/button) dan yang terlihat
+        # pengguna cuma tombol mati tanpa penjelasan.
+        "google_origins": _GOOGLE_ORIGINS,
     }
 
 

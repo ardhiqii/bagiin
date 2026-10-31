@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useToast } from './Toast'
 import { Alert, Button, Field, SectionHead, Sheet } from '../ds/primitives'
 import { endpoints } from '../lib/api'
-import { googleConfig, mountGoogleButton, showStubButton } from '../lib/google'
+import { googleAllowed, googleConfig, mountGoogleButton, showStubButton } from '../lib/google'
 import { logoutDevice } from '../lib/identity'
 import { signOut } from '../lib/session'
 import type { Identity } from '../lib/types'
@@ -58,10 +58,12 @@ export function AccountSecurity({ identity }: { identity: Identity | null }) {
     let alive = true
     googleConfig()
       .then(async (config) => {
-        if (!alive || !config.client_id || !googleSlot.current) return
+        // origin yang belum terdaftar di OAuth client akan ditolak Google
+        const clientId = config.client_id
+        if (!alive || !clientId || !googleAllowed(config) || !googleSlot.current) return
         cleanup = await mountGoogleButton(
           googleSlot.current,
-          config.client_id,
+          clientId,
           async (token) => {
             setBusy(true)
             setError('')
