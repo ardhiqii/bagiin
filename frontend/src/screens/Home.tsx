@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { inviteActions, useBills, useInvites, useRecap } from '../lib/queries'
+import { inviteActions, useBillMonths, useBills, useInvites, useRecap } from '../lib/queries'
 import { invalidateInviteViews } from '../lib/mutations'
 import { formatRp } from '../lib/money'
 import { api } from '../lib/api'
@@ -30,6 +30,27 @@ function shortDate(value: string) {
   return parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
 }
 
+const MONTH_NAMES = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+]
+
+function monthLabel(key: string) {
+  const [year, month] = key.split('-')
+  const index = Number(month) - 1
+  if (!Number.isInteger(index) || index < 0 || index > 11) return 'Tanpa tanggal'
+  return MONTH_NAMES[index] + ' ' + year
+}
+
+/** Versi pendek untuk chip: `Okt 2026`. Tinggi baris chip tidak boleh melompat
+ *  gara-gara nama bulan panjang. */
+function shortMonthLabel(key: string) {
+  const [year, month] = key.split('-')
+  const index = Number(month) - 1
+  if (!Number.isInteger(index) || index < 0 || index > 11) return 'Tanpa tanggal'
+  return MONTH_NAMES[index].slice(0, 3) + ' ' + year
+}
+
 /**
  * Satu pola baris untuk semua daftar. Angka di kanan selalu BAGIAN SAYA —
  * bukan total bill — supaya tidak ada dua angka berbeda arti yang terlihat sama.
@@ -41,6 +62,7 @@ function BillRow({
   share,
   total,
   flag,
+  settled,
 }: {
   id: string
   title: string
@@ -48,6 +70,7 @@ function BillRow({
   share: number
   total: number
   flag?: { kind: 'pay' | 'split'; text: string }
+  settled?: boolean
 }) {
   return (
     <Link to="/b/$billId" params={{ billId: id }} style={{ textDecoration: 'none', color: 'inherit' }}>
@@ -65,6 +88,10 @@ function BillRow({
                 <ActionFlag kind={flag.kind}>{flag.text}</ActionFlag>
               </>
             ) : null}
+            {/* Status tidak lagi punya section sendiri, jadi tiap baris yang
+                lunas harus mengatakannya sendiri. Tanpa ini orang kehilangan
+                satu-satunya cara membedakan "sudah" dan "belum". */}
+            {settled && !flag ? ' · lunas' : null}
           </small>
         </span>
         <span className="amt">
@@ -138,7 +165,36 @@ function InviteCard({
  * menebak mana yang memuat bill lama.
  */
 export function Home({ identityId, name }: { identityId: string | null; name: string }) {
-  const bills = useBills(identityId)
+  /**
+   * Beranda memuat SATU bulan, bukan seluruh riwayat.
+   *
+   * Dulu satu permintaan mengambil semua bill sekaligus. Itu terasa gratis
+   * selama bill masih belasan, tapi biayanya tumbuh terus sementara yang dibuka
+   * hampir selalu bulan berjalan. Sekarang: ringkasan bulan (satu query
+   * GROUP BY, tanpa isi bill) untuk daftar bulannya, lalu isi bulan yang dipilih
+   * saja. Bulan lama baru dimuat saat diketuk.
+   *
+   * Pencarian sengaja menembak SEMUA bulan: orang yang mencari tidak sedang
+   * memilih bulan, dia mencari nama bill.
+   */
+  const monthList = useBillMonths(identityId)
+  const [query, setQuery] = useState('')
+  const [month, setMonth] = useState<string | null>(null)
+  const [filter, setFilter] = useState<Filter>('semua')
+  const searching = query.trim().length > 0
+  const newestMonth = monthList.data?.months[0]?.month ?? null
+  // "Perlu dikerjakan" memuat semua bulan: angka di blok kuning dihitung dari
+  // seluruh riwayat, jadi daftarnya tidak boleh cuma bulan yang kebetulan
+  // terbuka — angka 5 dengan 2 baris di bawahnya adalah bug, bukan filter.
+  const needsAction = filter === 'perlu'
+  const activeMonth = searching || needsAction ? null : month ?? newestMonth
+  // ditahan sampai daftar bulan tahu bulan terbaru: tanpa itu layar sempat
+  // meminta seluruh bill dulu — persis biaya yang mau dihindari
+  const bills = useBills(
+    identityId,
+    activeMonth,
+    searching || needsAction || Boolean(monthList.data),
+  )
   const recap = useRecap(identityId)
   const invites = useInvites(identityId)
   const qc = useQueryClient()
@@ -163,8 +219,6 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
   }
 
   const rows = bills.data ?? []
-  const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<Filter>('semua')
 
   // Angka beranda = angka kartu = angka rekap: bagian yang belum dibayar di
   // SEMUA bill, termasuk yang pembagiannya belum selesai. Dulu bagian dari bill
@@ -187,27 +241,18 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
    * Konsekuensinya jumlah rincian selalu sama dengan angka besarnya.
    */
   const reasonOf = (bill: (typeof rows)[number]): 'split' | 'pay' | null => {
-    if (bill.settled) return null
-    // Bill bernilai nol tidak menuntut apa pun: tidak ada bagian untuk dipilih
-    // dan tidak ada yang bisa dibayar. Dulu bill seperti ini menulis "Kamu belum
-    // pilih item" selamanya — satu tugas yang mustahil diselesaikan.
-    if (bill.total_idr === 0) return null
-    // Belum memilih item = pekerjaan saya, titik.
-    if (!bill.has_picks) return 'split'
-    // Sudah memilih dan masih ada bagian saya yang belum dibayar: angka saya
-    // sudah pasti (bagian orang lain tidak mengubahnya), jadi ini tinggal bayar.
-    if (!bill.my_paid && bill.my_total_idr > 0) return 'pay'
-    // Sisa yang tidak diambil siapa pun jatuh ke pembayar. Kalau saya pembayar
-    // dan masih ada sisa, bill ini belum selesai menurut saya.
-    if (bill.i_am_payer && bill.uncovered_idr > 0) return 'split'
-    // Selain itu bukan urusan saya: porsi orang lain yang belum diambil akan
-    // ditanggung pembayar, dan bagian saya tidak ikut berubah. Menandainya
-    // sebagai tugas saya cuma bikin daftar terlihat penuh.
-    return null
+    // Server yang memutuskan (lihat `_action_kind` di backend) supaya angka di
+    // blok kuning dan penanda di baris tidak mungkin bercerita beda.
+    return bill.action ?? null
   }
+
+  // Baris di daftar (bulan yang dimuat) butuh alasan per bill untuk penanda.
   const reasons = new Map(rows.map((bill) => [bill.id, reasonOf(bill)]))
-  const splitCount = [...reasons.values()].filter((kind) => kind === 'split').length
-  const payCount = [...reasons.values()].filter((kind) => kind === 'pay').length
+  // Angka di blok kuning dihitung dari SELURUH bulan: rekap sudah memuat semua
+  // bill beserta alasannya, jadi angkanya global tanpa memuat daftar bulan lain.
+  const allActions = (recap.data?.provisional.bills ?? []).map((bill) => bill.action)
+  const splitCount = allActions.filter((kind) => kind === 'split').length
+  const payCount = allActions.filter((kind) => kind === 'pay').length
   const actionTotal = splitCount + payCount
   // Kata kerja, bukan kata benda: blok kuning isinya yang harus DIKERJAKAN.
   const breakdown = [
@@ -246,13 +291,12 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
   }, [rows, query, filter, reasons])
 
   /**
-   * Bill yang menunggu tindakan saya naik ke atas. Tanpa ini, angka "5 bill
-   * perlu dibereskan" di atas tidak kelihatan cocok dengan layar: baris yang
-   * ditandai bisa saja berada di bawah lipatan.
+   * Urutan baris mengikuti server (tanggal terbaru dulu), bukan "yang perlu
+   * dikerjakan dulu": penanda kerjaan sudah menempel di barisnya, dan kalau
+   * urutan berubah sendiri orang tidak bisa menebak di mana bill yang tadi
+   * dilihat. Yang perlu dikerjakan punya chip + blok kuning sendiri.
    */
-  const byAction = (bill: (typeof rows)[number]) => (reasons.get(bill.id) ? 0 : 1)
-  const open = shown.filter((bill) => !bill.settled).sort((a, b) => byAction(a) - byAction(b))
-  const settled = shown.filter((bill) => bill.settled)
+  const monthOptions = monthList.data?.months ?? []
 
   const flagFor = (bill: (typeof rows)[number]) => {
     const kind = reasons.get(bill.id)
@@ -367,6 +411,8 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
           </span>
           <span className="app-banner-text">
             <b>bill perlu kamu bereskan</b>
+            {/* Angka ini milik SELURUH bulan, bukan bulan yang sedang dibuka —
+                karena itu mengetuknya memuat semua bulan sekaligus. */}
             <small>{breakdown}</small>
           </span>
           {/* Bukan panah: panah di blok ini dulu menjanjikan pindah layar padahal
@@ -378,7 +424,7 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
 
       {bills.isPending && rows.length === 0 ? <SkeletonList rows={4} label="Memuat bill" /> : null}
 
-      {!bills.isPending && rows.length === 0 ? (
+      {!monthList.isPending && monthOptions.length === 0 ? (
         <EmptyState
           title="Belum ada bill"
           art={<img className="ds-art" src={homeEmptyArt} alt="" width={216} height={216} />}
@@ -411,7 +457,34 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
             ) : null}
           </div>
 
+          {/* Bulan dipilih di sini. Inilah saringan tanggalnya: satu bulan
+              dimuat saat dibuka, bulan lain belum disentuh sama sekali. */}
+          {monthOptions.length > 1 ? (
+            <div className="chip-row chip-row-months" role="group" aria-label="Pilih bulan">
+              <span className="chip-row-label" aria-hidden="true">Bulan</span>
+              {monthOptions.map((option) => (
+                <button
+                  key={option.month}
+                  type="button"
+                  className={'chip-filter' + (!searching && activeMonth === option.month ? ' is-active' : '')}
+                  aria-pressed={!searching && activeMonth === option.month}
+                  disabled={searching}
+                  onClick={() => setMonth(option.month)}
+                >
+                  {shortMonthLabel(option.month)} · {option.bill_count}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {searching ? (
+            <div className="app-note">
+              Mencari di semua bulan. Pilih bulan di atas kalau mau kembali melihat satu bulan.
+            </div>
+          ) : null}
+
           <div className="chip-row" role="group" aria-label="Saring bill">
+            <span className="chip-row-label" aria-hidden="true">Status</span>
             {FILTERS.filter((option) => option.key !== 'perlu' || actionTotal > 0).map((option) => (
               <button
                 key={option.key}
@@ -431,13 +504,13 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
         <div className="app-note">Tidak ada bill yang cocok dengan pencarian itu.</div>
       ) : null}
 
-      {open.length > 0 ? (
+      {shown.length > 0 ? (
         <section className="app-stack">
-          {filter === 'semua' ? (
-          <SectionHead meta={<>{open.length} bill</>}>Berjalan</SectionHead>
-          ) : null}
+          <SectionHead meta={<>{shown.length} bill</>}>
+            {searching ? 'Hasil di semua bulan' : monthLabel(activeMonth ?? '')}
+          </SectionHead>
           <div className="app-list">
-            {open.map((bill) => (
+            {shown.map((bill) => (
               <BillRow
                 key={bill.id}
                 id={bill.id}
@@ -446,36 +519,13 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
                 // SSB BENHIL" cuma memanjangkan baris tanpa menambah arti
                 meta={
                   shortDate(bill.created_at) +
-                  (bill.merchant && bill.merchant !== bill.title ? ' · ' + bill.merchant : '')
+                  (bill.merchant && bill.merchant !== bill.title ? ' · ' + bill.merchant : '') +
+                  (searching ? ' · ' + shortDate(bill.created_at) : '')
                 }
                 share={bill.my_total_idr}
                 total={bill.total_idr}
                 flag={flagFor(bill)}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {settled.length > 0 ? (
-        <section className="app-stack">
-          {filter === 'semua' ? (
-          <SectionHead meta={<>{settled.length} bill</>}>Lunas</SectionHead>
-          ) : null}
-          <div className="app-list">
-            {settled.map((bill) => (
-              <BillRow
-                key={bill.id}
-                id={bill.id}
-                title={bill.title}
-                // merchant yang sama dengan judul tidak diulang: "SSB BENHIL ·
-                // SSB BENHIL" cuma memanjangkan baris tanpa menambah arti
-                meta={
-                  shortDate(bill.created_at) +
-                  (bill.merchant && bill.merchant !== bill.title ? ' · ' + bill.merchant : '')
-                }
-                share={bill.my_total_idr}
-                total={bill.total_idr}
+                settled={bill.settled}
               />
             ))}
           </div>

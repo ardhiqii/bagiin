@@ -877,6 +877,32 @@ def _recap_current_user_state(
     }
 
 
+def _action_kind(fields: dict) -> str | None:
+    """Satu-satunya alasan sebuah bill butuh tindakan penampilnya.
+
+    Dipakai dua tempat: daftar bill (`/bills`) dan ringkasan beranda (`/recap`).
+    Kalau aturannya ditulis dua kali, angka di blok kuning beranda dan daftar
+    bisa bercerita beda — persis jenis kesalahan yang layar ini pernah punya
+    (tiga penghitung untuk himpunan yang tumpang tindih).
+
+    Urutannya tegas: pembagian yang belum lengkap lebih dulu, karena menagih
+    pembayaran untuk angka yang masih bisa berubah tidak masuk akal.
+    """
+    if fields.get("settled"):
+        return None
+    # bill bernilai nol tidak menuntut apa pun: tidak ada yang bisa dipilih,
+    # tidak ada yang bisa dibayar
+    if not fields.get("total_idr"):
+        return None
+    if not fields.get("has_picks"):
+        return "split"
+    if (not fields.get("my_paid")) and (fields.get("my_total_idr") or 0) > 0:
+        return "pay"
+    if fields.get("i_am_payer") and (fields.get("uncovered_idr") or 0) > 0:
+        return "split"
+    return None
+
+
 def _recap_action(
     kind: str,
     owner: str,
@@ -938,11 +964,35 @@ def _recap_provisional_bill(
         }
         for slot in response.get("uncovered_slots", []) or []
     ]
+    # Alasan tindakan dihitung dengan helper yang sama seperti daftar bill,
+    # dari fungsi yang sama pula (`_list_pick_state`) — beranda menjumlahkan ini
+    # untuk SELURUH bulan, bukan cuma bulan yang sedang dibuka.
+    pending_names, _total_unpaid, people, uncovered_idr, _all_paid, settled = _list_pick_state(bill_data)
+    payer_id, _ = db.resolve_payer(bill_data)
+    payload_action = _action_kind(
+        {
+            "settled": settled,
+            "total_idr": int(bill.get("total_idr", 0) or 0),
+            "has_picks": bool(bill_data["selections"]),
+            "my_paid": payer_id == viewer_id
+            or any(
+                p["identity_id"] == viewer_id and p["status"] == "paid"
+                for p in bill_data["payments"]
+            ),
+            "my_total_idr": next(
+                (p.get("total_idr", 0) for p in people if p.get("identity_id") == viewer_id),
+                0,
+            ),
+            "i_am_payer": payer_id == viewer_id,
+            "uncovered_idr": uncovered_idr,
+        }
+    )
     payload = {
         "bill_id": bill["id"],
         "title": bill["title"],
         "status": bill.get("status", "open"),
         "created_at": bill.get("created_at"),
+        "action": payload_action,
         "reason_codes": _recap_reason_codes(
             bill_data, response, pending_workflow=pending_workflow,
         ),
@@ -1874,12 +1924,35 @@ def _list_pick_state(
     return pending, total_unpaid, people, result["uncovered_idr"], all_paid, settled
 
 
-@app.get("/api/identities/{identity_id}/bills")
-def my_bills(identity_id: str, request: Request):
+_MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+@app.get("/api/identities/{identity_id}/bills/months")
+def my_bill_months(identity_id: str, request: Request):
+    """Ringkasan jumlah bill per bulan, tanpa memuat isi bill-nya.
+
+    Beranda memakai ini untuk menampilkan daftar bulan sekaligus: yang terbaru
+    langsung dibuka, bulan lain cuma satu baris berisi jumlah. Isi bulan baru
+    diambil saat orangnya benar-benar membuka bulan itu — memuat seluruh riwayat
+    di awal jadi makin mahal seiring waktu, padahal yang dibuka biasanya cuma
+    bulan berjalan.
+
+    Kosong berarti belum ada bill sama sekali (bukan error).
+    """
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
         raise HTTPException(403, "Identitas tidak cocok")
-    rows = db.get_bills_for_identity(identity_id)
+    return {"months": db.bill_months_for_identity(identity_id)}
+
+
+@app.get("/api/identities/{identity_id}/bills")
+def my_bills(identity_id: str, request: Request, month: str | None = None):
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas tidak cocok")
+    if month is not None and not _MONTH_RE.match(month):
+        raise HTTPException(400, "Format bulan harus YYYY-MM")
+    rows = db.get_bills_for_identity(identity_id, month)
     # expose the effective owner (resolved payer, else creator) so the UI can
     # show owner-only actions (delete) — mirrors _owner_id, including the
     # placeholder-name resolution that paid_by_identity_id alone misses
@@ -1923,6 +1996,9 @@ def my_bills(identity_id: str, request: Request):
             # without this the list showed a red "Belum lunas" next to a green
             # "Kamu udah bayar" on a bill where nothing had happened yet
             row["has_picks"] = bool(bill_data["selections"])
+            # satu alasan tindakan per bill, dihitung server supaya beranda dan
+            # daftar memakai aturan yang sama persis
+            row["action"] = _action_kind(row)
         else:
             # defensive fallback (bill row exists but get_bill failed): mirror
             # _owner_id exactly -- confirmed payer, else creator. This branch

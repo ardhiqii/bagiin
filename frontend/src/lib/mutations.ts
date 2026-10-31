@@ -22,7 +22,10 @@ export function invalidateMoneyViews(qc: QueryClient, target: MoneyTarget = {}) 
   const { identityId, billId } = target
   if (billId) void qc.invalidateQueries({ queryKey: keys.bill(billId) })
   if (identityId) {
-    void qc.invalidateQueries({ queryKey: keys.bills(identityId) })
+    // prefix ['bills', id]: setiap bulan yang sudah pernah dimuat ikut basi,
+    // bukan cuma bulan yang kebetulan sedang terbuka
+    void qc.invalidateQueries({ queryKey: keys.billsAll(identityId) })
+    void qc.invalidateQueries({ queryKey: keys.billMonths(identityId) })
     void qc.invalidateQueries({ queryKey: keys.recap(identityId) })
   }
 }
@@ -41,7 +44,8 @@ export function invalidateInviteViews(qc: QueryClient, identityId?: string | nul
 export function invalidateAccountViews(qc: QueryClient, identityId?: string | null) {
   if (!identityId) return
   void qc.invalidateQueries({ queryKey: ['accounts', identityId] })
-  void qc.invalidateQueries({ queryKey: keys.bills(identityId) })
+  void qc.invalidateQueries({ queryKey: keys.billsAll(identityId) })
+  void qc.invalidateQueries({ queryKey: keys.billMonths(identityId) })
   void qc.invalidateQueries({ queryKey: keys.recap(identityId) })
   // bill menyimpan salinan rekening pembayar di payload-nya
   void qc.invalidateQueries({ queryKey: ['bill'] })

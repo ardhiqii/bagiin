@@ -17,6 +17,16 @@ async function freshUser(page: Page, name: string) {
   await expect(page.getByRole('heading', { level: 1 })).toContainText(name)
 }
 
+/** Peserta dipilih dari kontak (orang yang pernah sebill), bukan diketik. */
+async function pickPeople(page: Page, names: string[]) {
+  await page.getByRole('button', { name: /\+ Pilih orang|\+ Tambah orang lagi/ }).click()
+  const sheet = page.getByRole('dialog', { name: 'Siapa yang ikut?' })
+  for (const name of names) {
+    await sheet.getByRole('button', { name: new RegExp(name) }).first().click()
+  }
+  await sheet.getByRole('button', { name: /^Selesai/ }).click()
+}
+
 async function createTwoItemBill(page: Page, title: string) {
   await page.goto('/create')
   await page.getByLabel('Nama bill').fill(title)
@@ -89,16 +99,27 @@ test.describe('Bagiin — mengubah bill', () => {
     await ctx.close()
   })
 
-  test('49. ubah daftar nama: ganti yang belum bergabung, kunci yang sudah', async ({ page, browser }) => {
+  test('49. ubah daftar nama: hapus yang belum bergabung, kunci yang sudah', async ({ page, browser }) => {
     await freshUser(page, 'Aufa')
+    // Bima & Citra harus pernah sebill dulu supaya bisa dipilih dari kontak
+    const basis = await createTwoItemBill(page, 'Basis ' + stamp)
+    // satu konteks per orang: localStorage berisi identitas, jadi satu konteks
+    // untuk dua nama berarti orang kedua tidak pernah benar-benar ada
+    for (const person of ['Bima', 'Citra']) {
+      const guestCtx = await browser.newContext({ viewport: { width: 390, height: 844 } })
+      const guest = await guestCtx.newPage()
+      await freshUser(guest, person)
+      await guest.goto(basis)
+      await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
+      await guest.getByRole('button', { name: /Nasi goreng, ketuk/ }).first().click()
+      await guestCtx.close()
+    }
+
     await page.goto('/create')
     await page.getByLabel('Nama bill').fill('Roster edit ' + stamp)
     await page.getByLabel('Item 1').fill('Sate')
     await page.getByLabel('Harga satuan').first().fill('30000')
-    for (const person of ['Citra', 'Bima']) {
-      await page.getByLabel('Nama teman').fill(person)
-      await page.getByRole('button', { name: 'Tambah', exact: true }).click()
-    }
+    await pickPeople(page, ['Citra', 'Bima'])
     // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
     // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
     // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
@@ -124,17 +145,13 @@ test.describe('Bagiin — mengubah bill', () => {
     await expect(page.getByText('· bergabung')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Hapus nama Bima' })).toHaveCount(0)
 
-    // Citra belum bergabung: bisa dihapus dan diganti
+    // Citra belum bergabung: bisa dihapus
     await page.getByRole('button', { name: 'Hapus nama Citra' }).click()
-    await page.getByLabel('Tambah nama').fill('Dodi')
-    await page.getByRole('button', { name: 'Tambah', exact: true }).click()
     await page.getByRole('button', { name: 'Simpan perubahan' }).click()
     await expect(page.getByText('Perubahan bill disimpan')).toBeVisible()
 
-    await expect(page.getByText('Dodi')).toBeVisible()
     await expect(page.getByText('Citra')).toHaveCount(0)
-    await expect(page.getByText('Diundang, belum bergabung').first()).toBeVisible()
-    // pilihan Bima tidak ikut hilang gara-gara roster diganti
+    // pilihan Bima tidak ikut hilang gara-gara daftar nama diubah
     await expect(page.getByText('Bagian Rp30.000').first()).toBeVisible()
     await ctx.close()
   })

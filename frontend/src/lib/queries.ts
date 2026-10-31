@@ -4,15 +4,47 @@ import { invalidateMoneyViews } from './mutations'
 import type { BillResponse, BillRow, Recap } from './types'
 
 export const keys = {
-  bills: (identityId: string) => ['bills', identityId] as const,
+  bills: (identityId: string, month?: string | null) => ['bills', identityId, month ?? 'semua'] as const,
+  /** prefix: menyapu semua bulan sekaligus (React Query cocokkan per awalan) */
+  billsAll: (identityId: string) => ['bills', identityId] as const,
+  billMonths: (identityId: string) => ['bill-months', identityId] as const,
   bill: (billId: string) => ['bill', billId] as const,
   recap: (identityId: string) => ['recap', identityId] as const,
 }
 
-export function useBills(identityId: string | null) {
+/**
+ * Daftar bill satu bulan (`YYYY-MM`), atau seluruhnya kalau `month` kosong.
+ *
+ * Beranda memakai ini per bulan: yang dimuat hanya bulan yang sedang dibuka.
+ * Memuat seluruh riwayat di awal terasa gratis waktu bill masih belasan, tapi
+ * biayanya tumbuh terus sementara yang dibuka hampir selalu bulan berjalan.
+ *
+ * `enabled` dipakai beranda untuk menahan permintaan sampai daftar bulan tahu
+ * bulan terbaru — tanpa itu layar sempat meminta SEMUA bill dulu (persis biaya
+ * yang mau dihindari) sebelum tahu bulan mana yang harus dimuat.
+ */
+export function useBills(identityId: string | null, month?: string | null, enabled = true) {
   return useQuery({
-    queryKey: keys.bills(identityId ?? ''),
-    queryFn: () => api<BillRow[]>('/api/identities/' + identityId + '/bills'),
+    queryKey: keys.bills(identityId ?? '', month),
+    queryFn: () =>
+      api<BillRow[]>(
+        '/api/identities/' +
+          identityId +
+          '/bills' +
+          (month ? '?month=' + encodeURIComponent(month) : ''),
+      ),
+    enabled: Boolean(identityId) && enabled,
+  })
+}
+
+export type BillMonth = { month: string; bill_count: number }
+
+/** Ringkasan jumlah bill per bulan — tanpa memuat isi bill-nya. */
+export function useBillMonths(identityId: string | null) {
+  return useQuery({
+    queryKey: keys.billMonths(identityId ?? ''),
+    queryFn: () =>
+      api<{ months: BillMonth[] }>('/api/identities/' + identityId + '/bills/months'),
     enabled: Boolean(identityId),
   })
 }

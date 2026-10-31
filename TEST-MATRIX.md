@@ -154,6 +154,9 @@ kosong).
 | I-09 | Terima Rp230.000 + bayar Rp22.000: Beranda dan Rekap menampilkan angka NET yang sama beserta rincian `Terima +…` / `Bayar −…` | `recap.spec.ts` 125 |
 | — | Tombol "Buat bill" ditunggu sampai `enabled` sebelum diklik (41 tempat): klik ke tombol mati hilang tanpa jejak dan di mesin lambat terbaca sebagai "aplikasi tidak berpindah" | semua spec |
 | I-10 | Angka besar bisa diketuk: sheet Rincian saldo menunjukkan terima − bayar = selisih, memisahkan yang belum pasti, dan tombolnya menggulir ke daftar bill | `recap.spec.ts` 126 |
+| I-11 | Beranda memuat **satu** bulan: setiap permintaan daftar bill menyebut `?month=`, bulan lain belum dimuat sampai chipnya diketuk | `monthly.spec.ts` 128 |
+| I-12 | Pencarian menembus semua bulan (bukan cuma bulan yang terbuka) dan menuliskannya di layar | `monthly.spec.ts` 129 |
+| I-13 | Peserta bill dipilih dari kontak lewat sheet pencarian (multi-centang), bukan nama ketik; nama lama tetap bisa dihapus | `roster.spec.ts` 39, `edit.spec.ts` 49 |
 
 ## Integritas angka
 

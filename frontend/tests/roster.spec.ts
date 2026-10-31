@@ -17,15 +17,25 @@ async function freshUser(page: Page, name: string) {
   await expect(page.getByRole('heading', { level: 1 })).toContainText(name)
 }
 
-async function createBill(page: Page, title: string, opts: { roster?: string[] } = {}) {
+/**
+ * Peserta sekarang dipilih dari orang yang pernah sebill, bukan diketik.
+ * Helper ini membuka sheet-nya dan mencentang nama yang diminta.
+ */
+async function pickPeople(page: Page, names: string[]) {
+  await page.getByRole('button', { name: /\+ Pilih orang|\+ Tambah orang lagi/ }).click()
+  const sheet = page.getByRole('dialog', { name: 'Siapa yang ikut?' })
+  for (const name of names) {
+    await sheet.getByRole('button', { name: new RegExp(name) }).first().click()
+  }
+  await sheet.getByRole('button', { name: /^Selesai/ }).click()
+}
+
+async function createBill(page: Page, title: string, opts: { people?: string[] } = {}) {
   await page.goto('/create')
   await page.getByLabel('Nama bill').fill(title)
   await page.getByLabel('Item 1').fill('Sate ayam')
   await page.getByLabel('Harga satuan').first().fill('30000')
-  for (const person of opts.roster ?? []) {
-    await page.getByLabel('Nama teman').fill(person)
-    await page.getByRole('button', { name: 'Tambah', exact: true }).click()
-  }
+  if (opts.people?.length) await pickPeople(page, opts.people)
   // Tunggu aplikasi menyatakan siap, jangan menebak lewat jeda: tombol ini
     // mati selama identitas belum siap, dan klik ke tombol mati hilang tanpa
     // jejak — di mesin lambat itu terbaca sebagai "aplikasi tidak berpindah".
@@ -63,17 +73,23 @@ test.describe('Bagiin — lunas manual dan daftar nama', () => {
     await ctx.close()
   })
 
-  test('39. nama yang diketik saat membuat bill menyambung ke orang yang join', async ({ page, browser }) => {
+  test('39. orang yang dipilih dari kontak menyambung ke dirinya saat join', async ({ page, browser }) => {
     await freshUser(page, 'Aufa')
-    const url = await createBill(page, 'Roster ' + stamp, { roster: ['Bima'] })
-
-    // placeholder diketik pembuat tetap muncul walau orangnya belum masuk
-    await page.reload()
-    await expect(page.getByText('Diundang, belum bergabung')).toBeVisible()
-
+    // Bima harus pernah sebill dulu supaya muncul di daftar pilihan
+    const basis = await createBill(page, 'Basis ' + stamp)
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
     const guest = await ctx.newPage()
     await freshUser(guest, 'Bima')
+    await guest.goto(basis)
+    await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
+    await guest.getByRole('button', { name: /Sate ayam, ketuk/ }).click()
+
+    const url = await createBill(page, 'Roster ' + stamp, { people: ['Bima'] })
+
+    // nama dari kontak jadi placeholder sampai orangnya masuk ke bill ini
+    await page.reload()
+    await expect(page.getByText('Diundang, belum bergabung')).toBeVisible()
+
     await guest.goto(url)
     await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
     await guest.getByRole('button', { name: /Sate ayam, ketuk/ }).click()

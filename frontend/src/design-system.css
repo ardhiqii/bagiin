@@ -885,6 +885,120 @@
   color: var(--ds-muted);
 }
 
+/* Kepala bulan di beranda: satu baris yang bisa dilipat.
+   Kenapa tombol dan bukan judul biasa: bulan selain bulan terbaru dimulai
+   tertutup, jadi harus ada sesuatu yang bisa diketuk untuk membukanya. Target
+   sentuh dibuat 44px, dan seluruh baris jadi sasaran — bukan cuma ikon panah. */
+.month-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--ds-space-1);
+  border: 0;
+  border-radius: var(--ds-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.month-head b {
+  font: var(--ds-weight-strong) var(--ds-text-sm)/1.2 var(--ds-font-body);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ds-navy);
+}
+.month-head small {
+  font: var(--ds-weight-medium) var(--ds-text-xs)/1.2 var(--ds-font-body);
+  color: var(--ds-muted);
+}
+.month-head svg {
+  color: var(--ds-muted);
+  transition: transform .18s ease;
+}
+.month-head.is-open svg {
+  transform: rotate(180deg);
+}
+.month-head:active {
+  background: var(--ds-bg-deep);
+}
+
+/* Dua baris chip berdampingan (bulan dan status) memakai gaya yang sama; label
+   kecil di depan masing-masing membuat jelas mana yang mengatur periode dan
+   mana yang mengatur status — tanpa label, dua sorotan aktif terasa setara. */
+.chip-row-label {
+  flex: none;
+  align-self: center;
+  font: var(--ds-weight-strong) var(--ds-text-xs)/1 var(--ds-font-body);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ds-muted-soft);
+  padding-right: var(--ds-space-1);
+}
+/* Bulan bisa bertambah terus: digeser mendatar, bukan membungkus jadi tiga
+   baris yang mendorong daftar bill keluar layar. */
+.chip-row.chip-row-months {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  /* label ikut tergulir bersama chip? tidak: dia berhenti di kiri */
+  padding-inline: 0;
+}
+.chip-row-months::-webkit-scrollbar {
+  display: none;
+}
+.chip-row-months .chip-filter {
+  flex: none;
+}
+
+/* Baris pemilih orang di sheet.
+   Kenapa tombol penuh dan bukan baris + tombol kecil di kanan: sasaran sentuh
+   harus seluruh baris. Mark di kanan hanya penanda keadaan, bukan tombol
+   terpisah — dua sasaran untuk satu keputusan bikin salah tekan. */
+.ds-pick-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  width: 100%;
+  min-height: var(--ds-touch-row);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 0;
+  border-radius: var(--ds-radius-md);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ds-pick-row + .ds-pick-row {
+  box-shadow: inset 0 1px 0 var(--ds-hairline);
+}
+.ds-pick-row:active {
+  background: var(--ds-bg-deep);
+}
+.ds-pick-mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 50%;
+  border: 1.5px solid var(--ds-border);
+  color: #fff;
+}
+.ds-pick-row.is-picked .ds-pick-mark {
+  border-color: var(--ds-teal);
+  background: var(--ds-teal);
+}
+/* Latar ikut menandai pilihan: centang sendirian masih terbaca mata, tapi di
+   daftar panjang orang memindai barisnya, bukan kolom kanan. */
+.ds-pick-row.is-picked {
+  background: var(--ds-mint);
+}
+
 /* ---------- Notice: konteks ringkas di dalam alur ----------
    Bukan Alert yang dikecilkan: ikon 15 px sebaris teks, tanpa judul tebal,
    supaya tidak bersaing dengan judul layar.

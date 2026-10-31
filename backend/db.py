@@ -1583,7 +1583,29 @@ def _bill_settled(bill_data: dict | None) -> bool:
     )
 
 
-def get_bills_for_identity(identity_id: str):
+def bill_months_for_identity(identity_id: str) -> list[dict]:
+    """Jumlah bill per bulan untuk satu identitas, terbaru dulu.
+
+    Satu query GROUP BY: tidak ada satu pun `get_bill()` di sini, jadi beranda
+    bisa menampilkan seluruh riwayat sebagai daftar bulan tanpa membayar harga
+    memuat isinya.
+    """
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT strftime('%Y-%m', COALESCE(b.transacted_at, b.created_at)) AS month,
+                  COUNT(DISTINCT b.id) AS bill_count
+          FROM bill b
+          LEFT JOIN payment p ON p.bill_id = b.id AND p.identity_id = ?
+          WHERE (b.creator_identity_id = ? AND b.creator_left = 0) OR p.id IS NOT NULL
+          GROUP BY month
+          ORDER BY month DESC""",
+        (identity_id, identity_id),
+    ).fetchall()
+    conn.close()
+    return [{"month": r["month"], "bill_count": r["bill_count"]} for r in rows if r["month"]]
+
+
+def get_bills_for_identity(identity_id: str, month: str | None = None):
     """Bills where identity is creator OR has selections/payments.
 
     A creator who left the bill (v58) drops out of it like anyone else: the
@@ -1601,17 +1623,24 @@ def get_bills_for_identity(identity_id: str):
     and additive, not part of the public API.)
     """
     conn = get_db()
-    rows = conn.execute(
-        """SELECT DISTINCT b.id, b.title, b.merchant, b.transacted_at,
+    # `month` (YYYY-MM) menyaring di SQL, bukan di Python: beranda hanya memuat
+    # bulan yang benar-benar dibuka, jadi biaya memuat satu bulan tidak ikut
+    # menanggung seluruh riwayat. Ekspresi waktunya HARUS sama dengan yang
+    # dipakai ORDER BY di bawah — kalau berbeda, satu bill bisa muncul di bulan
+    # yang tidak sesuai urutannya.
+    sql = """SELECT DISTINCT b.id, b.title, b.merchant, b.transacted_at,
                   b.total_idr, b.order_discount_idr, b.cashback_idr,
                   b.status, b.created_at, b.closed_at,
                   b.creator_identity_id, b.paid_by_identity_id, b.paid_by_confirmed
           FROM bill b
           LEFT JOIN payment p ON p.bill_id = b.id AND p.identity_id = ?
-          WHERE (b.creator_identity_id = ? AND b.creator_left = 0) OR p.id IS NOT NULL
-          ORDER BY COALESCE(b.transacted_at, b.created_at) DESC, b.created_at DESC""",
-        (identity_id, identity_id),
-    ).fetchall()
+          WHERE ((b.creator_identity_id = ? AND b.creator_left = 0) OR p.id IS NOT NULL)"""
+    params: list = [identity_id, identity_id]
+    if month:
+        sql += " AND strftime('%Y-%m', COALESCE(b.transacted_at, b.created_at)) = ?"
+        params.append(month)
+    sql += " ORDER BY COALESCE(b.transacted_at, b.created_at) DESC, b.created_at DESC"
+    rows = conn.execute(sql, params).fetchall()
     conn.close()
     out = []
     for r in rows:

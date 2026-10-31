@@ -3,7 +3,8 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { billActions, useBill, useBillAction } from '../lib/queries'
+import { billActions, useBill, useBillAction, useContacts, type Contact } from '../lib/queries'
+import { PeoplePicker } from '../components/PeoplePicker'
 import { invalidateMoneyViews } from '../lib/mutations'
 import { formatRp, parseRupiah } from '../lib/money'
 import { Alert, Button, Field, SectionHead, SkeletonCard, SkeletonList } from '../ds/primitives'
@@ -50,7 +51,11 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [roster, setRoster] = useState<string[] | null>(null)
-  const [rosterName, setRosterName] = useState('')
+  // Tambah peserta lewat daftar orang yang pernah sebill, bukan nama bebas.
+  // Nama yang sudah terlanjur ada di bill (termasuk dari versi lama) tetap
+  // ditampilkan dan tetap bisa dihapus.
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const contacts = useContacts(identityId, Boolean(identityId))
 
   // Nilai awal diambil sekali dari server, sesudah itu state lokal yang menang.
   const titleValue = title ?? data?.bill.title ?? ''
@@ -60,6 +65,12 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
   const discountValue = discount ?? (data ? formatRd(data.bill.order_discount_idr) : '')
   const drafts = items ?? (data ? data.items.map(draftFrom) : [])
   const rosterDraft = roster ?? (data ? data.participants.map((participant) => participant.name) : [])
+  // Yang tampil tercentang hanya kontak yang namanya sudah ada di daftar ini.
+  // Nama dari bill lama tidak punya pasangan kontak, jadi tidak bisa dicentang —
+  // tapi barisnya tetap tampil di atas dan bisa dihapus.
+  const pickedContacts = (contacts.data ?? []).filter((contact) =>
+    rosterDraft.includes(contact.display_name),
+  )
   // nama yang sudah diklaim orangnya dikunci: mengeluarkan orang pakai tombol
   // "Keluarkan" di layar bill, bukan dengan menghapus namanya di sini
   const claimed = new Set((data?.participants ?? []).filter((p) => p.identity_id).map((p) => p.name))
@@ -297,25 +308,27 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
             ) : (
               <div className="app-note">Belum ada nama yang disiapkan.</div>
             )}
-            <div className="app-inline">
-              <div className="grow">
-                <Field id="edit-roster-name" label="Tambah nama" value={rosterName} onChange={setRosterName} />
-              </div>
-              <Button
-                variant="quiet"
-                disabled={
-                  !rosterName.trim() ||
-                  rosterDraft.some((name) => name.toLowerCase() === rosterName.trim().toLowerCase())
-                }
-                onClick={() => {
-                  setRoster([...rosterDraft, rosterName.trim()])
-                  setRosterName('')
-                }}
-              >
-                Tambah
-              </Button>
-            </div>
+            <Button variant="quiet" onClick={() => setPickerOpen(true)}>
+              + Pilih orang
+            </Button>
           </section>
+
+          <PeoplePicker
+            open={pickerOpen}
+            contacts={contacts.data}
+            isPending={contacts.isPending}
+            isError={contacts.isError}
+            picked={pickedContacts}
+            onToggle={(contact: Contact) => {
+              const exists = rosterDraft.includes(contact.display_name)
+              setRoster(
+                exists
+                  ? rosterDraft.filter((name) => name !== contact.display_name)
+                  : [...rosterDraft, contact.display_name],
+              )
+            }}
+            onClose={() => setPickerOpen(false)}
+          />
 
           <section className="app-stack">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

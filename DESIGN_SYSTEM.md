@@ -508,6 +508,40 @@ Nama maksimal satu baris (ellipsis), meta satu baris (ellipsis): baris yang
 tingginya berbeda-beda membuat daftar tidak bisa dipindai dan kontrol di kanan
 jadi tidak sejajar.
 
+## Daftar panjang dikelompokkan waktu, disaring status
+
+Beranda mengelompokkan bill **per bulan** (`Oktober 2026`), bukan per status.
+Alasannya: 60 bill dalam satu daftar datar bukan daftar, itu dinding — orang
+tidak punya pegangan untuk mencari "bill bulan lalu". Bulan adalah satuan waktu
+yang orang memang pakai, dan angkanya gratis: diambil dari tanggal bill.
+
+Status tidak hilang, tapi pindah tempat: jadi **chip saringan** (Semua / Belum
+lunas / Lunas) dan **penanda di baris** (`· lunas`). Satu sumbu untuk menyaring,
+satu sumbu untuk mengelompokkan — dua filter yang saling memotong (status ×
+bulan) membuat orang harus mencoba-coba untuk tahu apa yang sedang dilihat.
+
+Bulan terbaru terbuka, bulan lain dilipat jadi satu baris `Oktober 2026 · 12
+bill · buka` yang bisa diketuk. Target sentuhnya seluruh kepala bulan (≥ 44 px),
+bukan hanya ikon panah.
+
+## Memilih orang, bukan mengetik nama
+
+Peserta bill dipilih dari **orang yang pernah sebill** lewat sheet pencarian:
+avatar, nama pembeda, `@username`/`#handle`, dan bill terakhirnya sebagai
+pengingat konteks. Nama yang diketik bebas menghasilkan string, bukan identitas:
+salah ketik tidak pernah diklaim siapa pun, dua orang bernama sama tidak bisa
+dibedakan, dan menambah tiga orang berarti tiga kali buka-tutup.
+
+Yang dipilih adalah baris penuh dengan **tanda centang** di kanan — bukan baris
+plus tombol kecil terpisah: satu keputusan, satu sasaran sentuh. Centang, bukan
+tombol "Undang", karena di form bill orang belum diundang; dia baru masuk saat
+membuka link. Tombol "Undang" tetap ada di tempatnya sendiri (layar bill), di
+sana tindakannya memang mengirim undangan.
+
+Orang yang belum pernah sebill **tidak dicari di sini**: dia masuk lewat link
+dan memilih namanya sendiri. Daftar kontak adalah saran yang akurat, bukan
+gerbang yang menutup orang baru.
+
 ## Dock bawah tidak boleh berubah tinggi
 
 Kalau tombol aksi utama ada di dock bawah, tinggi dock harus sama di semua

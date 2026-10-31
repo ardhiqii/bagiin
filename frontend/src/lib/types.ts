@@ -127,12 +127,19 @@ export type BillRow = {
   my_paid: boolean
   my_total_idr: number
   has_picks: boolean
+  /**
+   * Satu alasan bill ini butuh tindakanmu — diputuskan server (`_action_kind`)
+   * supaya blok kuning di beranda dan daftar bill memakai aturan yang sama.
+   */
+  action: 'split' | 'pay' | null
 }
 
 export type RecapBill = {
   bill_id: string
   title: string
   status: string
+  /** sama dengan BillRow.action; dipakai beranda untuk menjumlah lintas bulan */
+  action: 'split' | 'pay' | null
   created_at: string | null
   reason_codes: string[]
   estimated_payable_idr: number

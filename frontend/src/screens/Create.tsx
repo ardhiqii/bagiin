@@ -10,6 +10,8 @@ import { X } from '@phosphor-icons/react'
 import createHeroArt from '../assets/create-hero.webp'
 import scanArt from '../assets/scan.webp'
 import { invalidateMoneyViews } from '../lib/mutations'
+import { useContacts, type Contact } from '../lib/queries'
+import { PeoplePicker } from '../components/PeoplePicker'
 
 /**
  * Backend menolak judul, nama tempat, dan nama item di atas 120 karakter.
@@ -54,8 +56,11 @@ export function Create({ identityId }: { identityId: string | null }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const intentRef = useRef<'ocr' | 'attach'>('ocr')
   const abortRef = useRef<AbortController | null>(null)
-  const [roster, setRoster] = useState<string[]>([])
-  const [rosterName, setRosterName] = useState('')
+  // Peserta dipilih dari orang yang pernah sebill, bukan diketik. Yang belum
+  // pernah sebill masuk lewat link bill: dia memilih namanya sendiri di sana.
+  const [picked, setPicked] = useState<Contact[]>([])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const contacts = useContacts(identityId, Boolean(identityId))
 
   useEffect(() => {
     if (photoBusy !== 'ocr') return
@@ -240,9 +245,10 @@ export function Create({ identityId }: { identityId: string | null }) {
           photos: photos.map((p) => p.path),
           paid_by_name: payerName.trim() || null,
           tax_included: taxIncluded ? 1 : 0,
-          // nama yang diketik di sini jadi placeholder: begitu orangnya join,
-          // backend mencocokkan namanya dan klaim otomatis
-          participants: roster,
+          // nama dari kontak jadi placeholder: begitu orangnya join lewat link,
+          // backend mencocokkan namanya dan klaim otomatis. Namanya pasti sudah
+          // benar karena tidak diketik ulang.
+          participants: picked.map((contact) => contact.display_name),
         },
       })
       // bill baru mengubah beranda DAN rekap: yang lain belum tahu bill ini ada
@@ -494,42 +500,44 @@ export function Create({ identityId }: { identityId: string | null }) {
       <section className="app-stack">
         <SectionHead>Siapa saja yang ikut (opsional)</SectionHead>
         <p className="app-note">
-          Tulis nama teman kamu sekarang. Begitu mereka buka link dan memakai nama yang sama, bagiannya langsung nyambung.
+          Pilih dari orang yang pernah sebill dengan kamu. Teman baru tinggal buka link bill ini nanti — dia memilih namanya sendiri.
         </p>
-        {roster.length > 0 ? (
+        {picked.length > 0 ? (
           <div className="chip-row">
-            {roster.map((person) => (
-              <span className="chip" key={person}>
-                {person}
-                <button type="button" aria-label={'Hapus nama ' + person} onClick={() => setRoster((prev) => prev.filter((p) => p !== person))}>
+            {picked.map((contact) => (
+              <span className="chip" key={contact.id}>
+                {contact.display_name}
+                <button
+                  type="button"
+                  aria-label={'Hapus ' + contact.display_name}
+                  onClick={() => setPicked((prev) => prev.filter((item) => item.id !== contact.id))}
+                >
                   ×
                 </button>
               </span>
             ))}
           </div>
         ) : null}
-        <div className="app-inline">
-          <div className="grow">
-            <Field
-              id="roster-name"
-              label="Nama teman"
-              value={rosterName}
-              onChange={setRosterName}
-              hint="Contoh: Bima"
-            />
-          </div>
-          <Button
-            variant="quiet"
-            disabled={!rosterName.trim() || roster.some((p) => p.toLowerCase() === rosterName.trim().toLowerCase())}
-            onClick={() => {
-              setRoster((prev) => [...prev, rosterName.trim()])
-              setRosterName('')
-            }}
-          >
-            Tambah
-          </Button>
-        </div>
+        <Button variant="quiet" onClick={() => setPickerOpen(true)}>
+          {picked.length > 0 ? '+ Tambah orang lagi' : '+ Pilih orang'}
+        </Button>
       </section>
+
+      <PeoplePicker
+        open={pickerOpen}
+        contacts={contacts.data}
+        isPending={contacts.isPending}
+        isError={contacts.isError}
+        picked={picked}
+        onToggle={(contact) =>
+          setPicked((prev) =>
+            prev.some((item) => item.id === contact.id)
+              ? prev.filter((item) => item.id !== contact.id)
+              : [...prev, contact],
+          )
+        }
+        onClose={() => setPickerOpen(false)}
+      />
 
       <section className="app-stack">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
