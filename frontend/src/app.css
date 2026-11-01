@@ -139,8 +139,11 @@ textarea {
      jatuh ke atas, jadi bar-nya terbaca sebagai panel mengambang yang punya
      jarak sendiri ke navigasi. */
   padding: var(--ds-space-3) var(--ds-content-x) 0;
-  background: var(--ds-bg);
-  border-top: 1px solid color-mix(in srgb, var(--ds-border) 70%, transparent);
+  /* Satu permukaan dengan navigasi di bawahnya: kalau bar aksi memakai warna
+     halaman sementara navigasi putih, keduanya terbaca dua panel bertumpuk. */
+  background: color-mix(in srgb, var(--ds-surface) 92%, transparent);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid color-mix(in srgb, var(--ds-border) 92%, transparent);
 }
 
 .app-nav {
@@ -148,8 +151,13 @@ textarea {
   display: flex;
   justify-content: space-around;
   padding: var(--ds-space-2) var(--ds-gutter) calc(var(--ds-space-2) + env(safe-area-inset-bottom));
-  background: var(--ds-bg);
-  border-top: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
+  /* Permukaan sendiri, bukan warna halaman: dengan latar yang sama, satu-satunya
+     tanda batas adalah garis 1 px beralfa 0.55 yang hampir hilang, sehingga yang
+     terbaca justru bayangan kartu di atasnya dan bar-nya terlihat tidak selebar
+     layar. Putih 92% + blur = bar bawah yang jelas miliknya sendiri. */
+  background: color-mix(in srgb, var(--ds-surface) 92%, transparent);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid color-mix(in srgb, var(--ds-border) 92%, transparent);
 }
 
 /* Kalau bar ini justru elemen paling bawah (tanpa navigasi), ia tetap butuh
