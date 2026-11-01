@@ -58,9 +58,24 @@ const TONE_ICON: Record<Tone, typeof Clock> = {
   danger: WarningCircle,
 }
 
-export function StatusBadge({ tone, children }: { tone: Tone; children: ReactNode }) {
+export function StatusBadge({
+  tone,
+  compact = false,
+  children,
+}: {
+  tone: Tone
+  children: ReactNode
+  /** Untuk dipakai di dalam baris daftar: padding dan huruf dikecilkan supaya
+   *  tinggi baris tidak melompat, tapi bacaannya tetap jelas. */
+  compact?: boolean
+}) {
   const Icon = TONE_ICON[tone]
-  return <span className={`ds-badge ds-tone-${tone}`}><Icon size={14} weight="bold" aria-hidden="true" />{children}</span>
+  return (
+    <span className={`ds-badge ds-tone-${tone}${compact ? ' is-compact' : ''}`}>
+      <Icon size={compact ? 11 : 14} weight="bold" aria-hidden="true" />
+      {children}
+    </span>
+  )
 }
 
 export function Alert({ tone, title, children }: { tone: Tone; title: string; children: ReactNode }) {

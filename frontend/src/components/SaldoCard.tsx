@@ -77,7 +77,12 @@ export function SaldoCard({
           duaArah
             ? undefined
             : billBelumSelesai > 0
-              ? billBelumSelesai + ' bill belum selesai · bagianmu sudah dihitung'
+              // Dulu kalimat ini cuma menyebut "N bill belum selesai", padahal
+              // angka besar di atasnya menjumlah SEMUA bill. "Rp60.000 · 1 bill
+              // belum selesai" terbaca seolah 60 ribu itu milik satu bill tadi.
+              // Sekarang kedua cakupan disebut: berapa bill yang dihitung, dan
+              // berapa di antaranya yang pembagiannya belum selesai.
+              ? 'dari ' + (billsPasti + billBelumSelesai) + ' bill · ' + billBelumSelesai + ' belum selesai dibagi'
               : net === 0
                 ? 'tidak ada yang menunggu dibayar'
                 : 'dari ' + billsPasti + ' bill'

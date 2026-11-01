@@ -30,6 +30,14 @@ async function createBill(page: Page, title: string, item: string) {
   await expect(page).toHaveURL(/\/b\//)
 }
 
+/** Saringan status sekarang di dalam sheet "Atur", bukan baris chip di layar. */
+async function setStatus(page: Page, label: 'Lunas' | 'Belum lunas' | 'Semua') {
+  await page.getByRole('button', { name: /Atur/ }).click()
+  const sheet = page.getByRole('dialog')
+  await sheet.getByRole('button', { name: label, exact: true }).click()
+  await sheet.getByRole('button', { name: 'Terapkan' }).click()
+}
+
 test.describe('Bagiin — mencari dan menyaring bill', () => {
   test('41. cari bill dan saring yang sudah lunas', async ({ page }) => {
     await freshUser(page, 'Aufa')
@@ -52,10 +60,10 @@ test.describe('Bagiin — mencari dan menyaring bill', () => {
 
     // bersihkan pencarian, lalu saring lunas
     await page.getByLabel('Cari bill').fill('')
-    await page.getByRole('button', { name: 'Lunas', exact: true }).click()
+    await setStatus(page, 'Lunas')
     await expect(page.getByText('Sate ' + stamp)).toHaveCount(0)
 
-    await page.getByRole('button', { name: 'Belum lunas', exact: true }).click()
+    await setStatus(page, 'Belum lunas')
     await expect(page.getByText('Sate ' + stamp)).toBeVisible()
   })
 
@@ -70,10 +78,10 @@ test.describe('Bagiin — mencari dan menyaring bill', () => {
     await expect(page.getByRole('button', { name: 'Batalkan lunas seluruh bill' })).toBeVisible()
 
     await page.goto('/bills')
-    await page.getByRole('button', { name: 'Lunas', exact: true }).click()
+    await setStatus(page, 'Lunas')
     await expect(page.getByText('Lunas filter ' + stamp)).toBeVisible()
 
-    await page.getByRole('button', { name: 'Belum lunas', exact: true }).click()
+    await setStatus(page, 'Belum lunas')
     await expect(page.getByText('Lunas filter ' + stamp)).toHaveCount(0)
   })
 })

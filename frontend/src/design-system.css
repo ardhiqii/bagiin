@@ -51,6 +51,19 @@
   --ds-space-5: 20px;  /* jarak antar blok + gutter layar mobile */
   --ds-space-6: 24px;  /* padding kartu besar, jarak setelah blok panjang */
   --ds-space-8: 32px;
+
+  /* Jarak SEMANTIK: disebut menurut perannya, bukan angkanya. Tanpa nama peran,
+     setiap layar memilih angkanya sendiri dan hasilnya 9/10/14/18 px tercampur —
+     itu yang membuat sheet terasa padat dan tidak konsisten meski semuanya
+     "sudah pakai token".
+     Angkanya mengikuti anjuran umum spacing UI: kelipatan 4 (4pt/8pt grid),
+     jarak antar bagian layar mobile 16-24 px, gutter layar mobile 16-24 px,
+     padding kontrol 8-16 px. */
+  --ds-space-label: var(--ds-space-2);    /* 8  label → kontrol di bawahnya */
+  --ds-space-inline: var(--ds-space-2);   /* 8  ikon ↔ teks, kontrol sejenis */
+  --ds-space-group: var(--ds-space-4);    /* 16 antar grup di dalam satu bagian */
+  --ds-space-section: var(--ds-space-6);  /* 24 antar bagian layar */
+  --ds-gutter-sheet: var(--ds-space-5);   /* 20 margin dalam sheet */
   --ds-gutter: var(--ds-space-5);
   --ds-touch: 44px;    /* target sentuh minimum */
   --ds-touch-row: 56px; /* minimum baris aksi di dalam sheet */
@@ -496,6 +509,13 @@
   border-radius: var(--ds-radius-pill);
   font: var(--ds-weight-strong) var(--ds-text-sm)/1.2 var(--ds-font-body);
 }
+.ds-badge.is-compact {
+  gap: 4px;
+  padding: 4px 9px 4px 7px;
+  font: 800 12px/1.15 var(--ds-font-body);
+  letter-spacing: .01em;
+}
+.ds-badge.is-compact svg { flex: none; }
 .ds-tone-pending { background: var(--ds-pending-bg); color: var(--ds-pending); }
 .ds-tone-info { background: var(--ds-info-bg); color: var(--ds-info); }
 .ds-tone-success { background: var(--ds-success-bg); color: var(--ds-success); }
@@ -861,12 +881,14 @@
   max-height: min(88dvh, 760px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 12px 20px max(20px, env(safe-area-inset-bottom));
+  /* Gutter 20 px (batas atas anjuran 16-24 untuk layar mobile), atas 12 px
+     karena handle sudah memberi ruang, bawah ikut safe area. */
+  padding: var(--ds-space-3) var(--ds-gutter-sheet) max(var(--ds-space-6), env(safe-area-inset-bottom));
   border-radius: var(--ds-radius-xl) var(--ds-radius-xl) 0 0;
   box-shadow: 0 -24px 70px -24px rgba(16, 39, 49, .55);
   color: var(--ds-navy);
 }
-.ds-sheet-handle { display: block; width: 40px; height: 5px; margin: 0 auto 18px; border-radius: 999px; background: rgba(20, 47, 58, .16); }
+.ds-sheet-handle { display: block; width: 40px; height: 5px; margin: 0 auto var(--ds-space-3); border-radius: 999px; background: rgba(20, 47, 58, .16); }
 
 /* ---------- Judul bagian ----------
    Label kecil berjarak, bukan judul kedua: di daftar, yang harus menang adalah
@@ -885,46 +907,6 @@
   color: var(--ds-muted);
 }
 
-/* Kepala bulan di beranda: satu baris yang bisa dilipat.
-   Kenapa tombol dan bukan judul biasa: bulan selain bulan terbaru dimulai
-   tertutup, jadi harus ada sesuatu yang bisa diketuk untuk membukanya. Target
-   sentuh dibuat 44px, dan seluruh baris jadi sasaran — bukan cuma ikon panah. */
-.month-head {
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-  width: 100%;
-  min-height: 44px;
-  padding: 0 var(--ds-space-1);
-  border: 0;
-  border-radius: var(--ds-radius-sm);
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.month-head b {
-  font: var(--ds-weight-strong) var(--ds-text-sm)/1.2 var(--ds-font-body);
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--ds-navy);
-}
-.month-head small {
-  font: var(--ds-weight-medium) var(--ds-text-xs)/1.2 var(--ds-font-body);
-  color: var(--ds-muted);
-}
-.month-head svg {
-  color: var(--ds-muted);
-  transition: transform .18s ease;
-}
-.month-head.is-open svg {
-  transform: rotate(180deg);
-}
-.month-head:active {
-  background: var(--ds-bg-deep);
-}
-
 /* Dua baris chip berdampingan (bulan dan status) memakai gaya yang sama; label
    kecil di depan masing-masing membuat jelas mana yang mengatur periode dan
    mana yang mengatur status — tanpa label, dua sorotan aktif terasa setara. */
@@ -937,21 +919,275 @@
   color: var(--ds-muted-soft);
   padding-right: var(--ds-space-1);
 }
-/* Bulan bisa bertambah terus: digeser mendatar, bukan membungkus jadi tiga
-   baris yang mendorong daftar bill keluar layar. */
-.chip-row.chip-row-months {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-  /* label ikut tergulir bersama chip? tidak: dia berhenti di kiri */
-  padding-inline: 0;
+/* Satu kontrol daftar (pola 0.9): tombol "Atur" di kanan judul, bukan baris
+   chip. Chip memaksa orang memilih sebelum melihat; tombol membiarkan daftar
+   tampil utuh dan saringan jadi sesuatu yang dibuka kalau perlu. */
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-2);
+  margin-top: var(--ds-space-1);
 }
-.chip-row-months::-webkit-scrollbar {
-  display: none;
+.list-toolbar-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ds-space-2);
+  font: var(--ds-weight-strong) var(--ds-text-sm)/1.2 var(--ds-font-body);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ds-muted);
 }
-.chip-row-months .chip-filter {
+.list-toolbar-count {
+  font: var(--ds-weight-medium) var(--ds-text-xs)/1.2 var(--ds-font-body);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ds-muted-soft);
+}
+.list-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 var(--ds-space-3);
+  border: 0;
+  border-radius: 999px;
+  background: var(--ds-bg-deep);
+  color: var(--ds-navy);
+  font: var(--ds-weight-strong) var(--ds-text-sm)/1 var(--ds-font-body);
+  cursor: pointer;
+}
+.list-toolbar-btn.is-active {
+  background: var(--ds-teal);
+  color: #fff;
+}
+
+/* Penanda saringan aktif di badan layar. Tombol "Atur" hanya menyebut jumlahnya;
+   tanpa baris ini, daftar yang pendek tidak punya penjelasan apa pun setelah
+   sheet ditutup. */
+.filter-active {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-2);
+  padding: 8px var(--ds-space-3);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-bg-deep);
+  font: var(--ds-weight-medium) var(--ds-text-sm)/1.3 var(--ds-font-body);
+  color: var(--ds-navy);
+}
+.filter-active button {
   flex: none;
+  min-height: 44px;
+  padding: 0 var(--ds-space-2);
+  border: 0;
+  background: none;
+  color: var(--ds-teal);
+  font: var(--ds-weight-strong) var(--ds-text-sm)/1 var(--ds-font-body);
+  cursor: pointer;
+}
+
+/* Select di dalam sheet: bentuknya sama dengan input token, bukan select bawaan
+   browser yang tingginya berbeda-beda antar platform. */
+.ds-select-field {
+  display: grid;
+  gap: 8px;
+  margin-top: var(--ds-space-3);
+}
+.ds-select-field > span {
+  font: var(--ds-weight-medium) var(--ds-text-xs)/1.2 var(--ds-font-body);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ds-muted);
+}
+.ds-select {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 var(--ds-space-3);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-surface);
+  color: var(--ds-navy);
+  font: var(--ds-weight-medium) var(--ds-text-md)/1 var(--ds-font-body);
+  appearance: none;
+  cursor: pointer;
+}
+.sheet-actions {
+  display: grid;
+  gap: var(--ds-space-inline);
+  /* 24 px + garis rambut: aksi bukan bagian dari bidang terakhir, tapi langkah
+     berikutnya. Jarak yang sama dengan jarak antarbidang membuat tombol
+     "Terapkan" terbaca sebagai kontrol dari bidang di atasnya. */
+  margin-top: var(--ds-space-section);
+  padding-top: var(--ds-space-4);
+  border-top: 1px solid var(--ds-hairline);
+}
+/* ---------- Isi sheet: satu pola untuk semua bidang ----------
+   Setiap bidang = label + kontrol, dengan jarak yang sama di mana pun:
+   label → kontrol 8 px, kontrol sejenis 8 px, antar bidang 24 px.
+
+   Kenapa dipatok begitu, bukan "kira-kira enak": jarak yang berbeda-beda
+   antarbidang membuat mata membaca kelompok yang tidak ada (dua chip yang
+   berdekatan terlihat satu kelompok, dua bidang yang berjauhan terlihat dua
+   halaman). Angkanya mengikuti anjuran umum spacing UI — kelipatan 4, 16-24 px
+   antar bagian layar mobile, 8-16 px antar kontrol.
+
+   Bidang yang isinya cuma satu baris (mis. satu select) tetap memakai pola ini,
+   supaya tidak ada bidang yang "setengah jarak" hanya karena isinya sedikit. */
+.ds-field { display: grid; gap: var(--ds-space-label); }
+.ds-field + .ds-field { margin-top: var(--ds-space-section); }
+.ds-field-label {
+  font: var(--ds-weight-strong) var(--ds-text-xs)/1 var(--ds-font-body);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ds-muted-soft);
+}
+.ds-field-value {
+  font: var(--ds-weight-strong) var(--ds-text-xs)/1 var(--ds-font-body);
+  color: var(--ds-teal);
+}
+.ds-field-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ds-space-2); }
+
+/* Baris chip: membungkus, tidak pernah terpotong. Chip yang terpotong di tepi
+   kanan terlihat seperti bug, dan untuk 4 chip status di 390 px membungkus
+   memang lebih jujur daripada menggulir horizontal tanpa petunjuk. */
+/* Dua sampai empat pilihan pendek: grid dua kolom, supaya tidak pernah ada satu
+   chip yang tertinggal sendirian di baris kedua (baris pertama 3 chip + 1 chip
+   membuat separuh kanan kosong dan ritmenya patah). */
+.ds-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ds-space-inline);
+}
+.ds-chip-grid .chip-filter {
+  min-height: var(--ds-touch);
+  padding: 0 var(--ds-space-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.ds-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-inline);
+}
+.ds-field-hint {
+  margin: 0;
+  color: var(--ds-muted);
+  font: var(--ds-weight-regular) var(--ds-text-sm)/1.4 var(--ds-font-body);
+}
+.ds-chip-row .chip-filter {
+  /* 44 px = target sentuh minimum; padding 16 px, bukan 14: angka ganjil
+     membuat chip yang bersebelahan tidak pernah benar-benar sejajar. */
+  min-height: var(--ds-touch);
+  padding: 0 var(--ds-space-4);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1-5);
+}
+
+/* ---------- Periode: tahun → bulan ----------
+   Alasan dua tingkat (bukan satu select berisi semua bulan): dengan riwayat
+   tiga tahun isinya 36 baris, dan orang tetap harus menggulir — cuma kali ini
+   di dalam sheet. Dua tingkat menjaga yang terlihat tetap duabelas kotak.
+
+   Bulan tanpa bill dimatikan, bukan disembunyikan: kalau dihilangkan, grid
+   berubah bentuk tiap tahun dan mata harus mencari ulang posisi bulan yang sama. */
+/* Chip tahun di SATU baris: lebarnya mengikuti isi dan tidak mengecil, jadi
+   tahun tidak pernah terpotong dan tidak ada satu chip yang jatuh sendirian ke
+   baris kedua. Kalau tahunnya lebih dari empat, barisnya bergulir horizontal —
+   dan itu wajar untuk daftar yang panjangnya tak terbatas. */
+.period-years {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--ds-space-inline);
+  overflow-x: auto;
+  padding-bottom: var(--ds-space-half);
+  scrollbar-width: none;
+}
+.period-years::-webkit-scrollbar { display: none; }
+.period-years .chip-filter { flex: none; }
+.chip-count {
+  font: var(--ds-weight-strong) var(--ds-text-xs)/1 var(--ds-font-body);
+  color: var(--ds-muted);
+}
+/* Tanpa pemisah, "2026" + "4" terbaca sebagai satu angka "20264". */
+.chip-count::before {
+  content: '·';
+  margin-right: var(--ds-space-1);
+  opacity: .6;
+}
+.chip-filter.is-active .chip-count { color: rgba(255, 255, 255, .78); }
+
+/* Sub-kelompok di dalam bidang periode: label + grid, jaraknya 16 px dari baris
+   chip tahun — lebih rapat dari jarak antarbidang (24) karena masih satu bidang. */
+.period-subgroup {
+  display: grid;
+  gap: var(--ds-space-label);
+  margin-top: var(--ds-space-group);
+}
+.period-months {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--ds-space-inline);
+  margin-top: var(--ds-space-3);
+}
+.period-month {
+  display: grid;
+  gap: var(--ds-space-half);
+  min-height: 56px;
+  padding: var(--ds-space-2) var(--ds-space-1);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-surface);
+  color: var(--ds-navy);
+  text-align: center;
+  cursor: pointer;
+}
+.period-month b {
+  font: var(--ds-weight-strong) var(--ds-text-sm)/1.1 var(--ds-font-body);
+}
+.period-month span {
+  font: var(--ds-weight-medium) var(--ds-text-xs)/1.1 var(--ds-font-body);
+  color: var(--ds-muted);
+}
+.period-month.is-active {
+  background: var(--ds-teal);
+  border-color: var(--ds-teal);
+  color: #fff;
+}
+.period-month.is-active span { color: rgba(255, 255, 255, .8); }
+.period-month.is-empty { color: var(--ds-muted-soft); cursor: default; opacity: .55; }
+
+/* Baris ketiga daftar: status. Tingginya dipatok (min-height) supaya baris yang
+   statusnya lencana dan yang statusnya teks tetap menghasilkan tinggi baris yang
+   sama persis. Tanpa patokan ini selisih 6 px per baris menumpuk jadi daftar
+   yang terlihat miring. */
+.app-row .row-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  margin-top: 4px;
+  font: var(--ds-weight-medium) var(--ds-text-xs)/1.2 var(--ds-font-body);
+  letter-spacing: .01em;
+}
+.app-row .row-status svg { flex: none; }
+.app-row .row-status--pending { color: var(--ds-pending); }
+.app-row .row-status--danger { color: var(--ds-danger); }
+.app-row .row-status--quiet { color: var(--ds-muted); }
+/* Judul TIDAK ikut dipudarkan saat lunas. Sempat dicoba: baris lunas jadi
+   terbaca seperti tombol nonaktif, padahal isinya masih harus bisa dicari dan
+   dibaca. Yang turun nada cukup angkanya — itu bagian yang memang berhenti
+   menuntut perhatian. */
+.app-row .row-status .ds-badge.is-compact { flex: none; }
+.app-row .amt.is-settled .ds-amount {
+  color: var(--ds-muted);
+  font-weight: 500;
+  /* Angka yang sudah lunas masih harus terbaca (ini riwayat, bukan sampah),
+     tapi tidak boleh bersaing dengan angka yang masih menunggu. 500 + muted
+     cukup: mata menyapu daftar dan berhenti di angka yang tebal. */
 }
 
 /* Baris pemilih orang di sheet.
@@ -1135,8 +1371,10 @@
 .ds-action-row.is-danger:active { background: #fadad7; }
 .ds-sheet-close {
   position: absolute;
-  top: 14px;
-  right: 14px;
+  /* sejajar dengan judul: 12 px = padding atas sheet, jadi pusat tombol jatuh
+     di garis yang sama dengan huruf kapital judul */
+  top: var(--ds-space-3);
+  right: var(--ds-space-3);
   display: grid;
   place-items: center;
   width: 44px;
@@ -1147,7 +1385,7 @@
   color: var(--ds-muted);
   cursor: pointer;
 }
-.ds-sheet h3 { margin: 0 0 8px; font: var(--ds-weight-strong) var(--ds-text-2xl)/1.2 var(--ds-font-display); letter-spacing: -.035em; }
+.ds-sheet h3 { margin: 0 0 var(--ds-space-5); font: var(--ds-weight-strong) var(--ds-text-2xl)/1.2 var(--ds-font-display); letter-spacing: -.035em; }
 .ds-sheet-copy { margin: 0 0 16px; color: var(--ds-muted); font: var(--ds-weight-regular) var(--ds-text-md)/1.5 var(--ds-font-body); }
 .ds-sheet-row {
   display: flex;

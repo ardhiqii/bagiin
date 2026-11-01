@@ -213,5 +213,23 @@ export type Recap = {
     receivable_idr: number
     bills: RecapBill[]
   }
-  actions: { current_user: unknown[]; waiting_other: unknown[] }
+  /**
+   * Daftar tindakan kanonik dari server: SATU baris per bill yang menuntut
+   * sesuatu dari penontonnya. Dipakai blok kuning beranda, jadi angkanya tidak
+   * perlu disimpulkan ulang di klien — dan tidak bisa berbeda dari `/bills`.
+   */
+  actions: { current_user: RecapAction[]; waiting_other: RecapAction[] }
+}
+
+/** Satu tindakan yang harus dikerjakan penonton pada satu bill. */
+export type RecapAction = {
+  kind: 'split' | 'pay'
+  owner: string
+  bill_id: string
+  title: string
+  identity_id: string
+  name: string
+  amount_idr: number
+  provisional: boolean
+  href: string
 }

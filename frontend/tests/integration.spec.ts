@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Browser } from '@playwright/test'
+import { setStatus } from './fixtures/filters'
 
 /**
  * Storyboard integrasi tiga layar (lihat STORYBOARD.md).
@@ -372,7 +373,7 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     expect(bill.settled).toBe(true)
 
     await goHome(page)
-    await page.getByRole('button', { name: 'Lunas', exact: true }).click()
+    await setStatus(page, 'Lunas')
     await expect(page.locator('.app-row', { hasText: title })).toBeVisible()
 
     await goRecap(page)
@@ -861,9 +862,9 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     // bill yang ditutup tapi masih ada yang belum bayar TIDAK boleh pindah ke
     // "Lunas": menutup itu mengunci, bukan membebaskan utang
     await goHome(page)
-    await page.getByRole('button', { name: 'Lunas', exact: true }).click()
+    await setStatus(page, 'Lunas')
     await expect(page.locator('.app-row', { hasText: title })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Semua', exact: true }).click()
+    await setStatus(page, 'Semua')
     await expect(page.locator('.app-row', { hasText: title })).toBeVisible()
 
     await page.locator('.app-row', { hasText: title }).click()
@@ -961,7 +962,7 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
 
     await search.fill('')
     await page.waitForTimeout(300)
-    await page.getByRole('button', { name: 'Lunas', exact: true }).click()
+    await setStatus(page, 'Lunas')
     await page.waitForTimeout(400)
     await expect(page.locator('.app-row', { hasText: paidTitle })).toBeVisible()
     await expect(page.locator('.app-row', { hasText: openTitle })).toHaveCount(0)
@@ -1098,32 +1099,38 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
 
     // baris daftar: arah ditulis sebagai minus karena tidak ada label
     const payRow = page.locator('.app-row', { hasText: hostTitle })
-    await expect(payRow.locator('.ds-row-flag--pay')).toContainText('Tinggal kamu bayar')
+    await expect(payRow.locator('.row-status--danger')).toContainText('Tinggal dibayar')
     // arah di baris ini dibawa warna + kata kerja, bukan tanda minus: menulis
     // keduanya untuk hal yang sama membuat baris terbaca dua kali
     await expect(payRow.locator('.ds-amount--neg')).toBeVisible()
     await expect(payRow.locator('.ds-amount--neg')).not.toContainText('−')
 
-    // baris yang bukan tugas saya tidak diberi penanda apa pun
-    const flagged = await page.locator('.ds-row-flag').count()
+    // baris yang bukan tugas saya tidak diberi penanda tindakan (warnanya beda:
+    // pending/danger = ada yang harus dikerjakan, quiet = tidak)
+    const flagged = await page.locator('.row-status--pending, .row-status--danger').count()
     expect(flagged, 'jumlah baris bertanda == jumlah angka tindakan').toBe(split + pay)
 
     // blok kuning menyaring daftar tepat ke bill yang perlu dikerjakan —
     // afordans yang ditepati, bukan panah yang menjanjikan pindah layar
     await banner.click()
     await page.waitForTimeout(700)
-    await expect(page.locator('.chip-filter.is-active')).toContainText('Perlu dikerjakan')
+    // penanda saringan ada di badan layar (.filter-active), bukan baris chip:
+    // chip-nya sekarang hidup di dalam sheet "Atur"
+    await expect(page.locator('.filter-active')).toContainText('Perlu dikerjakan')
     await expect(page.locator('.app-row')).toHaveCount(split + pay)
     await banner.click()
     await page.waitForTimeout(500)
-    await expect(page.locator('.chip-filter.is-active')).toContainText('Semua')
+    // saringan dilepas: penanda hilang, daftar kembali penuh
+    await expect(page.locator('.filter-active')).toHaveCount(0)
 
     // saya bayar satu bill: angkanya turun tepat satu, bukan berubah jadi angka lain
     await apiSend(page, '/api/bills/' + hostBill + '/payments/' + me.id + '/paid')
     await page.reload()
     await page.waitForTimeout(1800)
     await expect(page.locator('.banner-count')).toHaveText(String(split + pay - 1))
-    await expect(page.locator('.app-row', { hasText: hostTitle }).locator('.ds-row-flag')).toHaveCount(0)
+    await expect(
+      page.locator('.app-row', { hasText: hostTitle }).locator('.row-status--pending, .row-status--danger'),
+    ).toHaveCount(0)
     expect(hostId).toBeTruthy()
     await host.close()
   })
@@ -1204,7 +1211,7 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
 
     const row = page.locator('.app-row', { hasText: title })
     await expect(row).toBeVisible()
-    await expect(row.locator('.ds-row-flag')).toHaveCount(0)
+    await expect(row.locator('.row-status--pending, .row-status--danger')).toHaveCount(0)
 
     // angka kuning == hitungan yang sama dari respons server (bill nol tidak ikut)
     const me = await identity(page)

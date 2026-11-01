@@ -729,3 +729,92 @@ Berkas dan pembuatnya:
 - `favicon.ico` dibangun dari PNG itu (16 px = geometri rata, 32/48 = bergerigi).
 
 Palet mark: navy `#142F3A`, amber `#C98A2E`, kertas `#FBFAF6`.
+
+## Daftar panjang: satu tombol "Atur", bukan baris chip
+
+Saringan daftar bill (bulan, status) **tidak** memakai baris chip yang selalu
+terlihat. Chip memaksa orang memilih sebelum melihat isi, dan begitu ada lebih
+dari dua bulan seluruh riwayat tersembunyi di balik satu pilihan — bill lama
+terasa hilang.
+
+Bentuk yang dipakai: daftar mengalir dengan **judul bulan sebagai pemisah**,
+satu tombol **Atur** di kanan judul daftar, dan sheet berisi chip status +
+pilihan bulan + Terapkan/Reset. Tombol menyebut jumlah saringan aktif
+(`Atur · 1`) karena tanpa itu tidak ada penanda apa pun yang menjelaskan kenapa
+daftarnya terasa pendek.
+
+Kolom bulan pada pemisah dihitung dari **tanggal yang ditampilkan di barisnya**
+(`transacted_at` lebih dulu, baru `created_at`). Kalau pemisah memakai kolom
+yang berbeda dari barisnya, sebuah bill bisa muncul di bawah judul bulan yang
+tidak cocok dengan tanggal yang tertulis di baris itu sendiri.
+
+Daftar dipotong 20 baris dengan tombol `Muat N lagi`. Potong dulu, baru
+kelompokkan — kalau dikelompokkan dulu lalu dipotong, judul bulan bisa muncul
+dua kali dan tombolnya berhenti di tengah bulan.
+
+## Periode: tahun dulu, baru bulan
+
+Saringan riwayat **tidak** memakai satu daftar bulan. Dengan riwayat tiga
+tahun, daftar itu berisi 36 baris dan orang tetap harus menggulir untuk mencari
+tahun yang dia mau — doom scrolling yang sama, cuma dipindahkan ke dalam sheet.
+
+Bentuknya dua tingkat:
+
+1. **Chip tahun** berisi jumlah bill (`2026 · 5`), plus `Semua tahun`.
+2. **Grid 12 bulan** (4 kolom × 3 baris) untuk tahun yang sedang dibuka, tiap
+   kotak menyebut jumlah bill-nya.
+
+Aturan yang mengikat:
+
+- **Bulan tanpa bill dimatikan, bukan disembunyikan.** Kalau dihilangkan, grid
+  berubah bentuk tiap tahun dan mata harus mencari ulang posisi bulan yang sama.
+- **Mengetuk tahun yang sedang aktif melepas saringan** tahun itu; mengetuk
+  bulan yang sedang aktif kembali ke seluruh tahun. Tidak ada keadaan terkunci
+  yang hanya bisa keluar lewat tombol Reset.
+- **Jumlah pilihan yang terlihat tetap dua belas, berapa pun panjang riwayat.**
+- **Label "Semua tahun"**, bukan "Semua": di sheet yang sama ada chip status
+  "Semua", dan dua tombol berlabel sama dengan arti berbeda adalah kebingungan
+  yang tidak perlu.
+- Periode berlaku di klien: satu query untuk seluruh riwayat, saringan hanya
+  memotong daftar. Tidak ada campuran angka dari query yang berbeda.
+
+## Jarak: nama peran, bukan angka
+
+Skala mentah sudah ada (`--ds-space-1` … `--ds-space-8`, kelipatan 4 ditambah
+2 px untuk garis rambut). Yang bermasalah bukan skalanya, tapi pemakaiannya:
+selama tiap layar memilih sendiri "8 di sini, 10 di sana, 14 untuk label",
+tokennya cuma jadi angka yang kebetulan sama.
+
+Karena itu ada token **semantik**:
+
+| Token | Nilai | Dipakai untuk |
+| --- | --- | --- |
+| `--ds-space-label` | 8 | label → kontrol di bawahnya |
+| `--ds-space-inline` | 8 | ikon ↔ teks, kontrol sejenis bersebelahan |
+| `--ds-space-group` | 16 | antar grup di dalam satu bidang |
+| `--ds-space-section` | 24 | antar bidang / bagian layar |
+| `--ds-gutter-sheet` | 20 | margin dalam sheet |
+
+Aturannya, dan alasannya:
+
+1. **Setiap bidang = label + kontrol.** Satu pola `.ds-field`; jarak antarbidang
+   selalu 24 px, jarak label→kontrol selalu 8 px. Bidang yang isinya cuma satu
+   select tetap memakai pola ini — kalau tidak, dia jadi "setengah jarak" hanya
+   karena isinya sedikit.
+2. **Angka ganjil dilarang** di CSS komponen (14, 15, 18, 9). Dua elemen yang
+   berdampingan dengan angka ganjil tidak pernah benar-benar sejajar, dan
+   selisihnya menumpuk jadi daftar yang terlihat miring.
+3. **Jarak yang berbeda = hubungan yang berbeda.** Dua kelompok yang jaraknya
+   sama terbaca satu kelompok. Karena itu aksi (tombol) dipisah 24 px **dan**
+   garis rambut: dia langkah berikutnya, bukan kontrol dari bidang terakhir.
+4. **Chip membungkus jadi grid, bukan menyisakan satu.** Empat chip di 390 px
+   dengan flex-wrap menyisakan satu chip sendirian di baris kedua; ruang kanan
+   kosong dan ritmenya patah. `.ds-chip-grid` = dua kolom sama lebar.
+5. **Target sentuh 44 px, padding horizontal kelipatan 4.** `--ds-touch`.
+6. **Progressive disclosure mengurangi kepadatan lebih baik daripada
+   merapatkan.** Grid 12 bulan hanya muncul setelah tahun dipilih; sebelumnya
+   sheet selalu menampilkan 4 chip + 4 chip + 12 kotak sekaligus.
+
+Angka acuannya mengikuti anjuran umum spacing UI: kelipatan 4 (4pt/8pt grid),
+16–24 px antar bagian layar mobile, 8–16 px antar kontrol, gutter mobile 16–24 px,
+line-height 1.4–1.6× ukuran huruf.
