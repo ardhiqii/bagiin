@@ -35,7 +35,10 @@ def _parse_gemini_keys(values=None) -> tuple[str, ...]:
     keys = [item.strip() for item in str(values or "").split(",") if item.strip()]
     legacy = os.environ.get("GEMINI_API_KEY", "").strip()
     if legacy:
-        keys.append(legacy)
+        # Kunci lama tetap nomor satu. Dia yang paling lama dipakai dan paling
+        # teruji; kunci tambahan adalah cadangan saat kunci itu kena 429, bukan
+        # pengganti yang mendadak jadi tulang punggung.
+        keys.insert(0, legacy)
     seen, unique = set(), []
     for key in keys:
         if key not in seen:
@@ -202,7 +205,7 @@ _OPENROUTER_MAX_ATTEMPTS = 2
 # Bagian anggaran yang disisihkan untuk cadangan OpenRouter. Model gratis yang
 # terukur butuh ~48 detik, jadi sisanya harus selebar itu; kalau disisihkan 15
 # detik seperti dulu, kandidat terbaik pun kehabisan waktu sebelum menjawab.
-_OPENROUTER_FALLBACK_RATIO = 0.65
+_OPENROUTER_FALLBACK_RATIO = 0.5
 _OPENROUTER_FALLBACK_MAX_SECONDS = 55.0
 
 SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Semua gambar dalam satu permintaan adalah halaman atau potongan dari SATU pesanan yang sama.

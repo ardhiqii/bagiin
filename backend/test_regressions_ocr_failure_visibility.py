@@ -108,6 +108,9 @@ def test_ocr_receipt_swallows_non_runtime_provider_errors(monkeypatch):
         calls.append("openrouter")
         return {"merchant": "WARTEG BAHARI", "items": [], "total": 0}
 
+    # Satu kunci saja: tesnya menguji "provider gagal -> lanjut cadangan",
+    # bukan berapa kali rotasi kunci terjadi.
+    monkeypatch.setattr(ocr, "GEMINI_API_KEYS", ("k",))
     monkeypatch.setattr(ocr, "GEMINI_API_KEY", "k")
     monkeypatch.setattr(ocr, "OR_API_KEY", "k")
     monkeypatch.setattr(ocr, "_gemini_ocr", gemini_fails)
