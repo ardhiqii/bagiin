@@ -224,11 +224,11 @@ test.describe('Bagiin — mengubah bill', () => {
     const dateInput = page.locator('#edit-date')
     await expect(dateInput).toBeVisible()
 
-    // tanggal lama harus terisi, bukan kosong
+    // tanggal lama harus terisi, bukan kosong, dan ditulis tanggal/bulan/tahun
     const before = await dateInput.inputValue()
-    expect(before).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(before).toMatch(/^\d{2}\/\d{2}\/\d{4}$/)
 
-    await dateInput.fill('2026-10-31')
+    await dateInput.fill('31/10/2026')
     await page.getByRole('button', { name: 'Simpan perubahan' }).click()
     await expect(page.getByText('Perubahan bill disimpan')).toBeVisible()
 

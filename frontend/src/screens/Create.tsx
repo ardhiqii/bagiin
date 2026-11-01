@@ -5,7 +5,7 @@ import { api } from '../lib/api'
 import { formatRp, parseRupiah } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { Alert, Button, Field, SectionHead, Sheet } from '../ds/primitives'
+import { Alert, Button, DateField, Field, SectionHead, Sheet } from '../ds/primitives'
 import { Plus, X } from '@phosphor-icons/react'
 import createHeroArt from '../assets/create-hero.webp'
 import scanArt from '../assets/scan.webp'
@@ -267,10 +267,14 @@ export function Create({ identityId }: { identityId: string | null }) {
           photos: photos.map((p) => p.path),
           paid_by_name: payerName.trim() || null,
           tax_included: taxIncluded ? 1 : 0,
-          // nama dari kontak jadi placeholder: begitu orangnya join lewat link,
-          // backend mencocokkan namanya dan klaim otomatis. Namanya pasti sudah
-          // benar karena tidak diketik ulang.
-          participants: picked.map((contact) => contact.display_name),
+          // Nama jadi placeholder, identity_id-nya ikut supaya orang yang
+          // dipilih benar-benar terhubung dan diundang oleh server. Dulu yang
+          // dikirim cuma nama: tidak ada undangan sama sekali, jadi orang yang
+          // sudah dipilih tidak pernah tahu dirinya masuk bill ini.
+          participants: picked.map((contact) => ({
+            name: contact.display_name,
+            identity_id: contact.id,
+          })),
         },
       })
       // bill baru mengubah beranda DAN rekap: yang lain belum tahu bill ini ada
@@ -474,13 +478,12 @@ export function Create({ identityId }: { identityId: string | null }) {
         maxLength={MAX_TEXT}
         onChange={setMerchant}
       />
-      <Field
+      <DateField
         id="bill-date"
         label="Tanggal bill"
-        type="date"
         value={billDate}
         onChange={setBillDate}
-        hint="Bawaannya hari ini. Ubah kalau bill-nya untuk tanggal lain."
+        hint="Bawaannya hari ini, ditulis tanggal/bulan/tahun. Ubah kalau bill-nya untuk tanggal lain."
       />
 
       <section className="app-stack">

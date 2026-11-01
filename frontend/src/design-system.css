@@ -833,6 +833,43 @@
 }
 .ds-field-hint,
 .ds-field-error { display: block; margin-top: 7px; font: var(--ds-weight-regular) var(--ds-text-sm)/1.4 var(--ds-font-body); }
+.ds-date-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+}
+.ds-date-field input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+}
+.ds-date-open {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--ds-radius-md);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface);
+  color: var(--ds-ink-muted);
+}
+.ds-date-open:active { transform: scale(.98); }
+/* pemilih kalender asli: dipakai showPicker(), tidak untuk dilihat */
+.ds-date-native {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
+  padding: 0;
+}
 .ds-field-hint { color: var(--ds-muted); }
 .ds-field-error { color: var(--ds-danger); font-weight: var(--ds-weight-medium); }
 .ds-field.has-error input { box-shadow: 0 0 0 2px rgba(176, 68, 61, .28), var(--ds-shadow-content); }

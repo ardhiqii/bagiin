@@ -569,6 +569,70 @@ def get_contacts(identity_id: str, q: str | None = None) -> list[dict]:
     return out
 
 
+def participant_link_candidates() -> list[dict]:
+    """Baris peserta yang namanya bisa ditautkan ke satu orang dengan pasti.
+
+    Bill yang dibuat sebelum peserta dari kontak membawa identity_id hanya
+    menyimpan NAMA. Akibatnya orang yang sudah dipilih tidak pernah menerima
+    undangan, dan Rekap tidak bisa membentuk saldo karena tidak ada pasangan
+    identitas — angka rekap terlihat "tidak berubah" walau bill terus
+    bertambah.
+
+    Fungsi ini hanya mengembalikan baris yang tidak ambigu: nama peserta harus
+    sama (tanpa beda huruf besar/kecil dan spasi) dengan nama atau alias milik
+    SATU kontak pembuat bill. Kalau ada dua orang yang cocok, baris itu
+    dilewati — salah taut lebih buruk daripada tidak menaut.
+    """
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """
+            WITH shared AS (
+                SELECT b.id AS bill_id, b.creator_identity_id AS person_id
+                FROM bill b
+                UNION ALL
+                SELECT b.id, p.identity_id FROM payment p
+                JOIN bill b ON b.id = p.bill_id
+            ),
+            pairs AS (
+                SELECT a.person_id AS me, b.person_id AS them
+                FROM shared a JOIN shared b ON a.bill_id = b.bill_id
+                WHERE a.person_id <> b.person_id
+                GROUP BY a.person_id, b.person_id
+            )
+            SELECT bp.bill_id, bp.name, b.creator_identity_id AS creator_id,
+                   GROUP_CONCAT(DISTINCT i.id) AS ids
+            FROM bill_participant bp
+            JOIN bill b ON b.id = bp.bill_id
+            JOIN identity i ON i.id <> b.creator_identity_id
+            JOIN pairs pr ON pr.me = b.creator_identity_id AND pr.them = i.id
+            LEFT JOIN contact_alias ca
+                   ON ca.owner_id = b.creator_identity_id AND ca.contact_id = i.id
+            WHERE bp.identity_id IS NULL
+              AND b.status = 'open'
+              AND (
+                    LOWER(TRIM(i.name)) = LOWER(TRIM(bp.name))
+                 OR LOWER(TRIM(COALESCE(ca.alias, ''))) = LOWER(TRIM(bp.name))
+              )
+            GROUP BY bp.bill_id, bp.name, b.creator_identity_id
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for row in rows:
+        ids = [x for x in (row["ids"] or "").split(",") if x]
+        if len(ids) != 1:
+            continue
+        out.append({
+            "bill_id": row["bill_id"],
+            "name": row["name"],
+            "creator_id": row["creator_id"],
+            "identity_id": ids[0],
+        })
+    return out
+
+
 def is_contact(identity_id: str, other_id: str) -> bool:
     """Have these two ever shared a bill? Same rule as get_contacts, without
     its LIMIT 50 — the invite endpoint used to test membership against that

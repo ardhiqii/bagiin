@@ -316,9 +316,12 @@ test.describe('Bagiin — riwayat per bulan', () => {
     const today = await page.evaluate(() => {
       const now = new Date()
       const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
-      return local.toISOString().slice(0, 10)
+      const [y, m, d] = local.toISOString().slice(0, 10).split('-')
+      return `${d}/${m}/${y}`
     })
+    // dd/mm/yyyy, bukan mm/dd/yyyy bawaan pemilih tanggal browser
     await expect(dateInput).toHaveValue(today)
+    await expect(dateInput).toHaveValue(/^\d{2}\/\d{2}\/\d{4}$/)
 
     // bill untuk bulan lalu: transaksinya beda dari tanggal pencatatan
     const now = new Date()
@@ -329,8 +332,9 @@ test.describe('Bagiin — riwayat per bulan', () => {
     await page.getByLabel('Nama bill').fill('Tanggal Lalu ' + stamp)
     await page.getByLabel('Item 1').fill('Nasi goreng')
     await page.getByLabel('Harga satuan').first().fill('30000')
-    await dateInput.fill(pastISO)
-    await expect(dateInput).toHaveValue(pastISO)
+    await dateInput.fill('15/' + String(past.getMonth() + 1).padStart(2, '0') + '/' + past.getFullYear())
+    const shown = String(past.getMonth() + 1).padStart(2, '0')
+    await expect(dateInput).toHaveValue('15/' + shown + '/' + past.getFullYear())
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
 

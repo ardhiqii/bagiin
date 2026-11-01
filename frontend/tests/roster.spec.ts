@@ -124,4 +124,45 @@ test.describe('Bagiin — lunas manual dan daftar nama', () => {
     await expect(page.getByText(/bagian kamu Rp30\.000/)).toBeVisible()
     await ctx.close()
   })
+
+})
+
+
+/**
+ * Bug: memilih orang dari kontak saat membuat bill hanya mengirim NAMANYA.
+ * Baris peserta tersimpan tanpa identitas, tidak ada undangan, dan orang yang
+ * sudah dipilih tidak pernah tahu dirinya masuk bill — sampai dia membuka link
+ * yang belum tentu dikirim.
+ */
+test.describe('Bagiin — peserta dari kontak', () => {
+  test('55. orang yang dipilih dari kontak langsung dapat billnya tanpa link', async ({ page, browser }) => {
+    const ownerName = 'Aufa ' + stamp
+    const guestName = 'Amel ' + stamp
+    await freshUser(page, ownerName)
+
+    // mereka harus pernah sebill dulu supaya muncul di pemilih kontak
+    const firstUrl = await createBill(page, 'Kenalan ' + stamp)
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    const guest = await ctx.newPage()
+    await freshUser(guest, guestName)
+    await guest.goto(firstUrl)
+    await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
+    await guest.getByRole('button', { name: /Sate ayam, ketuk/ }).click()
+
+    // bill kedua: dia dipilih dari kontak, bukan lewat link
+    await page.goto('/create')
+    await page.getByLabel('Nama bill').fill('Dipilih ' + stamp)
+    await page.getByLabel('Item 1').fill('Kopi susu')
+    await page.getByLabel('Harga satuan').first().fill('24000')
+    await pickPeople(page, [guestName])
+    await expect(page.getByRole('button', { name: 'Buat bill' })).toBeEnabled()
+    await page.getByRole('button', { name: 'Buat bill' }).click()
+    await expect(page).toHaveURL(/\/b\//)
+
+    // tanpa membuka link apa pun, bill itu harus sudah ada di berandanya
+    await guest.goto('/')
+    await expect(guest.getByText('Dipilih ' + stamp)).toBeVisible({ timeout: 15000 })
+
+    await ctx.close()
+  })
 })

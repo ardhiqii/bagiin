@@ -7,7 +7,7 @@ import { billActions, useBill, useBillAction, useContacts, type Contact } from '
 import { PeoplePicker } from '../components/PeoplePicker'
 import { invalidateMoneyViews } from '../lib/mutations'
 import { formatRp, parseRupiah } from '../lib/money'
-import { Alert, Button, Field, SectionHead, Sheet, SkeletonCard, SkeletonList } from '../ds/primitives'
+import { Alert, Button, DateField, Field, SectionHead, Sheet, SkeletonCard, SkeletonList } from '../ds/primitives'
 import manualArt from '../assets/manual.webp'
 import type { BillItem } from '../lib/types'
 
@@ -135,7 +135,14 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
           cashback: data.bill.cashback_idr,
           subtotal,
           total,
-          participants: rosterDraft,
+          // Kontak yang dipilih ikut membawa identity_id: server memakainya
+          // untuk menautkan baris nama ke orangnya dan mengirim undangan,
+          // sama seperti saat bill dibuat. Nama tanpa akun tetap dikirim
+          // sebagai teks biasa.
+          participants: rosterDraft.map((name) => {
+            const contact = pickedContacts.find((c) => c.display_name === name)
+            return contact ? { name, identity_id: contact.id } : name
+          }),
           tax_mode: data.bill.tax_mode,
           tax_included: Boolean(data.bill.tax_included),
           // daftar item harus lengkap: id yang tidak dikirim akan dihapus
@@ -228,13 +235,12 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
           <section className="app-stack">
             <Field id="edit-title" label="Nama bill" value={titleValue} onChange={setTitle} />
             <Field id="edit-merchant" label="Merchant (opsional)" value={merchantValue} onChange={setMerchant} />
-            <Field
+            <DateField
               id="edit-date"
               label="Tanggal bill"
-              type="date"
               value={dateValue}
               onChange={setBillDate}
-              hint="Tanggal transaksinya, bukan tanggal pencatatannya."
+              hint="Tanggal transaksinya, ditulis tanggal/bulan/tahun."
             />
           </section>
 

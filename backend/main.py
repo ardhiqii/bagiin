@@ -373,7 +373,14 @@ def _normalize_item(raw, *, include_id: bool = False) -> dict:
 
 
 def _normalize_participants(value) -> list[str]:
-    """Validate the optional creator-declared participant list."""
+    """Validate the optional creator-declared participant list.
+
+    Entries may be a bare name (legacy, and still the shape for guests who have
+    no account) or `{"name": ..., "identity_id": ...}` when the creator picked
+    someone from their contacts. The identity id is optional here and is
+    resolved separately by `_participant_links`, so an unknown or malformed id
+    never loses the name.
+    """
     if value is None:
         return []
     if not isinstance(value, list):
@@ -381,14 +388,111 @@ def _normalize_participants(value) -> list[str]:
     participants = []
     seen = set()
     for participant in value:
-        if not isinstance(participant, str) or not participant.strip():
+        if isinstance(participant, dict):
+            raw_name = participant.get("name")
+        else:
+            raw_name = participant
+        if not isinstance(raw_name, str) or not raw_name.strip():
             continue
-        name = participant.strip()
+        name = raw_name.strip()
         key = name.lower()
         if key not in seen:
             seen.add(key)
             participants.append(name)
     return participants
+
+
+def _participant_links(value) -> list[tuple[str, str]]:
+    """(nama, identity_id) untuk peserta yang dipilih dari kontak."""
+    links: list[tuple[str, str]] = []
+    if not isinstance(value, list):
+        return links
+    seen: set[str] = set()
+    for participant in value:
+        if not isinstance(participant, dict):
+            continue
+        name = participant.get("name")
+        identity_id = participant.get("identity_id")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        if not isinstance(identity_id, str) or not identity_id.strip():
+            continue
+        identity_id = identity_id.strip()
+        if identity_id in seen:
+            continue
+        seen.add(identity_id)
+        links.append((name.strip(), identity_id))
+    return links
+
+
+def _link_and_invite_participants(
+    bill_id: str, participants_value, invited_by: str
+) -> None:
+    """Peserta yang dipilih dari kontak langsung terhubung dan diundang.
+
+    Sebelumnya layar Buat bill hanya mengirim NAMA: baris peserta tersimpan
+    tanpa identitas, tidak ada baris undangan, dan orang yang sudah dipilih
+    tidak pernah menerima apa pun — bill-nya ada, tetapi dia tidak tahu. Karena
+    peserta tanpa identitas juga tidak bisa membentuk saldo di Rekap, angka
+    rekap ikut terlihat "tidak berubah" walau bill baru terus bertambah.
+
+    Aturan undangannya sama dengan `POST /api/bills/{id}/invite`: hanya orang
+    yang pernah berbagi bill. Kontak dengan auto_accept bergabung langsung;
+    sisanya mendapat kartu undangan untuk diterima sendiri.
+    """
+    for name, identity_id in _participant_links(participants_value):
+        if identity_id == invited_by:
+            continue
+        target = db.get_identity(identity_id)
+        if not target:
+            continue
+        if not db.is_contact(invited_by, identity_id):
+            continue
+        # tautkan baris placeholder yang namanya kita kirim, supaya nama itu
+        # tidak muncul dua kali (satu baris teks, satu baris orang sungguhan)
+        if name:
+            db.claim_participant(bill_id, identity_id, name)
+        if db.identity_on_bill(bill_id, identity_id):
+            continue
+        inv = db.create_invite(bill_id, identity_id, invited_by)
+        if inv.get("reopened_from_decline"):
+            continue
+        if bool(target.get("auto_accept", 1)):
+            db.mark_invite_accepted(inv["id"])
+            db.join_bill(bill_id, identity_id, target["name"])
+
+
+def _backfill_participant_links() -> None:
+    """Sekali jalan saat start: tautkan peserta lama yang namanya jelas.
+
+    Bill yang dibuat sebelum Buat bill mengirim identity_id hanya menyimpan nama,
+    jadi orang yang sudah dipilih tidak pernah menerima undangan dan tidak
+    pernah muncul di Rekap. Tanpa ini, perbaikan hanya berlaku untuk bill baru
+    dan pemilik harus membuat ulang bill lamanya.
+    """
+    if os.environ.get("BAGIIN_SKIP_PARTICIPANT_BACKFILL") == "1":
+        return
+    try:
+        candidates = db.participant_link_candidates()
+    except Exception as exc:  # jangan gagalkan start karena backfill
+        print("backfill peserta dilewati:", exc)
+        return
+    done = 0
+    for item in candidates:
+        try:
+            _link_and_invite_participants(
+                item["bill_id"],
+                [{"name": item["name"], "identity_id": item["identity_id"]}],
+                item["creator_id"],
+            )
+            done += 1
+        except Exception:
+            continue
+    if done:
+        print("backfill peserta: %d baris ditautkan dan diundang" % done)
+
+
+_backfill_participant_links()
 
 
 _ALLOWED_PHOTO_MIME = {"image/jpeg", "image/png", "image/webp"}
@@ -2135,6 +2239,9 @@ async def create_bill(request: Request):
         photos=photos,
         paid_by_name=paid_by_name,
     )
+    _link_and_invite_participants(created["id"], data.get("participants"), ident["id"])
+    # bentuk respons tetap {"id": ...} seperti sebelumnya: layar Buat bill
+    # memakainya untuk pindah ke bill yang baru dibuat
     return created
 
 
@@ -2256,6 +2363,7 @@ async def update_bill(bill_id: str, request: Request):
         total=total_v,
         tax_included=1 if tax_included_v else 0,
     )
+    _link_and_invite_participants(bill_id, data.get("participants"), ident["id"])
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
 

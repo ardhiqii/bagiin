@@ -1,8 +1,9 @@
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import loadingReceipt from '../assets/anim/receipt-app.webp'
 import loadingCoin from '../assets/anim/coin-app.webp'
 import { PROVIDERS, opticalHeight, providerKey } from '../lib/providers'
-import { CaretRight, Check, CheckCircle, Clock, Info, Wallet, WarningCircle, X } from '@phosphor-icons/react'
+import { CalendarBlank, CaretRight, Check, CheckCircle, Clock, Info, Wallet, WarningCircle, X } from '@phosphor-icons/react'
 
 /* ---------- money ---------- */
 
@@ -397,6 +398,105 @@ export function Field({
     {hint && !error && <small id={`${id}-hint`} className="ds-field-hint">{hint}</small>}
     {error && <small id={`${id}-error`} className="ds-field-error">{error}</small>}
   </div>
+}
+
+/* ---------- tanggal ---------- */
+
+/** 'YYYY-MM-DD' -> 'DD/MM/YYYY' untuk ditampilkan. */
+export function isoToIdDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? '')
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : ''
+}
+
+/** 'DD/MM/YYYY' (ketikan orang) -> 'YYYY-MM-DD', atau '' kalau belum sah. */
+export function idDateToIso(text: string): string {
+  const digits = (text ?? '').replace(/[^0-9]/g, '').slice(0, 8)
+  if (digits.length !== 8) return ''
+  const day = Number(digits.slice(0, 2))
+  const month = Number(digits.slice(2, 4))
+  const year = Number(digits.slice(4))
+  if (year < 1900 || year > 2200) return ''
+  if (month < 1 || month > 12) return ''
+  if (day < 1 || day > new Date(year, month, 0).getDate()) return ''
+  return `${digits.slice(4)}-${digits.slice(2, 4)}-${digits.slice(0, 2)}`
+}
+
+/**
+ * Pemilih tanggal yang SELALU tampil dd/mm/yyyy.
+ *
+ * `<input type="date">` mengikuti bahasa browser, bukan bahasa halaman: di
+ * Chrome berbahasa Inggris tanggal 1 November tampil "11/01/2026" — terbaca
+ * sebelas Januari oleh orang Indonesia. Kolom ini menyimpan nilainya sebagai
+ * dd/mm/yyyy, mengubahnya jadi ISO untuk state, dan tetap menyediakan pemilih
+ * kalender bawaan lewat tombol di kanan (nilainya tidak ikut ditampilkan).
+ */
+export function DateField({
+  id, label, value, onChange, hint,
+}: {
+  id: string
+  label: string
+  /** ISO 'YYYY-MM-DD' atau '' */
+  value: string
+  onChange: (iso: string) => void
+  hint?: string
+}) {
+  const [text, setText] = useState(() => isoToIdDate(value))
+  const pickerRef = useRef<HTMLInputElement | null>(null)
+
+  // nilai dari luar (mis. bill lama selesai dimuat) menimpa teks lokal
+  useEffect(() => {
+    setText(isoToIdDate(value))
+  }, [value])
+
+  return (
+    <div className="ds-field">
+      <label htmlFor={id}>{label}</label>
+      <div className="ds-date-field">
+        <input
+          id={id}
+          value={text}
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          placeholder="hh/bb/tttt"
+          onChange={(event) => {
+            const digits = event.target.value.replace(/[^0-9]/g, '').slice(0, 8)
+            const pretty = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4)]
+              .filter(Boolean)
+              .join('/')
+            setText(pretty)
+            const iso = idDateToIso(digits)
+            if (iso) onChange(iso)
+            else if (!digits) onChange('')
+          }}
+        />
+        <button
+          type="button"
+          className="ds-date-open"
+          aria-label="Pilih dari kalender"
+          onClick={() => {
+            const el = pickerRef.current
+            if (!el) return
+            if (typeof el.showPicker === 'function') el.showPicker()
+            else el.click()
+          }}
+        >
+          <CalendarBlank size={18} weight="bold" aria-hidden="true" />
+        </button>
+        {/* pemilih kalender asli: tidak terlihat, tidak dibaca pembaca layar */}
+        <input
+          ref={pickerRef}
+          type="date"
+          tabIndex={-1}
+          aria-hidden="true"
+          value={value}
+          className="ds-date-native"
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </div>
+      {hint ? <small id={`${id}-hint`} className="ds-field-hint">{hint}</small> : null}
+    </div>
+  )
 }
 
 /* ---------- navigation ---------- */
