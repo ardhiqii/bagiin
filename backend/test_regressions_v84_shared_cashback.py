@@ -84,7 +84,7 @@ def test_zenbu_receipt_facts_stay_fixed_with_shared_cashback():
     ]
     selections = [
         {"item_id": index, "identity_id": identity}
-        for index, identity in enumerate(("aufa", "budi", "citra", "dina", "eka"), 1)
+        for index, identity in enumerate(("wulan", "budi", "citra", "dina", "eka"), 1)
     ]
     receipt = {"subtotal": 299_000, "tax": 32_292, "service": 23_920}
 
@@ -92,13 +92,13 @@ def test_zenbu_receipt_facts_stay_fixed_with_shared_cashback():
         _bill(subtotal=299_000, tax=32_292, service=23_920),
         items,
         selections,
-        fallback_id="aufa",
+        fallback_id="wulan",
     )
     shared = _compute(
         _bill(subtotal=299_000, tax=32_292, service=23_920, cashback=50_000),
         items,
         selections,
-        fallback_id="aufa",
+        fallback_id="wulan",
     )
 
     assert without["total_ok"] is True

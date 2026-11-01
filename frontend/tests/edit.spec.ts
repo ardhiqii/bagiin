@@ -46,7 +46,7 @@ async function createTwoItemBill(page: Page, title: string) {
 
 test.describe('Bagiin — mengubah bill', () => {
   test('33. judul dan pajak bisa diubah, pilihan orang lain tetap', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     const url = await createTwoItemBill(page, 'Ubah ' + stamp)
 
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
@@ -82,7 +82,7 @@ test.describe('Bagiin — mengubah bill', () => {
   })
 
   test('34. tamu tidak bisa mengubah bill', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     const url = await createTwoItemBill(page, 'Kunci ' + stamp)
 
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
@@ -100,7 +100,7 @@ test.describe('Bagiin — mengubah bill', () => {
   })
 
   test('49. ubah daftar nama: hapus yang belum bergabung, kunci yang sudah', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     // Bima & Citra harus pernah sebill dulu supaya bisa dipilih dari kontak
     const basis = await createTwoItemBill(page, 'Basis ' + stamp)
     // satu konteks per orang: localStorage berisi identitas, jadi satu konteks
@@ -157,7 +157,7 @@ test.describe('Bagiin — mengubah bill', () => {
   })
 
   test('36. hapus bill butuh konfirmasi dan bill hilang dari daftar', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     const title = 'Hapus ' + stamp
     await createTwoItemBill(page, title)
 
@@ -181,7 +181,7 @@ test.describe('Bagiin — mengubah bill', () => {
   })
 
   test('35. tambah dan hapus item saat mengubah bill', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     await createTwoItemBill(page, 'Item ubah ' + stamp)
 
     await openActions(page)

@@ -17,7 +17,7 @@ test.describe.configure({ timeout: 300_000 })
 
 test.describe('Bagiin — baca struk dari foto', () => {
   test('36. foto struk terbaca, angkanya masuk ke form, foto ikut tersimpan', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     await page.goto('/create')
 
     // OCR bergantung layanan luar dan kuotanya bisa habis (Gemini 429).

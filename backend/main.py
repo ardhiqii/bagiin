@@ -519,7 +519,7 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
     result["people"].sort(key=lambda p: -p["total_idr"])
     all_ids = [p["identity_id"] for p in result["people"]]
     names = _names_for_identities(all_ids)
-    # claimed participants -> canonical display name (creator-typed casing, e.g. "Amel")
+    # claimed participants -> canonical display name (creator-typed casing, e.g. "Sari")
     claimed = {p["identity_id"]: p["name"] for p in bill_data["participants"]
                if p.get("identity_id")}
     for p in result["people"]:
@@ -1783,7 +1783,7 @@ async def put_contact_alias(identity_id: str, contact_id: str, request: Request)
     melihatnya, dan orang yang diberi nama tidak pernah menerimanya.
 
     Dedup alias per pemilik dijaga di DB (unique index case-insensitive) supaya
-    "dua Amel" tidak berubah jadi dua baris bernama sama lagi.
+    "dua Sari" tidak berubah jadi dua baris bernama sama lagi.
     """
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:

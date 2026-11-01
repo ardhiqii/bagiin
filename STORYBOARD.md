@@ -18,7 +18,7 @@ menceritakan angka yang sama setelah setiap perubahan**, tanpa reload.
 ## Alur pemakaian yang harus benar
 
 ### 1. Buat bill
-Aufa memotret/ketik bill Rp20.000, lalu membuka beranda dan rekap.
+Budi memotret/ketik bill Rp20.000, lalu membuka beranda dan rekap.
 - Beranda: baris baru muncul, angka kanan `Belum pilih` (dia belum memilih item),
   keterangan `dari Rp20.000`.
 - Bill: total Rp20.000.
@@ -221,11 +221,11 @@ Jalur tamu tidak pernah dipaksa akun: buka link, isi nama, pilih item.
 
 ## Nama pembeda untuk kontak
 
-Di lapangan, nama orang tidak unik. Di DB uji ada 245 identity bernama "Aufa".
+Di lapangan, nama orang tidak unik. Di DB uji ada 245 identity dengan nama yang sama.
 
 - Pengaturan → **Kontak**: daftar orang yang pernah bareng bill, dengan
   `@username` atau kode `#SW9C`, jumlah bill bareng, dan bill terakhir.
-- Ketuk baris → beri nama pembeda (`Amel Kampus`). Nama asli tetap terlihat di
+- Ketuk baris → beri nama pembeda (`Sari Kantor`). Nama asli tetap terlihat di
   baris kedua.
 - Nama pembeda **privat dan satu arah**: hanya penampil yang melihatnya, dan
   tidak pernah dipakai di pesan yang dikirim ke orangnya.

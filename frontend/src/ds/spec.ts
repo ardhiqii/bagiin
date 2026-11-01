@@ -83,7 +83,7 @@ export const RULES = [
     title: 'Status tidak boleh hanya warna',
     wrong: 'Titik kuning tanpa teks',
     right: 'StatusBadge "Sementara · Citra belum pilih"',
-    why: 'Sekitar 8% pria kesulitan membedakan hijau–merah. Warna mempercepat, teks yang menjelaskan.',
+    why: 'Sekitar 8% pria kesulitan membedakan hijau dan merah. Warna mempercepat, teks yang menjelaskan.',
   },
   {
     title: 'Uang selalu dari server',

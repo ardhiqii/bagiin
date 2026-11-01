@@ -10,7 +10,7 @@ import { test, expect } from '@playwright/test'
  * ditemukan" di atas fitur yang kelihatan siap dipakai.
  */
 
-const BASI = { id: 'IDBASI-TIDAK-ADA', name: 'Aufa', role: 'person', secret: 'rahasia-palsu' }
+const BASI = { id: 'IDBASI-TIDAK-ADA', name: 'Budi', role: 'person', secret: 'rahasia-palsu' }
 
 /** Suntik identitas sekali saja — reload berikutnya tidak mengulanginya lagi. */
 async function contextWithStaleIdentity(browser: import('@playwright/test').Browser, identity = BASI) {

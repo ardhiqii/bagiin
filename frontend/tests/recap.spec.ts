@@ -57,7 +57,7 @@ async function contextAs(browser: import('@playwright/test').Browser, identity: 
 
 test.describe('Bagiin — rekap berisi pekerjaan, bukan arsip', () => {
   test('63. bill yang pembagiannya belum jelas bisa ditutup dari rekap, lalu hilang', async ({ page }) => {
-    await onboard(page, 'Aufa')
+    await onboard(page, 'Budi')
     const title = 'Belum Dipilih ' + stamp
     await createBill(page, title)
 
@@ -77,7 +77,7 @@ test.describe('Bagiin — rekap berisi pekerjaan, bukan arsip', () => {
   })
 
   test('64. orang yang belum bayar tampil per orang, lalu hilang setelah lunas', async ({ page, browser }) => {
-    await onboard(page, 'Aufa')
+    await onboard(page, 'Budi')
     const url = await createBill(page, 'Tagihanku ' + stamp, '30000')
 
     const { ctx, guest } = await guestPicks(browser, url, 'Bima')
@@ -109,7 +109,7 @@ test.describe('Bagiin — rekap berisi pekerjaan, bukan arsip', () => {
   })
 
   test('65. orang dengan dua arah: net tampil, bruto tetap disebut', async ({ page, browser }) => {
-    await onboard(page, 'Aufa')
+    await onboard(page, 'Budi')
     // saya menalangi: Bima berutang Rp30.000 ke saya
     const mine = await createBill(page, 'Saya Nalangin ' + stamp, '30000')
     const first = await guestPicks(browser, mine, 'Bima')
@@ -154,7 +154,7 @@ test.describe('Bagiin — satu angka untuk uang yang sama', () => {
     // Kasus nyata: orang punya piutang Rp230.000 di satu bill, dan utang
     // Rp22.000 di bill lain. Sebelum ini Beranda menulis "terima Rp208.000"
     // sementara Rekap menulis "bayar Rp22.000" untuk uang yang sama.
-    await onboard(page, 'Aufa Saldo ' + stamp)
+    await onboard(page, 'Budi Saldo ' + stamp)
     const linkTerima = await createBill(page, 'Piutang ' + stamp, '230000')
 
     // tamu mengambil item di bill pertama -> pemilik menerima Rp230.000
@@ -166,7 +166,7 @@ test.describe('Bagiin — satu angka untuk uang yang sama', () => {
     await t.getByRole('button', { name: /Sate, ketuk/ }).click()
     await t.waitForTimeout(1000)
 
-    // bill kedua: tamu jadi pembayar, Aufa mengambil item Rp22.000
+    // bill kedua: tamu jadi pembayar, Budi mengambil item Rp22.000
     const pemilik2 = await browser.newContext({ viewport: { width: 390, height: 844 } })
     const p2 = await pemilik2.newPage()
     await onboard(p2, 'Pembayar ' + stamp)
@@ -176,7 +176,7 @@ test.describe('Bagiin — satu angka untuk uang yang sama', () => {
     await page.getByRole('button', { name: 'Ikut bill ini' }).first().click()
     const namaField = page.getByLabel('Nama kamu')
     if (await namaField.isVisible().catch(() => false)) {
-      await namaField.fill('Aufa Saldo ' + stamp)
+      await namaField.fill('Budi Saldo ' + stamp)
       await page.getByRole('button', { name: 'Simpan nama & ikut bill' }).click()
     }
     await page.locator('.ds-item').filter({ hasText: 'Sate' }).first().click()
@@ -228,7 +228,7 @@ test.describe('Bagiin — satu angka untuk uang yang sama', () => {
 test.describe('Bagiin — angka besar bisa ditanya', () => {
   test('126. mengetuk angka besar membuka rincian: terima − bayar = selisih, dan yang belum pasti terpisah', async ({ page, browser }) => {
     test.setTimeout(180_000)
-    await onboard(page, 'Aufa Tanya ' + stamp)
+    await onboard(page, 'Budi Tanya ' + stamp)
     const linkTerima = await createBill(page, 'Piutang Tanya ' + stamp, '230000')
 
     const tamu = await browser.newContext({ viewport: { width: 390, height: 844 } })
@@ -248,7 +248,7 @@ test.describe('Bagiin — angka besar bisa ditanya', () => {
     await page.getByRole('button', { name: 'Ikut bill ini' }).first().click()
     const namaField = page.getByLabel('Nama kamu')
     if (await namaField.isVisible().catch(() => false)) {
-      await namaField.fill('Aufa Tanya ' + stamp)
+      await namaField.fill('Budi Tanya ' + stamp)
       await page.getByRole('button', { name: 'Simpan nama & ikut bill' }).click()
     }
     await page.locator('.ds-item').filter({ hasText: 'Sate' }).first().click()
@@ -294,7 +294,7 @@ test.describe('Bagiin — angka besar bisa ditanya', () => {
 
   test('127. satu arah: rincian menyebut utang dan angkanya cuma muncul sekali', async ({ page, browser }) => {
     test.setTimeout(120_000)
-    await onboard(page, 'Aufa Satu Arah ' + stamp)
+    await onboard(page, 'Budi Satu Arah ' + stamp)
     // bill milik orang lain yang itemnya saya ambil -> saya cuma punya utang
     const pemilik = await browser.newContext({ viewport: { width: 390, height: 844 } })
     const p = await pemilik.newPage()
@@ -305,7 +305,7 @@ test.describe('Bagiin — angka besar bisa ditanya', () => {
     await page.getByRole('button', { name: 'Ikut bill ini' }).first().click()
     const namaField = page.getByLabel('Nama kamu')
     if (await namaField.isVisible().catch(() => false)) {
-      await namaField.fill('Aufa Satu Arah ' + stamp)
+      await namaField.fill('Budi Satu Arah ' + stamp)
       await page.getByRole('button', { name: 'Simpan nama & ikut bill' }).click()
     }
     await page.locator('.ds-item').filter({ hasText: 'Sate' }).first().click()

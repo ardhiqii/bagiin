@@ -35,7 +35,7 @@ async function createLineBill(
 
 test.describe('Bagiin — ambil porsi per baris', () => {
   test('26. satu ketukan = satu porsi, sisa porsi tampil sebagai belum diambil', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     // 2 tiket @62.000: dulu satu ketukan langsung menagih 124.000
     await createLineBill(page, 'Tiket ' + stamp, '62000', '2', 'tiket')
 
@@ -54,7 +54,7 @@ test.describe('Bagiin — ambil porsi per baris', () => {
   })
 
   test('27. satu baris dibagi bertiga otomatis, tanpa mengatur apa pun', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     const url = await createLineBill(page, 'Pizza bareng ' + stamp)
     // 60.000 untuk satu baris (qty 1) yang dimakan dua orang: cukup diketuk
     await page.getByRole('button', { name: /Pizza besar, ketuk untuk/ }).click()
@@ -76,7 +76,7 @@ test.describe('Bagiin — ambil porsi per baris', () => {
   })
 
   test('28. empat orang berbagi tiga gelas, harga turun sendiri', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     // 3 gelas x 5.000 = baris 15.000
     const url = await createLineBill(page, 'Es teh ' + stamp, '5000', '3', 'Es teh manis')
     const contexts = []
@@ -99,7 +99,7 @@ test.describe('Bagiin — ambil porsi per baris', () => {
   })
 
   test('29. baris yang tidak diambil siapa pun jatuh ke yang menalangi', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     await createLineBill(page, 'Tiket kosong ' + stamp, '40000', '2', 'tiket konser')
 
     await expect(page.getByText(/1 item belum dipilih/)).toBeVisible()

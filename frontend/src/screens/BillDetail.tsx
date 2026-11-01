@@ -452,8 +452,9 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
           {canManage && summarizeUncovered(data).has && !data.settled ? (
             <Alert tone="pending" title={summarizeUncovered(data).title}>
-              Untuk: {summarizeUncovered(data).names} — sementara ditanggung yang menalangi
-              {summarizeUncovered(data).money > 0 ? ' (' + formatRp(summarizeUncovered(data).money) + ')' : ''}.
+              {summarizeUncovered(data).names} belum memilih itemnya
+              {summarizeUncovered(data).money > 0 ? ' (' + formatRp(summarizeUncovered(data).money) + ')' : ''}. Sementara
+              ditanggung yang menalangi.
             </Alert>
           ) : null}
 
@@ -531,7 +532,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                               : null}
                         {/* Pemisah hanya kalau memang ada status di depannya. Item
                             qty 1 yang diambil lebih dari satu orang dulu tidak
-                            dapat pemisah, jadi layarnya menulis "2 orangAufa,
+                            dapat pemisah, jadi layarnya menulis "2 orangBudi,
                             Bima" — satu kalimat yang tidak bisa dibaca. */}
                         {isSlot || sharedBeyondPortions || item.quantity > 1 ? ' · ' : ''}
                         {label || 'belum ada yang ambil'}

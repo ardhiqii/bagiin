@@ -501,8 +501,8 @@ def get_contacts(identity_id: str, q: str | None = None) -> list[dict]:
         WITH shared AS (
             -- people on a bill = creator OR anyone with a payment row there.
             -- UNION (not COALESCE): with a payment present the creator used to
-            -- vanish, so contacts were one-directional (Budi saw Aufa's bill
-            -- but not Aufa as a contact).
+            -- vanish, so contacts were one-directional (Budi saw Wulan's bill
+            -- but not Wulan as a contact).
             SELECT b.id AS bill_id, b.created_at, b.title,
                    b.creator_identity_id AS person_id
             FROM bill b
@@ -1089,8 +1089,8 @@ def update_bill(bill_id: str, title: str, merchant=UNCHANGED,
 def claim_participant(bill_id: str, identity_id: str, name: str):
     """Link a real identity to a creator-typed participant slot.
 
-    Matching is normalized (trimmed + case-insensitive) so "Amel" typed by the
-    creator and "amel" typed by the guest resolve to the same person. Only
+    Matching is normalized (trimmed + case-insensitive) so "Sari" typed by the
+    creator and "sari" typed by the guest resolve to the same person. Only
     unclaimed slots are taken; claiming is idempotent.
     """
     if not name or not name.strip():

@@ -36,7 +36,7 @@ async function createBill(page: Page, title: string, items: [string, string][]) 
 
 test.describe('Bagiin — keadaan yang berubah di belakang layar', () => {
   test('44. tamu menekan item setelah bill ditutup: pesan jelas, bukan diam', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     const url = await createBill(page, 'Tutup ' + stamp, [['Kwetiau', '27000']])
 
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
@@ -60,7 +60,7 @@ test.describe('Bagiin — keadaan yang berubah di belakang layar', () => {
   })
 
   test('45. tamu menekan item setelah bill ditandai lunas', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     const url = await createBill(page, 'Lunas2 ' + stamp, [['Bakmi', '31000']])
 
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
@@ -81,7 +81,7 @@ test.describe('Bagiin — keadaan yang berubah di belakang layar', () => {
   })
 
   test('46. item dihapus pemilik saat sudah dipilih orang lain', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     const url = await createBill(page, 'Hapus item ' + stamp, [
       ['Soto', '25000'],
       ['Es teh', '8000'],
@@ -111,7 +111,7 @@ test.describe('Bagiin — keadaan yang berubah di belakang layar', () => {
   })
 
   test('47. tamu keluar padahal sudah memilih: total pemilik ikut berubah', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     const url = await createBill(page, 'Keluar ' + stamp, [['Pecel', '21000']])
 
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
@@ -134,7 +134,7 @@ test.describe('Bagiin — keadaan yang berubah di belakang layar', () => {
   })
 
   test('48. tautan bill yang tidak ada: pesan jelas dan bisa kembali', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     await page.goto('/b/tidak-ada-bill-seperti-ini')
     await expect(page.getByText('Bill tidak bisa dibuka')).toBeVisible({ timeout: 15_000 })
     await page.getByRole('button', { name: 'Kembali' }).first().click()

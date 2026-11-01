@@ -168,7 +168,7 @@ export function AccountSecurity({ identity }: { identity: Identity | null }) {
         <SectionHead>Akun</SectionHead>
         <p className="app-note">
           Akun dipakai untuk masuk dari perangkat lain. Tanpa akun pun kamu tetap
-          bisa bikin dan ikut bill — kode pemulihan sudah cukup untuk pindah HP.
+          bisa bikin dan ikut bill. Kode pemulihan sudah cukup untuk pindah HP.
         </p>
 
         <div className="ds-card ds-card-surface ds-pad-sm">
@@ -233,7 +233,11 @@ export function AccountSecurity({ identity }: { identity: Identity | null }) {
                 <span className="grow">
                   <b>{device.label}</b>
                   <small>
-                    {device.current ? 'Ini perangkat ini' : 'Terakhir aktif ' + (device.last_seen_at ?? '—')}
+                    {device.current
+                      ? 'Ini perangkat ini'
+                      : device.last_seen_at
+                        ? 'Terakhir aktif ' + device.last_seen_at
+                        : 'Belum pernah dipakai'}
                   </small>
                 </span>
                 {device.current ? (
@@ -269,7 +273,7 @@ export function AccountSecurity({ identity }: { identity: Identity | null }) {
             setUsername(v.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase())
             setError('')
           }}
-          hint="3–20 huruf kecil, angka, atau _. Ini yang kamu sebut saat minta diundang."
+          hint="3-20 huruf kecil, angka, atau _. Ini yang kamu sebut saat minta diundang."
           error={error || undefined}
           maxLength={20}
           autoComplete="username"

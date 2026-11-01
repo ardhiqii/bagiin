@@ -4,7 +4,7 @@ import { endpoints } from './api'
  * Migrasi nama pembeda dari versi 0.9.
  *
  * 0.9 menyimpan nama kontak di perangkat saja:
- *   localStorage['bagiin_recap_aliases'] = { "<identity-id>": "Amel kantor" }
+ *   localStorage['bagiin_recap_aliases'] = { "<identity-id>": "Sari kantor" }
  * 1.0 menyimpannya di server (tabel contact_alias) supaya ikut ke perangkat lain.
  *
  * Tanpa langkah ini, orang yang sudah menamai kontaknya di 0.9 akan melihat nama

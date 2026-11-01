@@ -344,7 +344,7 @@ export function Create({ identityId }: { identityId: string | null }) {
             </b>
             <p className="app-note">
               {photoBusy === 'ocr'
-                ? 'Bisa 10–60 detik kalau layanan AI ramai. Kamu tetap bisa mengisi manual sambil menunggu.'
+                ? 'Bisa 10-60 detik kalau layanan AI ramai. Kamu tetap bisa mengisi manual sambil menunggu.'
                 : 'Sebentar, fotonya sedang disimpan.'}
             </p>
             {photoBusy === 'ocr' ? (
@@ -500,7 +500,7 @@ export function Create({ identityId }: { identityId: string | null }) {
       <section className="app-stack">
         <SectionHead>Siapa saja yang ikut (opsional)</SectionHead>
         <p className="app-note">
-          Pilih dari orang yang pernah sebill dengan kamu. Teman baru tinggal buka link bill ini nanti — dia memilih namanya sendiri.
+          Pilih dari orang yang pernah sebill dengan kamu. Teman baru tinggal buka link bill ini nanti, dia memilih namanya sendiri.
         </p>
         {picked.length > 0 ? (
           <div className="chip-row">

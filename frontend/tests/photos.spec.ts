@@ -13,7 +13,7 @@ async function freshUser(page: Page, name: string) {
 
 test.describe('Bagiin — foto struk setelah bill jadi', () => {
   test('43. tambah dan hapus foto struk di bill yang sudah ada', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     await page.goto('/create')
     await page.getByLabel('Nama bill').fill('Foto ' + stamp)
     await page.getByLabel('Item 1').fill('Nasi uduk')

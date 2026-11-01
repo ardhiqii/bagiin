@@ -153,9 +153,11 @@ function BillRow({
             // Baris tanpa penanda tetap netral: tidak ada yang perlu dikerjakan.
             <Amount value={share} tone={flag?.kind === 'pay' ? 'neg' : undefined} />
           ) : (
-            // Kolom kanan isinya angka; kalau belum ada bagian, tanda pisah lebih
-            // jujur daripada kata yang menduplikasi penanda di kiri.
-            <span style={{ fontWeight: 'var(--ds-weight-medium)', color: 'var(--ds-muted-soft)' }}>—</span>
+            // Kolom kanan isinya angka. Kalau belum ada bagian, biarkan kosong:
+            // baris ketiga sudah menjelaskan keadaannya, dan tanda pisah cuma
+            // menambah satu glyph yang tidak berarti apa-apa. Ruangnya tetap
+            // dipesan (nbsp) supaya tinggi baris tidak berubah.
+            <span aria-hidden="true">&nbsp;</span>
           )}
           <small style={{ display: 'block', fontWeight: 'var(--ds-weight-medium)', color: 'var(--ds-muted)' }}>
             {share === total ? 'seluruh bill' : 'dari ' + formatRp(total)}
@@ -840,7 +842,7 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
                     }}
                   >
                     <b>{monthShort(value)}</b>
-                    <span>{entry ? entry.bill_count : '—'}</span>
+                    <span>{entry ? entry.bill_count : ''}</span>
                   </button>
                 )
               })}

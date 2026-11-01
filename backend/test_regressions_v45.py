@@ -47,7 +47,7 @@ def _mk_bill(creator, title="Makan", subtotal=0, tax=0, service=0, total=0,
         creator_id=creator["id"], title=title, tax_mode=tax_mode,
         subtotal=subtotal, tax=tax, service=service, total=total,
         items=items or [{"name": "A", "price": subtotal or 1}],
-        participants=participants or ["Aufa", "Budi"],
+        participants=participants or ["Wulan", "Budi"],
         tax_included=tax_included, paid_by_name=paid_by_name,
     )
     return data["id"]
@@ -60,11 +60,11 @@ def _ids(bid):
 
 def test_settled_consistent_between_list_and_detail_price0_item():
     """Price-0 pick + tax: detail says settled, list must say settled too."""
-    creator = db.new_identity("Aufa", role="creator")
+    creator = db.new_identity("Wulan", role="creator")
     budi = db.new_identity("Budi")
     bid = _mk_bill(creator, subtotal=0, tax=1000, service=0, total=1000,
                    items=[{"name": "gratisan", "price": 0}],
-                   participants=["Aufa", "Budi"])
+                   participants=["Wulan", "Budi"])
     H = _H(creator["id"])
     Hb = _H(budi["id"])
 
@@ -86,11 +86,11 @@ def test_settled_consistent_between_list_and_detail_price0_item():
 
 def test_settled_consistent_unpaid_guest():
     """A guest who picked but hasn't paid must be unsettled in BOTH views."""
-    creator = db.new_identity("Aufa2", role="creator")
+    creator = db.new_identity("Wulan2", role="creator")
     budi = db.new_identity("Budi2")
     bid = _mk_bill(creator, subtotal=30000, tax=3000, total=33000,
                    items=[{"name": "Makan", "price": 30000}],
-                   participants=["Aufa2", "Budi2"])
+                   participants=["Wulan2", "Budi2"])
     H = _H(creator["id"])
     Hb = _H(budi["id"])
 
@@ -109,7 +109,7 @@ def test_settled_consistent_unpaid_guest():
 
 def test_create_rejects_tax_included_with_tax():
     """tax_included + tax > 0 is an impossible combo -> 400."""
-    creator = db.new_identity("Aufa3", role="creator")
+    creator = db.new_identity("Wulan3", role="creator")
     payload = {
         "title": "X",
         "items": [{"name": "A", "price": 10000}, {"name": "B", "price": 5000}],
@@ -122,7 +122,7 @@ def test_create_rejects_tax_included_with_tax():
 
 def test_create_rejects_inconsistent_total():
     """total must equal subtotal+tax+service -> 400 otherwise."""
-    creator = db.new_identity("Aufa4", role="creator")
+    creator = db.new_identity("Wulan4", role="creator")
     payload = {
         "title": "X",
         "items": [{"name": "A", "price": 10000}],
@@ -134,7 +134,7 @@ def test_create_rejects_inconsistent_total():
 
 def test_update_rejects_inconsistent_total():
     """update_bill must apply the same total guard."""
-    creator = db.new_identity("Aufa5", role="creator")
+    creator = db.new_identity("Wulan5", role="creator")
     bid = _mk_bill(creator, subtotal=10000, tax=1000, total=11000,
                    items=[{"name": "A", "price": 10000}])
     ids = _ids(bid)
@@ -149,12 +149,12 @@ def test_update_rejects_inconsistent_total():
 
 def test_equal_tax_zero_subtotal_lands_on_creator():
     """equal mode + discount==price (zero subtotal base): tax must not vanish."""
-    creator = db.new_identity("Aufa6", role="creator")
+    creator = db.new_identity("Wulan6", role="creator")
     budi = db.new_identity("Budi6")
     bid = _mk_bill(creator, subtotal=0, tax=1000, service=0, total=1000,
                    tax_mode="equal",
                    items=[{"name": "Gratis", "price": 5000, "discount": 5000}],
-                   participants=["Aufa6", "Budi6"])
+                   participants=["Wulan6", "Budi6"])
     H = _H(creator["id"])
     Hb = _H(budi["id"])
 

@@ -90,7 +90,7 @@ kosong).
 | X-04 | Item tanpa pemilih dilaporkan (belum jelas), bukan dibebankan diam-diam | `integration.spec.ts` 76 |
 | X-05 | Identitas basi (server tidak kenal) → tab Kode, bukan Nama | `v1-cases.spec.ts` V-05 |
 | X-06 | Ganti password mencabut sesi perangkat lain | `auth-and-contacts.spec.ts` 108 |
-| X-07 | Nama pembeda dobel ditolak (tidak ada dua "Amel" yang sama) | `auth-and-contacts.spec.ts` 116 |
+| X-07 | Nama pembeda dobel ditolak (tidak ada dua "Sari" yang sama) | `auth-and-contacts.spec.ts` 116 |
 | X-08 | Net nol **tapi** masih ada bill yang menunggu: kalimat "tidak ada utang tersisa" tidak boleh muncul di samping banner "1 bill perlu kamu bereskan" | audit data (2 identitas di DB produksi: *deandra*, *temen terbaik aufa*), perbaikan copy di `Home.tsx` |
 
 ### Edge

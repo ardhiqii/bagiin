@@ -68,7 +68,7 @@ export function PeoplePicker({
     <Sheet open={open} title="Siapa yang ikut?" onClose={onClose}>
       <p className="app-note">
         Pilih dari orang yang pernah sebill dengan kamu. Yang belum pernah, buka
-        link bill ini nanti — dia ikut sendiri dari sana.
+        link bill ini nanti, dia ikut sendiri dari sana.
       </p>
 
       <div className="search-field">

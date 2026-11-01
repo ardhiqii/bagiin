@@ -40,7 +40,7 @@ async function setStatus(page: Page, label: 'Lunas' | 'Belum lunas' | 'Semua') {
 
 test.describe('Bagiin — mencari dan menyaring bill', () => {
   test('41. cari bill dan saring yang sudah lunas', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     await createBill(page, 'Sate ' + stamp, 'Sate ayam')
     await createBill(page, 'Bakso ' + stamp, 'Bakso')
     await createBill(page, 'Nasi ' + stamp, 'Nasi goreng')
@@ -68,7 +68,7 @@ test.describe('Bagiin — mencari dan menyaring bill', () => {
   })
 
   test('42. bill yang ditandai lunas pindah ke saringan Lunas', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     await createBill(page, 'Lunas filter ' + stamp, 'Mie')
 
     await openActions(page)

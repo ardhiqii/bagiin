@@ -273,7 +273,7 @@ export function Settings({ identity }: { identity: Identity | null }) {
         <SectionHead>Identitas</SectionHead>
         <div className="app-row">
           <span className="grow">
-            <b>{identity?.id ?? '—'}</b>
+            <b>{identity?.id ?? ''}</b>
             <small>ID ini yang menyimpan siapa kamu di semua bill. Jangan dibagikan.</small>
           </span>
           <button type="button" className="ds-button ds-button-quiet" onClick={() => identity && copy(identity.id, 'ID identitas disalin')}>

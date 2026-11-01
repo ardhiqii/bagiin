@@ -436,7 +436,7 @@ Penanda aksi memakai **kata kerja**, bukan kata sifat: `Tinggal kamu bayar`,
 
 ### Kepala layar tidak menghitung
 
-Judul layar hanya menyebut siapa/apa (`Halo, Aufa`). Tidak ada jumlah bill,
+Judul layar hanya menyebut siapa/apa (`Halo, Budi`). Tidak ada jumlah bill,
 tidak ada "belum lunas", tidak ada lencana angka. Penghitung di kepala berubah
 sendiri setiap ada yang dibayar, dan angka yang berubah tanpa penjelasan membuat
 orang menebak mana yang harus dipercaya.
@@ -451,7 +451,7 @@ menjanjikan pindah layar.
 
 Di data, orang selalu dikenali dari `identity.id`. Di layar, yang dibaca orang
 adalah nama — dan nama itu bisa sama persis untuk dua orang berbeda (di DB uji:
-245 identity bernama "Aufa"). Karena itu setiap tempat yang meminta orang
+245 identity dengan nama yang sama). Karena itu setiap tempat yang meminta orang
 memilih manusia harus memberi **pembeda**, bukan cuma nama:
 
 1. **Nama pembeda milik penampil** (alias) — privat, satu arah. Tidak pernah
@@ -461,7 +461,7 @@ memilih manusia harus memberi **pembeda**, bukan cuma nama:
 3. **Konteks**: jumlah bill bareng + judul bill terakhir.
 
 Aturannya satu: **kalau dua baris bisa membingungkan, itu kegagalan desain, bukan
-kegagalan orang.** Daftar yang menampilkan dua "Amel" identik tanpa pembeda tidak
+kegagalan orang.** Daftar yang menampilkan dua "Sari" identik tanpa pembeda tidak
 boleh dikirim ke layar.
 
 Nama asli selalu ada di baris kedua saat alias dipakai — orang berhak memastikan
@@ -818,3 +818,27 @@ Aturannya, dan alasannya:
 Angka acuannya mengikuti anjuran umum spacing UI: kelipatan 4 (4pt/8pt grid),
 16–24 px antar bagian layar mobile, 8–16 px antar kontrol, gutter mobile 16–24 px,
 line-height 1.4–1.6× ukuran huruf.
+
+## Naskah: tanpa tanda pisah dekoratif, tanpa nama orang tertentu
+
+**Tanda pisah panjang "—" tidak dipakai sebagai sambungan kalimat.** Bukan soal
+selera: tanda itu memaksa mata berhenti di tengah kalimat pendek, dan di layar
+390 px sambungannya sering jatuh jadi baris baru yang menggantung. Kalau kalimat
+butuh jeda, pakai titik. Kalau dua hal memang satu kalimat, pakai koma.
+
+Pemisah di **judul** juga bukan tanda pisah: `Bagiin · bagi bill bareng tanpa
+ribet` (tab browser, `og:title`, `twitter:title`, `og:image:alt`). Di tab selebar
+200 px, satu glyph yang tidak berbunyi memakan ruang yang dibutuhkan tagline-nya.
+
+Pengecualian yang sah: rentang angka ditulis dengan tanda hubung biasa
+(`3-20 huruf`, `10-60 detik`), dan kode boleh memakai apa pun — aturan ini soal
+teks yang dibaca orang.
+
+**Nama contoh memakai nama yang lazim**, bukan nama orang tertentu: `Budi` untuk
+nama diri, `Sari Kantor` untuk nama-pembeda (nama + penanda tempat). Alasannya
+sederhana — orang lain yang membuka aplikasi harus bisa melihat dirinya di contoh
+itu, dan nama orang di rumah tidak melakukan pekerjaan itu.
+
+Angka kosong tidak diisi tanda pisah. Kalau sebuah kolom tidak punya isi:
+kosongkan, atau jawab pertanyaannya dengan kalimat (`Belum pernah dipakai`), bukan
+dengan glyph yang artinya harus ditebak.

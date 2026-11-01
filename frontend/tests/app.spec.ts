@@ -17,16 +17,16 @@ test.describe('Bagiin — perilaku user', () => {
     await expect(page.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible()
     // tombol terkunci selama nama belum diisi
     await expect(page.getByRole('button', { name: 'Mulai pakai Bagiin' })).toBeDisabled()
-    await page.getByLabel('Nama kamu').fill('Aufa')
+    await page.getByLabel('Nama kamu').fill('Budi')
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Halo, Aufa')
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Halo, Budi')
     // nama bertahan setelah reload
     await page.reload()
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Halo, Aufa')
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Halo, Budi')
   })
 
   test('2. buat bill: total dihitung benar lalu tersimpan', async ({ page }) => {
-    await onboard(page, 'Aufa')
+    await onboard(page, 'Budi')
     await page.goto('/create')
 
     await page.getByLabel('Nama bill').fill('Makan malam ' + stamp)
@@ -52,7 +52,7 @@ test.describe('Bagiin — perilaku user', () => {
   })
 
   test('3. bill: pilih item, bagian saya dihitung, tandai lunas', async ({ page }) => {
-    await onboard(page, 'Aufa')
+    await onboard(page, 'Budi')
     await page.goto('/create')
     await page.getByLabel('Nama bill').fill('Kopi ' + stamp)
     await page.getByLabel('Item 1').fill('Kopi susu')
@@ -78,7 +78,7 @@ test.describe('Bagiin — perilaku user', () => {
   })
 
   test('4. teman buka link, ikut bill, pilih item sendiri', async ({ page, browser }) => {
-    await onboard(page, 'Aufa')
+    await onboard(page, 'Budi')
     await page.goto('/create')
     await page.getByLabel('Nama bill').fill('Bareng ' + stamp)
     await page.getByLabel('Item 1').fill('Ayam')
@@ -114,7 +114,7 @@ test.describe('Bagiin — perilaku user', () => {
   })
 
   test('5. daftar bill dan rekap menampilkan bill yang barusan dibuat', async ({ page }) => {
-    await onboard(page, 'Aufa')
+    await onboard(page, 'Budi')
     await page.goto('/create')
     const title = 'Rekap ' + stamp
     await page.getByLabel('Nama bill').fill(title)
@@ -137,16 +137,16 @@ test.describe('Bagiin — perilaku user', () => {
   })
 
   test('6. pengaturan: ganti nama langsung terlihat di beranda', async ({ page }) => {
-    await onboard(page, 'Aufa')
+    await onboard(page, 'Budi')
     await page.goto('/settings')
-    await page.getByLabel('Nama kamu').fill('Aufa Fauqi')
+    await page.getByLabel('Nama kamu').fill('Budi Santoso')
     await page.getByRole('button', { name: 'Simpan nama' }).click()
     await page.goto('/')
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Aufa Fauqi')
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Budi Santoso')
   })
 
   test('7. tombol bagikan menyalin link bill', async ({ page }) => {
-    await onboard(page, 'Aufa')
+    await onboard(page, 'Budi')
     await page.goto('/create')
     await page.getByLabel('Nama bill').fill('Share ' + stamp)
     await page.getByLabel('Item 1').fill('Teh')
@@ -167,7 +167,7 @@ test.describe('Bagiin — perilaku user', () => {
   })
 
   test('8. navigasi bawah pindah layar tanpa error', async ({ page }) => {
-    await onboard(page, 'Aufa')
+    await onboard(page, 'Budi')
     const nav = page.getByRole('navigation', { name: 'Navigasi utama' })
     // daftar bill sekarang menyatu dengan beranda: tab "Bill" hilang
     await expect(nav.getByRole('link', { name: 'Bill', exact: true })).toHaveCount(0)

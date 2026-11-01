@@ -134,7 +134,7 @@ export function Contacts({ identityId }: { identityId: string }) {
           title="Belum ada kontak"
           art={<img className="ds-empty-art" src={peopleArt} alt="" width={120} height={120} />}
         >
-          Kontak muncul sendiri setelah kamu bareng bill dengan seseorang — tidak
+          Kontak muncul sendiri setelah kamu bareng bill dengan seseorang. Tidak
           perlu menambahkan manual.
         </EmptyState>
       ) : null}
@@ -199,7 +199,7 @@ export function Contacts({ identityId }: { identityId: string }) {
                 setAlias(next)
                 setError('')
               }}
-              hint="Contoh: Amel Kampus. Hanya kamu yang melihat nama ini."
+              hint="Contoh: Sari Kantor. Hanya kamu yang melihat nama ini."
               error={error || undefined}
               maxLength={40}
             />

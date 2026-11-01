@@ -85,17 +85,17 @@ def _upload(bid, ident, data=b"\xff\xd8\xffjpg-bytes"):
 
 def test_create_with_photos_list():
     """photos[] attaches every path, in order."""
-    aufa = db.new_identity("Aufa61", role="creator")
+    wulan = db.new_identity("Wulan61", role="creator")
     p1, p2 = _fake_photo(), _fake_photo()
-    bid = _mk_bill(aufa, photos=[p1, p2])
+    bid = _mk_bill(wulan, photos=[p1, p2])
     assert _photos(bid) == [p1, p2]
 
 
 def test_legacy_photo_path_folds_in():
     """create_bill(photo_path=...) still lands in bill_photo (OCR path)."""
-    aufa = db.new_identity("Aufa61b", role="creator")
+    wulan = db.new_identity("Wulan61b", role="creator")
     p = _fake_photo()
-    bid = _mk_bill(aufa, photo_path=p)
+    bid = _mk_bill(wulan, photo_path=p)
     assert _photos(bid) == [p]
     # the legacy column still holds the value (kept, not dropped)
     row = db.get_bill(bid)
@@ -104,10 +104,10 @@ def test_legacy_photo_path_folds_in():
 
 def test_upload_adds_not_replaces():
     """POST /photo now ADDS — a second upload keeps both photos."""
-    aufa = db.new_identity("Aufa61c", role="creator")
+    wulan = db.new_identity("Wulan61c", role="creator")
     p = _fake_photo()
-    bid = _mk_bill(aufa, photos=[p])
-    r = _upload(bid, aufa)
+    bid = _mk_bill(wulan, photos=[p])
+    r = _upload(bid, wulan)
     assert r.status_code == 200, r.text
     assert len(_photos(bid)) == 2, _photos(bid)
     assert p in _photos(bid)
@@ -115,9 +115,9 @@ def test_upload_adds_not_replaces():
 
 def test_delete_photo_removes_and_unlinks():
     """DELETE /photos/{id} removes the row AND unlinks the file."""
-    aufa = db.new_identity("Aufa61d", role="creator")
-    bid = _mk_bill(aufa)
-    r = _upload(bid, aufa)
+    wulan = db.new_identity("Wulan61d", role="creator")
+    bid = _mk_bill(wulan)
+    r = _upload(bid, wulan)
     assert r.status_code == 200, r.text
     photos = db.get_bill(bid)["photos"]
     assert len(photos) == 1
@@ -125,7 +125,7 @@ def test_delete_photo_removes_and_unlinks():
     path = photos[0]["path"]
     assert Path(path).exists()
 
-    r = c.delete(f"/api/bills/{bid}/photos/{pid}", headers=_H(aufa))
+    r = c.delete(f"/api/bills/{bid}/photos/{pid}", headers=_H(wulan))
     assert r.status_code == 200, r.text
     assert _photos(bid) == []
     assert not Path(path).exists(), "file must be unlinked"
@@ -134,12 +134,12 @@ def test_delete_photo_removes_and_unlinks():
 def test_migration_converts_legacy_photo():
     """A bill whose photo_path predates v61 gets a bill_photo row."""
     # simulate a legacy bill: insert photo_path directly, no bill_photo row
-    aufa = db.new_identity("Aufa61e", role="creator")
+    wulan = db.new_identity("Wulan61e", role="creator")
     conn = db.get_db()
     conn.execute(
         """INSERT INTO bill (id, creator_identity_id, title, photo_path, subtotal_idr, tax_idr, service_idr, total_idr)
            VALUES ('legacy61', ?, 'Lama', '/tmp/old.jpg', 0, 0, 0, 0)""",
-        (aufa["id"],),
+        (wulan["id"],),
     )
     conn.commit()
     conn.close()
@@ -151,36 +151,36 @@ def test_migration_converts_legacy_photo():
 
 def test_non_owner_cannot_add_or_delete():
     """Guest cannot attach or remove photos -> 403."""
-    aufa = db.new_identity("Aufa61f", role="creator")
-    amel = db.new_identity("Amel61f")
-    bid = _mk_bill(aufa)
-    c.post(f"/api/bills/{bid}/join", headers=_H(amel))
-    assert _upload(bid, amel).status_code == 403
-    assert c.delete(f"/api/bills/{bid}/photos/1", headers=_H(amel)).status_code == 403
+    wulan = db.new_identity("Wulan61f", role="creator")
+    sari = db.new_identity("Sari61f")
+    bid = _mk_bill(wulan)
+    c.post(f"/api/bills/{bid}/join", headers=_H(sari))
+    assert _upload(bid, sari).status_code == 403
+    assert c.delete(f"/api/bills/{bid}/photos/1", headers=_H(sari)).status_code == 403
 
 
 def test_delete_bill_removes_all_photos():
     """Deleting the bill deletes every photo row + file."""
-    aufa = db.new_identity("Aufa61g", role="creator")
-    bid = _mk_bill(aufa)
-    r1 = _upload(bid, aufa, b"\xff\xd8\xffone")
-    r2 = _upload(bid, aufa, b"\xff\xd8\xfftwo")
+    wulan = db.new_identity("Wulan61g", role="creator")
+    bid = _mk_bill(wulan)
+    r1 = _upload(bid, wulan, b"\xff\xd8\xffone")
+    r2 = _upload(bid, wulan, b"\xff\xd8\xfftwo")
     assert r1.status_code == 200 and r2.status_code == 200
     paths = [p["path"] for p in db.get_bill(bid)["photos"]]
     assert len(paths) == 2
     assert all(Path(p).exists() for p in paths)
 
-    assert c.delete(f"/api/bills/{bid}", headers=_H(aufa)).status_code == 200
+    assert c.delete(f"/api/bills/{bid}", headers=_H(wulan)).status_code == 200
     assert all(not Path(p).exists() for p in paths), "all photo files unlinked"
 
 
 def test_standalone_photo_upload():
     """POST /api/photos saves a file without scanning (manual attach flow)."""
-    aufa = db.new_identity("Aufa61h", role="creator")
+    wulan = db.new_identity("Wulan61h", role="creator")
     r = c.post(
         "/api/photos",
         files={"file": ("f.jpg", b"\xff\xd8\xffraw", "image/jpeg")},
-        headers=_H(aufa),
+        headers=_H(wulan),
     )
     assert r.status_code == 200, r.text
     p = r.json()["photo_path"]

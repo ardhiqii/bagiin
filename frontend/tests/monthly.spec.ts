@@ -90,7 +90,7 @@ function monthKey(date: Date) {
 
 test.describe('Bagiin — riwayat per bulan', () => {
   test('128. beranda memuat semua bulan, bulan dipilih lewat tombol Atur', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
 
     const now = new Date()
     const thisMonth = new Date(now.getFullYear(), now.getMonth(), 15, 12)
@@ -106,7 +106,7 @@ test.describe('Bagiin — riwayat per bulan', () => {
     })
 
     await page.goto('/')
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Aufa')
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Budi')
 
     // default: seluruh riwayat, dipisah judul bulan — bukan satu bulan terpilih
     await expect(page.getByText('Bulan ini ' + stamp)).toBeVisible()
@@ -143,7 +143,7 @@ test.describe('Bagiin — riwayat per bulan', () => {
   })
 
   test('129. pencarian menembus semua bulan, bukan cuma yang tersaring', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
 
     const now = new Date()
     const thisMonth = new Date(now.getFullYear(), now.getMonth(), 15, 12)
@@ -154,7 +154,7 @@ test.describe('Bagiin — riwayat per bulan', () => {
     await createBillViaApi(page, 'Cari Lintas Bulan ' + stamp, `${monthKey(lastMonth)}-15T12:00:00`)
 
     await page.goto('/')
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Aufa')
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Budi')
 
     // saring dulu ke bulan berjalan, lalu cari bill bulan lalu
     await page.getByRole('button', { name: /Atur/ }).click()
@@ -171,7 +171,7 @@ test.describe('Bagiin — riwayat per bulan', () => {
   })
 
   test('131. bill lunas punya lencana hijau dan angkanya meredup', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
 
     const today = new Date()
     const title = 'Lunas Lencana ' + stamp
@@ -201,7 +201,7 @@ test.describe('Bagiin — riwayat per bulan', () => {
     await settleBillViaApi(page, billId)
 
     await page.goto('/')
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Aufa')
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Budi')
 
     const paidRow = page.locator('.app-row', { hasText: title })
     const openRow = page.locator('.app-row', { hasText: openTitle })
@@ -220,7 +220,7 @@ test.describe('Bagiin — riwayat per bulan', () => {
   })
 
   test('132. riwayat tiga tahun: tahun dipilih dulu, baru bulan', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
 
     const now = new Date()
     const thisYear = now.getFullYear()
@@ -232,7 +232,7 @@ test.describe('Bagiin — riwayat per bulan', () => {
     await createBillViaApi(page, 'Dua Tahun Lalu ' + stamp, `${oldYear}-06-10T12:00:00`)
 
     await page.goto('/')
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Aufa')
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Budi')
     // default: tiga tahun bercampur, dipisah judul bulan
     await expect(page.getByText('Tahun Ini ' + stamp)).toBeVisible()
 
@@ -278,7 +278,7 @@ test.describe('Bagiin — riwayat per bulan', () => {
   })
 
   test('130. angka "perlu dikerjakan" menghitung semua bulan, bukan yang tersaring', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
 
     const now = new Date()
     const thisMonth = new Date(now.getFullYear(), now.getMonth(), 10, 12)
@@ -289,7 +289,7 @@ test.describe('Bagiin — riwayat per bulan', () => {
     await createBillViaApi(page, 'Perlu Sep ' + stamp, `${monthKey(lastMonth)}-10T12:00:00`)
 
     await page.goto('/')
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Aufa')
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Budi')
 
     // blok kuning menyebut 2 — seluruh riwayat
     const banner = page.locator('#perlu-tindakan')

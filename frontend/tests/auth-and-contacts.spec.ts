@@ -211,8 +211,8 @@ test.describe('Bagiin — akun dan sesi perangkat', () => {
     await page.goto('/masuk')
     await page.getByRole('tab', { name: 'Akun' }).click()
     const field = page.getByLabel('Username')
-    await field.fill('Aufa Besar!@#')
-    await expect(field).toHaveValue('aufabesar')
+    await field.fill('Budi Besar!@#')
+    await expect(field).toHaveValue('budibesar')
   })
 
   test('107. ganti username: yang sudah dipakai orang lain ditolak, yang bebas disimpan', async ({ page }) => {
@@ -487,12 +487,12 @@ test.describe('Bagiin — nama pembeda kontak', () => {
     const a = await registerViaApi(page, {
       username: 'k1_' + stamp,
       password: 'rahasia123',
-      name: 'Amel ' + stamp,
+      name: 'Sari ' + stamp,
     })
     const b = await registerViaApi(page, {
       username: 'k2_' + stamp,
       password: 'rahasia123',
-      name: 'Amel ' + stamp,
+      name: 'Sari ' + stamp,
     })
     await createBill(page, me, 'Kopi Satu ' + stamp, a)
     const billId = await createBill(page, me, 'Kopi Dua ' + stamp, b)

@@ -283,7 +283,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
           <section className="app-stack">
             <SectionHead>Siapa saja yang ikut</SectionHead>
             <p className="app-note">
-              Nama yang belum diklaim bisa diganti atau dihapus di sini. Nama yang sudah bergabung dikunci — kalau mau
+              Nama yang belum diklaim bisa diganti atau dihapus di sini. Nama yang sudah bergabung dikunci. Kalau mau
               mengeluarkan orangnya, pakai tombol Keluarkan di layar bill.
             </p>
             {rosterDraft.length > 0 ? (

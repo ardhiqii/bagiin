@@ -112,12 +112,12 @@ def test_leaver_paid_record_dropped():
 def test_owner_cannot_leave():
     """The confirmed payer holds the bill — they can't walk out of it."""
     alice = db.new_identity("Alice57c", role="creator")
-    amel = db.new_identity("Amel57c")
+    sari = db.new_identity("Sari57c")
     bid = _mk_bill(alice)
-    c.post(f"/api/bills/{bid}/join", headers=_H(amel))
-    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": amel["id"]}, headers=_H(alice))
+    c.post(f"/api/bills/{bid}/join", headers=_H(sari))
+    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": sari["id"]}, headers=_H(alice))
 
-    r = c.post(f"/api/bills/{bid}/leave", headers=_H(amel))
+    r = c.post(f"/api/bills/{bid}/leave", headers=_H(sari))
     assert r.status_code == 400, r.text
     assert "Owner" in r.json()["detail"]
 
@@ -127,18 +127,18 @@ def test_creator_can_leave_once_a_payer_holds_the_bill():
     so the creator can walk out like anyone else. The money they used to
     absorb (unpicked free items) follows the bill to its owner."""
     alice = db.new_identity("Alice57d", role="creator")
-    amel = db.new_identity("Amel57d")
+    sari = db.new_identity("Sari57d")
     bid = _mk_bill(alice, items=[{"name": "A", "price": 100000}],
                    subtotal=100000, tax=0, total=100000)
-    c.post(f"/api/bills/{bid}/join", headers=_H(amel))
-    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": amel["id"]}, headers=_H(alice))
+    c.post(f"/api/bills/{bid}/join", headers=_H(sari))
+    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": sari["id"]}, headers=_H(alice))
 
     r = c.post(f"/api/bills/{bid}/leave", headers=_H(alice))
     assert r.status_code == 200, r.text
     data = r.json()
     assert all(p["identity_id"] != alice["id"] for p in data["people"]), "creator gone"
     # the unpicked item lands on the owner now, and the split still reconciles
-    me = next(p for p in data["people"] if p["identity_id"] == amel["id"])
+    me = next(p for p in data["people"] if p["identity_id"] == sari["id"])
     assert me["total_idr"] == 100000, me["total_idr"]
     assert data["total_ok"] is True
 
@@ -147,26 +147,26 @@ def test_creator_leaving_drops_the_bill_from_their_list():
     """Leaving means leaving: the bill stops showing up in the creator's
     history, exactly like it does for any other participant who leaves."""
     alice = db.new_identity("Alice57d2", role="creator")
-    amel = db.new_identity("Amel57d2")
+    sari = db.new_identity("Sari57d2")
     bid = _mk_bill(alice)
-    c.post(f"/api/bills/{bid}/join", headers=_H(amel))
-    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": amel["id"]}, headers=_H(alice))
+    c.post(f"/api/bills/{bid}/join", headers=_H(sari))
+    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": sari["id"]}, headers=_H(alice))
     assert any(b["id"] == bid for b in c.get(f"/api/identities/{alice['id']}/bills", headers=_H(alice)).json())
 
     assert c.post(f"/api/bills/{bid}/leave", headers=_H(alice)).status_code == 200
     assert not any(b["id"] == bid for b in c.get(f"/api/identities/{alice['id']}/bills", headers=_H(alice)).json())
     # still the payer's bill, and the link still works for the creator
-    assert any(b["id"] == bid for b in c.get(f"/api/identities/{amel['id']}/bills", headers=_H(amel)).json())
+    assert any(b["id"] == bid for b in c.get(f"/api/identities/{sari['id']}/bills", headers=_H(sari)).json())
     assert c.get(f"/api/bills/{bid}", headers=_H(alice)).status_code == 200
 
 
 def test_creator_can_rejoin_after_leaving():
     """The share link is the way back in — rejoining undoes the exit."""
     alice = db.new_identity("Alice57d3", role="creator")
-    amel = db.new_identity("Amel57d3")
+    sari = db.new_identity("Sari57d3")
     bid = _mk_bill(alice)
-    c.post(f"/api/bills/{bid}/join", headers=_H(amel))
-    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": amel["id"]}, headers=_H(alice))
+    c.post(f"/api/bills/{bid}/join", headers=_H(sari))
+    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": sari["id"]}, headers=_H(alice))
     c.post(f"/api/bills/{bid}/leave", headers=_H(alice))
 
     r = c.post(f"/api/bills/{bid}/join", headers=_H(alice))
@@ -179,12 +179,12 @@ def test_owner_can_remove_a_creator_who_no_longer_holds_the_bill():
     """Mirror of leaving: the manager can drop the creator too, once the
     creator is just another participant (v58)."""
     alice = db.new_identity("Alice57d7", role="creator")
-    amel = db.new_identity("Amel57d7")
+    sari = db.new_identity("Sari57d7")
     bid = _mk_bill(alice)
-    c.post(f"/api/bills/{bid}/join", headers=_H(amel))
-    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": amel["id"]}, headers=_H(alice))
+    c.post(f"/api/bills/{bid}/join", headers=_H(sari))
+    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": sari["id"]}, headers=_H(alice))
 
-    r = c.delete(f"/api/bills/{bid}/people/{alice['id']}", headers=_H(amel))
+    r = c.delete(f"/api/bills/{bid}/people/{alice['id']}", headers=_H(sari))
     assert r.status_code == 200, r.text
     assert all(p["identity_id"] != alice["id"] for p in r.json()["people"])
     assert not any(b["id"] == bid for b in c.get(f"/api/identities/{alice['id']}/bills", headers=_H(alice)).json())
@@ -225,13 +225,13 @@ def test_payer_handed_back_returns_the_creator_to_the_bill():
     """The owner un-picks themselves as payer, so the bill falls back to the
     creator — an owner outside their own bill would be a ghost."""
     alice = db.new_identity("Alice57d6", role="creator")
-    amel = db.new_identity("Amel57d6")
+    sari = db.new_identity("Sari57d6")
     bid = _mk_bill(alice)
-    c.post(f"/api/bills/{bid}/join", headers=_H(amel))
-    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": amel["id"]}, headers=_H(alice))
+    c.post(f"/api/bills/{bid}/join", headers=_H(sari))
+    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": sari["id"]}, headers=_H(alice))
     assert c.post(f"/api/bills/{bid}/leave", headers=_H(alice)).status_code == 200
 
-    r = c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": None}, headers=_H(amel))
+    r = c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": None}, headers=_H(sari))
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["owner_id"] == alice["id"]
@@ -262,17 +262,17 @@ def test_creator_locked_out_but_payer_full():
     """Once confirmed, the payer can edit/close/mark-paid/delete; the creator
     gets 403 on all of them (regression guard for the v57 rule)."""
     alice = db.new_identity("Alice57g", role="creator")
-    amel = db.new_identity("Amel57g")
+    sari = db.new_identity("Sari57g")
     bid = _mk_bill(alice, items=[{"name": "A", "price": 100000}],
                    subtotal=100000, tax=0, total=100000)
-    c.post(f"/api/bills/{bid}/join", headers=_H(amel))
-    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": amel["id"]}, headers=_H(alice))
+    c.post(f"/api/bills/{bid}/join", headers=_H(sari))
+    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": sari["id"]}, headers=_H(alice))
 
     HA = _H(alice)
-    HAa = _H(amel)
+    HAa = _H(sari)
     assert c.post(f"/api/bills/{bid}/close", headers=HA).status_code == 403
     assert c.delete(f"/api/bills/{bid}", headers=HA).status_code == 403
-    assert c.post(f"/api/bills/{bid}/payments/{amel['id']}/paid", headers=HA).status_code == 403
+    assert c.post(f"/api/bills/{bid}/payments/{sari['id']}/paid", headers=HA).status_code == 403
     assert c.get(f"/api/bills/{bid}", headers=HA).json()["can_manage"] is False
 
     assert c.post(f"/api/bills/{bid}/close", headers=HAa).status_code == 200

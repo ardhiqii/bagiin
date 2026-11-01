@@ -22,7 +22,7 @@ async function pickPhotoThrough(page: Page, button: string) {
 
 test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () => {
   test('38. lampirkan foto sebagai bukti tanpa memanggil AI', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     let ocrCalls = 0
     await page.route('**/api/ocr', async (route) => {
       ocrCalls += 1
@@ -54,7 +54,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
   })
 
   test('39. AI gagal: pesannya jelas, dan foto tetap bisa dipakai sebagai bukti', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     await page.route('**/api/ocr', (route) =>
       route.fulfill({
         status: 422,
@@ -90,7 +90,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
   })
 
   test('40. selama AI membaca, ada status berjalan dan tombol batal', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     await page.route('**/api/ocr', async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 6000))
       await route.fulfill({
@@ -113,7 +113,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
   })
 
   test('41. struk yang pajaknya sudah termasuk: kolom pajak dikunci, bill ditandai', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     await page.route('**/api/ocr', (route) =>
       route.fulfill({
         status: 200,
@@ -160,7 +160,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
   })
 
   test('42. beberapa foto sekaligus: struk panjang atau screenshot pesanan', async ({ page }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     await page.goto('/create')
 
     const [chooser] = await Promise.all([

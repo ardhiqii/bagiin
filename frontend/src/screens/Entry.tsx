@@ -246,7 +246,7 @@ export function Entry({
                 </button>
               </div>
               <Notice tone="pending">
-                Kode ini hanya muncul sekali. Catat sekarang — di Pengaturan bisa
+                Kode ini hanya muncul sekali. Catat sekarang. Di Pengaturan bisa
                 dibuat kode baru kapan saja.
               </Notice>
               <Button
@@ -285,7 +285,7 @@ export function Entry({
                  bertanya mana yang harus diklik. */
               <Notice tone="pending">
                 Identitas di perangkat ini sudah tidak ada di server. Masukkan kode
-                pemulihanmu untuk kembali ke bill lama — isi nama baru akan membuat
+                pemulihanmu untuk kembali ke bill lama. Isi nama baru akan membuat
                 profil kosong.
               </Notice>
             ) : (
@@ -324,7 +324,7 @@ export function Entry({
                       setName(next)
                       setError('')
                     }}
-                    hint="Contoh: Aufa — nama ini yang muncul ke teman di bill"
+                    hint="Contoh: Budi. Nama ini yang muncul ke teman di bill"
                     error={error || undefined}
                     autoComplete="name"
                   />
@@ -395,7 +395,7 @@ export function Entry({
                       setUsername(v.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase())
                       setError('')
                     }}
-                    hint={step === 'daftar' ? '3–20 huruf kecil, angka, atau _' : undefined}
+                    hint={step === 'daftar' ? '3-20 huruf kecil, angka, atau _' : undefined}
                     autoComplete="username"
                     maxLength={20}
                   />
@@ -459,7 +459,7 @@ export function Entry({
             {google && !google.client_id && !google.stub ? (
               <Notice tone="pending">
                 Login Google belum diaktifkan di server. Pakai nama, kode pemulihan,
-                atau username — semuanya tetap jalan.
+                atau username. Semuanya tetap jalan.
               </Notice>
             ) : null}
             <div

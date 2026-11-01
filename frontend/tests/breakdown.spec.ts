@@ -13,7 +13,7 @@ async function onboard(page: Page, name: string) {
 
 test.describe('Bagiin — rincian struk di layar bill', () => {
   test('54. subtotal, pajak, service, dan diskon kelihatan sebagai baris', async ({ page }) => {
-    await onboard(page, 'Aufa')
+    await onboard(page, 'Budi')
     await page.goto('/create')
 
     await page.getByLabel('Nama bill').fill('Rincian ' + stamp)
@@ -45,7 +45,7 @@ test.describe('Bagiin — rincian struk di layar bill', () => {
   })
 
   test('55. bill tanpa pajak/diskon hanya menampilkan subtotal dan total', async ({ page }) => {
-    await onboard(page, 'Aufa')
+    await onboard(page, 'Budi')
     await page.goto('/create')
 
     await page.getByLabel('Nama bill').fill('Polos ' + stamp)

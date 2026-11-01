@@ -56,7 +56,7 @@ def _mk_bill(creator, title="Makan", subtotal=0, tax=0, service=0, total=0,
         creator_id=creator["id"], title=title, tax_mode=tax_mode,
         subtotal=subtotal, tax=tax, service=service, total=total,
         items=items or [{"name": "A", "price": subtotal or 1}],
-        participants=participants or ["Aufa", "Budi"],
+        participants=participants or ["Wulan", "Budi"],
         tax_included=tax_included, paid_by_name=paid_by_name,
     )
     return data["id"]

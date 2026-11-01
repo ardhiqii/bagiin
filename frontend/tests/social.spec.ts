@@ -36,9 +36,9 @@ async function identityOf(page: Page) {
   return JSON.parse(raw ?? '{}') as { id: string; secret: string }
 }
 
-/** Dua orang, satu bill: pembuat (Aufa) + tamu yang ikut & memilih. */
+/** Dua orang, satu bill: pembuat (Budi) + tamu yang ikut & memilih. */
 async function twoPeople(page: Page, browser: import('@playwright/test').Browser, title: string) {
-  await freshUser(page, 'Aufa')
+  await freshUser(page, 'Budi')
   const url = await createBill(page, title)
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
   const guest = await ctx.newPage()

@@ -653,7 +653,7 @@ p, small, .app-note { text-wrap: pretty; }
   color: var(--ds-pending);
   font-size: var(--ds-text-xs);
   font-weight: var(--ds-weight-medium);
-  /* nama orang bisa panjang ("temen terbaik aufa"); pill tidak boleh melebar
+  /* nama orang bisa panjang ("temen terbaik budi"); pill tidak boleh melebar
      sampai menekan tombol di kanan, jadi dipotong dengan elipsis */
   max-width: 100%;
   overflow: hidden;

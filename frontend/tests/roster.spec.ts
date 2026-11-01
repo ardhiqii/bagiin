@@ -47,7 +47,7 @@ async function createBill(page: Page, title: string, opts: { people?: string[] }
 
 test.describe('Bagiin — lunas manual dan daftar nama', () => {
   test('38. pemilik bisa menandai seluruh bill lunas lalu membatalkannya', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     const url = await createBill(page, 'Lunas ' + stamp)
 
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
@@ -74,7 +74,7 @@ test.describe('Bagiin — lunas manual dan daftar nama', () => {
   })
 
   test('39. orang yang dipilih dari kontak menyambung ke dirinya saat join', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     // Bima harus pernah sebill dulu supaya muncul di daftar pilihan
     const basis = await createBill(page, 'Basis ' + stamp)
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
@@ -104,7 +104,7 @@ test.describe('Bagiin — lunas manual dan daftar nama', () => {
   })
 
   test('40. pemilik mengeluarkan orang dari bill', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     const url = await createBill(page, 'Keluarkan ' + stamp)
 
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })

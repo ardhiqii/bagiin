@@ -62,14 +62,14 @@ def test_a1_creator_can_be_reinvited_after_leaving():
     answered 400 "Orang ini udah di bill" even though they were out of the
     roster and out of their own history -- un-re-invitable except by raw link."""
     alice = db.new_identity("Alice66a", role="creator")
-    amel = db.new_identity("Amel66a")
+    sari = db.new_identity("Sari66a")
     bid = _mk_bill(alice)
-    c.post(f"/api/bills/{bid}/join", headers=_H(amel))
-    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": amel["id"]}, headers=_H(alice))
+    c.post(f"/api/bills/{bid}/join", headers=_H(sari))
+    c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": sari["id"]}, headers=_H(alice))
     assert c.post(f"/api/bills/{bid}/leave", headers=_H(alice)).status_code == 200
     assert db.identity_on_bill(bid, alice["id"]) is False
 
-    r = c.post(f"/api/bills/{bid}/invite", json={"identity_id": alice["id"]}, headers=_H(amel))
+    r = c.post(f"/api/bills/{bid}/invite", json={"identity_id": alice["id"]}, headers=_H(sari))
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "joined"
     data = c.get(f"/api/bills/{bid}", headers=_H(alice)).json()
@@ -96,17 +96,17 @@ def test_a3_photo_endpoints_reject_non_image_content_type():
     checked size only. A HEIC (or a text file) used to sail through as 200,
     get stored as `<hex>.jpg` with a bill_photo row, and the uploader got a
     success toast plus a broken thumbnail."""
-    aufa = db.new_identity("Aufa66c", role="creator")
-    bid = _mk_bill(aufa)
+    wulan = db.new_identity("Wulan66c", role="creator")
+    bid = _mk_bill(wulan)
     r = c.post(f"/api/bills/{bid}/photo",
-               files={"file": ("x.heic", b"whatever", "image/heic")}, headers=_H(aufa))
+               files={"file": ("x.heic", b"whatever", "image/heic")}, headers=_H(wulan))
     assert r.status_code == 400, r.text
     r2 = c.post("/api/photos",
-                files={"file": ("x.txt", b"not a photo", "text/plain")}, headers=_H(aufa))
+                files={"file": ("x.txt", b"not a photo", "text/plain")}, headers=_H(wulan))
     assert r2.status_code == 400, r2.text
     # a real jpeg still works
     r3 = c.post(f"/api/bills/{bid}/photo",
-               files={"file": ("x.jpg", b"\xff\xd8\xffjpeg-bytes", "image/jpeg")}, headers=_H(aufa))
+               files={"file": ("x.jpg", b"\xff\xd8\xffjpeg-bytes", "image/jpeg")}, headers=_H(wulan))
     assert r3.status_code == 200, r3.text
 
 
@@ -122,13 +122,13 @@ def test_a4_create_bill_photos_list_is_capped():
     upload-shaped now. A junk or foreign path is rejected outright; that is
     covered in test_regressions_v67.py.
     """
-    aufa = db.new_identity("Aufa66d", role="creator")
+    wulan = db.new_identity("Wulan66d", role="creator")
     many = []
     for i in range(50):
         path = main.UPLOAD_DIR / f"{i:016x}.jpg"
         path.write_bytes(b"\xff\xd8\xfffixture")
         many.append(str(path))
-    bid = _mk_bill(aufa, photos=many)
+    bid = _mk_bill(wulan, photos=many)
     assert len(db.get_bill(bid)["photos"]) == 10
 
 
@@ -143,13 +143,13 @@ def test_a5_my_bills_fallback_respects_paid_by_confirmed():
     db.get_bill to return None for this one bill, same as the defensive
     comment describes ("bill row exists but get_bill failed")."""
     alice = db.new_identity("Alice66e", role="creator")
-    amel = db.new_identity("Amel66e")
-    bid = _mk_bill(alice, paid_by_name="Amel66e")
-    # amel joins under the matching name -> claim_participant links her as
+    sari = db.new_identity("Sari66e")
+    bid = _mk_bill(alice, paid_by_name="Sari66e")
+    # sari joins under the matching name -> claim_participant links her as
     # paid_by_identity_id, but paid_by_confirmed stays 0 (name match only)
-    c.post(f"/api/bills/{bid}/join", headers=_H(amel))
+    c.post(f"/api/bills/{bid}/join", headers=_H(sari))
     live = db.get_bill(bid)
-    assert live["bill"]["paid_by_identity_id"] == amel["id"]
+    assert live["bill"]["paid_by_identity_id"] == sari["id"]
     assert not live["bill"]["paid_by_confirmed"]
 
     orig_get_bill = db.get_bill
@@ -157,7 +157,7 @@ def test_a5_my_bills_fallback_respects_paid_by_confirmed():
         return None if bill_id == bid else orig_get_bill(bill_id)
     db.get_bill = _patched
     try:
-        rows = c.get(f"/api/identities/{amel['id']}/bills", headers=_H(amel)).json()
+        rows = c.get(f"/api/identities/{sari['id']}/bills", headers=_H(sari)).json()
     finally:
         db.get_bill = orig_get_bill
     row = next(r for r in rows if r["id"] == bid)
@@ -224,18 +224,18 @@ def test_a8_pending_invite_visible_and_cancellable_by_manager_only():
     cancel endpoint -- inviting the wrong contact (auto_accept OFF) had no
     recourse, and the sender was offered "Undang" again with no hint one was
     already outstanding."""
-    aufa = db.new_identity("Aufa66h", role="creator")
+    wulan = db.new_identity("Wulan66h", role="creator")
     rina = db.new_identity("Rina66h")
     stranger = db.new_identity("Stranger66h")
-    shared = _mk_bill(aufa, title="Shared")
+    shared = _mk_bill(wulan, title="Shared")
     c.post(f"/api/bills/{shared}/join", headers=_H(rina))  # kontak terbukti
     c.post(f"/api/identities/{rina['id']}/auto_accept", json={"auto_accept": False}, headers=_H(rina))
 
-    bid = _mk_bill(aufa)
-    r = c.post(f"/api/bills/{bid}/invite", json={"identity_id": rina["id"]}, headers=_H(aufa))
+    bid = _mk_bill(wulan)
+    r = c.post(f"/api/bills/{bid}/invite", json={"identity_id": rina["id"]}, headers=_H(wulan))
     assert r.json()["status"] == "pending", r.text
 
-    data = c.get(f"/api/bills/{bid}", headers=_H(aufa)).json()
+    data = c.get(f"/api/bills/{bid}", headers=_H(wulan)).json()
     assert any(iv["identity_id"] == rina["id"] for iv in data["pending_invites"]), data.get("pending_invites")
     invite_id = data["pending_invites"][0]["id"]
 
@@ -245,7 +245,7 @@ def test_a8_pending_invite_visible_and_cancellable_by_manager_only():
 
     # only the manager can cancel it
     assert c.delete(f"/api/bills/{bid}/invites/{invite_id}", headers=_H(rina)).status_code == 403
-    r2 = c.delete(f"/api/bills/{bid}/invites/{invite_id}", headers=_H(aufa))
+    r2 = c.delete(f"/api/bills/{bid}/invites/{invite_id}", headers=_H(wulan))
     assert r2.status_code == 200, r2.text
     assert r2.json()["pending_invites"] == []
     assert not any(i["bill_id"] == bid for i in
@@ -257,10 +257,10 @@ def test_a8_pending_invite_visible_and_cancellable_by_manager_only():
 def test_a9_non_object_body_is_400_not_500():
     """POST /api/bills with `[]` (or a bare number) reaches `data.get` on a
     non-dict -> AttributeError -> 500."""
-    aufa = db.new_identity("Aufa66i", role="creator")
-    r = c.post("/api/bills", json=[], headers=_H(aufa))
+    wulan = db.new_identity("Wulan66i", role="creator")
+    r = c.post("/api/bills", json=[], headers=_H(wulan))
     assert r.status_code == 400, r.text
-    r2 = c.post("/api/bills", json=123, headers=_H(aufa))
+    r2 = c.post("/api/bills", json=123, headers=_H(wulan))
     assert r2.status_code == 400, r2.text
 
 
@@ -269,19 +269,19 @@ def test_a9_non_object_body_is_400_not_500():
 def test_a10_huge_price_is_400_not_500():
     """Money `_to_int` calls had minv=0 but no maxv, so `1e20`-scale input
     reached sqlite3 and raised `OverflowError: Python int too large`."""
-    aufa = db.new_identity("Aufa66j", role="creator")
+    wulan = db.new_identity("Wulan66j", role="creator")
     huge = 10**20
     r = c.post("/api/bills", json={
         "title": "Bill", "items": [{"name": "A", "price": huge}],
         "subtotal": huge, "tax": 0, "service": 0, "total": huge,
-    }, headers=_H(aufa))
+    }, headers=_H(wulan))
     assert r.status_code == 400, r.text
 
-    bid = _mk_bill(aufa)
+    bid = _mk_bill(wulan)
     r2 = c.put(f"/api/bills/{bid}", json={
         "title": "Bill", "items": [{"name": "A", "price": huge}],
         "subtotal": huge, "tax": 0, "service": 0, "total": huge,
-    }, headers=_H(aufa))
+    }, headers=_H(wulan))
     assert r2.status_code == 400, r2.text
 
 
@@ -291,15 +291,15 @@ def test_a11_photo_endpoints_blocked_once_bill_closed():
     """Both photo endpoints gated on _can_manage only, while the UI hides
     both controls once the bill is closed -- a photo attached to a bill that
     later closes could never be removed through the app."""
-    aufa = db.new_identity("Aufa66k", role="creator")
-    bid = _mk_bill(aufa)
+    wulan = db.new_identity("Wulan66k", role="creator")
+    bid = _mk_bill(wulan)
     pid = db.add_bill_photo(bid, "/tmp/v66-before-close.jpg")
-    assert c.post(f"/api/bills/{bid}/close", headers=_H(aufa)).status_code == 200
+    assert c.post(f"/api/bills/{bid}/close", headers=_H(wulan)).status_code == 200
 
     r = c.post(f"/api/bills/{bid}/photo",
-               files={"file": ("x.jpg", b"data", "image/jpeg")}, headers=_H(aufa))
+               files={"file": ("x.jpg", b"data", "image/jpeg")}, headers=_H(wulan))
     assert r.status_code == 403, r.text
-    r2 = c.delete(f"/api/bills/{bid}/photos/{pid}", headers=_H(aufa))
+    r2 = c.delete(f"/api/bills/{bid}/photos/{pid}", headers=_H(wulan))
     assert r2.status_code == 403, r2.text
     assert [p["id"] for p in db.get_bill(bid)["photos"]] == [pid], "photo must survive"
 

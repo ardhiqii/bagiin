@@ -32,7 +32,7 @@ test.describe('Bagiin — gerbang nama', () => {
   test('51. setelah nama diisi, layar yang tadi terkunci terbuka', async ({ page }) => {
     await page.goto('/create')
     await expect(page.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible()
-    await page.getByLabel('Nama kamu').fill('Aufa')
+    await page.getByLabel('Nama kamu').fill('Budi')
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
 
     // gerbang hilang dan layar Buat langsung bisa dipakai
@@ -48,11 +48,11 @@ test.describe('Bagiin — gerbang nama', () => {
     await expect(page).toHaveURL(/\/b\//)
 
     await page.goto('/')
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Halo, Aufa')
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Halo, Budi')
   })
 
   test('52. tamu tanpa nama tetap bisa lihat bill, tapi diminta nama saat ikut', async ({ page, browser }) => {
-    await named(page, 'Aufa')
+    await named(page, 'Budi')
     await page.goto('/create')
     await page.getByLabel('Nama bill').fill('Link ' + stamp)
     await page.getByLabel('Item 1').fill('Nasi uduk')
@@ -87,9 +87,9 @@ test.describe('Bagiin — gerbang nama', () => {
   })
 
   test('53. hapus identitas mengembalikan aplikasi ke gerbang nama', async ({ page }) => {
-    await named(page, 'Aufa')
+    await named(page, 'Budi')
     await page.goto('/settings')
-    await page.getByLabel('Nama kamu').fill('Aufa Fauqi')
+    await page.getByLabel('Nama kamu').fill('Budi Santoso')
     await page.getByRole('button', { name: 'Simpan nama' }).click()
     await expect(page.getByText('Nama kamu sudah diperbarui')).toBeVisible()
 

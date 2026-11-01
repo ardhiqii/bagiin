@@ -154,7 +154,7 @@ test.describe('Bagiin v2 — satu layar masuk', () => {
 
 test.describe('Bagiin v2 — batas tampilan', () => {
   test('V-06. nama 60 karakter + emoji tampil utuh tanpa merusak layout', async ({ page }) => {
-    const name = 'Aufa ' + '🦖'.repeat(3) + ' ' + 'x'.repeat(48)
+    const name = 'Budi ' + '🦖'.repeat(3) + ' ' + 'x'.repeat(48)
     await startAsGuest(page, name)
     const heading = page.getByRole('heading', { level: 1 })
     await expect(heading).toContainText('🦖')

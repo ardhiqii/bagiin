@@ -45,27 +45,27 @@ def _make_bill(creator, title="Makan Bareng", participants=None):
 
 
 def test_contacts_kontak_terbukti():
-    aufa = db.new_identity("Aufa", role="creator")
+    wulan = db.new_identity("Wulan", role="creator")
     budi = db.new_identity("Budi")
     citra = db.new_identity("Citra")
-    # Aufa creates bill 1, Budi joins -> mutual bill
-    b1 = _make_bill(aufa, "Warung A")
+    # Wulan creates bill 1, Budi joins -> mutual bill
+    b1 = _make_bill(wulan, "Warung A")
     db.join_bill(b1["id"], budi["id"], "Budi")
-    # Citra never shares a bill with Aufa
-    b2 = _make_bill(aufa, "Warung B")
+    # Citra never shares a bill with Wulan
+    b2 = _make_bill(wulan, "Warung B")
     assert db.get_bill(b2["id"])["bill"]["id"]  # bill2 exists, nobody joined
 
-    kontak = db.get_contacts(aufa["id"])
+    kontak = db.get_contacts(wulan["id"])
     ids = {k["id"] for k in kontak}
     assert budi["id"] in ids, f"Budi (joined mutual bill) harus muncul: {kontak}"
     assert citra["id"] not in ids, "Citra belum pernah share bill -> bukan kontak"
-    assert aufa["id"] not in ids, "diri sendiri gak boleh jadi kontak"
+    assert wulan["id"] not in ids, "diri sendiri gak boleh jadi kontak"
     # search filter
-    assert db.get_contacts(aufa["id"], q="bud")[0]["id"] == budi["id"]
-    assert db.get_contacts(aufa["id"], q="cit") == []
-    # Budi sees Aufa too (shared bill is mutual)
+    assert db.get_contacts(wulan["id"], q="bud")[0]["id"] == budi["id"]
+    assert db.get_contacts(wulan["id"], q="cit") == []
+    # Budi sees Wulan too (shared bill is mutual)
     budi_kontak = {k["id"] for k in db.get_contacts(budi["id"])}
-    assert aufa["id"] in budi_kontak
+    assert wulan["id"] in budi_kontak
 
     # kontakt dari bill yang dibuat orang lain (dedi bikin bill, citra join)
     dedi = db.new_identity("Dedi")
@@ -77,19 +77,19 @@ def test_contacts_kontak_terbukti():
 
 
 def test_invite_auto_accept_joins_immediately():
-    aufa = db.new_identity("Aufa", role="creator")
+    wulan = db.new_identity("Wulan", role="creator")
     budi = db.new_identity("Budi")
     # pastikan auto_accept default ON
     assert db.get_identity(budi["id"])["auto_accept"] == 1
-    # bill lama: Budi join -> jadi kontak terbukti Aufa
-    b_old = _make_bill(aufa, "Warung Lama")
+    # bill lama: Budi join -> jadi kontak terbukti Wulan
+    b_old = _make_bill(wulan, "Warung Lama")
     db.join_bill(b_old["id"], budi["id"], "Budi")
-    assert any(c["id"] == budi["id"] for c in db.get_contacts(aufa["id"]))
+    assert any(c["id"] == budi["id"] for c in db.get_contacts(wulan["id"]))
     # bill baru: Budi BELUM di situ, di-invite langsung
-    b1 = _make_bill(aufa, "Warung E")
+    b1 = _make_bill(wulan, "Warung E")
 
     r = client.post(f"/api/bills/{b1['id']}/invite",
-                    json={"identity_id": budi["id"]}, headers=_H(aufa))
+                    json={"identity_id": budi["id"]}, headers=_H(wulan))
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["status"] == "joined", body
@@ -106,16 +106,16 @@ def test_invite_auto_accept_joins_immediately():
 
 
 def test_invite_pending_when_auto_accept_off():
-    aufa = db.new_identity("Aufa", role="creator")
+    wulan = db.new_identity("Wulan", role="creator")
     budi = db.new_identity("Budi")
     db.set_auto_accept(budi["id"], 0)
     assert db.get_identity(budi["id"])["auto_accept"] == 0
-    b_old = _make_bill(aufa, "Warung Lama")
+    b_old = _make_bill(wulan, "Warung Lama")
     db.join_bill(b_old["id"], budi["id"], "Budi")
-    b1 = _make_bill(aufa, "Warung F")
+    b1 = _make_bill(wulan, "Warung F")
 
     r = client.post(f"/api/bills/{b1['id']}/invite",
-                    json={"identity_id": budi["id"]}, headers=_H(aufa))
+                    json={"identity_id": budi["id"]}, headers=_H(wulan))
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "pending", r.json()
     # belum jadi peserta
@@ -125,7 +125,7 @@ def test_invite_pending_when_auto_accept_off():
     pending = db.get_pending_invites(budi["id"])
     assert len(pending) == 1, pending
     assert pending[0]["bill_id"] == b1["id"]
-    assert pending[0]["invited_by_name"] == "Aufa"
+    assert pending[0]["invited_by_name"] == "Wulan"
     assert pending[0]["bill_title"] == "Warung F"
     # dan invite milik orang lain tidak bocor
     citra = db.new_identity("Citra")
@@ -134,14 +134,14 @@ def test_invite_pending_when_auto_accept_off():
 
 
 def test_invite_accept_and_decline():
-    aufa = db.new_identity("Aufa", role="creator")
+    wulan = db.new_identity("Wulan", role="creator")
     budi = db.new_identity("Budi")
     db.set_auto_accept(budi["id"], 0)
-    b_old = _make_bill(aufa, "Warung Lama")
+    b_old = _make_bill(wulan, "Warung Lama")
     db.join_bill(b_old["id"], budi["id"], "Budi")
-    b1 = _make_bill(aufa, "Warung G")
+    b1 = _make_bill(wulan, "Warung G")
     client.post(f"/api/bills/{b1['id']}/invite",
-                json={"identity_id": budi["id"]}, headers=_H(aufa))
+                json={"identity_id": budi["id"]}, headers=_H(wulan))
     inv_id = db.get_pending_invites(budi["id"])[0]["id"]
 
     # accept oleh invitee
@@ -155,11 +155,11 @@ def test_invite_accept_and_decline():
     # decline
     citra = db.new_identity("Citra")
     db.set_auto_accept(citra["id"], 0)
-    b_old2 = _make_bill(aufa, "Warung Lama 2")
+    b_old2 = _make_bill(wulan, "Warung Lama 2")
     db.join_bill(b_old2["id"], citra["id"], "Citra")
-    b2 = _make_bill(aufa, "Warung H")
+    b2 = _make_bill(wulan, "Warung H")
     client.post(f"/api/bills/{b2['id']}/invite",
-                json={"identity_id": citra["id"]}, headers=_H(aufa))
+                json={"identity_id": citra["id"]}, headers=_H(wulan))
     inv2 = db.get_pending_invites(citra["id"])[0]
     r = client.post(f"/api/bills/{b2['id']}/invites/{inv2['id']}/decline", headers=_H(citra))
     assert r.status_code == 200, r.text
@@ -171,10 +171,10 @@ def test_invite_accept_and_decline():
 
 
 def test_invite_permissions_and_edges():
-    aufa = db.new_identity("Aufa", role="creator")
+    wulan = db.new_identity("Wulan", role="creator")
     budi = db.new_identity("Budi")
     citra = db.new_identity("Citra")
-    b1 = _make_bill(aufa, "Warung I")
+    b1 = _make_bill(wulan, "Warung I")
     db.join_bill(b1["id"], budi["id"], "Budi")
 
     # bukan owner -> 403
@@ -183,24 +183,24 @@ def test_invite_permissions_and_edges():
     assert r.status_code == 403, r.text
     # invite diri sendiri -> 400
     r = client.post(f"/api/bills/{b1['id']}/invite",
-                    json={"identity_id": aufa["id"]}, headers=_H(aufa))
+                    json={"identity_id": wulan["id"]}, headers=_H(wulan))
     assert r.status_code == 400, r.text
     # invite yang sudah di bill -> 400
     r = client.post(f"/api/bills/{b1['id']}/invite",
-                    json={"identity_id": budi["id"]}, headers=_H(aufa))
+                    json={"identity_id": budi["id"]}, headers=_H(wulan))
     assert r.status_code == 400, r.text
     # target tidak ada -> 404
     r = client.post(f"/api/bills/{b1['id']}/invite",
-                    json={"identity_id": "gak-ada"}, headers=_H(aufa))
+                    json={"identity_id": "gak-ada"}, headers=_H(wulan))
     assert r.status_code in (400, 404), r.text
     # invite ke bill tertutup -> 403
     db.close_bill(b1["id"])
-    b2 = _make_bill(aufa, "Warung J")
+    b2 = _make_bill(wulan, "Warung J")
     r = client.post(f"/api/bills/{b2['id']}/invite",
-                    json={"identity_id": citra["id"]}, headers=_H(aufa))
+                    json={"identity_id": citra["id"]}, headers=_H(wulan))
     db.close_bill(b2["id"])
     r = client.post(f"/api/bills/{b2['id']}/invite",
-                    json={"identity_id": citra["id"]}, headers=_H(aufa))
+                    json={"identity_id": citra["id"]}, headers=_H(wulan))
     assert r.status_code == 403, r.text
     # accept bill tertutup -> 403
     invs = db.get_pending_invites(citra["id"])
@@ -221,28 +221,28 @@ def test_auto_accept_toggle_endpoint():
     assert db.get_identity(budi["id"])["auto_accept"] == 0
     assert client.get(f"/api/identities/{budi['id']}/me", headers=_H(budi)).json()["auto_accept"] is False
     # orang lain gak bisa ubah punya orang lain
-    aufa = db.new_identity("Aufa", role="creator")
+    wulan = db.new_identity("Wulan", role="creator")
     r = client.post(f"/api/identities/{budi['id']}/auto_accept",
-                    json={"auto_accept": True}, headers=_H(aufa))
+                    json={"auto_accept": True}, headers=_H(wulan))
     assert r.status_code == 403, r.text
     assert db.get_identity(budi["id"])["auto_accept"] == 0
     print("PASS auto_accept toggle: /me reflects, 403 cross-identity")
 
 
 def test_contacts_endpoint_auth():
-    aufa = db.new_identity("Aufa", role="creator")
+    wulan = db.new_identity("Wulan", role="creator")
     budi = db.new_identity("Budi")
-    b1 = _make_bill(aufa, "Warung K")
+    b1 = _make_bill(wulan, "Warung K")
     db.join_bill(b1["id"], budi["id"], "Budi")
     # header salah -> 403
-    r = client.get(f"/api/identities/{aufa['id']}/contacts")
+    r = client.get(f"/api/identities/{wulan['id']}/contacts")
     assert r.status_code in (400, 403), r.text
-    r = client.get(f"/api/identities/{aufa['id']}/contacts", headers=_H(aufa))
+    r = client.get(f"/api/identities/{wulan['id']}/contacts", headers=_H(wulan))
     assert r.status_code == 200, r.text
     assert any(c["id"] == budi["id"] for c in r.json())
     # path id beda dari header -> 403
     citra = db.new_identity("Citra")
-    r = client.get(f"/api/identities/{citra['id']}/contacts", headers=_H(aufa))
+    r = client.get(f"/api/identities/{citra['id']}/contacts", headers=_H(wulan))
     assert r.status_code == 403, r.text
     print("PASS contacts endpoint: auth required, path==header enforced, kontak benar")
 
@@ -251,20 +251,20 @@ def test_invite_requires_kontak_terbukti():
     """MEDIUM fix: invite target must have shared a bill with the inviter.
     Identity ids are public (in every bill payload), so without this anyone
     could force-join strangers to their own bills (spam vector)."""
-    aufa = db.new_identity("Aufa", role="creator")
-    stranger = db.new_identity("Stranger")  # never shared a bill with Aufa
-    b1 = _make_bill(aufa, "Warung Kontak")
+    wulan = db.new_identity("Wulan", role="creator")
+    stranger = db.new_identity("Stranger")  # never shared a bill with Wulan
+    b1 = _make_bill(wulan, "Warung Kontak")
     r = client.post(f"/api/bills/{b1['id']}/invite",
-                    json={"identity_id": stranger["id"]}, headers=_H(aufa))
+                    json={"identity_id": stranger["id"]}, headers=_H(wulan))
     assert r.status_code == 400, r.text
     assert "berbagi bill" in r.json()["detail"].lower(), r.json()
     # belum jadi peserta
     assert not db.identity_on_bill(b1["id"], stranger["id"])
-    # setelah stranger share bill sekali (join bill Aufa), bisa di-invite
-    b_old = _make_bill(aufa, "Warung Lama")
+    # setelah stranger share bill sekali (join bill Wulan), bisa di-invite
+    b_old = _make_bill(wulan, "Warung Lama")
     db.join_bill(b_old["id"], stranger["id"], "Stranger")
     r = client.post(f"/api/bills/{b1['id']}/invite",
-                    json={"identity_id": stranger["id"]}, headers=_H(aufa))
+                    json={"identity_id": stranger["id"]}, headers=_H(wulan))
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "joined", r.json()
     print("PASS invite scope: target wajib kontak terbukti, stranger 400, kontak OK")
@@ -273,22 +273,22 @@ def test_invite_requires_kontak_terbukti():
 def test_reinvite_after_remove_person_actually_joins():
     """HIGH fix: an 'accepted' invite row used to survive remove_person, so a
     re-invite returned status=joined while the person was never re-joined."""
-    aufa = db.new_identity("Aufa", role="creator")
+    wulan = db.new_identity("Wulan", role="creator")
     budi = db.new_identity("Budi")
-    b_old = _make_bill(aufa, "Warung Lama")
+    b_old = _make_bill(wulan, "Warung Lama")
     db.join_bill(b_old["id"], budi["id"], "Budi")
-    b1 = _make_bill(aufa, "Warung E2")
+    b1 = _make_bill(wulan, "Warung E2")
     r = client.post(f"/api/bills/{b1['id']}/invite",
-                    json={"identity_id": budi["id"]}, headers=_H(aufa))
+                    json={"identity_id": budi["id"]}, headers=_H(wulan))
     assert r.json()["status"] == "joined", r.json()
     assert db.identity_on_bill(b1["id"], budi["id"])
     # owner removes Budi
-    r = client.delete(f"/api/bills/{b1['id']}/people/{budi['id']}", headers=_H(aufa))
+    r = client.delete(f"/api/bills/{b1['id']}/people/{budi['id']}", headers=_H(wulan))
     assert r.status_code == 200, r.text
     assert not db.identity_on_bill(b1["id"], budi["id"])
     # re-invite -> harus beneran join lagi (payment row ada), bukan status palsu
     r = client.post(f"/api/bills/{b1['id']}/invite",
-                    json={"identity_id": budi["id"]}, headers=_H(aufa))
+                    json={"identity_id": budi["id"]}, headers=_H(wulan))
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "joined", r.json()
     assert db.identity_on_bill(b1["id"], budi["id"]), "re-invite harus beneran join"
@@ -318,14 +318,14 @@ def test_auto_accept_toggle_strict_boolean():
 def test_pending_invites_exclude_closed_bills():
     """LOW fix: a pending card for a closed bill is a dead-end — accept 403s
     and the card lingers forever. Closed bills must not show pending cards."""
-    aufa = db.new_identity("Aufa", role="creator")
+    wulan = db.new_identity("Wulan", role="creator")
     budi = db.new_identity("Budi")
     db.set_auto_accept(budi["id"], 0)
-    b_old = _make_bill(aufa, "Warung Lama")
+    b_old = _make_bill(wulan, "Warung Lama")
     db.join_bill(b_old["id"], budi["id"], "Budi")
-    b1 = _make_bill(aufa, "Warung Closed Invite")
+    b1 = _make_bill(wulan, "Warung Closed Invite")
     client.post(f"/api/bills/{b1['id']}/invite",
-                json={"identity_id": budi["id"]}, headers=_H(aufa))
+                json={"identity_id": budi["id"]}, headers=_H(wulan))
     assert len(db.get_pending_invites(budi["id"])) == 1
     db.close_bill(b1["id"])
     assert db.get_pending_invites(budi["id"]) == [], "closed bill gak boleh nongol di card"
@@ -336,14 +336,14 @@ def test_join_via_link_voids_pending_invite():
     """Edge: someone with a pending invite opens the bill link instead of the
     home card. The link join used to leave the invite 'pending', so home kept
     showing a dead "Gabung" card for someone already in the bill."""
-    aufa = db.new_identity("Aufa", role="creator")
+    wulan = db.new_identity("Wulan", role="creator")
     budi = db.new_identity("Budi")
     db.set_auto_accept(budi["id"], 0)
-    b_old = _make_bill(aufa, "Warung Lama")
+    b_old = _make_bill(wulan, "Warung Lama")
     db.join_bill(b_old["id"], budi["id"], "Budi")
-    b1 = _make_bill(aufa, "Warung Link-Join")
+    b1 = _make_bill(wulan, "Warung Link-Join")
     client.post(f"/api/bills/{b1['id']}/invite",
-                json={"identity_id": budi["id"]}, headers=_H(aufa))
+                json={"identity_id": budi["id"]}, headers=_H(wulan))
     assert len(db.get_pending_invites(budi["id"])) == 1
     # Budi opens the link directly (POST /join) instead of accepting the card
     r = client.post(f"/api/bills/{b1['id']}/join", headers=_H(budi))

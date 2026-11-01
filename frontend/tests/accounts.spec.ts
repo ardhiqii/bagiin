@@ -28,8 +28,8 @@ async function addAccount(page: Page, brand: string, number: string, holder: str
 
 test.describe('Bagiin — rekening dan undangan', () => {
   test('30. rekening bisa ditambah, diubah, dan dihapus', async ({ page }) => {
-    await freshUser(page, 'Aufa')
-    await addAccount(page, 'BCA', '1234567890', 'Aufa Fauqi')
+    await freshUser(page, 'Budi')
+    await addAccount(page, 'BCA', '1234567890', 'Budi Santoso')
 
     await expect(page.getByText('BCA', { exact: true })).toBeVisible()
     await expect(page.getByText('1234567890')).toBeVisible()
@@ -49,8 +49,8 @@ test.describe('Bagiin — rekening dan undangan', () => {
   })
 
   test('31. rekening pembayar terlihat oleh orang lain di layar bill', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
-    await addAccount(page, 'GoPay', '081234567890', 'Aufa Fauqi')
+    await freshUser(page, 'Budi')
+    await addAccount(page, 'GoPay', '081234567890', 'Budi Santoso')
 
     await page.goto('/create')
     await page.getByLabel('Nama bill').fill('Transfer ' + stamp)
@@ -70,14 +70,14 @@ test.describe('Bagiin — rekening dan undangan', () => {
     await guest.goto(url)
     await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
 
-    await expect(guest.getByText('Transfer ke Aufa')).toBeVisible()
+    await expect(guest.getByText('Transfer ke Budi')).toBeVisible()
     await expect(guest.getByText('GoPay')).toBeVisible()
     await expect(guest.getByText('081234567890')).toBeVisible()
     await ctx.close()
   })
 
   test('32. mematikan terima-otomatis membuat undangan menunggu', async ({ page, browser }) => {
-    await freshUser(page, 'Aufa')
+    await freshUser(page, 'Budi')
     // bikin kontak dulu: satu bill bareng
     await page.goto('/create')
     await page.getByLabel('Nama bill').fill('Kenalan ' + stamp)

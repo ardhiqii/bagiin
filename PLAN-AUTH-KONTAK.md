@@ -38,7 +38,7 @@ yang disimpan di localStorage. Kode pemulihan bisa memindahkannya, tapi tidak ad
 cara login yang wajar di perangkat baru, tidak ada daftar perangkat, dan tidak ada
 cara mematikan satu perangkat saja.
 
-**b. Nama bukan pembeda.** Di DB sandbox ada 245 identity bernama "Aufa" dan 108
+**b. Nama bukan pembeda.** Di DB sandbox ada 245 identity dengan nama yang sama dan 108
 "Bima". `GET /contacts` hanya mengembalikan `{id, name, last_shared}`, jadi sheet
 undangan menampilkan dua baris yang identik. Salah pilih = utang masuk ke orang
 yang salah.
