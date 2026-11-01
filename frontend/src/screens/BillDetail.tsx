@@ -115,6 +115,22 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
   const joined = Boolean(me)
   const canManage = data?.can_manage ?? false
+  /** Peserta yang namanya ada di bill tapi orangnya belum benar-benar masuk:
+   *  belum punya identitas, atau sudah tertaut tapi undangannya masih menunggu
+   *  (terjadi kalau penerima mematikan "terima undangan otomatis"). */
+  const waiting = useMemo(() => {
+    if (!data) return []
+    const joinedIds = new Set(data.people.map((person) => person.identity_id))
+    // yang masih punya kartu undangan sudah tampil di bagian "Undangan menunggu";
+    // di sini hanya yang tidak punya kartu apa pun — misalnya undangannya
+    // ditolak — supaya namanya tidak hilang sama sekali dari layar
+    const invitedIds = new Set((data.pending_invites ?? []).map((invite) => invite.identity_id))
+    return data.participants.filter((participant) => {
+      if (participant.identity_id && joinedIds.has(participant.identity_id)) return false
+      if (participant.identity_id && invitedIds.has(participant.identity_id)) return false
+      return true
+    })
+  }, [data])
   /** Aksi pribadi yang belum selesai — satu-satunya isi bar bawah. */
   const primaryAction = (() => {
     if (!data) return null
@@ -622,15 +638,15 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               <span className="app-spacer" />
               <span className="app-note">
                 <UsersThree size={13} /> {data.people.length} bergabung
-                {data.participants.some((participant) => !participant.identity_id)
-                  ? ' · ' + data.participants.filter((participant) => !participant.identity_id).length + ' diundang'
-                  : ''}
+                {waiting.length > 0 ? ' · ' + waiting.length + ' diundang' : ''}
               </span>
             </div>
             <div>
-              {/* nama yang diketik pembuat tapi orangnya belum join */}
-              {data.participants
-                .filter((participant) => !participant.identity_id)
+              {/* Nama yang belum benar-benar bergabung tetap ditampilkan: baik
+                  yang belum punya identitas (diketik pembuat) maupun yang sudah
+                  tertaut tapi undangannya masih menunggu. Tanpa ini, orang yang
+                  diundang dengan "terima otomatis" mati hilang dari daftar. */}
+              {waiting
                 .map((participant) => (
                   <div className="app-row" key={'placeholder-' + participant.name}>
                     <Avatar label={initials(participant.name)} tone="muted" />

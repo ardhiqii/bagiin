@@ -365,11 +365,13 @@ export type ItemState = 'idle' | 'picked' | 'shared'
 
 export function Field({
   label, value, onChange, hint, error, inputMode, id, disabled,
-  type = 'text', autoComplete, maxLength,
+  type = 'text', autoComplete, maxLength, onBlur,
 }: {
   label: string
   value: string
   onChange: (next: string) => void
+  /** Dipakai kolom yang harus dirapikan saat ditinggal (mis. qty minimal 1). */
+  onBlur?: () => void
   hint?: string
   error?: string
   inputMode?: 'text' | 'numeric' | 'email'
@@ -392,6 +394,7 @@ export function Field({
       maxLength={maxLength}
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
+      onBlur={onBlur}
       aria-invalid={error ? true : undefined}
       aria-describedby={describedBy}
     />
@@ -442,6 +445,9 @@ export function DateField({
 }) {
   const [text, setText] = useState(() => isoToIdDate(value))
   const pickerRef = useRef<HTMLInputElement | null>(null)
+  const digits = text.replace(/[^0-9]/g, '')
+  // lengkap tapi tidak ada di kalender (32/13/2026): jangan diam-diam diterima
+  const invalid = digits.length === 8 && !idDateToIso(digits)
 
   // nilai dari luar (mis. bill lama selesai dimuat) menimpa teks lokal
   useEffect(() => {
@@ -459,6 +465,12 @@ export function DateField({
           inputMode="numeric"
           autoComplete="off"
           placeholder="hh/bb/tttt"
+          aria-invalid={invalid ? true : undefined}
+          aria-describedby={hint || invalid ? `${id}-hint` : undefined}
+          onBlur={() => {
+            // tanggal yang tidak ada tidak boleh tertinggal di layar seolah sah
+            if (invalid) setText(isoToIdDate(value))
+          }}
           onChange={(event) => {
             const digits = event.target.value.replace(/[^0-9]/g, '').slice(0, 8)
             const pretty = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4)]
@@ -494,7 +506,13 @@ export function DateField({
           onChange={(event) => onChange(event.target.value)}
         />
       </div>
-      {hint ? <small id={`${id}-hint`} className="ds-field-hint">{hint}</small> : null}
+      {invalid ? (
+        <small id={`${id}-hint`} className="ds-field-hint is-error">
+          Tanggal itu tidak ada di kalender
+        </small>
+      ) : hint ? (
+        <small id={`${id}-hint`} className="ds-field-hint">{hint}</small>
+      ) : null}
     </div>
   )
 }

@@ -871,6 +871,8 @@
   padding: 0;
 }
 .ds-field-hint { color: var(--ds-muted); }
+.ds-field-hint.is-error { color: var(--ds-danger); }
+.ds-field:has(.ds-field-hint.is-error) input { border-color: var(--ds-danger); }
 .ds-field-error { color: var(--ds-danger); font-weight: var(--ds-weight-medium); }
 .ds-field.has-error input { box-shadow: 0 0 0 2px rgba(176, 68, 61, .28), var(--ds-shadow-content); }
 

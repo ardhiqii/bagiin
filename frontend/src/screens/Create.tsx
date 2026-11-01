@@ -58,6 +58,11 @@ export function Create({ identityId }: { identityId: string | null }) {
   const [discount, setDiscount] = useState('')
   const [payerName, setPayerName] = useState('')
   const [busy, setBusy] = useState(false)
+  // Kunci sinkron, bukan state: dua ketukan dalam satu putaran render sama-sama
+  // membaca busy=false, dan itu cukup untuk membuat DUA bill (terbukti di tes
+  // ketukan ganda). Kunci ini menutup celah sebelum render berikutnya sempat
+  // mematikan tombolnya.
+  const submitLock = useRef(false)
   const [error, setError] = useState('')
   /** Semua foto bill ini: ada yang dibaca AI, ada yang cuma bukti. */
   const [photos, setPhotos] = useState<{ path: string; source: 'ocr' | 'attach' }[]>([])
@@ -206,7 +211,7 @@ export function Create({ identityId }: { identityId: string | null }) {
 
   const parsed = items.map((i) => ({
     name: i.name.trim(),
-    qty: Math.max(0, Number.parseInt(i.qty || '1', 10) || 0),
+    qty: Math.max(1, Number.parseInt(i.qty || '1', 10) || 1),
     price: parseRupiah(i.price),
   }))
   const subtotal = parsed.reduce((sum, i) => sum + i.price * i.qty, 0)
@@ -232,7 +237,8 @@ export function Create({ identityId }: { identityId: string | null }) {
         : ''
 
   async function submit() {
-    if (!canSubmit) return
+    if (submitLock.current || !canSubmit) return
+    submitLock.current = true
     setError('')
     setBusy(true)
     try {
@@ -284,6 +290,7 @@ export function Create({ identityId }: { identityId: string | null }) {
     } catch (err) {
       setError((err as Error).message)
     } finally {
+      submitLock.current = false
       setBusy(false)
     }
   }
@@ -517,6 +524,13 @@ export function Create({ identityId }: { identityId: string | null }) {
                   value={item.qty}
                   inputMode="numeric"
                   onChange={(v) => setItems((prev) => prev.map((it) => (it.key === item.key ? { ...it, qty: v.replace(/[^0-9]/g, '') } : it)))}
+                  // Kotak boleh kosong sebentar saat mengetik, tapi tidak boleh
+                  // ditinggal 0 atau kosong: item tanpa porsi bukan item, dan
+                  // layar Ubah bill sudah memaksa minimal 1 — dua layar tidak
+                  // boleh berbeda aturan untuk kolom yang sama.
+                  onBlur={() => setItems((prev) => prev.map((it) => (
+                    it.key === item.key && (Number(it.qty) || 0) < 1 ? { ...it, qty: '1' } : it
+                  )))}
                 />
                 <Field
                   id={'item-price-' + index}

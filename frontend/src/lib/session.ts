@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { endpoints, isSessionError, setSessionErrorHandler } from './api'
 import { loadStored, publishIdentity, storeIdentity, type Stored } from './identity'
+import type { Identity } from './types'
 import { migrateRecapAliases } from './legacy-aliases'
 
 /**
@@ -107,7 +108,27 @@ const SESSION_TIMEOUT = Symbol('sesi-timeout')
  * Jaringan bermasalah TIDAK mengeluarkan orang dari akunnya — hanya server yang
  * menjawab "identitas ini tidak ada / sesi tidak valid" yang boleh memutus sesi.
  */
-export async function startSession(): Promise<void> {
+/**
+ * Gabungkan jawaban `/me` dengan identitas yang tersimpan di perangkat.
+ *
+ * Sebelum ini hanya `name` dan `role` yang diperbarui. Akibatnya setelan yang
+ * diubah di server tidak pernah sampai ke layar: orang mematikan "terima
+ * undangan otomatis", database menyimpan 0, dan setelah muat ulang sakelarnya
+ * kembali menyala karena yang dibaca nilai lama di perangkat.
+ */
+function mergeIdentity(stored: Stored, me: Partial<Identity> & { auto_accept?: number | boolean }): Stored {
+  const auto = me.auto_accept
+  return {
+    ...stored,
+    name: me.name ?? stored.name,
+    role: me.role ?? stored.role,
+    auto_accept: auto === undefined || auto === null ? stored.auto_accept : auto ? 1 : 0,
+    username: me.username === undefined ? stored.username : me.username,
+    handle: me.handle === undefined ? stored.handle : me.handle,
+  }
+}
+
+export async function startSession() {
   const stored = loadStored()
   if (!stored?.id) {
     setSession({ status: 'anonymous' })
@@ -141,20 +162,14 @@ export async function startSession(): Promise<void> {
     // memuatnya sendiri, dan hasil pemeriksaan yang telat tetap dihormati.
     setSession({ status: 'authed' })
     void probe
-      .then((late) =>
-        publishIdentity({ ...stored, name: late.name ?? stored.name, role: late.role ?? stored.role }),
-      )
+      .then((late) => publishIdentity(mergeIdentity(stored, late)))
       .catch((error) => {
         if (isSessionError(error)) expireSession()
       })
     return
   }
 
-  const merged: Stored = {
-    ...stored,
-    name: me.name ?? stored.name,
-    role: me.role ?? stored.role,
-  }
+  const merged = mergeIdentity(stored, me)
   publishIdentity(merged)
   setSession({ status: 'authed' })
   // Nama kontak dari 0.9 dipindahkan ke server sekali per perangkat. Tidak

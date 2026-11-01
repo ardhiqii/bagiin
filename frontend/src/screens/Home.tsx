@@ -603,7 +603,31 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
         <SkeletonList rows={4} label="Memuat bill" avatar={false} />
       ) : null}
 
-      {!bills.isPending && rows.length === 0 ? (
+      {!bills.isPending && rows.length === 0 && (bills.data ?? []).length > 0 ? (
+        /* Ada bill, tapi saringan/pencarian menyembunyikan semuanya. Tanpa blok
+           ini orang terjebak: bilah "Bill kamu" + tombol Atur ikut hilang, jadi
+           tidak ada lagi jalan untuk melepas saringan selain memuat ulang. */
+        <EmptyState
+          title="Tidak ada bill di saringan ini"
+          art={<img className="ds-art" src={homeEmptyArt} alt="" width={216} height={216} />}
+          action={
+            <Button
+              onClick={() => {
+                setFilter('semua')
+                setPeriod(null)
+                setQuery('')
+                setVisible(PAGE_ROWS)
+              }}
+            >
+              Tampilkan semua bill
+            </Button>
+          }
+        >
+          {(bills.data ?? []).length} bill kamu ada di periode atau status lain.
+        </EmptyState>
+      ) : null}
+
+      {!bills.isPending && rows.length === 0 && (bills.data ?? []).length === 0 ? (
         <EmptyState
           title="Belum ada bill"
           art={<img className="ds-art" src={homeEmptyArt} alt="" width={216} height={216} />}

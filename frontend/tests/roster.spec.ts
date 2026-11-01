@@ -45,6 +45,17 @@ async function createBill(page: Page, title: string, opts: { people?: string[] }
   return page.url()
 }
 
+/** Matikan "Terima undangan otomatis": undangan berhenti di kartu dulu. */
+async function turnOffAutoAccept(page: Page) {
+  await page.goto('/settings')
+  const toggle = page.getByLabel('Terima undangan otomatis')
+  await expect(toggle).toBeVisible({ timeout: 20000 })
+  if (await toggle.isChecked()) {
+    await toggle.click()
+    await expect(toggle).not.toBeChecked()
+  }
+}
+
 test.describe('Bagiin — lunas manual dan daftar nama', () => {
   test('38. pemilik bisa menandai seluruh bill lunas lalu membatalkannya', async ({ page, browser }) => {
     await freshUser(page, 'Budi')
@@ -80,24 +91,30 @@ test.describe('Bagiin — lunas manual dan daftar nama', () => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
     const guest = await ctx.newPage()
     await freshUser(guest, 'Bima')
+    // Bima mematikan undangan otomatis, jadi undangan berhenti sebagai kartu
+    // sampai dia sendiri membuka link — inilah yang membuat nama di daftar
+    // masih berstatus "diundang, belum bergabung"
+    await turnOffAutoAccept(guest)
     await guest.goto(basis)
     await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
     await guest.getByRole('button', { name: /Sate ayam, ketuk/ }).click()
 
     const url = await createBill(page, 'Roster ' + stamp, { people: ['Bima'] })
 
-    // nama dari kontak jadi placeholder sampai orangnya masuk ke bill ini
+    // undangan berhenti sebagai kartu menunggu sampai orangnya membuka link;
+    // namanya tetap terlihat di layar bill, bukan hilang tanpa jejak
     await page.reload()
-    await expect(page.getByText('Diundang, belum bergabung')).toBeVisible()
+    await expect(page.getByText('Undangan menunggu')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText('Belum menerima undangan')).toBeVisible()
 
     await guest.goto(url)
     await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
     await guest.getByRole('button', { name: /Sate ayam, ketuk/ }).click()
     await expect(guest.getByText(/bagian kamu Rp30\.000/)).toBeVisible()
 
-    // klaim berhasil: placeholder hilang, Bima jadi baris orang biasa
+    // klaim berhasil: kartu undangan hilang, Bima jadi baris orang biasa
     await page.reload()
-    await expect(page.getByText('Diundang, belum bergabung')).toHaveCount(0)
+    await expect(page.getByText('Undangan menunggu')).toHaveCount(0, { timeout: 15000 })
     await expect(page.getByText(/Bagian Rp30\.000/)).toBeVisible()
     await expect(page.getByText(/Bima/).first()).toBeVisible()
     await ctx.close()

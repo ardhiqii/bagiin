@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/AppShell'
@@ -30,6 +30,16 @@ export function Settings({ identity }: { identity: Identity | null }) {
   const [confirmReset, setConfirmReset] = useState(false)
   const [autoAccept, setAutoAccept] = useState<boolean>((identity?.auto_accept ?? 1) === 1)
   const [recoveryCode, setRecoveryCode] = useState('')
+
+  // Identitas datang belakangan (sesi selesai dimuat setelah layar ini tampil).
+  // Tanpa sinkronisasi ini, sakelar memakai nilai bawaan selamanya: orang
+  // mematikan undangan otomatis, database menyimpan 0, tapi setelah muat ulang
+  // layar tetap menampilkan "menyala".
+  useEffect(() => {
+    if (!identity) return
+    setAutoAccept((identity.auto_accept ?? 1) === 1)
+    setName((current) => (current ? current : identity.name ?? ''))
+  }, [identity?.id, identity?.auto_accept, identity?.name])
   const [codeBusy, setCodeBusy] = useState(false)
 
   async function saveName() {

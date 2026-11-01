@@ -152,6 +152,53 @@ def test_rekap_bergerak_setelah_pasangan_identitas_ada():
     assert guest_recap["final"]["payable_idr"] == after["final"]["receivable_idr"]
 
 
+def test_hapus_nama_dari_bill_membatalkan_undangan_menunggu():
+    """Mengedit daftar nama harus ikut mencabut undangan yang masih pending.
+
+    Tanpa ini, layar bill menyimpan kartu "Undangan menunggu" untuk orang yang
+    namanya sudah dihapus pembuat bill.
+    """
+    owner = db.new_identity("Hana Uji", role="creator")
+    guest = db.new_identity("Indra Uji")
+    _shared_bill(owner, guest)
+    db.set_auto_accept(guest["id"], False)
+
+    bill = _create_bill(owner, [{"name": guest["name"], "identity_id": guest["id"]}])
+    invites = client.get(
+        "/api/identities/%s/invites" % guest["id"], headers=_H(guest)
+    ).json()
+    assert len(invites) == 1, invites
+
+    # pembuat menghapus nama itu dari daftar (item tetap seperti semula)
+    detail = client.get("/api/bills/%s" % bill["id"], headers=_H(owner)).json()
+    money = detail["bill"]
+    response = client.put("/api/bills/%s" % bill["id"], headers=_H(owner), json={
+        "title": money["title"],
+        "tax_mode": money.get("tax_mode", "proportional"),
+        "subtotal": money["subtotal_idr"],
+        "order_discount": money.get("order_discount_idr", 0),
+        "cashback": money.get("cashback_idr", 0),
+        "tax": money.get("tax_idr", 0),
+        "service": money.get("service_idr", 0),
+        "total": money["total_idr"],
+        "items": [
+            {
+                "id": item["id"], "name": item["name"], "price": item["price_idr"],
+                "quantity": item.get("quantity", 1), "discount": item.get("discount_idr", 0),
+                "mode": item.get("mode", "free"), "slot_count": item.get("slot_count"),
+            }
+            for item in detail["items"]
+        ],
+        "participants": [],
+    })
+    assert response.status_code == 200, response.text
+
+    invites_after = client.get(
+        "/api/identities/%s/invites" % guest["id"], headers=_H(guest)
+    ).json()
+    assert invites_after == [], invites_after
+
+
 def test_backfill_menautkan_bill_lama_yang_cuma_menyimpan_nama():
     owner = db.new_identity("Fajar Uji", role="creator")
     guest = db.new_identity("Gita Uji")

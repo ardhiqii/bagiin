@@ -27,6 +27,17 @@ async function pickPeople(page: Page, names: string[]) {
   await sheet.getByRole('button', { name: /^Selesai/ }).click()
 }
 
+/** Matikan "Terima undangan otomatis" supaya undangan berhenti di kartu dulu. */
+async function turnOffAutoAccept(page: Page) {
+  await page.goto('/settings')
+  const toggle = page.getByLabel('Terima undangan otomatis')
+  await expect(toggle).toBeVisible({ timeout: 20000 })
+  if (await toggle.isChecked()) {
+    await toggle.click()
+    await expect(toggle).not.toBeChecked()
+  }
+}
+
 async function createTwoItemBill(page: Page, title: string) {
   await page.goto('/create')
   await page.getByLabel('Nama bill').fill(title)
@@ -112,6 +123,9 @@ test.describe('Bagiin — mengubah bill', () => {
       await guest.goto(basis)
       await guest.getByRole('button', { name: 'Ikut bill ini' }).click()
       await guest.getByRole('button', { name: /Nasi goreng, ketuk/ }).first().click()
+      // Citra sengaja mematikan undangan otomatis: hanya dengan begitu ada nama
+      // yang benar-benar berstatus "diundang, belum bergabung"
+      if (person === 'Citra') await turnOffAutoAccept(guest)
       await guestCtx.close()
     }
 
@@ -141,8 +155,8 @@ test.describe('Bagiin — mengubah bill', () => {
     await openActions(page)
     await page.getByRole('button', { name: 'Ubah bill' }).click()
 
-    // nama yang sudah bergabung tidak punya tombol hapus
-    await expect(page.getByText('· bergabung')).toBeVisible()
+    // nama yang sudah bergabung tidak punya tombol hapus (Bima ikut otomatis)
+    await expect(page.getByText('· bergabung').first()).toBeVisible()
     await expect(page.getByRole('button', { name: 'Hapus nama Bima' })).toHaveCount(0)
 
     // Citra belum bergabung: bisa dihapus

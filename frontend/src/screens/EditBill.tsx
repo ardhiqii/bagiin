@@ -84,9 +84,16 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
   const pickedContacts = (contacts.data ?? []).filter((contact) =>
     rosterDraft.includes(contact.display_name),
   )
-  // nama yang sudah diklaim orangnya dikunci: mengeluarkan orang pakai tombol
-  // "Keluarkan" di layar bill, bukan dengan menghapus namanya di sini
-  const claimed = new Set((data?.participants ?? []).filter((p) => p.identity_id).map((p) => p.name))
+  // Nama dikunci hanya kalau orangnya benar-benar sudah bergabung (punya baris
+  // pembayaran di bill ini). Peserta yang baru diundang — misalnya penerima
+  // mematikan "terima undangan otomatis" — masih boleh dihapus/diganti, dan
+  // mengeluarkan orang yang sudah masuk tetap lewat tombol "Keluarkan".
+  const joinedIds = new Set((data?.people ?? []).map((person) => person.identity_id))
+  const claimed = new Set(
+    (data?.participants ?? [])
+      .filter((p) => p.identity_id && joinedIds.has(p.identity_id))
+      .map((p) => p.name),
+  )
 
   const parsed = drafts.map((draft) => ({
     id: draft.id,

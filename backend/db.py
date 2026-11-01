@@ -1099,6 +1099,20 @@ def update_bill(bill_id: str, title: str, merchant=UNCHANGED,
                 "INSERT INTO bill_participant (bill_id, name, identity_id, sort_order) VALUES (?, ?, ?, ?)",
                 (bill_id, name, claims.get(name), i),
             )
+        # Undangan yang masih menggantung untuk nama yang baru saja dihapus ikut
+        # dibatalkan. Tanpa ini layar bill menyimpan kartu "Undangan menunggu"
+        # untuk orang yang sudah tidak ada di daftar nama.
+        conn.execute(
+            """
+            DELETE FROM bill_invite
+            WHERE bill_id = ? AND status = 'pending'
+              AND identity_id NOT IN (
+                    SELECT identity_id FROM bill_participant
+                    WHERE bill_id = ? AND identity_id IS NOT NULL
+              )
+            """,
+            (bill_id, bill_id),
+        )
     # items diff
     existing = {r["id"] for r in conn.execute(
         "SELECT id FROM item WHERE bill_id = ?", (bill_id,))}
