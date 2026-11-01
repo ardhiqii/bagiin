@@ -151,11 +151,11 @@ def test_slow_gemini_cannot_consume_reserved_openrouter_budget(monkeypatch):
     """A Gemini failure at its primary deadline still leaves fallback time."""
     monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
     monkeypatch.setattr(ocr, "OR_API_KEY", "fake-openrouter-key")
-    # 9 detik: cukup untuk dua model Gemini (masing-masing minimal
-    # _MIN_ATTEMPT_SECONDS) plus cadangan 1/3 anggaran. Anggaran 3 detik
-    # membuat irisan model pertama di bawah batas minimum, dan Gemini tidak
-    # dicoba sama sekali — jalur yang berbeda dari yang mau diuji di sini.
-    monkeypatch.setattr(ocr, "OCR_BUDGET_SECONDS", 9.0)
+    # Anggaran asli (80 detik) dengan jam palsu: waktunya tidak benar-benar
+    # berjalan, jadi tesnya tetap cepat. Angka kecil seperti 3 detik membuat
+    # irisan model pertama jatuh di bawah _MIN_ATTEMPT_SECONDS, sehingga Gemini
+    # tidak dicoba sama sekali — jalur yang berbeda dari yang mau diuji di sini.
+    monkeypatch.setattr(ocr, "OCR_BUDGET_SECONDS", 60.0)
 
     class _Clock:
         def __init__(self):

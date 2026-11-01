@@ -182,15 +182,26 @@ RETRY_CODES = (429, 500, 502, 503, 504)
 # another 3x90s + backoff -> ~465s worst case on a single request. Cloudflare cuts the
 # connection at 100s and returns its own 524 HTML, so anything past that point burns
 # CPU for nobody. Both providers now share ONE wall-clock budget for the whole call.)
-OCR_BUDGET_SECONDS = 45.0
-_ATTEMPT_TIMEOUT_CAP = 15.0
+# Anggaran total. Sudah dicoba 80 detik supaya model gratis OpenRouter (48-168
+# detik) kebagian waktu: hasilnya pengguna menunggu 96 detik dan tetap gagal,
+# karena modelnya mengembalikan content kosong. Menunggu lebih lama bukan
+# perbaikan. 60 detik: Gemini tetap dapat 30 detik, dan kegagalan berhenti lebih
+# cepat daripada menahan orang di layar selama satu setengah menit.
+OCR_BUDGET_SECONDS = float(os.environ.get("BAGIIN_OCR_BUDGET_SECONDS", "60"))
+# Batas satu percobaan. 15 detik hanya cukup untuk Gemini; model gratis yang
+# menjawab benar butuh ~48 detik, jadi batasnya ikut dinaikkan dan dijaga
+# anggaran total yang tetap memotong.
+_ATTEMPT_TIMEOUT_CAP = float(os.environ.get("BAGIIN_OCR_ATTEMPT_CAP", "30"))
 _MIN_ATTEMPT_SECONDS = 3.0
 _OPENROUTER_MAX_ATTEMPTS = 2
 # Keep a bounded slice for the fallback instead of letting a slow primary
 # consume the shared deadline. The ratio makes tiny test budgets scale down,
 # while the cap keeps production fallback latency predictable.
-_OPENROUTER_FALLBACK_RATIO = 1 / 3
-_OPENROUTER_FALLBACK_MAX_SECONDS = 15.0
+# Bagian anggaran yang disisihkan untuk cadangan OpenRouter. Model gratis yang
+# terukur butuh ~48 detik, jadi sisanya harus selebar itu; kalau disisihkan 15
+# detik seperti dulu, kandidat terbaik pun kehabisan waktu sebelum menjawab.
+_OPENROUTER_FALLBACK_RATIO = 0.5
+_OPENROUTER_FALLBACK_MAX_SECONDS = 30.0
 
 SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Semua gambar dalam satu permintaan adalah halaman atau potongan dari SATU pesanan yang sama.
 Gabungkan bukti dari semua gambar dan jangan menghitung baris, diskon, pajak, atau total yang tumpang tindih dua kali. Output JSON EXACTLY:
@@ -610,10 +621,22 @@ def _active_openrouter_models() -> tuple[str, ...]:
     return models or DEFAULT_OPENROUTER_OCR_MODELS
 
 
-def _openrouter_model_deadline(deadline: float, remaining_models: int) -> float:
-    """Give every remaining model a fair slice of the shared wall-clock budget."""
+def _openrouter_model_deadline(
+    deadline: float, remaining_models: int, index: int = 0
+) -> float:
+    """Bagi waktu cadangan: kandidat pertama boleh memakai sisa, sisanya dibagi.
+
+    Membagi rata terdengar adil tapi salah di sini. Model gratis yang terukur
+    menjawab benar butuh ~48 detik; kalau empat model berbagi 50 detik, masing
+    masing dapat 12 detik dan SEMUANYA gagal — padahal yang pertama akan berhasil
+    kalau saja diberi waktu. Kandidat pertama karena itu memegang sisa waktu
+    (dibatasi `_ATTEMPT_TIMEOUT_CAP`), dan kalau dia gagal cepat (429 dalam 2
+    detik) kandidat berikutnya masih kebagian sisa yang hampir utuh.
+    """
     now = time.monotonic()
     remaining = max(0.0, deadline - now)
+    if index == 0:
+        return min(deadline, now + min(_ATTEMPT_TIMEOUT_CAP, remaining))
     share = remaining / max(1, remaining_models)
     return min(deadline, now + min(_ATTEMPT_TIMEOUT_CAP, share))
 
@@ -645,7 +668,9 @@ def _openrouter_ocr(
     for index, model in enumerate(models):
         if deadline <= time.monotonic():
             break
-        model_deadline = _openrouter_model_deadline(deadline, len(models) - index)
+        model_deadline = _openrouter_model_deadline(
+            deadline, len(models) - index, index=index
+        )
         try:
             return _openrouter_model_ocr(
                 payload_images,
@@ -798,6 +823,11 @@ def _openrouter_payload(
             "content": [{"type": "text", "text": SYSTEM_PROMPT}] + image_parts,
         }],
         "temperature": 0.1,
+        # Model reasoning menghabiskan token untuk berpikir sebelum menulis
+        # jawaban. Tanpa batas yang longgar, model seperti nemotron berhenti
+        # dengan `finish_reason=length` dan content kosong — yang terbaca sebagai
+        # "respons tidak bisa dibaca", padahal modelnya cuma kehabisan tempat.
+        "max_tokens": 2500,
     }
     if structured:
         payload["response_format"] = {"type": "json_object"}
