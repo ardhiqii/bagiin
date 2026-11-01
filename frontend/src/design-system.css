@@ -1021,6 +1021,17 @@
   margin-top: var(--ds-space-section);
   padding-top: var(--ds-space-4);
   border-top: 1px solid var(--ds-hairline);
+  /* Menempel di bawah sheet: di 360x640 isi sheet pasti lebih tinggi dari layar,
+     dan tombol "Terapkan" yang harus digulir dulu berarti orang bisa menutup
+     sheet tanpa pernah menerapkan saringannya. Latar solid + garis rambut
+     memisahkannya dari isi yang lewat di belakangnya. */
+  position: sticky;
+  bottom: calc(-1 * max(var(--ds-space-6), env(safe-area-inset-bottom)));
+  z-index: 2;
+  margin-inline: calc(-1 * var(--ds-gutter-sheet));
+  padding-inline: var(--ds-gutter-sheet);
+  padding-bottom: var(--ds-space-3);
+  background: var(--ds-bg);
 }
 /* ---------- Isi sheet: satu pola untuk semua bidang ----------
    Setiap bidang = label + kontrol, dengan jarak yang sama di mana pun:
