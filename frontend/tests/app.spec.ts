@@ -177,4 +177,24 @@ test.describe('Bagiin — perilaku user', () => {
     await nav.getByRole('link', { name: 'Beranda', exact: true }).click()
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Halo')
   })
+
+
+  /**
+   * Server yang lambat atau jaringan yang menggantung tidak boleh membuat orang
+   * menatap kerangka selamanya. Dulu status sesi menunggu tanpa batas, jadi
+   * /me yang tidak pernah menjawab = layar putih berisi kerangka, selamanya.
+   */
+  test('9. server lambat: layar dibuka, bukan menatap kerangka selamanya', async ({ page }) => {
+    await onboard(page, 'Budi')
+    // setelah identitas ada, tahan pemeriksaan sesi lebih lama dari batas tunggu
+    await page.route('**/api/identities/*/me', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 15000))
+      await route.continue()
+    })
+    await page.reload()
+    // kerangka muncul dulu, tapi tidak boleh bertahan lebih dari ~8 detik
+    await expect(page.locator('.ds-skel')).toHaveCount(0, { timeout: 12000 })
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Budi')
+    await expect(page.getByRole('navigation', { name: 'Navigasi utama' })).toBeVisible()
+  })
 })

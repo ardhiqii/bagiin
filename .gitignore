@@ -22,3 +22,6 @@ backend/.env
 
 # artefak build TypeScript
 frontend/tsconfig.tsbuildinfo
+
+# skrip ukur sekali pakai (jangan ikut ter-commit)
+frontend/.*.mjs

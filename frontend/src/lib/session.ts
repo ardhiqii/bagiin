@@ -93,6 +93,16 @@ export function signOut() {
 }
 
 /**
+ * Batas tunggu validasi sesi. Server yang lambat, atau jaringan yang menggantung,
+ * tidak boleh membuat orang menatap kerangka layar selamanya: sesudah batas ini
+ * layar dibuka dengan identitas tersimpan, dan hasil pemeriksaan yang datang
+ * belakangan tetap dipakai — termasuk memutus sesi kalau ternyata identitasnya
+ * sudah tidak ada.
+ */
+const SESSION_CHECK_TIMEOUT_MS = 8000
+const SESSION_TIMEOUT = Symbol('sesi-timeout')
+
+/**
  * Validasi identitas tersimpan ke server sebelum layar mana pun dibuka.
  * Jaringan bermasalah TIDAK mengeluarkan orang dari akunnya — hanya server yang
  * menjawab "identitas ini tidak ada / sesi tidak valid" yang boleh memutus sesi.
@@ -104,28 +114,16 @@ export async function startSession(): Promise<void> {
     return
   }
   publishIdentity(stored)
+
+  const probe = endpoints.me(stored.id)
+  let me: Awaited<ReturnType<typeof endpoints.me>> | typeof SESSION_TIMEOUT
   try {
-    const me = await endpoints.me(stored.id)
-    const merged: Stored = {
-      ...stored,
-      name: me.name ?? stored.name,
-      role: me.role ?? stored.role,
-    }
-    publishIdentity(merged)
-    setSession({ status: 'authed' })
-    // Nama kontak dari 0.9 dipindahkan ke server sekali per perangkat. Tidak
-    // ditunggu: layar tidak boleh tertahan oleh pekerjaan latar seperti ini.
-    void migrateRecapAliases(merged.id)
-    if (!stored.secret) {
-      // localStorage dibersihkan sebagian: ambil ulang secret kalau perangkat
-      // ini memang masih pemilik sesi. Gagal di sini bukan alasan menendang.
-      try {
-        const bound = await endpoints.bind(stored.id)
-        if (bound?.secret) publishIdentity({ ...merged, secret: bound.secret })
-      } catch {
-        /* sudah terikat di perangkat lain */
-      }
-    }
+    me = await Promise.race([
+      probe,
+      new Promise<typeof SESSION_TIMEOUT>((resolve) =>
+        setTimeout(() => resolve(SESSION_TIMEOUT), SESSION_CHECK_TIMEOUT_MS),
+      ),
+    ])
   } catch (error) {
     if (isSessionError(error)) {
       expireSession()
@@ -134,6 +132,46 @@ export async function startSession(): Promise<void> {
     // Offline atau server sedang bermasalah: pertahankan sesi, biar layar yang
     // menampilkan pesan koneksi sendiri.
     setSession({ status: 'authed' })
+    return
+  }
+
+  if (me === SESSION_TIMEOUT) {
+    // Server belum menjawab dalam batas tunggu: buka layar dengan identitas yang
+    // tersimpan, jangan tahan orang di kerangka. Tiap layar punya keadaan
+    // memuatnya sendiri, dan hasil pemeriksaan yang telat tetap dihormati.
+    setSession({ status: 'authed' })
+    void probe
+      .then((late) =>
+        publishIdentity({ ...stored, name: late.name ?? stored.name, role: late.role ?? stored.role }),
+      )
+      .catch((error) => {
+        if (isSessionError(error)) expireSession()
+      })
+    return
+  }
+
+  const merged: Stored = {
+    ...stored,
+    name: me.name ?? stored.name,
+    role: me.role ?? stored.role,
+  }
+  publishIdentity(merged)
+  setSession({ status: 'authed' })
+  // Nama kontak dari 0.9 dipindahkan ke server sekali per perangkat. Tidak
+  // ditunggu: layar tidak boleh tertahan oleh pekerjaan latar seperti ini.
+  void migrateRecapAliases(merged.id)
+  if (!stored.secret) {
+    // localStorage dibersihkan sebagian: ambil ulang secret kalau perangkat ini
+    // memang masih pemilik sesi. Jangan ditunggu — endpoint ini pun bisa lambat,
+    // dan gagal di sini bukan alasan menendang orang dari akunnya.
+    void endpoints
+      .bind(stored.id)
+      .then((bound) => {
+        if (bound?.secret) publishIdentity({ ...merged, secret: bound.secret })
+      })
+      .catch(() => {
+        /* sudah terikat di perangkat lain */
+      })
   }
 }
 
