@@ -218,11 +218,21 @@ test.describe('lebar CSS besar di ponsel', () => {
         const r = el.getBoundingClientRect()
         return { x: Math.round(r.left), w: Math.round(r.width) }
       }
-      return { vw: innerWidth, frame: g('.app-frame'), nav: g('.app-nav') }
+      const kartu = document.querySelector('.app-body > *')
+      const kr = kartu?.getBoundingClientRect()
+      return {
+        vw: innerWidth,
+        frame: g('.app-frame'),
+        nav: g('.app-nav'),
+        isi: kr ? { x: Math.round(kr.left), w: Math.round(kr.width) } : null,
+      }
     })
     expect(m.vw).toBe(506)
     expect(m.frame).toEqual({ x: 0, w: 506 })
     expect(m.nav).toEqual({ x: 0, w: 506 })
+    // Permukaan bar sampai tepi, tapi isinya tidak ikut melar: lebar isi
+    // bertahan 440 px seperti di ponsel 480 px, jadi marginnya tetap lega.
+    expect(m.isi).toEqual({ x: 33, w: 440 })
   })
 })
 })

@@ -44,7 +44,14 @@ textarea {
    lebar layar mana pun. Dulu tiap bagian menulis angkanya sendiri: isi 20/24/34
    px menurut breakpoint, bar bawah selalu 20 px — di laptop bedanya 14 px dan
    bar bawahnya terlihat menjorok ke dalam. */
-.app-shell { --ds-content-x: var(--ds-gutter); }
+.app-shell {
+  --ds-content-x: var(--ds-gutter);
+  /* Jarak kiri-kanan ISI. Frame-nya sendiri selebar layar (permukaan bar harus
+     sampai tepi), tapi isi tidak ikut melar: di atas 480 px sisa ruangnya dibagi
+     dua dan masuk ke padding, jadi lebar isi bertahan di 440 px — 20 px gutter
+     ditambah sisa/2. Di 384 px sisa itu nol, jadi ponsel sempit tidak berubah. */
+  --ds-content-pad: calc(var(--ds-content-x) + max(0px, (100% - 480px) / 2));
+}
 
 .app-frame {
   width: 100%;
@@ -75,7 +82,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: var(--ds-space-3);
-  padding: var(--ds-space-3) var(--ds-content-x);
+  padding: var(--ds-space-3) var(--ds-content-pad);
   background: color-mix(in srgb, var(--ds-bg) 88%, transparent);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 70%, transparent);
@@ -125,7 +132,7 @@ textarea {
 .app-body {
   flex: 1;
   min-height: 0;
-  padding: var(--ds-gutter) var(--ds-content-x) var(--ds-space-6);
+  padding: var(--ds-gutter) var(--ds-content-pad) var(--ds-space-6);
   scroll-padding-bottom: 24px;
   display: flex;
   flex-direction: column;
@@ -147,7 +154,7 @@ textarea {
      permukaan. Sebelumnya ada pita 8 px kosong di bawah tombol plus bayangan
      jatuh ke atas, jadi bar-nya terbaca sebagai panel mengambang yang punya
      jarak sendiri ke navigasi. */
-  padding: var(--ds-space-3) var(--ds-content-x) 0;
+  padding: var(--ds-space-3) var(--ds-content-pad) 0;
   /* Satu permukaan dengan navigasi di bawahnya: kalau bar aksi memakai warna
      halaman sementara navigasi putih, keduanya terbaca dua panel bertumpuk. */
   background: color-mix(in srgb, var(--ds-surface) 92%, transparent);
@@ -1105,7 +1112,7 @@ p, small, .app-note { text-wrap: pretty; }
 .app-nav a.app-rail-extra { display: none; }
 
 @media (min-width: 720px) {
-  .app-shell { --ds-content-x: var(--ds-space-6); }
+  .app-shell { --ds-content-x: var(--ds-space-6); --ds-content-pad: var(--ds-content-x); }
   .app-frame {
     display: block;
     height: auto;
@@ -1133,7 +1140,7 @@ p, small, .app-note { text-wrap: pretty; }
 }
 
 @media (min-width: 900px) {
-  .app-shell { --rail: 208px; --ds-content-x: 34px; }
+  .app-shell { --rail: 208px; --ds-content-x: 34px; --ds-content-pad: var(--ds-content-x); }
   .app-frame {
     display: grid;
     grid-template-columns: 208px minmax(0, 1fr);
