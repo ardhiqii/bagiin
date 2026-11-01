@@ -15,6 +15,13 @@ async function identity(page: Page) {
   return JSON.parse(stored || '{}') as { id: string; name: string; secret: string }
 }
 
+/** Identitas ditulis ke localStorage setelah layar selesai memuat; membaca
+ *  terlalu cepat menghasilkan objek kosong dan header auth yang hilang. */
+async function waitForIdentity(page: Page) {
+  await expect.poll(async () => (await identity(page)).id, { timeout: 20000 }).toBeTruthy()
+  return identity(page)
+}
+
 test.describe('1.0 — integritas yang tidak kelihatan', () => {
   test('I-01. pratinjau tautan dan PWA: og:image, manifest, ikon semuanya hidup', async ({ page, request }) => {
     await page.goto('/')
@@ -121,7 +128,7 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     await page.goto('/')
     await page.getByLabel('Nama kamu').fill(name)
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
-    const me = await identity(page)
+    const me = await waitForIdentity(page)
 
     await page.goto('/create')
     await page.getByLabel('Nama bill').fill('Konsisten ' + stamp)
@@ -141,7 +148,12 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     // ambil angka dari dua endpoint berbeda, bukan dari DOM: kalau backend
     // menjawab beda, layar mana pun yang salah tidak akan ketahuan dari UI
     const headers = { 'X-Identity-Id': me.id, 'X-Identity-Secret': me.secret }
-    const list = await (await page.request.get(`/api/identities/${me.id}/bills`, { headers })).json()
+    const listRes = await page.request.get(`/api/identities/${me.id}/bills`, { headers })
+    const listRaw = await listRes.text()
+    if (!listRes.ok() || !listRaw.trim().startsWith('[')) {
+      throw new Error('GET bills -> ' + listRes.status() + ' ' + listRaw.slice(0, 200))
+    }
+    const list = JSON.parse(listRaw)
     const row = list.find((b: { id: string }) => b.id === billId)
     const detail = await (await page.request.get(`/api/bills/${billId}`, { headers })).json()
     const mine = detail.people.find((p: { identity_id: string }) => p.identity_id === me.id)
