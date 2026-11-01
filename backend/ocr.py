@@ -11,6 +11,8 @@ import time
 from datetime import date as _date
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as _FutureTimeout
 
 log = logging.getLogger("bagiin.ocr")
 
@@ -98,9 +100,9 @@ OR_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 # sebagai catatan: kalau kuotanya sedang lapang, mereka model tercepat di sini.
 DEFAULT_OPENROUTER_OCR_MODELS = (
     "nvidia/nemotron-3.5-super-vl:free",
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "dots-studio/dots-3-note-preview:free",
     "openrouter/free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "google/gemma-4-26b-a4b-it:free",
     "google/gemma-4-31b-it:free",
 )
@@ -187,11 +189,11 @@ RETRY_CODES = (429, 500, 502, 503, 504)
 # karena modelnya mengembalikan content kosong. Menunggu lebih lama bukan
 # perbaikan. 60 detik: Gemini tetap dapat 30 detik, dan kegagalan berhenti lebih
 # cepat daripada menahan orang di layar selama satu setengah menit.
-OCR_BUDGET_SECONDS = float(os.environ.get("BAGIIN_OCR_BUDGET_SECONDS", "60"))
+OCR_BUDGET_SECONDS = float(os.environ.get("BAGIIN_OCR_BUDGET_SECONDS", "85"))
 # Batas satu percobaan. 15 detik hanya cukup untuk Gemini; model gratis yang
 # menjawab benar butuh ~48 detik, jadi batasnya ikut dinaikkan dan dijaga
 # anggaran total yang tetap memotong.
-_ATTEMPT_TIMEOUT_CAP = float(os.environ.get("BAGIIN_OCR_ATTEMPT_CAP", "30"))
+_ATTEMPT_TIMEOUT_CAP = float(os.environ.get("BAGIIN_OCR_ATTEMPT_CAP", "55"))
 _MIN_ATTEMPT_SECONDS = 3.0
 _OPENROUTER_MAX_ATTEMPTS = 2
 # Keep a bounded slice for the fallback instead of letting a slow primary
@@ -200,8 +202,8 @@ _OPENROUTER_MAX_ATTEMPTS = 2
 # Bagian anggaran yang disisihkan untuk cadangan OpenRouter. Model gratis yang
 # terukur butuh ~48 detik, jadi sisanya harus selebar itu; kalau disisihkan 15
 # detik seperti dulu, kandidat terbaik pun kehabisan waktu sebelum menjawab.
-_OPENROUTER_FALLBACK_RATIO = 0.5
-_OPENROUTER_FALLBACK_MAX_SECONDS = 30.0
+_OPENROUTER_FALLBACK_RATIO = 0.65
+_OPENROUTER_FALLBACK_MAX_SECONDS = 55.0
 
 SYSTEM_PROMPT = """Kamu membaca struk belanja/makanan Indonesia. Semua gambar dalam satu permintaan adalah halaman atau potongan dari SATU pesanan yang sama.
 Gabungkan bukti dari semua gambar dan jangan menghitung baris, diskon, pajak, atau total yang tumpang tindih dua kali. Output JSON EXACTLY:
@@ -672,12 +674,28 @@ def _openrouter_ocr(
             deadline, len(models) - index, index=index
         )
         try:
-            return _openrouter_model_ocr(
+            # Batas waktu harus dipaksa dari luar. `urlopen(timeout=…)` hanya
+            # membatasi tiap operasi socket, bukan total permintaan: OpenRouter
+            # mengirim byte sedikit-sedikit sambil menahan antrean, jadi model
+            # yang dijadwalkan 45 detik pernah baru menjawab di detik ke-95 dan
+            # menembus anggaran (dan hampir menembus batas 100 detik Cloudflare).
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(
+                _openrouter_model_ocr,
                 payload_images,
                 payload_mimes,
                 model,
                 model_deadline,
             )
+            try:
+                return future.result(
+                    timeout=max(0.1, model_deadline - time.monotonic())
+                )
+            except _FutureTimeout:
+                future.cancel()
+                raise _OpenRouterFailure("timeout") from None
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
         except _OpenRouterFailure as failure:
             # (bug v66: provider bodies can contain receipt fields or other
             # sensitive response data; only the selected model and a safe
@@ -823,11 +841,12 @@ def _openrouter_payload(
             "content": [{"type": "text", "text": SYSTEM_PROMPT}] + image_parts,
         }],
         "temperature": 0.1,
-        # Model reasoning menghabiskan token untuk berpikir sebelum menulis
-        # jawaban. Tanpa batas yang longgar, model seperti nemotron berhenti
-        # dengan `finish_reason=length` dan content kosong — yang terbaca sebagai
-        # "respons tidak bisa dibaca", padahal modelnya cuma kehabisan tempat.
-        "max_tokens": 2500,
+        # SENGAJA tanpa `max_tokens`. Model gratis di sini adalah model reasoning:
+        # mereka menghabiskan ribuan token untuk berpikir sebelum menulis
+        # jawaban. Dibatasi 2500, hasilnya `finish_reason=length` dengan content
+        # kosong — terbaca sebagai "respons tidak bisa dibaca" padahal modelnya
+        # cuma kehabisan tempat. Tanpa batas itu, nemotron-3.5-super-vl menjawab
+        # benar dalam 20,6 detik; dengan batas 8000 jadi 81 detik.
     }
     if structured:
         payload["response_format"] = {"type": "json_object"}
