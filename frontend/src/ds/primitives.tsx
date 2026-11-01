@@ -374,8 +374,8 @@ export function Field({
   inputMode?: 'text' | 'numeric' | 'email'
   id: string
   disabled?: boolean
-  /** password dipakai di layar masuk; default teks biasa */
-  type?: 'text' | 'password' | 'email'
+  /** password dipakai di layar masuk; date dipakai pemilih tanggal bill */
+  type?: 'text' | 'password' | 'email' | 'date'
   autoComplete?: string
   maxLength?: number
 }) {
@@ -474,15 +474,33 @@ export function SkeletonCard({ label = 'Memuat' }: { label?: string }) {
   )
 }
 
-/** Kerangka daftar: avatar, dua baris teks, satu angka di kanan. */
-export function SkeletonList({ rows = 3, label = 'Memuat' }: { rows?: number; label?: string }) {
+/**
+ * Kerangka daftar: avatar (opsional), dua baris teks, satu angka di kanan.
+ *
+ * Bentuknya mengikuti daftar aslinya, bukan daftar kartu terpisah: baris asli
+ * tinggal di dalam satu kartu dengan pemisah 1 px dan tinggi ~94 px. Versi
+ * pertama kerangka ini memakai kartu-kartu terpisah berjarak 8 px setinggi
+ * 64 px, jadi yang muncul di layar bukan bayangan isi yang akan datang —
+ * melainkan daftar lain yang lebih rapat dan lebih pendek, lalu melompat saat
+ * data asli masuk.
+ */
+export function SkeletonList({
+  rows = 3,
+  label = 'Memuat',
+  avatar = true,
+}: {
+  rows?: number
+  label?: string
+  /** daftar bill tidak punya avatar; daftar kontak punya */
+  avatar?: boolean
+}) {
   return (
     <div className="ds-skel-list" role="status" aria-live="polite">
       <span className="ds-skel-sr">{label}…</span>
       {Array.from({ length: rows }).map((_, index) => (
-        <div className="ds-skel-row" key={index} aria-hidden="true">
-          <Skeleton width={40} height={40} radius={14} />
-          <span style={{ flex: 1, display: 'grid', gap: 7 }}>
+        <div className={'ds-skel-row' + (avatar ? '' : ' is-bill')} key={index} aria-hidden="true">
+          {avatar ? <Skeleton width={40} height={40} radius={14} /> : null}
+          <span className="ds-skel-lines">
             <Skeleton width={index % 2 === 0 ? '58%' : '44%'} height={13} />
             <Skeleton width={index % 2 === 0 ? '36%' : '52%'} height={11} />
           </span>
@@ -520,15 +538,10 @@ export function LoadingState({
         <span className="ds-loading-coin" style={{ backgroundImage: `url(${loadingCoin})` }} />
       </div>
       <div className="ds-loading-copy">
-        <b style={{ fontSize: 15 }}>{label}…</b>
+        <b className="ds-loading-title">{label}…</b>
         {Array.from({ length: rows }).map((_, index) => (
           <Skeleton key={index} width={index === 0 ? '86%' : '58%'} height={11} />
         ))}
-        <span className="ds-loading-dots" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </span>
       </div>
     </div>
   )

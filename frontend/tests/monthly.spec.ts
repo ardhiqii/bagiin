@@ -302,4 +302,43 @@ test.describe('Bagiin — riwayat per bulan', () => {
     await expect(page.getByText('Perlu Okt ' + stamp)).toBeVisible()
     await expect(page.getByRole('button', { name: /Atur · 1/ })).toBeVisible()
   })
+
+  test('134. tanggal bill bisa diubah saat dibuat, bawaannya hari ini', async ({ page }) => {
+    await freshUser(page, 'Budi')
+    await page.goto('/create')
+
+    /**
+     * Tanggal bawaan harus tanggal hari ini menurut jam perangkat. Kalau
+     * dihitung lewat toISOString() (UTC), di WIB antara pukul 00.00 dan 07.00
+     * tanggalnya masih tanggal kemarin.
+     */
+    const dateInput = page.locator('#bill-date')
+    const today = await page.evaluate(() => {
+      const now = new Date()
+      const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
+      return local.toISOString().slice(0, 10)
+    })
+    await expect(dateInput).toHaveValue(today)
+
+    // bill untuk bulan lalu: transaksinya beda dari tanggal pencatatan
+    const now = new Date()
+    const past = new Date(now.getFullYear(), now.getMonth() - 1, 15, 12)
+    const pastISO = `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, '0')}-15`
+    const pastShort = past.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+
+    await page.getByLabel('Nama bill').fill('Tanggal Lalu ' + stamp)
+    await page.getByLabel('Item 1').fill('Nasi goreng')
+    await page.getByLabel('Harga satuan').first().fill('30000')
+    await dateInput.fill(pastISO)
+    await expect(dateInput).toHaveValue(pastISO)
+    await page.getByRole('button', { name: 'Buat bill' }).click()
+    await expect(page).toHaveURL(/\/b\//)
+
+    await page.goto('/')
+    const row = page
+      .getByText('Tanggal Lalu ' + stamp)
+      .locator('xpath=ancestor::*[contains(@class,"app-row")]')
+    // yang tampil tanggal pilihan (15 <bulan lalu>), bukan tanggal pencatatan
+    await expect(row).toContainText(pastShort)
+  })
 })

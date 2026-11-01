@@ -39,6 +39,13 @@ textarea {
 /* Angka selalu rata kolom supaya Rp tidak menari antar baris. */
 .app-shell, .app-row .amt, .ds-balance-value, .ds-money { font-variant-numeric: tabular-nums; }
 
+/* Satu sumber untuk jarak kiri-kanan isi layar.
+   Header, isi, DAN bar bawah memakai nilai ini, jadi tepinya selalu lurus di
+   lebar layar mana pun. Dulu tiap bagian menulis angkanya sendiri: isi 20/24/34
+   px menurut breakpoint, bar bawah selalu 20 px — di laptop bedanya 14 px dan
+   bar bawahnya terlihat menjorok ke dalam. */
+.app-shell { --ds-content-x: var(--ds-gutter); }
+
 .app-frame {
   width: 100%;
   max-width: 480px;
@@ -59,7 +66,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: var(--ds-space-3);
-  padding: var(--ds-space-3) var(--ds-gutter);
+  padding: var(--ds-space-3) var(--ds-content-x);
   background: color-mix(in srgb, var(--ds-bg) 88%, transparent);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 70%, transparent);
@@ -109,7 +116,7 @@ textarea {
 .app-body {
   flex: 1;
   min-height: 0;
-  padding: var(--ds-gutter) var(--ds-gutter) var(--ds-space-6);
+  padding: var(--ds-gutter) var(--ds-content-x) var(--ds-space-6);
   scroll-padding-bottom: 24px;
   display: flex;
   flex-direction: column;
@@ -122,9 +129,12 @@ textarea {
   flex: none;
   position: relative;
   z-index: 30;
-  /* Padding samping sama dengan .app-body supaya tombol utama tidak menempel
-     ke tepi layar sementara kartu di atasnya punya gutter 18 px. */
-  padding: var(--ds-space-3) var(--ds-gutter) var(--ds-space-2);
+  /* Samping memakai --ds-content-x yang SAMA dengan .app-body dan .app-top,
+     jadi tepi bar bawah selalu lurus dengan tepi kartu di atasnya di setiap
+     lebar layar. Sebelumnya nilai ini ditulis ulang dengan --ds-gutter (20 px),
+     padahal isi memakai 24 px di ≥720 dan 34 px di ≥900: di laptop bar bawahnya
+     menjorok 14 px ke dalam dari kartu. */
+  padding: var(--ds-space-3) var(--ds-content-x) var(--ds-space-2);
   background: var(--ds-bg);
   box-shadow: 0 -12px 24px color-mix(in srgb, var(--ds-navy) 6%, transparent);
 }
@@ -237,11 +247,15 @@ p, small, .app-note { text-wrap: pretty; }
 
 /* Bar ringkasan di layar buat bill: total selalu kelihatan, tombol simpan
    tidak pernah tenggelam di bawah lipatan. */
+/* Padding samping TIDAK diulang di sini: .app-bottom sudah memberi gutter.
+   Dulu dua-duanya memberi 20 px, jadi total dan tombol "Buat bill" menjorok
+   40 px dari tepi sementara semua kartu di atasnya 20 px — bar bawahnya
+   terbaca tidak selebar layar. */
 .create-dock {
   display: flex;
   align-items: center;
   gap: var(--ds-space-4);
-  padding: var(--ds-space-3) var(--ds-gutter);
+  padding: var(--ds-space-3) 0;
   border-top: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
 }
 .create-dock .tot { flex: 1; min-width: 0; display: grid; gap: var(--ds-space-half); }
@@ -518,6 +532,33 @@ p, small, .app-note { text-wrap: pretty; }
   text-align: right;
   color: var(--ds-muted);
   font: var(--ds-weight-regular) var(--ds-text-sm)/1.3 var(--ds-font-body);
+}
+
+/* Baris "pilih orang": satu baris utuh dengan tanda + dan garis putus-putus.
+   Sebelumnya tombol teks tenang berukuran 44 px; di layar yang penuh isian
+   baris teks tanpa kotak tidak terbaca sebagai tombol — pemiliknya sendiri
+   sampai tidak sadar tombolnya ada. */
+.add-person {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  width: 100%;
+  min-height: 56px;
+  padding: 0 var(--ds-space-4);
+  border: 1.5px dashed color-mix(in srgb, var(--ds-teal) 42%, transparent);
+  border-radius: var(--ds-radius-md);
+  background: color-mix(in srgb, var(--ds-mint) 50%, transparent);
+  color: var(--ds-teal);
+  font: var(--ds-weight-strong) var(--ds-text-base)/1.2 var(--ds-font-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background .15s ease, transform .12s ease;
+}
+.add-person:active { transform: scale(.99); background: color-mix(in srgb, var(--ds-mint) 78%, transparent); }
+.add-person .add-count {
+  margin-left: auto;
+  font: var(--ds-weight-regular) var(--ds-text-sm)/1 var(--ds-font-body);
+  color: var(--ds-muted);
 }
 
 /* Sheet aksi: tombol berjarak rapat, bukan menumpuk penuh. */
@@ -829,6 +870,18 @@ p, small, .app-note { text-wrap: pretty; }
   background: var(--ds-bg-deep);
 }
 .photo-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Ketuk foto = lihat penuh. Sebelumnya foto di layar buat bill hanya gambar
+   mati: hasil AI tidak bisa diperiksa ulang padahal justru di situ orang perlu
+   memastikan bacaan struknya benar. */
+.photo-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
 .photo-tag {
   position: absolute;
   left: 6px;
@@ -841,7 +894,7 @@ p, small, .app-note { text-wrap: pretty; }
   letter-spacing: .02em;
 }
 .photo-tag.is-ai { background: var(--ds-teal); }
-.photo-tile button {
+.photo-tile .photo-kill {
   position: absolute;
   top: 5px;
   right: 5px;
@@ -856,6 +909,7 @@ p, small, .app-note { text-wrap: pretty; }
   display: grid;
   place-items: center;
   cursor: pointer;
+  z-index: 2;
 }
 .check-row {
   display: flex;
@@ -1019,6 +1073,7 @@ p, small, .app-note { text-wrap: pretty; }
 .app-nav a.app-rail-extra { display: none; }
 
 @media (min-width: 720px) {
+  .app-shell { --ds-content-x: var(--ds-space-6); }
   .app-frame {
     display: block;
     height: auto;
@@ -1046,7 +1101,7 @@ p, small, .app-note { text-wrap: pretty; }
 }
 
 @media (min-width: 900px) {
-  .app-shell { --rail: 208px; }
+  .app-shell { --rail: 208px; --ds-content-x: 34px; }
   .app-frame {
     display: grid;
     grid-template-columns: 208px minmax(0, 1fr);

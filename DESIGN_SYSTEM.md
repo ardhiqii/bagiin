@@ -842,3 +842,35 @@ itu, dan nama orang di rumah tidak melakukan pekerjaan itu.
 Angka kosong tidak diisi tanda pisah. Kalau sebuah kolom tidak punya isi:
 kosongkan, atau jawab pertanyaannya dengan kalimat (`Belum pernah dipakai`), bukan
 dengan glyph yang artinya harus ditebak.
+
+## Memuat: kerangka yang bentuknya sama, bukan teks lalu lompat
+
+Tiga aturan, semuanya dari keluhan nyata di layar ponsel:
+
+1. **Layar tunggu awal langsung menampilkan kerangka**, bukan kalimat
+   "Menyiapkan Bagiin…". Kalimat itu lalu diganti kerangka begitu data datang:
+   dua bentuk untuk satu keadaan, dan yang kedua terasa seperti memuat dua kali.
+2. **Kerangka harus sepadan ukurannya dengan isi aslinya.** Daftar bill asli
+   adalah **satu kartu** dengan pemisah 1 px dan baris setinggi **94 px**; kerangka
+   versi pertama memakai kartu-kartu terpisah setinggi 64 px berjarak 8 px.
+   Bedanya bukan kosmetik: yang muncul di layar bukan bayangan isi yang akan
+   datang, melainkan daftar lain yang lebih rapat — lalu melompat saat data masuk.
+3. **Satu sinyal memuat sudah cukup.** Tiga titik berdenyut di bawah bar kilau
+   terbaca sebagai elemen yang menimpanya, bukan sebagai keadaan memuat. Bar
+   kilau menyatakan hal yang sama; titiknya dihapus.
+
+Jarak di dalam kartu memuat memakai `--ds-space-3` (12 px), bukan 10 px.
+
+## Bar bawah: gutter hanya diberikan sekali
+
+Satu variabel, `--ds-content-x`, menentukan jarak kiri-kanan isi layar: 20 px di
+ponsel, 24 px di ≥720, 34 px di ≥900 (rail). `.app-top`, `.app-body`, dan
+`.app-bottom` semuanya memakai nilai itu, jadi tepinya lurus di lebar layar mana
+pun. Diukur di tujuh lebar (320/360/393/412/480/768/1024): tepi kiri kartu =
+tepi kiri "Total bill" dan tepi kanan tombol = tepi kanan kartu, tanpa selisih.
+
+Dock di dalam `.app-bottom` **tidak boleh** menambah padding samping lagi. Dulu `.create-dock`
+menambah 20 px lagi, jadi total dan tombol "Buat bill" menjorok **40 px** dari
+tepi sementara semua kartu di atasnya 20 px — bar bawahnya terbaca tidak selebar
+layar. Diukur di 393x851 (Samsung A56): sesudah perbaikan `.tot` mulai di x=20
+dan tombol berakhir di 373, sama dengan tepi kartu.

@@ -104,7 +104,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     await pickPhotoThrough(page, 'Scan pakai AI')
 
     await expect(page.getByText(/Membaca struk…/)).toBeVisible()
-    await expect(page.getByText(/Bisa 10–60 detik/)).toBeVisible()
+    await expect(page.getByText(/Bisa 10-60 detik/)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Batal baca' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Batal baca' }).click()
@@ -173,7 +173,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     await expect(page.getByText(/3 dari 10/)).toBeVisible()
 
     // satu foto bisa dilepas lagi tanpa mengganggu yang lain
-    await page.locator('.photo-tile button').first().click()
+    await page.locator('.photo-tile .photo-kill').first().click()
     await expect(page.locator('.photo-tile')).toHaveCount(2)
 
     await page.getByLabel('Nama bill').fill('Pesanan panjang ' + stamp)
@@ -186,5 +186,36 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//)
     await expect(page.getByAltText('Foto struk bill')).toHaveCount(2)
+  })
+
+  /**
+   * Hasil bacaan AI harus bisa diperiksa sebelum bill disimpan. Dulu foto di
+   * layar buat bill hanya gambar mati: satu-satunya cara melihat penuh adalah
+   * menyimpan bill dulu, lalu membukanya dari beranda.
+   */
+  test('43. foto struk bisa diketuk untuk diperiksa penuh sebelum disimpan', async ({ page }) => {
+    await freshUser(page, 'Budi')
+    await page.goto('/create')
+
+    const chooserPromise = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: 'Lampirkan saja' }).click()
+    const chooser = await chooserPromise
+    // struk kecil apa saja: yang diuji di sini membuka penampil, bukan isi fotonya
+    await chooser.setFiles({
+      name: 'struk.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+        'base64',
+      ),
+    })
+
+    await expect(page.locator('.photo-tile')).toHaveCount(1)
+    await page.locator('.photo-open').first().click()
+
+    const sheet = page.getByRole('dialog')
+    await expect(sheet).toBeVisible()
+    await expect(sheet.getByRole('img', { name: /Foto struk bukti 1/ })).toBeVisible()
+    await expect(sheet).toContainText('Cocokkan angkanya')
   })
 })

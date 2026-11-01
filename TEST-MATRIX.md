@@ -159,6 +159,8 @@ kosong).
 | I-13 | Peserta bill dipilih dari kontak lewat sheet pencarian (multi-centang), bukan nama ketik; nama lama tetap bisa dihapus | `roster.spec.ts` 39, `edit.spec.ts` 49 |
 | I-14 | Bill yang sudah lunas memakai lencana hijau **Lunas** dan angkanya meredup; baris yang belum selesai tidak punya lencana, jadi menonjol saat daftar disapu mata | `monthly.spec.ts` 131 |
 | I-15 | Riwayat lintas tahun disaring dua tingkat: chip tahun (dengan jumlah bill) lalu grid 12 bulan; bulan tanpa bill dimatikan; memilih tahun menyaring daftar ke tahun itu | `monthly.spec.ts` 132 |
+| I-16 | Tanggal bill bisa diubah saat membuat bill, bawaannya hari ini menurut jam perangkat (bukan UTC); tanggal pilihan yang tampil di beranda dan yang menentukan bulannya | `monthly.spec.ts` 134 |
+| I-17 | Foto struk di layar buat bill bisa diketuk untuk diperiksa penuh sebelum bill disimpan | `photo-intents.spec.ts` 43 |
 
 ## Integritas angka
 

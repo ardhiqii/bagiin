@@ -597,7 +597,11 @@ export function Home({ identityId, name }: { identityId: string | null; name: st
         </button>
       ) : null}
 
-      {bills.isPending && rows.length === 0 ? <SkeletonList rows={4} label="Memuat bill" /> : null}
+      {/* avatar={false}: daftar bill tidak punya avatar, jadi kerangka yang
+          menampilkan lingkaran avatar menjanjikan bentuk yang tidak akan datang */}
+      {bills.isPending && rows.length === 0 ? (
+        <SkeletonList rows={4} label="Memuat bill" avatar={false} />
+      ) : null}
 
       {!bills.isPending && rows.length === 0 ? (
         <EmptyState

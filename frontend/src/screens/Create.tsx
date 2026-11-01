@@ -5,8 +5,8 @@ import { api } from '../lib/api'
 import { formatRp, parseRupiah } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { Alert, Button, Field, SectionHead } from '../ds/primitives'
-import { X } from '@phosphor-icons/react'
+import { Alert, Button, Field, SectionHead, Sheet } from '../ds/primitives'
+import { Plus, X } from '@phosphor-icons/react'
 import createHeroArt from '../assets/create-hero.webp'
 import scanArt from '../assets/scan.webp'
 import { invalidateMoneyViews } from '../lib/mutations'
@@ -22,6 +22,18 @@ const MAX_TEXT = 120
 
 type DraftItem = { key: string; name: string; qty: string; price: string }
 
+/**
+ * Tanggal hari ini menurut jam perangkat, bukan UTC.
+ *
+ * `new Date().toISOString()` memotong ke UTC: di WIB (UTC+7) pukul 06.00 tanggal
+ * 1 masih tercatat 31 di UTC, jadi tanggal bawaannya bisa meleset sehari.
+ */
+function todayISO(): string {
+  const now = new Date()
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 10)
+}
+
 const newItem = (): DraftItem => ({ key: Math.random().toString(36).slice(2), name: '', qty: '1', price: '' })
 
 /** Angka -> teks ribuan tanpa prefix, untuk isi input. */
@@ -34,6 +46,12 @@ export function Create({ identityId }: { identityId: string | null }) {
 
   const [title, setTitle] = useState('')
   const [merchant, setMerchant] = useState('')
+  /**
+   * Tanggal bill. Bawaannya hari ini, tapi bisa diubah: bill sering dibuat
+   * belakangan untuk transaksi yang tanggalnya lain (makan tanggal 31, dicatat
+   * tanggal 2), dan tanpa pilihan ini tanggalnya ikut tanggal pencatatan.
+   */
+  const [billDate, setBillDate] = useState(todayISO)
   const [items, setItems] = useState<DraftItem[]>([newItem()])
   const [tax, setTax] = useState('')
   const [service, setService] = useState('')
@@ -60,6 +78,8 @@ export function Create({ identityId }: { identityId: string | null }) {
   // pernah sebill masuk lewat link bill: dia memilih namanya sendiri di sana.
   const [picked, setPicked] = useState<Contact[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
+  /** Indeks foto yang sedang dilihat penuh; null = tidak ada. */
+  const [viewer, setViewer] = useState<number | null>(null)
   const contacts = useContacts(identityId, Boolean(identityId))
 
   useEffect(() => {
@@ -221,7 +241,9 @@ export function Create({ identityId }: { identityId: string | null }) {
         body: {
           title: title.trim() || merchant.trim() || 'Bill',
           merchant: merchant.trim() || null,
-          transacted_at: null,
+          // jam 12 siang, bukan tengah malam: tengah malam UTC bisa jatuh ke
+          // tanggal sebelumnya di zona waktu barat, dan jam 12 aman di semua zona.
+          transacted_at: billDate ? billDate + ' 12:00:00' : null,
           tax_mode: 'proportional',
           subtotal,
           order_discount: discountIdr,
@@ -307,15 +329,26 @@ export function Create({ identityId }: { identityId: string | null }) {
           <div className="photo-grid">
             {photos.map((photo) => (
               <div className="photo-tile" key={photo.path}>
-                <img
-                  src={'/uploads/' + photo.path.split('/').pop()}
-                  alt={photo.source === 'ocr' ? 'Foto struk yang dibaca' : 'Foto struk bukti'}
-                />
+                {/* Ketuk = lihat penuh, supaya hasil bacaan AI bisa diperiksa
+                    ulang sebelum bill disimpan. Tombol hapus tetap terpisah:
+                    satu ketukan tidak boleh punya dua arti. */}
+                <button
+                  type="button"
+                  className="photo-open"
+                  aria-label={'Lihat foto ' + (photos.indexOf(photo) + 1)}
+                  onClick={() => setViewer(photos.indexOf(photo))}
+                >
+                  <img
+                    src={'/uploads/' + photo.path.split('/').pop()}
+                    alt={photo.source === 'ocr' ? 'Foto struk yang dibaca' : 'Foto struk bukti'}
+                  />
+                </button>
                 <span className={'photo-tag' + (photo.source === 'ocr' ? ' is-ai' : '')}>
                   {photo.source === 'ocr' ? 'AI' : 'bukti'}
                 </span>
                 <button
                   type="button"
+                  className="photo-kill"
                   aria-label="Hapus foto"
                   onClick={() => setPhotos((prev) => prev.filter((item) => item.path !== photo.path))}
                 >
@@ -441,6 +474,14 @@ export function Create({ identityId }: { identityId: string | null }) {
         maxLength={MAX_TEXT}
         onChange={setMerchant}
       />
+      <Field
+        id="bill-date"
+        label="Tanggal bill"
+        type="date"
+        value={billDate}
+        onChange={setBillDate}
+        hint="Bawaannya hari ini. Ubah kalau bill-nya untuk tanggal lain."
+      />
 
       <section className="app-stack">
         <div className="app-inline">
@@ -518,9 +559,13 @@ export function Create({ identityId }: { identityId: string | null }) {
             ))}
           </div>
         ) : null}
-        <Button variant="quiet" onClick={() => setPickerOpen(true)}>
+        <button type="button" className="add-person" onClick={() => setPickerOpen(true)}>
+          <Plus size={18} weight="bold" aria-hidden="true" />
           {picked.length > 0 ? '+ Tambah orang lagi' : '+ Pilih orang'}
-        </Button>
+          {picked.length > 0 ? (
+            <span className="add-count">{picked.length} orang dipilih</span>
+          ) : null}
+        </button>
       </section>
 
       <PeoplePicker
@@ -538,6 +583,42 @@ export function Create({ identityId }: { identityId: string | null }) {
         }
         onClose={() => setPickerOpen(false)}
       />
+
+      <Sheet open={viewer !== null} title="Foto struk" onClose={() => setViewer(null)}>
+        {viewer !== null && photos[viewer] ? (
+          <div className="photo-viewer">
+            <img
+              src={'/uploads/' + photos[viewer].path.split('/').pop()}
+              alt={
+                photos[viewer].source === 'ocr'
+                  ? 'Foto struk yang dibaca AI ' + (viewer + 1)
+                  : 'Foto struk bukti ' + (viewer + 1)
+              }
+            />
+            {photos.length > 1 ? (
+              <div className="photo-viewer-nav">
+                <Button variant="secondary" disabled={viewer === 0} onClick={() => setViewer((v) => Math.max(0, (v ?? 0) - 1))}>
+                  Sebelumnya
+                </Button>
+                <span className="app-note">
+                  {viewer + 1} dari {photos.length}
+                </span>
+                <Button
+                  variant="secondary"
+                  disabled={viewer >= photos.length - 1}
+                  onClick={() => setViewer((v) => Math.min(photos.length - 1, (v ?? 0) + 1))}
+                >
+                  Berikutnya
+                </Button>
+              </div>
+            ) : (
+              <p className="app-note">
+                Cocokkan angkanya dengan isian di bawah. Kalau ada yang salah, tinggal ubah di form.
+              </p>
+            )}
+          </div>
+        ) : null}
+      </Sheet>
 
       <section className="app-stack">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
