@@ -133,6 +133,45 @@ def _parse_openrouter_models(models_value=None, legacy_model=None) -> tuple[str,
 
 
 OPENROUTER_OCR_MODELS = _parse_openrouter_models()
+
+
+def _parse_paid_openrouter_models(values=None) -> tuple[str, ...]:
+    """Model OpenRouter berbayar murah, dipakai SEBELUM model gratis.
+
+    Model gratis di akun ini menjawab benar tapi 48-168 detik (kuotanya 50
+    permintaan/hari dan prioritas antreannya paling bawah), jadi di dalam
+    anggaran 45 detik mereka praktis tidak pernah selesai. Model berbayar murah
+    dengan sufiks `:nitro` (routing ke penyedia tercepat) menjawab 5 detik dengan
+    biaya sekitar $0.0018 per struk — sekitar Rp30.
+
+    Kosongkan `BAGIIN_OCR_PAID_MODELS` atau set `BAGIIN_OCR_ALLOW_PAID=0` untuk
+    mematikan jalur berbayar sepenuhnya; tanpa itu rantai kembali ke model gratis
+    yang lambat.
+    """
+    if values is None:
+        values = os.environ.get("BAGIIN_OCR_PAID_MODELS", "")
+    configured = str(values or "").strip()
+    if configured:
+        models = [item.strip() for item in configured.split(",") if item.strip()]
+    else:
+        # Hanya keluarga Gemini. Diukur pada struk uji, `openai/gpt-4o-mini:nitro`
+        # memang cepat (5 detik) tapi salah kolom: harga yang diambil adalah
+        # TOTAL BARIS, bukan harga satuan, sehingga "3 x 5.000" tercatat
+        # price=15000 qty=3 — totalnya jadi Rp112.300 untuk struk Rp58.300.
+        # Model yang salah duit lebih berbahaya daripada model yang gagal, jadi
+        # dia tidak dipakai sebagai cadangan diam-diam.
+        models = ["google/gemini-2.5-flash:nitro"]
+    allow = os.environ.get("BAGIIN_OCR_ALLOW_PAID", "1").strip().lower()
+    if allow in {"0", "false", "no"}:
+        return ()
+    return tuple(model for model in models if not _is_free_openrouter_model(model))
+
+
+PAID_OPENROUTER_OCR_MODELS = _parse_paid_openrouter_models()
+# Bagian anggaran cadangan yang boleh dipakai jalur berbayar. Model gratis tetap
+# kebagian sisanya, karena kalau saldo OpenRouter kosong jalur berbayar gagal
+# cepat (402) dan tidak menghabiskan waktu.
+_PAID_FALLBACK_SHARE = 0.6
 # Keep the old singular constant for callers that import it directly. New
 # requests use OR_MODELS and pass the selected model explicitly per payload.
 OR_MODELS = OPENROUTER_OCR_MODELS
@@ -351,6 +390,32 @@ def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
         log.warning("Tidak ada kunci Gemini, langsung coba OpenRouter")
 
     if OR_API_KEY:
+        paid_models = _active_paid_openrouter_models()
+        if paid_models:
+            # Model gratis di akun ini butuh 48-168 detik; model berbayar murah
+            # dengan `:nitro` sekitar 5 detik dengan biaya ~Rp30 per struk. Jadi
+            # yang berbayar dicoba dulu, dan model gratis tetap jadi jaring kalau
+            # saldo kosong (gagal cepat dengan 402, bukan menggantung).
+            paid_remaining = max(0.0, deadline - time.monotonic())
+            paid_deadline = min(
+                deadline,
+                time.monotonic()
+                + max(_MIN_ATTEMPT_SECONDS, paid_remaining * _PAID_FALLBACK_SHARE),
+            )
+            try:
+                return _openrouter_ocr(
+                    provider_input,
+                    paid_deadline,
+                    mime_type=mime_type,
+                    models=paid_models,
+                )
+            except Exception as error:  # noqa: BLE001
+                providers_tried.append("OpenRouter-berbayar")
+                log.warning(
+                    "OpenRouter berbayar habis (%s: %s), lanjut model gratis",
+                    type(error).__name__,
+                    str(error)[:120],
+                )
         try:
             return _openrouter_ocr(provider_input, deadline, mime_type=mime_type)
         except Exception as error:  # noqa: BLE001
@@ -553,10 +618,15 @@ def _openrouter_model_deadline(deadline: float, remaining_models: int) -> float:
     return min(deadline, now + min(_ATTEMPT_TIMEOUT_CAP, share))
 
 
+def _active_paid_openrouter_models() -> tuple[str, ...]:
+    return tuple(PAID_OPENROUTER_OCR_MODELS)
+
+
 def _openrouter_ocr(
     image_bytes,
     deadline: float,
     mime_type: str | list[str] = "image/jpeg",
+    models: tuple[str, ...] | None = None,
 ) -> dict:
     records = _image_records(image_bytes, mime_type)
     prepared_records = []
@@ -570,7 +640,7 @@ def _openrouter_ocr(
     image_mimes = [image_mime for _, image_mime in prepared_records]
     payload_images = encoded_images[0] if len(encoded_images) == 1 else encoded_images
     payload_mimes = image_mimes[0] if len(image_mimes) == 1 else image_mimes
-    models = _active_openrouter_models()
+    models = models or _active_openrouter_models()
 
     for index, model in enumerate(models):
         if deadline <= time.monotonic():

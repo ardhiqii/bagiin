@@ -531,3 +531,34 @@ def test_gemini_timeout_moves_to_next_model_not_next_key(monkeypatch):
     assert used[1][0] == ocr.GEMINI_MODELS[1]
     # kunci kedua tidak dicoba untuk model pertama
     assert not [entry for entry in used if entry == (ocr.GEMINI_MODELS[0], "kunci-dua")]
+
+
+def test_paid_openrouter_models_tried_before_free(monkeypatch):
+    """Jalur berbayar murah dicoba sebelum model gratis yang butuh 48-168 detik."""
+    calls = []
+
+    def fake_openrouter(image_bytes, deadline, mime_type="image/jpeg", models=None):
+        calls.append(models)
+        return {"merchant": "Berbayar", "items": [], "total": 0}
+
+    monkeypatch.setattr(ocr, "GEMINI_API_KEYS", ())
+    monkeypatch.setattr(ocr, "GEMINI_API_KEY", "")
+    monkeypatch.setattr(ocr, "OR_API_KEY", "kunci-openrouter")
+    monkeypatch.setattr(ocr, "PAID_OPENROUTER_OCR_MODELS", ("google/gemini-2.5-flash:nitro",))
+    monkeypatch.setattr(ocr, "_openrouter_ocr", fake_openrouter)
+
+    result = ocr.ocr_receipt(b"image", "image/jpeg")
+
+    assert result["merchant"] == "Berbayar"
+    assert calls[0] == ("google/gemini-2.5-flash:nitro",)
+
+
+def test_paid_models_not_offered_when_disallowed(monkeypatch):
+    """Saklar biaya: BAGIIN_OCR_ALLOW_PAID=0 mengosongkan daftar berbayar."""
+    monkeypatch.setenv("BAGIIN_OCR_ALLOW_PAID", "0")
+    monkeypatch.delenv("BAGIIN_OCR_PAID_MODELS", raising=False)
+    assert ocr._parse_paid_openrouter_models() == ()
+
+    monkeypatch.setenv("BAGIIN_OCR_ALLOW_PAID", "1")
+    models = ocr._parse_paid_openrouter_models()
+    assert models and all(not ocr._is_free_openrouter_model(model) for model in models)
