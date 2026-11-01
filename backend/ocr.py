@@ -14,18 +14,50 @@ import urllib.request
 
 log = logging.getLogger("bagiin.ocr")
 
-GEMINI_MODEL = os.environ.get("BAGIIN_OCR_MODEL", "gemini-3.5-flash")
+def _parse_gemini_models(values=None) -> tuple[str, ...]:
+    """Model Gemini berurutan, semuanya memakai kunci yang sama.
+
+    Urutannya dari yang paling cepat, bukan paling pintar: dua model ini
+    menghasilkan pembacaan yang identik pada struk uji, jadi yang menentukan
+    cuma waktu tunggu. Free tier Google mengantre, dan antreannya bisa 2 detik
+    atau 60 detik untuk model yang sama — karena itu model kedua bukan kemewahan,
+    dia jalan keluar ketika yang pertama sedang mengantre panjang.
+    """
+    if values is None:
+        values = os.environ.get("BAGIIN_OCR_MODELS", "")
+    configured = str(values or "").strip() or os.environ.get("BAGIIN_OCR_MODEL", "").strip()
+    models = [item.strip() for item in configured.split(",") if item.strip()]
+    return tuple(models) or ("gemini-3.5-flash-lite", "gemini-3.5-flash")
+
+
+GEMINI_MODELS = _parse_gemini_models()
+GEMINI_MODEL = GEMINI_MODELS[0]
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 OR_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
+# Urutan ini hasil pengukuran 1 Nov 2026 dengan struk sintetis (gambar 54-114 KB,
+# kunci yang sama dengan produksi). Yang ditulis cuma kelas hasil dan durasi:
+#
+#   nvidia/nemotron-3.5-super-vl:free            ok   48 s
+#   nvidia/nemotron-3-nano-omni-30b-...:free     ok  106 s
+#   dots-studio/dots-3-note-preview:free         ok  168 s
+#   openrouter/free                              ok  154 s
+#   google/gemma-4-26b-a4b-it:free               429  (ditolak setelah ~32 s)
+#   google/gemma-4-31b-it:free                   429
+#   thinkingmachines/inkling{,-small}:free       403  (tidak diizinkan akun ini)
+#
+# Artinya: model gratis OpenRouter yang bisa membaca gambar menjawab benar,
+# tapi 48-168 detik — di luar anggaran OCR 45 detik. Karena itu Gemini tetap
+# penyedia utama dan daftar ini cuma jaring terakhir; yang selalu 429/403 dibuang
+# supaya tidak menghabiskan irisan waktu model lain. Dua gemma disimpan di akhir
+# sebagai catatan: kalau kuotanya sedang lapang, mereka model tercepat di sini.
 DEFAULT_OPENROUTER_OCR_MODELS = (
+    "nvidia/nemotron-3.5-super-vl:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "dots-studio/dots-3-note-preview:free",
+    "openrouter/free",
     "google/gemma-4-26b-a4b-it:free",
     "google/gemma-4-31b-it:free",
-    "dots-studio/dots-3-note-preview:free",
-    "thinkingmachines/inkling-small:free",
-    "thinkingmachines/inkling:free",
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-    "openrouter/free",
 )
 
 
@@ -172,21 +204,39 @@ def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
     primary_deadline = deadline - fallback_seconds
     providers_tried = []
     if GEMINI_API_KEY:
-        try:
-            return _gemini_ocr(provider_input, mime_type, primary_deadline)
-        except Exception as error:  # noqa: BLE001 - provider apa pun boleh gagal
-            # Dulu hanya RuntimeError yang ditangkap. HTTPError/TimeoutError dari
-            # urllib lolos ke handler generik di main.py, jadi pesan 429 berubah
-            # jadi "sedang mengalami gangguan" dan penyebabnya tidak pernah
-            # tercatat di log (bug: kuota Gemini habis 26 Okt, log cuma bilang
-            # failure=provider).
-            providers_tried.append("Gemini")
-            log.warning(
-                "Gemini OCR model=%s failure=provider (%s: %s), coba OpenRouter",
-                GEMINI_MODEL,
-                type(error).__name__,
-                str(error)[:120],
+        # Beberapa model Gemini, satu kunci. Free tier-nya mengantre dan
+        # antreannya tidak bisa ditebak (model yang sama bisa 2 detik atau 60
+        # detik), jadi mencoba model lain lebih berguna daripada mengulang model
+        # yang sama dan berharap antreannya lebih pendek.
+        for index, model in enumerate(GEMINI_MODELS):
+            remaining = primary_deadline - time.monotonic()
+            if remaining < _MIN_ATTEMPT_SECONDS:
+                log.warning(
+                    "Gemini: sisa %.1fs untuk %d model, berhenti sebelum %s",
+                    max(0.0, remaining),
+                    len(GEMINI_MODELS) - index,
+                    model,
+                )
+                break
+            slice_deadline = min(
+                primary_deadline,
+                time.monotonic()
+                + max(_MIN_ATTEMPT_SECONDS, remaining / (len(GEMINI_MODELS) - index)),
             )
+            try:
+                return _gemini_ocr(provider_input, mime_type, slice_deadline, model=model)
+            except Exception as error:  # noqa: BLE001 - provider apa pun boleh gagal
+                # Dulu hanya RuntimeError yang ditangkap. HTTPError/TimeoutError
+                # dari urllib lolos ke handler generik di main.py, jadi pesan 429
+                # berubah jadi "sedang mengalami gangguan" dan penyebabnya tidak
+                # pernah tercatat di log (bug: kuota Gemini habis 26 Okt).
+                providers_tried.append(model)
+                log.warning(
+                    "Gemini OCR model=%s failure=provider (%s: %s), coba berikutnya",
+                    model,
+                    type(error).__name__,
+                    str(error)[:120],
+                )
     else:
         log.warning("GEMINI_API_KEY kosong, langsung coba OpenRouter")
 
@@ -209,13 +259,36 @@ def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
     )
 
 
-def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline: float | None = None) -> dict:
+def _gemini_ocr(
+    image_bytes,
+    mime_type: str | list[str] = "image/jpeg",
+    deadline: float | None = None,
+    model: str | None = None,
+) -> dict:
     if deadline is None and isinstance(mime_type, (int, float)):
         deadline = float(mime_type)
         mime_type = "image/jpeg"
     if deadline is None:
         deadline = time.monotonic() + OCR_BUDGET_SECONDS
+    model = model or GEMINI_MODEL
     records = _image_records(image_bytes, mime_type)
+    # (bug 1 Nov: _downscale cuma dipanggil di jalur OpenRouter. Gemini menerima
+    # foto HP apa adanya — 3-4 MB, base64 ~5 MB — dan permintaannya lewat batas
+    # 15 detik per percobaan, dua kali, lalu menghabiskan 30 dari 45 detik
+    # anggaran dan menyisakan ~2 detik per model cadangan. Semua provider dapat
+    # gambar yang sama kecilnya sekarang.)
+    prepared_records = []
+    for raw, image_mime in records:
+        prepared = _downscale(raw)
+        prepared_records.append(
+            (prepared, "image/jpeg" if prepared is not raw else image_mime)
+        )
+    log.info(
+        "OCR Gemini: %d byte -> %d byte (%d gambar)",
+        sum(len(raw) for raw, _ in records),
+        sum(len(prepared) for prepared, _ in prepared_records),
+        len(prepared_records),
+    )
     image_parts = [
         {
             "inline_data": {
@@ -223,7 +296,7 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
                 "data": base64.b64encode(raw).decode(),
             }
         }
-        for raw, image_mime in records
+        for raw, image_mime in prepared_records
     ]
     payload = {
         "contents": [
@@ -237,7 +310,7 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
         },
     }
     url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}"
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}"
         f":generateContent?key={GEMINI_API_KEY}"
     )
     req = urllib.request.Request(
@@ -264,7 +337,7 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
             body = e.read().decode()[:300]
             log.warning(
                 "Gemini OCR model=%s failure=http status=%d attempt=%d/%d",
-                GEMINI_MODEL,
+                model,
                 code,
                 attempt + 1,
                 MAX_ATTEMPTS,
@@ -276,18 +349,31 @@ def _gemini_ocr(image_bytes, mime_type: str | list[str] = "image/jpeg", deadline
                 time.sleep(backoff)
                 continue
             raise RuntimeError(f"HTTP {code}")
-        except Exception:
+        except Exception as error:  # noqa: BLE001 - penyebab asli wajib masuk log
+            reason = getattr(error, "reason", None)
+            timed_out = isinstance(error, (socket.timeout, TimeoutError)) or isinstance(
+                reason, (socket.timeout, TimeoutError)
+            )
+            # Dulu kelasnya hilang di log ("failure=request" saja), jadi tidak
+            # ada cara membedakan lambat dari ditolak.
             log.warning(
-                "Gemini OCR model=%s failure=request attempt=%d/%d",
-                GEMINI_MODEL,
+                "Gemini OCR model=%s failure=request attempt=%d/%d class=%s%s",
+                model,
                 attempt + 1,
                 MAX_ATTEMPTS,
+                type(error).__name__,
+                " timeout=ya" if timed_out else "",
             )
+            if timed_out:
+                # Percobaan kedua menunggu dengan batas waktu yang sama, jadi
+                # yang didapat cuma kehilangan 15 detik lagi dari anggaran
+                # bersama — sementara model cadangan belum dicoba sama sekali.
+                raise RuntimeError("Permintaan OCR gagal (waktu habis)") from error
             backoff = 2 * (attempt + 1)
             if attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
                 time.sleep(backoff)
                 continue
-            raise RuntimeError("Permintaan OCR gagal")
+            raise RuntimeError("Permintaan OCR gagal") from error
     if data is None:
         raise RuntimeError("Kegagalan setelah beberapa percobaan (waktu habis)")
 

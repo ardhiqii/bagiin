@@ -100,7 +100,7 @@ def test_ocr_receipt_swallows_non_runtime_provider_errors(monkeypatch):
 
     calls = []
 
-    def gemini_fails(image, mime_type="image/jpeg", deadline=None):
+    def gemini_fails(image, mime_type="image/jpeg", deadline=None, model=None):
         calls.append("gemini")
         raise urllib.error.URLError("connection reset")
 
@@ -115,5 +115,6 @@ def test_ocr_receipt_swallows_non_runtime_provider_errors(monkeypatch):
 
     result = ocr.ocr_receipt(b"fake-image", "image/jpeg")
 
-    assert calls == ["gemini", "openrouter"]
+    # satu percobaan per model Gemini, lalu cadangan OpenRouter
+    assert calls == ["gemini"] * len(ocr.GEMINI_MODELS) + ["openrouter"]
     assert result["merchant"] == "WARTEG BAHARI"

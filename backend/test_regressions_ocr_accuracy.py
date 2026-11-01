@@ -236,8 +236,9 @@ def test_openrouter_model_config_preserves_order_and_legacy_override():
     ) == ("second:free", "first:free")
     assert ocr._parse_openrouter_models("", "legacy:free") == ("legacy:free",)
     assert ocr._parse_openrouter_models("paid/model", "legacy:free") == ocr.DEFAULT_OPENROUTER_OCR_MODELS
-    assert ocr.DEFAULT_OPENROUTER_OCR_MODELS[0] == "google/gemma-4-26b-a4b-it:free"
-    assert ocr.DEFAULT_OPENROUTER_OCR_MODELS[-1] == "openrouter/free"
+    # Urutan default = urutan hasil ukur (yang benar-benar menjawab lebih dulu).
+    assert ocr.DEFAULT_OPENROUTER_OCR_MODELS[0] == "nvidia/nemotron-3.5-super-vl:free"
+    assert "openrouter/free" in ocr.DEFAULT_OPENROUTER_OCR_MODELS
     assert all(ocr._is_free_openrouter_model(model) for model in ocr.DEFAULT_OPENROUTER_OCR_MODELS)
 
 
@@ -437,3 +438,45 @@ if __name__ == "__main__":
     import pytest
 
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_gemini_sends_downscaled_image(monkeypatch):
+    """Gemini wajib menerima gambar yang sudah dikecilkan.
+
+    Bug 1 Nov 2026: `_downscale` cuma dipanggil di jalur OpenRouter, sementara
+    Pillow belum terpasang di venv sehingga fungsinya mengembalikan byte asli.
+    Foto HP 3-4 MB dikirim apa adanya, permintaan Gemini melewati batas 15 detik
+    per percobaan DUA KALI, dan 30 dari 45 detik anggaran habis sebelum satu pun
+    model cadangan dicoba. Tes ini mengunci dua hal: hasil _downscale yang
+    dipakai, dan mime ikut berubah jadi JPEG saat byte-nya berubah.
+    """
+    captured = {}
+
+    class _Response:
+        def read(self):
+            return json.dumps({
+                "candidates": [{"content": {"parts": [{"text": json.dumps({
+                    "merchant": "Kecil",
+                    "items": [],
+                    "subtotal": 0,
+                    "tax": 0,
+                    "service": 0,
+                    "total": 0,
+                    "tax_included": False,
+                })}]}}],
+            }).encode()
+
+    def fake_urlopen(request, timeout=None):
+        captured["payload"] = json.loads(request.data)
+        return _Response()
+
+    monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
+    monkeypatch.setattr(ocr, "_downscale", lambda raw, max_side=1280: b"kecil-jpeg")
+    monkeypatch.setattr(ocr.urllib.request, "urlopen", fake_urlopen)
+
+    result = ocr._gemini_ocr(b"x" * 5000, "image/png", time.monotonic() + 5)
+
+    part = captured["payload"]["contents"][0]["parts"][0]["inline_data"]
+    assert part["data"] == base64.b64encode(b"kecil-jpeg").decode()
+    assert part["mime_type"] == "image/jpeg"
+    assert result["merchant"] == "Kecil"

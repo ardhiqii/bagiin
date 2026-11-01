@@ -151,7 +151,11 @@ def test_slow_gemini_cannot_consume_reserved_openrouter_budget(monkeypatch):
     """A Gemini failure at its primary deadline still leaves fallback time."""
     monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
     monkeypatch.setattr(ocr, "OR_API_KEY", "fake-openrouter-key")
-    monkeypatch.setattr(ocr, "OCR_BUDGET_SECONDS", 3.0)
+    # 9 detik: cukup untuk dua model Gemini (masing-masing minimal
+    # _MIN_ATTEMPT_SECONDS) plus cadangan 1/3 anggaran. Anggaran 3 detik
+    # membuat irisan model pertama di bawah batas minimum, dan Gemini tidak
+    # dicoba sama sekali — jalur yang berbeda dari yang mau diuji di sini.
+    monkeypatch.setattr(ocr, "OCR_BUDGET_SECONDS", 9.0)
 
     class _Clock:
         def __init__(self):
@@ -174,8 +178,10 @@ def test_slow_gemini_cannot_consume_reserved_openrouter_budget(monkeypatch):
         "tax_included": False,
     }
 
-    def slow_gemini(image_bytes, mime_type, deadline):
-        observed["start"] = clock.now
+    def slow_gemini(image_bytes, mime_type, deadline, model=None):
+        # Tiap model Gemini dapat potongan anggarannya sendiri; yang pertama
+        # memakai seluruh potongannya, jadi dianggap lambat sampai habis.
+        observed.setdefault("start", clock.now)
         observed["gemini_deadline"] = deadline
         clock.now = deadline
         raise RuntimeError("simulated slow provider")
@@ -194,7 +200,11 @@ def test_slow_gemini_cannot_consume_reserved_openrouter_budget(monkeypatch):
         ocr._OPENROUTER_FALLBACK_MAX_SECONDS,
         ocr.OCR_BUDGET_SECONDS * ocr._OPENROUTER_FALLBACK_RATIO,
     )
-    assert observed["openrouter_deadline"] - observed["gemini_deadline"] == expected_reserve
+    # Inti yang dijaga tes ini bukan "Gemini memakai seluruh anggaran utama",
+    # melainkan "cadangan tetap kebagian waktunya". Sejak tiap model Gemini
+    # dapat potongan sendiri, model pertama hanya memegang sebagian anggaran
+    # utama — jadi yang diuji sekarang: batas cadangan tidak ikut dimakan.
+    assert observed["gemini_deadline"] <= observed["openrouter_deadline"] - expected_reserve
     assert observed["fallback_remaining"] == expected_reserve
     assert observed["openrouter_deadline"] - observed["start"] == ocr.OCR_BUDGET_SECONDS
     assert observed["fallback_remaining"] > 0

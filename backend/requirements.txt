@@ -8,3 +8,7 @@ google-auth
 # Google sungguhan gagal saat verifikasi token, dan kegagalannya baru muncul
 # ketika stub dimatikan.
 requests
+# Dipakai ocr._downscale. Tanpa ini fungsi itu diam-diam mengembalikan byte asli
+# (foto HP 3-4 MB), dan setiap provider menerima payload base64 ~5 MB — cukup
+# lambat untuk menembus batas waktu per percobaan.
+pillow
