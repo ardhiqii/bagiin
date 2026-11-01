@@ -203,4 +203,39 @@ test.describe('Bagiin — mengubah bill', () => {
     await expect(page.getByText('Nasi goreng')).toHaveCount(0)
     await expect(page.getByText('Rp40.000').first()).toBeVisible()
   })
+
+  /**
+   * Tanggal transaksi bisa salah saat bill dibuat dan harus bisa diperbaiki
+   * tanpa menghapus bill: bill tanggal 31 tetap harus tercatat di bulan itu,
+   * bukan di bulan saat datanya diperbaiki.
+   */
+  test('50. tanggal bill bisa diganti saat mengubah bill', async ({ page }) => {
+    await freshUser(page, 'Budi')
+    await page.goto('/create')
+    await page.getByLabel('Nama bill').fill('Geser Tanggal ' + stamp)
+    await page.getByLabel('Item 1').fill('Nasi goreng')
+    await page.getByLabel('Harga satuan').first().fill('30000')
+    await page.getByRole('button', { name: 'Buat bill' }).click()
+    await expect(page).toHaveURL(/\/b\//)
+
+    await openActions(page)
+    await page.getByRole('button', { name: 'Ubah bill' }).click()
+    await expect(page).toHaveURL(/\/edit$/)
+    const dateInput = page.locator('#edit-date')
+    await expect(dateInput).toBeVisible()
+
+    // tanggal lama harus terisi, bukan kosong
+    const before = await dateInput.inputValue()
+    expect(before).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+
+    await dateInput.fill('2026-10-31')
+    await page.getByRole('button', { name: 'Simpan perubahan' }).click()
+    await expect(page.getByText('Perubahan bill disimpan')).toBeVisible()
+
+    await page.goto('/')
+    const row = page
+      .getByText('Geser Tanggal ' + stamp)
+      .locator('xpath=ancestor::*[contains(@class,"app-row")]')
+    await expect(row).toContainText('31 Okt')
+  })
 })

@@ -7,11 +7,19 @@ import { billActions, useBill, useBillAction, useContacts, type Contact } from '
 import { PeoplePicker } from '../components/PeoplePicker'
 import { invalidateMoneyViews } from '../lib/mutations'
 import { formatRp, parseRupiah } from '../lib/money'
-import { Alert, Button, Field, SectionHead, SkeletonCard, SkeletonList } from '../ds/primitives'
+import { Alert, Button, Field, SectionHead, Sheet, SkeletonCard, SkeletonList } from '../ds/primitives'
 import manualArt from '../assets/manual.webp'
 import type { BillItem } from '../lib/types'
 
 const formatRd = (value: number): string => formatRp(value).replace('Rp', '')
+
+/** "2026-10-31 12:00:00" -> "2026-10-31", bentuk yang diterima <input type=date>. */
+const isoDate = (value?: string | null): string => (value ? value.slice(0, 10) : '')
+
+/** Jam asli dipertahankan saat hanya tanggalnya yang diganti, supaya urutan
+    riwayat tidak berubah untuk bill yang dicatat sore atau malam. */
+const timeOf = (value?: string | null): string =>
+  value && value.length >= 19 ? value.slice(11, 19) : '12:00:00'
 
 type Draft = {
   id?: number
@@ -51,6 +59,8 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [roster, setRoster] = useState<string[] | null>(null)
+  const [billDate, setBillDate] = useState<string | null>(null)
+  const [viewer, setViewer] = useState<number | null>(null)
   // Tambah peserta lewat daftar orang yang pernah sebill, bukan nama bebas.
   // Nama yang sudah terlanjur ada di bill (termasuk dari versi lama) tetap
   // ditampilkan dan tetap bisa dihapus.
@@ -63,6 +73,9 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
   const taxValue = tax ?? (data ? formatRd(data.bill.tax_idr) : '')
   const serviceValue = service ?? (data ? formatRd(data.bill.service_idr) : '')
   const discountValue = discount ?? (data ? formatRd(data.bill.order_discount_idr) : '')
+  // Tanggal transaksi, bukan tanggal pencatatan: bill bisa dibuat hari ini
+  // untuk makan yang terjadi kemarin atau tanggal yang akan datang.
+  const dateValue = billDate ?? isoDate(data?.bill.transacted_at)
   const drafts = items ?? (data ? data.items.map(draftFrom) : [])
   const rosterDraft = roster ?? (data ? data.participants.map((participant) => participant.name) : [])
   // Yang tampil tercentang hanya kontak yang namanya sudah ada di daftar ini.
@@ -112,6 +125,10 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
         body: {
           title: titleValue.trim() || data.bill.title,
           merchant: merchantValue.trim(),
+          // kosong = biarkan apa adanya, bukan menghapus tanggal
+          transacted_at: dateValue
+            ? dateValue + ' ' + timeOf(data.bill.transacted_at)
+            : (data.bill.transacted_at ?? null),
           tax: taxIdr,
           service: serviceIdr,
           order_discount: discountIdr,
@@ -211,7 +228,41 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
           <section className="app-stack">
             <Field id="edit-title" label="Nama bill" value={titleValue} onChange={setTitle} />
             <Field id="edit-merchant" label="Merchant (opsional)" value={merchantValue} onChange={setMerchant} />
+            <Field
+              id="edit-date"
+              label="Tanggal bill"
+              type="date"
+              value={dateValue}
+              onChange={setBillDate}
+              hint="Tanggal transaksinya, bukan tanggal pencatatannya."
+            />
           </section>
+
+          {data.photos.length > 0 ? (
+            <section className="photo-block">
+              <SectionHead meta={<>{data.photos.length} foto</>}>Foto struk</SectionHead>
+              <div className="photo-grid">
+                {data.photos.map((photo, index) => (
+                  <div className="photo-tile" key={photo.path}>
+                    {/* Ketuk = lihat penuh, supaya hasil bacaan AI bisa dicek
+                        ulang saat mengubah bill, sama seperti di layar bill. */}
+                    <button
+                      type="button"
+                      className="photo-open"
+                      aria-label={'Lihat foto ' + (index + 1)}
+                      onClick={() => setViewer(index)}
+                    >
+                      <img
+                        src={'/uploads/' + photo.path.split('/').pop()}
+                        alt={'Foto struk ' + (index + 1)}
+                      />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="app-note">Ketuk foto untuk melihat penuh. Menambah atau menghapus foto dilakukan di layar bill.</p>
+            </section>
+          ) : null}
 
           <section className="app-stack">
             <div className="app-inline">
@@ -406,6 +457,38 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
 
         </>
       ) : null}
+
+      {/* Penampil foto yang sama dengan layar bill: hasil bacaan AI harus bisa
+          diperiksa saat mengubah bill, bukan cuma setelah bill jadi. */}
+      <Sheet open={viewer !== null} title="Foto struk" onClose={() => setViewer(null)}>
+        {data && viewer !== null && data.photos[viewer] ? (
+          <div className="photo-viewer">
+            <img
+              src={'/uploads/' + data.photos[viewer].path.split('/').pop()}
+              alt={'Foto struk ' + (viewer + 1)}
+            />
+            <div className="photo-viewer-nav">
+              <Button
+                variant="secondary"
+                disabled={viewer === 0}
+                onClick={() => setViewer((v) => Math.max(0, (v ?? 0) - 1))}
+              >
+                Sebelumnya
+              </Button>
+              <small className="app-note">
+                {viewer + 1} dari {data.photos.length}
+              </small>
+              <Button
+                variant="secondary"
+                disabled={viewer >= data.photos.length - 1}
+                onClick={() => setViewer((v) => Math.min(data.photos.length - 1, (v ?? 0) + 1))}
+              >
+                Berikutnya
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Sheet>
     </AppShell>
   )
 }

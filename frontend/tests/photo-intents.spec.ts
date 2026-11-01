@@ -218,4 +218,31 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     await expect(sheet.getByRole('img', { name: /Foto struk bukti 1/ })).toBeVisible()
     await expect(sheet).toContainText('Cocokkan angkanya')
   })
+
+  /**
+   * Hasil bacaan AI harus bisa dicek juga saat bill diubah, bukan hanya saat
+   * dibuat. Dulu layar Ubah bill tidak menampilkan foto sama sekali, jadi
+   * untuk membandingkan angka dengan struk harus keluar ke layar bill.
+   */
+  test('44. foto struk ikut tampil di layar Ubah bill dan bisa dilihat penuh', async ({ page }) => {
+    await freshUser(page, 'Budi')
+    await page.goto('/create')
+    await pickPhotoThrough(page, 'Lampirkan saja')
+    await page.getByLabel('Nama bill').fill('Ubah Foto ' + stamp)
+    await page.getByLabel('Item 1').fill('Nasi goreng')
+    await page.getByLabel('Harga satuan').first().fill('30000')
+    await page.getByRole('button', { name: 'Buat bill' }).click()
+    await expect(page).toHaveURL(/\/b\//)
+
+    await page.getByRole('button', { name: 'Aksi lain' }).click()
+    await page.waitForTimeout(150)
+    await page.getByRole('button', { name: 'Ubah bill' }).click()
+    await expect(page).toHaveURL(/\/edit$/)
+    await expect(page.locator('.photo-tile')).toHaveCount(1)
+
+    await page.locator('.photo-open').first().click()
+    const sheet = page.getByRole('dialog')
+    await expect(sheet).toBeVisible()
+    await expect(sheet.getByRole('img', { name: /Foto struk 1/ })).toBeVisible()
+  })
 })

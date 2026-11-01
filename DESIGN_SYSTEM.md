@@ -861,6 +861,12 @@ Tiga aturan, semuanya dari keluhan nyata di layar ponsel:
 
 Jarak di dalam kartu memuat memakai `--ds-space-3` (12 px), bukan 10 px.
 
+Layar **Ubah bill** memakai aturan yang sama dengan layar buat bill: tanggal
+transaksi bisa diganti (dengan jam aslinya dipertahankan supaya urutan riwayat
+tidak berubah), dan foto struk tampil serta bisa diketuk untuk memeriksa hasil
+bacaan AI. Kalau sebuah bill bisa dibuat dengan tanggal dan foto, ia juga harus
+bisa diperbaiki dengan tanggal dan foto.
+
 ## Bar bawah: gutter hanya diberikan sekali
 
 Satu variabel, `--ds-content-x`, menentukan jarak kiri-kanan isi layar: 20 px di
@@ -869,7 +875,12 @@ ponsel, 24 px di ≥720, 34 px di ≥900 (rail). `.app-top`, `.app-body`, dan
 pun. Diukur di tujuh lebar (320/360/393/412/480/768/1024): tepi kiri kartu =
 tepi kiri "Total bill" dan tepi kanan tombol = tepi kanan kartu, tanpa selisih.
 
-Dock di dalam `.app-bottom` **tidak boleh** menambah padding samping lagi. Dulu `.create-dock`
+Dock di dalam `.app-bottom` **tidak boleh** menambah padding samping lagi.
+
+Bar aksi dan navigasi bawah adalah **satu permukaan**: `.app-bottom` tidak punya
+padding bawah dan tidak punya bayangan, hanya satu garis 1 px di atasnya. Kalau
+ada bar aksi, `.app-nav` kehilangan garis atasnya (`.app-bottom + .app-nav`),
+karena dua garis 1 px yang berdempetan terbaca sebagai celah, bukan pemisah. Dulu `.create-dock`
 menambah 20 px lagi, jadi total dan tombol "Buat bill" menjorok **40 px** dari
 tepi sementara semua kartu di atasnya 20 px — bar bawahnya terbaca tidak selebar
 layar. Diukur di 393x851 (Samsung A56): sesudah perbaikan `.tot` mulai di x=20

@@ -161,6 +161,8 @@ kosong).
 | I-15 | Riwayat lintas tahun disaring dua tingkat: chip tahun (dengan jumlah bill) lalu grid 12 bulan; bulan tanpa bill dimatikan; memilih tahun menyaring daftar ke tahun itu | `monthly.spec.ts` 132 |
 | I-16 | Tanggal bill bisa diubah saat membuat bill, bawaannya hari ini menurut jam perangkat (bukan UTC); tanggal pilihan yang tampil di beranda dan yang menentukan bulannya | `monthly.spec.ts` 134 |
 | I-17 | Foto struk di layar buat bill bisa diketuk untuk diperiksa penuh sebelum bill disimpan | `photo-intents.spec.ts` 43 |
+| I-18 | Tanggal bill bisa diganti saat mengubah bill, dan tanggal barunya yang menentukan bulan di beranda | `edit.spec.ts` 50 |
+| I-19 | Foto struk ikut tampil di layar Ubah bill dan bisa dilihat penuh | `photo-intents.spec.ts` 44 |
 
 ## Integritas angka
 

@@ -134,9 +134,13 @@ textarea {
      lebar layar. Sebelumnya nilai ini ditulis ulang dengan --ds-gutter (20 px),
      padahal isi memakai 24 px di ≥720 dan 34 px di ≥900: di laptop bar bawahnya
      menjorok 14 px ke dalam dari kartu. */
-  padding: var(--ds-space-3) var(--ds-content-x) var(--ds-space-2);
+  /* Tanpa padding bawah dan tanpa bayangan: bar aksi dan navigasi bawah satu
+     permukaan. Sebelumnya ada pita 8 px kosong di bawah tombol plus bayangan
+     jatuh ke atas, jadi bar-nya terbaca sebagai panel mengambang yang punya
+     jarak sendiri ke navigasi. */
+  padding: var(--ds-space-3) var(--ds-content-x) 0;
   background: var(--ds-bg);
-  box-shadow: 0 -12px 24px color-mix(in srgb, var(--ds-navy) 6%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--ds-border) 70%, transparent);
 }
 
 .app-nav {
@@ -147,6 +151,16 @@ textarea {
   background: var(--ds-bg);
   border-top: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
 }
+
+/* Kalau bar ini justru elemen paling bawah (tanpa navigasi), ia tetap butuh
+   napas bawah dan safe area iPhone. */
+.app-frame > .app-bottom:last-child {
+  padding-bottom: calc(var(--ds-space-2) + env(safe-area-inset-bottom));
+}
+
+/* Kalau di atasnya ada bar aksi, garis pemisahnya sudah diberikan .app-bottom.
+   Dua garis 1 px berjarak 0 px terbaca sebagai celah tipis, bukan pemisah. */
+.app-bottom + .app-nav { border-top: 0; }
 
 .app-nav a {
   flex: 1;
@@ -255,8 +269,9 @@ p, small, .app-note { text-wrap: pretty; }
   display: flex;
   align-items: center;
   gap: var(--ds-space-4);
+  /* Tanpa border atas sendiri: .app-bottom sudah memberinya satu. Dua garis
+     berjarak 12 px terbaca sebagai dua permukaan. */
   padding: var(--ds-space-3) 0;
-  border-top: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
 }
 .create-dock .tot { flex: 1; min-width: 0; display: grid; gap: var(--ds-space-half); }
 .create-dock .tot small {
