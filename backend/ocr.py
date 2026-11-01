@@ -14,6 +14,50 @@ import urllib.request
 
 log = logging.getLogger("bagiin.ocr")
 
+def _parse_gemini_keys(values=None) -> tuple[str, ...]:
+    """Kunci Gemini berurutan; satu kunci = satu kuota free tier.
+
+    Kuota gratis Gemini dihitung per project, bukan per aplikasi. Satu kunci
+    yang sudah dipakai hari itu akan menjawab 429 sampai tengah malam, dan tidak
+    ada model yang bisa menolong — beda dengan antrean model yang cuma lambat.
+    Kunci kedua (project lain) adalah satu-satunya cara mendapat kuota gratis
+    tambahan tanpa membayar.
+
+    Sumber, berurutan: BAGIIN_OCR_GEMINI_KEYS, GEMINI_API_KEYS, lalu
+    GEMINI_API_KEY tunggal (nama lama, tetap dihormati).
+    """
+    if values is None:
+        values = os.environ.get("BAGIIN_OCR_GEMINI_KEYS", "") or os.environ.get(
+            "GEMINI_API_KEYS", ""
+        )
+    keys = [item.strip() for item in str(values or "").split(",") if item.strip()]
+    legacy = os.environ.get("GEMINI_API_KEY", "").strip()
+    if legacy:
+        keys.append(legacy)
+    seen, unique = set(), []
+    for key in keys:
+        if key not in seen:
+            seen.add(key)
+            unique.append(key)
+    return tuple(unique)
+
+
+GEMINI_API_KEYS = _parse_gemini_keys()
+
+
+def _active_gemini_keys() -> tuple[str, ...]:
+    """Kunci yang dipakai percobaan ini.
+
+    Dibaca per panggilan, bukan hanya saat import: tes menukar `GEMINI_API_KEY`
+    langsung, dan proyek yang menambah kunci kedua lewat `BAGIIN_OCR_GEMINI_KEYS`
+    tidak perlu mengubah daftar kunci yang sudah ada.
+    """
+    if GEMINI_API_KEYS:
+        return GEMINI_API_KEYS
+    legacy = (GEMINI_API_KEY or "").strip()
+    return (legacy,) if legacy else ()
+
+
 def _parse_gemini_models(values=None) -> tuple[str, ...]:
     """Model Gemini berurutan, semuanya memakai kunci yang sama.
 
@@ -32,7 +76,8 @@ def _parse_gemini_models(values=None) -> tuple[str, ...]:
 
 GEMINI_MODELS = _parse_gemini_models()
 GEMINI_MODEL = GEMINI_MODELS[0]
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# Nama lama, tetap ada untuk pemanggil dan tes yang membacanya langsung.
+GEMINI_API_KEY = GEMINI_API_KEYS[0] if GEMINI_API_KEYS else ""
 OR_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
 # Urutan ini hasil pengukuran 1 Nov 2026 dengan struk sintetis (gambar 54-114 KB,
@@ -175,6 +220,22 @@ def _image_records(
     return records
 
 
+def _prepare_records(records) -> list[tuple[bytes, str]]:
+    """Kecilkan tiap gambar sekali, dipakai semua percobaan dan semua provider.
+
+    Dipanggil di awal `ocr_receipt`, bukan di dalam adapter: dengan tiga kunci
+    dan dua model, mengecilkan gambar di dalam adapter berarti pekerjaan yang
+    sama diulang sampai enam kali untuk foto yang sama.
+    """
+    prepared_records = []
+    for raw, image_mime in records:
+        prepared = _downscale(raw)
+        prepared_records.append(
+            (prepared, "image/jpeg" if prepared is not raw else image_mime)
+        )
+    return prepared_records
+
+
 def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
     """OCR via Gemini; kalau Gemini gagal (quota/error), fallback ke OpenRouter gratis."""
     # (bug v66: pesan error dulu nge-leak nama env var mentah-mentah ke toast user,
@@ -183,12 +244,28 @@ def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
     # padahal servernya yang belum disetel. Detail teknis sekarang cuma ke log;
     # user cuma liat kalimat pendek yang jujur, dan "belum disetel" dibedain dari
     # "lagi penuh / gagal baca".)
-    if not GEMINI_API_KEY and not OR_API_KEY:
-        log.error("OCR tidak berjalan: GEMINI_API_KEY dan OPENROUTER_API_KEY sama-sama kosong")
+    gemini_keys = _active_gemini_keys()
+    if not gemini_keys and not OR_API_KEY:
+        log.error("OCR tidak berjalan: tidak ada kunci Gemini maupun OPENROUTER_API_KEY")
         raise RuntimeError("Fitur baca struk otomatis belum disetel di server. Isi manual dulu ya.")
 
     records = _image_records(image_bytes, mime_type)
-    provider_input = image_bytes if isinstance(image_bytes, (bytes, bytearray, memoryview)) else records
+    # Ukuran sebelum/sesudah masuk log sekali per permintaan: tanpa angka ini,
+    # pengecilan gambar yang tidak jalan lagi (Pillow hilang, dekode gagal)
+    # kembali menjadi kegagalan senyap yang cuma terlihat sebagai timeout.
+    prepared_records = _prepare_records(records)
+    log.info(
+        "OCR gambar: %d byte -> %d byte (%d gambar)",
+        sum(len(raw) for raw, _ in records),
+        sum(len(prepared) for prepared, _ in prepared_records),
+        len(prepared_records),
+    )
+    if isinstance(image_bytes, (bytes, bytearray, memoryview)):
+        provider_input = prepared_records[0][0]
+        mime_type = prepared_records[0][1]
+    else:
+        provider_input = prepared_records
+        mime_type = [image_mime for _, image_mime in prepared_records]
     started = time.monotonic()
     deadline = started + max(0.0, OCR_BUDGET_SECONDS)
     # (bug v66 review: Gemini dulu menerima deadline penuh, jadi provider yang
@@ -203,42 +280,75 @@ def ocr_receipt(image_bytes, mime_type: str | list[str] = "image/jpeg") -> dict:
         )
     primary_deadline = deadline - fallback_seconds
     providers_tried = []
-    if GEMINI_API_KEY:
-        # Beberapa model Gemini, satu kunci. Free tier-nya mengantre dan
-        # antreannya tidak bisa ditebak (model yang sama bisa 2 detik atau 60
-        # detik), jadi mencoba model lain lebih berguna daripada mengulang model
-        # yang sama dan berharap antreannya lebih pendek.
-        for index, model in enumerate(GEMINI_MODELS):
-            remaining = primary_deadline - time.monotonic()
-            if remaining < _MIN_ATTEMPT_SECONDS:
-                log.warning(
-                    "Gemini: sisa %.1fs untuk %d model, berhenti sebelum %s",
-                    max(0.0, remaining),
-                    len(GEMINI_MODELS) - index,
-                    model,
-                )
+    if gemini_keys:
+        # Dua sumbu yang berbeda, dan keduanya perlu:
+        #
+        # * model — free tier mengantre, dan antreannya tidak bisa ditebak
+        #   (model yang sama bisa 2 detik atau 60 detik). Antrean itu milik
+        #   model, jadi kunci lain tidak menolong; yang benar pindah model.
+        # * kunci — kuota gratis dihitung per project, bukan per aplikasi. Kunci
+        #   yang sudah habis menjawab 429 sampai tengah malam, dan model apa pun
+        #   kena. Di situ kunci kedua justru satu-satunya yang menolong.
+        #
+        # Karena itu 429 -> kunci berikutnya (model tetap), timeout -> model
+        # berikutnya (kunci tidak akan mengubah antrean).
+        pairs_left = len(GEMINI_MODELS) * len(gemini_keys)
+        stop_models = False
+        for model in GEMINI_MODELS:
+            if stop_models:
                 break
-            slice_deadline = min(
-                primary_deadline,
-                time.monotonic()
-                + max(_MIN_ATTEMPT_SECONDS, remaining / (len(GEMINI_MODELS) - index)),
-            )
-            try:
-                return _gemini_ocr(provider_input, mime_type, slice_deadline, model=model)
-            except Exception as error:  # noqa: BLE001 - provider apa pun boleh gagal
-                # Dulu hanya RuntimeError yang ditangkap. HTTPError/TimeoutError
-                # dari urllib lolos ke handler generik di main.py, jadi pesan 429
-                # berubah jadi "sedang mengalami gangguan" dan penyebabnya tidak
-                # pernah tercatat di log (bug: kuota Gemini habis 26 Okt).
-                providers_tried.append(model)
-                log.warning(
-                    "Gemini OCR model=%s failure=provider (%s: %s), coba berikutnya",
-                    model,
-                    type(error).__name__,
-                    str(error)[:120],
+            for key_index, key in enumerate(gemini_keys, start=1):
+                remaining = primary_deadline - time.monotonic()
+                if remaining < _MIN_ATTEMPT_SECONDS:
+                    log.warning(
+                        "Gemini: sisa %.1fs untuk %d kesempatan, berhenti sebelum %s (kunci #%d)",
+                        max(0.0, remaining),
+                        pairs_left,
+                        model,
+                        key_index,
+                    )
+                    stop_models = True
+                    break
+                slice_deadline = min(
+                    primary_deadline,
+                    time.monotonic() + max(_MIN_ATTEMPT_SECONDS, remaining / pairs_left),
                 )
+                pairs_left -= 1
+                try:
+                    return _gemini_ocr(
+                        provider_input,
+                        mime_type,
+                        slice_deadline,
+                        model=model,
+                        api_key=key,
+                    )
+                except _GeminiFailure as error:
+                    providers_tried.append(f"{model}/kunci#{key_index}")
+                    log.warning(
+                        "Gemini OCR model=%s kunci#%d failure=%s (%s), %s",
+                        model,
+                        key_index,
+                        error.kind,
+                        str(error)[:80],
+                        "pindah model" if error.kind == "timeout" else "kunci berikutnya",
+                    )
+                    if error.kind == "timeout":
+                        break
+                except Exception as error:  # noqa: BLE001 - provider apa pun boleh gagal
+                    # Dulu hanya RuntimeError yang ditangkap. HTTPError/TimeoutError
+                    # dari urllib lolos ke handler generik di main.py, jadi pesan 429
+                    # berubah jadi "sedang mengalami gangguan" dan penyebabnya tidak
+                    # pernah tercatat di log (bug: kuota Gemini habis 26 Okt).
+                    providers_tried.append(f"{model}/kunci#{key_index}")
+                    log.warning(
+                        "Gemini OCR model=%s kunci#%d failure=provider (%s: %s), coba berikutnya",
+                        model,
+                        key_index,
+                        type(error).__name__,
+                        str(error)[:120],
+                    )
     else:
-        log.warning("GEMINI_API_KEY kosong, langsung coba OpenRouter")
+        log.warning("Tidak ada kunci Gemini, langsung coba OpenRouter")
 
     if OR_API_KEY:
         try:
@@ -264,6 +374,7 @@ def _gemini_ocr(
     mime_type: str | list[str] = "image/jpeg",
     deadline: float | None = None,
     model: str | None = None,
+    api_key: str | None = None,
 ) -> dict:
     if deadline is None and isinstance(mime_type, (int, float)):
         deadline = float(mime_type)
@@ -271,24 +382,12 @@ def _gemini_ocr(
     if deadline is None:
         deadline = time.monotonic() + OCR_BUDGET_SECONDS
     model = model or GEMINI_MODEL
-    records = _image_records(image_bytes, mime_type)
-    # (bug 1 Nov: _downscale cuma dipanggil di jalur OpenRouter. Gemini menerima
-    # foto HP apa adanya — 3-4 MB, base64 ~5 MB — dan permintaannya lewat batas
-    # 15 detik per percobaan, dua kali, lalu menghabiskan 30 dari 45 detik
-    # anggaran dan menyisakan ~2 detik per model cadangan. Semua provider dapat
-    # gambar yang sama kecilnya sekarang.)
-    prepared_records = []
-    for raw, image_mime in records:
-        prepared = _downscale(raw)
-        prepared_records.append(
-            (prepared, "image/jpeg" if prepared is not raw else image_mime)
-        )
-    log.info(
-        "OCR Gemini: %d byte -> %d byte (%d gambar)",
-        sum(len(raw) for raw, _ in records),
-        sum(len(prepared) for prepared, _ in prepared_records),
-        len(prepared_records),
-    )
+    api_key = api_key if api_key is not None else GEMINI_API_KEY
+    # (bug 1 Nov: _downscale dulu cuma dipanggil di jalur OpenRouter, jadi Gemini
+    # menerima foto HP 3-4 MB apa adanya. Sekarang gambar sudah dikecilkan sekali
+    # di ocr_receipt; panggilan di sini cuma jaring untuk pemanggil langsung, dan
+    # pada gambar yang sudah kecil hasilnya hampir tidak berubah.)
+    prepared_records = _prepare_records(_image_records(image_bytes, mime_type))
     image_parts = [
         {
             "inline_data": {
@@ -311,7 +410,7 @@ def _gemini_ocr(
     }
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}"
-        f":generateContent?key={GEMINI_API_KEY}"
+        f":generateContent?key={api_key}"
     )
     req = urllib.request.Request(
         url,
@@ -343,12 +442,14 @@ def _gemini_ocr(
                 MAX_ATTEMPTS,
             )
             if code == 429 and "quota" in body.lower():
-                raise RuntimeError("kuota harian habis (reset tengah malam)")
+                raise _GeminiFailure(
+                    "quota", "kuota harian habis (reset tengah malam)", code
+                )
             backoff = 2 * (attempt + 1)
             if code in RETRY_CODES and attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
                 time.sleep(backoff)
                 continue
-            raise RuntimeError(f"HTTP {code}")
+            raise _GeminiFailure("http", f"HTTP {code}", code)
         except Exception as error:  # noqa: BLE001 - penyebab asli wajib masuk log
             reason = getattr(error, "reason", None)
             timed_out = isinstance(error, (socket.timeout, TimeoutError)) or isinstance(
@@ -368,20 +469,24 @@ def _gemini_ocr(
                 # Percobaan kedua menunggu dengan batas waktu yang sama, jadi
                 # yang didapat cuma kehilangan 15 detik lagi dari anggaran
                 # bersama — sementara model cadangan belum dicoba sama sekali.
-                raise RuntimeError("Permintaan OCR gagal (waktu habis)") from error
+                raise _GeminiFailure(
+                    "timeout", "Permintaan OCR gagal (waktu habis)"
+                ) from error
             backoff = 2 * (attempt + 1)
             if attempt < MAX_ATTEMPTS - 1 and backoff < deadline - time.monotonic():
                 time.sleep(backoff)
                 continue
-            raise RuntimeError("Permintaan OCR gagal") from error
+            raise _GeminiFailure("request", "Permintaan OCR gagal") from error
     if data is None:
-        raise RuntimeError("Kegagalan setelah beberapa percobaan (waktu habis)")
+        raise _GeminiFailure(
+            "budget", "Kegagalan setelah beberapa percobaan (waktu habis)"
+        )
 
     try:
         text = _gemini_response_text(data)
         parsed = _parse_json_text(text)
     except Exception:
-        raise RuntimeError("respons tidak bisa dibaca")
+        raise _GeminiFailure("parse", "respons tidak bisa dibaca")
     return _normalize(parsed)
 
 
@@ -395,6 +500,21 @@ def _gemini_response_text(data) -> str:
         and isinstance(part.get("text"), str)
         and part.get("thought") is not True
     )
+
+
+class _GeminiFailure(RuntimeError):
+    """Kegagalan Gemini yang kelasnya boleh masuk log.
+
+    Bedanya dengan RuntimeError biasa: `kind` memutuskan langkah berikutnya.
+    `quota` (429) berarti kunci ini habis untuk hari ini, jadi kunci lain layak
+    dicoba untuk model yang sama. `timeout` berarti model ini sedang mengantre,
+    jadi kunci lain tidak akan menolong dan yang benar adalah pindah model.
+    """
+
+    def __init__(self, kind: str, message: str, status: int | None = None):
+        self.kind = kind
+        self.status = status
+        super().__init__(message)
 
 
 class _OpenRouterFailure(RuntimeError):

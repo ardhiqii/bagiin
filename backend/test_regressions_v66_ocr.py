@@ -178,7 +178,7 @@ def test_slow_gemini_cannot_consume_reserved_openrouter_budget(monkeypatch):
         "tax_included": False,
     }
 
-    def slow_gemini(image_bytes, mime_type, deadline, model=None):
+    def slow_gemini(image_bytes, mime_type, deadline, model=None, api_key=None):
         # Tiap model Gemini dapat potongan anggarannya sendiri; yang pertama
         # memakai seluruh potongannya, jadi dianggap lambat sampai habis.
         observed.setdefault("start", clock.now)
@@ -237,6 +237,9 @@ def test_gemini_attempt_stops_once_budget_spent():
 # ---------- B5: honest, non-leaking "not configured" message ----------
 
 def test_no_provider_configured_message_does_not_leak_env_var_names(monkeypatch):
+    # Sejak kunci Gemini jadi daftar, "tidak ada penyedia" berarti daftarnya
+    # kosong — bukan cuma nama lama `GEMINI_API_KEY` yang dikosongkan.
+    monkeypatch.setattr(ocr, "GEMINI_API_KEYS", ())
     monkeypatch.setattr(ocr, "GEMINI_API_KEY", "")
     monkeypatch.setattr(ocr, "OR_API_KEY", "")
     try:
@@ -251,8 +254,10 @@ def test_no_provider_configured_message_does_not_leak_env_var_names(monkeypatch)
 
 
 def test_no_provider_configured_message_is_indonesian_and_actionable():
-    monkeypatch_gemini = ocr.GEMINI_API_KEY
-    monkeypatch_or = ocr.OR_API_KEY
+    saved_keys = ocr.GEMINI_API_KEYS
+    saved_gemini = ocr.GEMINI_API_KEY
+    saved_or = ocr.OR_API_KEY
+    ocr.GEMINI_API_KEYS = ()
     ocr.GEMINI_API_KEY = ""
     ocr.OR_API_KEY = ""
     try:
@@ -263,8 +268,9 @@ def test_no_provider_configured_message_is_indonesian_and_actionable():
             msg = str(e)
             assert "manual" in msg.lower()
     finally:
-        ocr.GEMINI_API_KEY = monkeypatch_gemini
-        ocr.OR_API_KEY = monkeypatch_or
+        ocr.GEMINI_API_KEYS = saved_keys
+        ocr.GEMINI_API_KEY = saved_gemini
+        ocr.OR_API_KEY = saved_or
 
 
 # ---------- documented repairs must keep working ----------

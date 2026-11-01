@@ -480,3 +480,54 @@ def test_gemini_sends_downscaled_image(monkeypatch):
     assert part["data"] == base64.b64encode(b"kecil-jpeg").decode()
     assert part["mime_type"] == "image/jpeg"
     assert result["merchant"] == "Kecil"
+
+
+def test_gemini_quota_moves_to_next_key(monkeypatch):
+    """429 kuota harus pindah KUNCI, bukan pindah model.
+
+    Kuota gratis dihitung per project, jadi kunci yang habis akan menjawab 429
+    untuk model apa pun. Kalau 429 malah dijawab dengan pindah model, seluruh
+    daftar model habis dan kunci kedua yang masih punya kuota tidak pernah
+    dicoba — itu kesalahan yang justru membuat fitur ini terlihat "tidak ada
+    fallback".
+    """
+    used = []
+
+    def fake(image_bytes, mime_type="image/jpeg", deadline=None, model=None, api_key=None):
+        used.append((model, api_key))
+        if api_key == "kunci-habis":
+            raise ocr._GeminiFailure("quota", "kuota harian habis (reset tengah malam)", 429)
+        return {"merchant": "Kedua", "items": [], "total": 0}
+
+    monkeypatch.setattr(ocr, "_gemini_ocr", fake)
+    monkeypatch.setattr(ocr, "GEMINI_API_KEYS", ("kunci-habis", "kunci-segar"))
+    monkeypatch.setattr(ocr, "OR_API_KEY", "")
+
+    result = ocr.ocr_receipt(b"image", "image/jpeg")
+
+    assert result["merchant"] == "Kedua"
+    # model pertama dicoba di kedua kunci sebelum pindah model
+    assert used[:2] == [(ocr.GEMINI_MODELS[0], "kunci-habis"), (ocr.GEMINI_MODELS[0], "kunci-segar")]
+
+
+def test_gemini_timeout_moves_to_next_model_not_next_key(monkeypatch):
+    """Timeout itu antrean model, bukan kuota: kunci lain tidak menolong."""
+    used = []
+
+    def fake(image_bytes, mime_type="image/jpeg", deadline=None, model=None, api_key=None):
+        used.append((model, api_key))
+        if model == ocr.GEMINI_MODELS[0]:
+            raise ocr._GeminiFailure("timeout", "Permintaan OCR gagal (waktu habis)")
+        return {"merchant": "ModelKedua", "items": [], "total": 0}
+
+    monkeypatch.setattr(ocr, "_gemini_ocr", fake)
+    monkeypatch.setattr(ocr, "GEMINI_API_KEYS", ("kunci-satu", "kunci-dua"))
+    monkeypatch.setattr(ocr, "OR_API_KEY", "")
+
+    result = ocr.ocr_receipt(b"image", "image/jpeg")
+
+    assert result["merchant"] == "ModelKedua"
+    assert used[0] == (ocr.GEMINI_MODELS[0], "kunci-satu")
+    assert used[1][0] == ocr.GEMINI_MODELS[1]
+    # kunci kedua tidak dicoba untuk model pertama
+    assert not [entry for entry in used if entry == (ocr.GEMINI_MODELS[0], "kunci-dua")]

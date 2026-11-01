@@ -100,7 +100,7 @@ def test_ocr_receipt_swallows_non_runtime_provider_errors(monkeypatch):
 
     calls = []
 
-    def gemini_fails(image, mime_type="image/jpeg", deadline=None, model=None):
+    def gemini_fails(image, mime_type="image/jpeg", deadline=None, model=None, api_key=None):
         calls.append("gemini")
         raise urllib.error.URLError("connection reset")
 
