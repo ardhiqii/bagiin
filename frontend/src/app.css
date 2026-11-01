@@ -48,7 +48,16 @@ textarea {
 
 .app-frame {
   width: 100%;
-  max-width: 480px;
+  /* TANPA max-width di ponsel. Dulu 480 px, dan itu hanya kelihatan di
+     perangkat yang lebar CSS-nya >480 (Galaxy dengan "screen zoom" kecil,
+     Chrome dengan page zoom, atau tablet kecil): frame-nya jadi kolom 480 px
+     di tengah, menyisakan pita kosong di kiri-kanan. Karena warna frame sama
+     dengan warna halaman, satu-satunya yang memperlihatkan pita itu adalah
+     garis navigasi bawah — persis terbaca sebagai "garisnya nggak full".
+     Di 384 px tidak ada selisih, jadi emulator tidak pernah menunjukkannya:
+     pada 506 px pita itu 13 px di tiap sisi, dan itu angka yang cocok dengan
+     tangkapan layar perangkat. */
+  max-width: none;
   /* tinggi tetap, bukan min-height: isi yang scroll di dalam, bar bawah dan
      navigasi selalu menempel di dasar frame */
   height: 100dvh;

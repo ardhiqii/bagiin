@@ -197,4 +197,32 @@ test.describe('Bagiin — perilaku user', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Budi')
     await expect(page.getByRole('navigation', { name: 'Navigasi utama' })).toBeVisible()
   })
+
+
+/**
+ * Lebar CSS ponsel tidak selalu 384. Galaxy dengan "screen zoom" kecil, Chrome
+ * dengan page zoom, atau tablet kecil bisa melaporkan 500-700 px. Di lebar itu
+ * frame dulu dibatasi 480 px dan diletakkan di tengah, menyisakan pita kosong —
+ * tidak terlihat di emulator 384 px, tapi di perangkat nyata garis navigasi
+ * bawahnya jelas tidak sampai tepi.
+ */
+test.describe('lebar CSS besar di ponsel', () => {
+  test.use({ viewport: { width: 506, height: 900 } })
+
+  test('10. bar bawah dan navigasi tetap selebar layar di 506 px', async ({ page }) => {
+    await onboard(page, 'Budi')
+    const m = await page.evaluate(() => {
+      const g = (sel) => {
+        const el = document.querySelector(sel)
+        if (!el) return null
+        const r = el.getBoundingClientRect()
+        return { x: Math.round(r.left), w: Math.round(r.width) }
+      }
+      return { vw: innerWidth, frame: g('.app-frame'), nav: g('.app-nav') }
+    })
+    expect(m.vw).toBe(506)
+    expect(m.frame).toEqual({ x: 0, w: 506 })
+    expect(m.nav).toEqual({ x: 0, w: 506 })
+  })
+})
 })
