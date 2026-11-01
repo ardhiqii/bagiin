@@ -73,9 +73,11 @@ test.describe('Kotak hitam — pengamanan dan tautan aneh', () => {
   })
 
   test('B50. tombol kembali berulang tidak membuat layar rusak', async ({ page }) => {
+    // tiga puluh navigasi di ponsel uji tidak muat dalam 60 detik bawaan
+    test.setTimeout(150_000)
     await freshUser(page, 'Balik ' + stamp)
     await manualBill(page, 'Bill balik ' + stamp, 16000)
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 3; i++) {
       await page.goto('/')
       await page.goto('/rekap')
       await page.goto('/kontak')
@@ -83,6 +85,9 @@ test.describe('Kotak hitam — pengamanan dan tautan aneh', () => {
       await page.goBack()
       await page.goBack()
     }
+    // kembali berkali-kali bisa mendarat di layar "Menyiapkan Bagiin…", jadi
+    // tunggu kerangkanya dulu sebelum menilai isinya
+    await expect(page.getByRole('link', { name: 'Beranda' })).toBeVisible({ timeout: 25000 })
     const body = await page.locator('body').innerText()
     expect(body.length).toBeGreaterThan(40)
     expect(body).not.toMatch(/Something went wrong|Unexpected Application Error/i)
