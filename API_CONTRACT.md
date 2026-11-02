@@ -1,12 +1,16 @@
 # Bagiin — API & Behaviour Contract (backend truth)
 
 Source of truth: `backend/main.py` (routes, validation, `_compute_response`, recap),
-`backend/calc.py` (`compute`), `backend/db.py` (SQL, row shapes), and the legacy client
-(`frontend/static/app.js`, `create.js`, `bill.js`, `recap.js`, `screens.js`).
+`backend/calc.py` (`compute`), `backend/db.py` (SQL, row shapes), dan klien yang dipakai
+sekarang — `frontend/src/lib/api.ts` plus layar di `frontend/src/screens/`.
 
-Every response shape below is copied from the source, and spot-verified against the live
-backend at `http://127.0.0.1:8082` (read-only GETs against the real SQLite DB). Where the
-source is ambiguous or the behaviour is surprising, it says so instead of guessing.
+Every response shape below is copied from the source, and spot-verified against a running
+backend (`bagiin-dev` di `http://127.0.0.1:8090`, read-only GETs terhadap salinan DB).
+Where the source is ambiguous or the behaviour is surprising, it says so instead of guessing.
+
+> Catatan: dokumen ini ditulis saat frontend masih vanilla (0.9). Bentuk endpoint-nya
+> masih berlaku, tetapi rujukan ke `frontend/static/*.js` dan port 8082 sudah tidak ada.
+> Frontend 1.0 ada di `frontend/src/`.
 
 **Endpoint surface size:** `/openapi.json` exposes **41 paths / 47 operations**; excluding the
 static shell (`GET|HEAD /`, `GET|HEAD /static/manifest.json`) that is **43 operations under `/api`**,

@@ -1,90 +1,104 @@
 # AGENTS.md — Bagiin 1.0
 
-This file governs work on the **`react` branch only** — that branch is **versi 1.0**.
-`main` is **versi 0.9**, the live vanilla app (`bagiin.ardhiqi.com`), and must not
-be touched from here.
+Bagiin adalah **satu aplikasi, satu folder, satu DB**. Versi 1 (React) adalah
+satu-satunya garis yang hidup; tidak ada lagi dua jalur vanilla/React.
 
-## Dua jalur, satu repo
+## Fakta yang berlaku
 
-| Versi | Branch | Isi |
-| --- | --- | --- |
-| **0.9** | `main` | Vanilla JS (`frontend/static/*.js`), FastAPI menyajikan HTML, produksi di bagiin.ardhiqi.com. Hanya perbaikan, tanpa fitur baru |
-| **1.0** | `react` | React 19 + TypeScript + Vite, design system Seimbang/Saldo, FastAPI terpisah, akun berlapis + kontak ber-alias. Semua pengembangan terjadi di sini |
+| Hal | Nilai |
+| --- | --- |
+| Versi | **1.0.0** (`frontend/package.json`) |
+| Branch kerja | `main` — tidak ada branch lain |
+| Kode | `/opt/projects/bagiin` |
+| Frontend | React 19 + TypeScript + Vite (`frontend/`) |
+| Backend | FastAPI + SQLite stdlib (`backend/`) |
+| Produksi | https://bagiin.ardhiqi.com |
+| DB produksi | `/var/lib/bagiin/bagiin.db` — **di luar repo, jangan dipindah** |
+| Uploads produksi | `/var/www/bagiin-uploads` |
+| Build yang dilayani | `/var/www/bagiin` |
+| Layanan produksi | `bagiin-api.service` — port **8096**, `BAGIIN_ENV=production` |
+| Layanan uji (e2e) | `bagiin-dev.service` — port **8090**, DB `/var/lib/bagiin-dev/bagiin.db` |
 
+Versi vanilla 0.9 sudah pensiun: kodenya hanya ada di riwayat git, tidak ada
+`frontend/static/`, tidak ada `prototype/`, dan `main` sekarang berisi versi 1.
+`bagiin-react.ardhiqi.com` hanya 301 ke domain utama.
 
-Rules:
+## Aturan kerja
 
-- All React work happens on `react`. Never commit React work to `main`, never
-  merge `react` into `main` without an explicit owner decision.
-- `main` is deployed live. A stray merge or push there ships to real users.
-- The backend on this branch is still the vanilla backend and stays untouched
-  unless a task explicitly says otherwise.
+- Semua perubahan di `main`. Kalau butuh branch sementara, hapus setelah merge —
+  jangan biarkan garis kedua tumbuh lagi.
+- **Jangan menulis ke DB produksi di luar API.** Untuk membaca boleh
+  (`mode=ro`), untuk mengubah lewat backend. Data hidup ada di
+  `/var/lib/bagiin/bagiin.db`, bukan di repo.
+- Deploy hanya lewat `bash scripts/deploy-web.sh` (menyimpan build + DB lama,
+  lalu membuktikan hasilnya lewat HTTP). Membatalkan: `bash scripts/rollback-web.sh`.
+  Jangan `rsync` manual ke `/var/www/bagiin` dan jangan lupa restart `bagiin-api`
+  kalau kode backend berubah.
+- Jangan mengarahkan e2e ke 8096. Playwright memakai `bagiin-dev` (8090).
+- Jangan mengubah `/etc/nginx` tanpa menyalin perubahannya ke
+  `scripts/nginx/bagiin.ardhiqi.com.v1.conf`.
 
-## Source of truth, in order
+## Source of truth, berurutan
 
-1. `PRODUCT.md` — product and business rules decided by the owner (Indonesian).
-   When it disagrees with the old code, PRODUCT.md wins and the difference is
-   discussed before changing behaviour.
-2. `DESIGN_SYSTEM.md` — the chosen visual direction (Seimbang layout, Saldo
-   palette), tokens, components, status vocabulary.
-3. `UX_RESEARCH.md` — research record; distinguishes published third-party
-   behaviour from recommendations for Bagiin.
-4. `CLAUDE.md` — how the existing backend/vanilla app actually works.
-5. `SPEC.md` — historical implementation changelog.
+1. `PRODUCT.md` — aturan produk dan bisnis dari pemilik (Indonesian). Kalau
+   berbeda dengan kode, PRODUCT.md menang dan selisihnya dibahas dulu.
+2. `DESIGN_SYSTEM.md` — arah visual (Seimbang layout, Saldo palette), token,
+   komponen, kosakata status.
+3. `UX_RESEARCH.md` — catatan riset; memisahkan perilaku pihak ketiga dari
+   rekomendasi untuk Bagiin.
+4. `RUNBOOK-V1.md` — topologi, deploy, rollback, keadaan darurat.
+5. `CLAUDE.md` — cara backend dan frontend benar-benar bekerja.
+6. `SPEC.md` — changelog implementasi historis.
 
-## Money rules (non-negotiable)
+## Aturan uang (tidak negotiable)
 
-- Final money always comes from the server (`backend/calc.py` + `_compute_response()`).
-  A client that re-derives the split is the single most expensive bug class in this
-  project — it once told a guest to transfer the wrong amount.
-- Prototype code may mock amounts, but any production React code must render the
-  server payload, not recompute it.
-- All rupiah are integers. Keep the invariant
+- Angka final selalu dari server (`backend/calc.py` + `_compute_response()`).
+  Klien yang menghitung ulang split adalah kelas bug termahal di proyek ini —
+  pernah menyuruh tamu transfer nominal yang salah.
+- Semua rupiah integer. Jaga invariant
   `sum(people totals) + uncovered_idr + remaining_to_creator == bill.total_idr`.
+- Diskon tidak boleh melebihi subtotal; tombol simpan mati dan alasannya
+  ditulis di kolom diskon (layar tidak boleh menampilkan total minus).
 
-## Struktur versi 1
+## Struktur
 
-Branch `react` adalah **versi 1** dan berisi aplikasi utuh:
-
-- `frontend/` — React + TypeScript + Vite (satu-satunya frontend; versi vanilla
-  sudah dihapus dari branch ini, dan tetap hidup di branch `main` sebagai versi 0.9)
-- `backend/` — FastAPI (akun, sesi perangkat, alias kontak, split bill)
-
-`prototype/` sudah dihapus: itu lab desain versi lama, dan membawa dua sumber
-token visual justru membuat orang menyalin nilai dari tempat yang salah.
+- `frontend/src/screens/` — satu berkas per layar (`Home`, `Create`, `EditBill`,
+  `BillDetail`, `Recap`, `Contacts`, `Settings`, `Entry`, `Welcome`, `NotFound`).
+- `frontend/src/lib/` — `api.ts` (fetch + header identitas), `session.ts`,
+  `queries.ts`, `mutations.ts`, `money.ts`, `share.ts`.
+- `frontend/src/design-system.css` + `app.css` — token dan komponen. Jangan
+  menambah warna/ukuran ad hoc; pakai token yang ada.
+- `backend/main.py` (endpoint + `_compute_response()`), `db.py` (skema +
+  `ALTER TABLE` idempoten), `calc.py` (mesin split murni), `ocr.py`.
+- `backend/venv/` — venv milik repo ini sendiri (Python 3.14). Bukan warisan
+  folder lain.
 
 ## Commands
 
 ```bash
-cd frontend
-npm install
-npm run dev            # http://localhost:5199
-npm run build          # tsc -b && vite build  -> frontend/dist
-npx playwright test    # e2e (butuh API di 8090)
-```
-
-Backend:
-
-```bash
+# backend
 cd backend
-# Worktree ini tidak punya venv sendiri; venv dipakai bersama dari worktree 0.9
-/opt/projects/bagiin/backend/venv/bin/python -m pytest -q
+./venv/bin/python -m pytest -q                     # 422 kasus, ~25 dtk
+BAGIIN_DB=/tmp/x.db ./venv/bin/python -m pytest -q  # pakai DB sekali pakai
+
+# frontend
+cd frontend
+npm run dev        # http://localhost:5199, proxy /api -> 127.0.0.1:8090
+npm run build      # tsc -b && vite build -> dist/
+npx playwright test  # 33 berkas / 253 kasus; butuh bagiin-dev.service hidup
 ```
 
-Nomor versi disimpan di `frontend/package.json` (1.0.0) dan di README bagian
-**Versi**. Kalau menyebut versi di commit atau dokumen, pakai `0.9` (vanilla,
-branch `main`) atau `1.0` (React, branch `react`).
+Kalau habis pindah branch atau merge yang mengganti banyak isi `frontend/`,
+**restart Vite** sebelum menjalankan e2e — module graph basi bikin layar
+kosong dan tes gagal massal padahal aplikasinya sehat.
 
-Live: https://bagiin-react.ardhiqi.com menyajikan `frontend/dist` (root
-`/var/www/bagiin-react`), dengan `/api/` diteruskan nginx ke instance v1 di port
-8090 (`bagiin-react-api.service`, DB salinan `/var/lib/bagiin-sandbox/bagiin.db`).
-Redeploy = `npm run build` lalu salin `dist/.` ke root itu dan reload nginx.
+## Konvensi
 
-## Conventions
-
-- UI copy, error messages, and OCR prompts are casual Indonesian. Match it.
-- Comments in this codebase explain bugs that happened; keep them when refactoring.
-- Backend schema changes go through idempotent `ALTER TABLE` at the bottom of
-  `db.init_db()`. Never rewrite the base `CREATE TABLE`.
-- Never `parseInt` a rupiah input value — inputs hold dot-formatted text.
-- No native `confirm()`; use the project's sheet components.
+- UI copy, pesan error (`HTTPException` detail), dan prompt OCR memakai bahasa
+  Indonesia santai. Ikuti.
+- Komentar di kode ini menceritakan bug yang pernah terjadi; jangan dihapus
+  saat merapikan sekitarnya.
+- Perubahan skema lewat `ALTER TABLE` idempoten di bawah `db.init_db()`.
+  Jangan menulis ulang `CREATE TABLE` dasar.
+- Jangan `parseInt` nilai input rupiah — input berisi teks bertitik.
+- Jangan pakai `confirm()` bawaan browser; pakai sheet komponen proyek.

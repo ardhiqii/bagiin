@@ -10,6 +10,10 @@ gateway. Live at https://bagiin.ardhiqi.com. `SPEC.md` is the product spec + cha
 (written in Indonesian); it is the record of *why* rules exist and is kept up to date
 per release.
 
+Sejak 2 Nov 2026 hanya ada **satu aplikasi**: React 19 + TypeScript + Vite di
+`frontend/`, FastAPI di `backend/`, branch kerja `main`. Folder dan frontend vanilla
+0.9 sudah tidak ada. Topologi (layanan, port, DB, deploy) ada di `RUNBOOK-V1.md`.
+
 UI copy, error messages (`HTTPException` details), and OCR prompts are all in casual
 Indonesian. Match that when adding user-facing strings.
 
@@ -17,78 +21,57 @@ Indonesian. Match that when adding user-facing strings.
 
 ```bash
 cd backend
-source venv/bin/activate                 # venv is committed-adjacent but gitignored
-./venv/bin/uvicorn main:app --reload --port 8090   # API saja; UI dijalankan Vite (frontend/, :5199)
+./venv/bin/python -m pytest -q                       # 422 kasus, ~25 dtk
+./venv/bin/python -m pytest test_behaviors.py -q     # one file
+./venv/bin/python -m pytest -q -k slot               # one test
 
-venv/bin/python -m pytest -q                       # full suite (~140 tests, ~7s)
-venv/bin/python -m pytest test_behaviors.py -q     # one file
-venv/bin/python -m pytest test_behaviors.py -q -k slot   # one test
-venv/bin/python test_calc_regression.py            # test files also run standalone (__main__)
-
-# browser smoke tests (need Chrome on --remote-debugging-port=9222)
-BAGIIN_DB=/tmp/e2e.db BAGIIN_UPLOAD_DIR=/tmp/e2e-up venv/bin/python -m uvicorn main:app --port 8099 &
-node ../tools/e2e_smoke.mjs      # guest picker: shown total == server total
-node ../tools/e2e_settled.mjs    # a hand-settled bill says the same thing on every screen
+# API sendiri tanpa layanan (UI tetap dari Vite)
+BAGIIN_DB=/tmp/e2e.db BAGIIN_UPLOAD_DIR=/tmp/e2e-up \
+  ./venv/bin/uvicorn main:app --port 8090
 ```
 
-`tools/e2e_smoke.mjs` seeds a bill, drives the real UI, and asserts the guest is shown
-**exactly** what the server says they owe. That equality is the expensive regression: the
-frontend used to re-derive the split in JS and told people to transfer the wrong amount.
-It needs no dependencies — Node's built-in WebSocket talks to a Chrome that is already
-running with `--remote-debugging-port=9222`.
+```bash
+cd frontend
+npm run dev        # http://localhost:5199, proxy /api -> 127.0.0.1:8090
+npm run build      # tsc -b && vite build -> dist/
+npx playwright test  # 33 berkas / 253 kasus; butuh bagiin-dev.service (8090) hidup
+```
 
-`tools/e2e_settled.mjs` guards the other recurring bug class: one bill, two contradicting
-statements. A bill settled by hand (`POST /settle`, v60) deliberately leaves every payment
-row `unpaid`, so the manager view, the guest view and the list must all read
-`settled_manual` or they argue with each other on screen.
+Layanan yang hidup: `bagiin-api` (produksi, 8096, DB `/var/lib/bagiin/bagiin.db`) dan
+`bagiin-dev` (uji, 8090, DB `/var/lib/bagiin-dev/bagiin.db`). Deploy dan rollback hanya
+lewat `scripts/deploy-web.sh` / `scripts/rollback-web.sh`; jangan `rsync` manual dan
+jangan lupa `systemctl restart bagiin-api` kalau kode backend berubah.
 
-Tests set `BAGIIN_DB` to a temp file at import time, so they never touch `backend/bagiin.db`
-(the live DB, gitignored). Any new test file must do the same **before** importing `db`.
-`backend/conftest.py` does the same for `BAGIIN_UPLOAD_DIR` once for the whole session
-(main.py resolves and `mkdir`s it at import, so the first file to import `main` binds it
-for every other file) and disables the rate limiter, whose buckets are process-global.
-
-Production: `sudo systemctl restart bagiin.service` (systemd + nginx + Let's Encrypt on the
-VPS; uploads live in `/var/www/bagiin-uploads`).
+Tests set `BAGIIN_DB` to a temp file at import time, so they never touch the live DB.
+Any new test file must do the same **before** importing `db`. `backend/conftest.py`
+does the same for `BAGIIN_UPLOAD_DIR` once for the whole session (main.py resolves and
+`mkdir`s it at import, so the first file to import `main` binds it for every other
+file) and disables the rate limiter, whose buckets are process-global.
 
 Env (`backend/.env`, gitignored, loaded manually at the top of `main.py`):
 `GEMINI_API_KEY` (OCR), optional `OPENROUTER_API_KEY` (OCR fallback), `BAGIIN_DB`,
-`BAGIIN_UPLOAD_DIR`, `BAGIIN_OCR_MODEL`.
+`BAGIIN_UPLOAD_DIR`, `BAGIIN_OCR_MODEL`, `BAGIIN_GOOGLE_ORIGINS`.
 
-## Frontend versioning — read before touching `frontend/`
+## Frontend build and deploy
 
-Assets live flat in `frontend/static/` (no version folders). `index.html` and
-`manifest.json` are **server-rendered templates** (see "static frontend" block at the
-bottom of `backend/main.py`): asset URLs carry a content hash
-(`/static/app.js?v=<sha256[:12]>`), computed at request time from the file bytes.
+Ada build step sekarang. `npm run build` menghasilkan `dist/` berisi aset ber-hash
+(`assets/index-<hash>.js`), lalu `scripts/deploy-web.sh` menyalinnya ke
+`/var/www/bagiin`. `index.html` tidak lagi dirender server: berkas statis itu
+memuat nama aset ber-hash, jadi deploy selalu utuh atau tidak sama sekali.
 
-Cache semantics:
-- `index.html` + `/static/manifest.json` → `Cache-Control: no-cache, must-revalidate`
-  + `ETag` (304 revalidation). Cloudflare treats them as DYNAMIC — always fetched fresh.
-- Everything else under `/static/` → `Cache-Control: public, max-age=31536000, immutable`.
-  Content changes ⇒ new hash ⇒ new URL ⇒ no stale reads ever.
+nginx memetakan MIME per-lokasi (`types { }` di dalam `location`), bukan global —
+kalau tidak, `manifest.webmanifest` dan `og-cover.png` terkirim sebagai
+`text/html`. Staging-nya ada di `scripts/nginx/bagiin.ardhiqi.com.v1.conf`;
+jangan mengedit `/etc/nginx` tanpa menyalin balik perubahannya ke situ.
 
-**Deploying a frontend change is just pushing the file** — no version bump, no folder
-copy, nothing to remember. The hash IS the version. There is no "current version".
+Konsekuensinya: **jangan pernah menguji perubahan UI di domain publik**. Pakai
+`npm run dev` (5199) atau instance uji, lalu deploy. Skrip deploy menyimpan tarball
+build lama + snapshot DB lebih dulu, lalu membuktikan `/`, `/manifest.webmanifest`,
+`/favicon.svg`, `/og-cover.png`, `/api/auth/config`, `/recap` lewat HTTP — status
+atau content-type salah berarti deploy dianggap gagal.
 
-Still never hit the live domain with partial files mid-write, and verify edits against
-`localhost:8082` BEFORE loading the public URL (CF may cache a half-written asset under
-its hash URL once; it is orphaned the moment the file completes, but verify anyway).
-
-No build step, no framework, no npm. Vanilla JS with global functions loaded via three
-`<script>` tags; all CSS is inline in `index.html`. JS budget: < 50KB gz.
-
-**Design system** lives entirely in the `<style>` block of `index.html`: warm-neutral tokens
-plus one accent, a fixed radius scale, tinted shadows, and a dark-mode token swap. Prefer the
-existing classes over inline styles. Two layout rules matter: screens wrap their markup in
-`shell(main, side)`, and the primary action lives in a `.dock` — a fixed bottom bar on
-phones, a sticky right rail at ≥1040px. Call `watchDock()` after rendering a screen that has
-one, so the page reserves the dock's real height instead of a guessed constant.
-
-`app.js` carries the shared UI vocabulary the screens are built from: `ic()` (inline SVG icon
-set — no icon library, since there is no package manager), `openSheet()` / `confirmSheet()`
-(never use native `confirm()`), `withBusy()` (locks a button for the duration of an async
-action), `skeletonRows()`, and `esc()`.
+Kalau habis pindah branch atau merge besar, restart Vite sebelum e2e: module graph
+basi membuat layar kosong dan tes gagal massal padahal aplikasinya sehat.
 
 ## Architecture
 
@@ -100,7 +83,7 @@ action), `skeletonRows()`, and `esc()`.
 - `db.py` — schema in `init_db()` plus idempotent `ALTER TABLE` migrations appended at the
   bottom of it. Add new columns that way; never rewrite the base `CREATE TABLE`.
 - `calc.py` — pure split engine. No I/O, no DB.
-- `ocr.py` — Gemini (`gemini-3.5-flash`) primary, OpenRouter free vision fallback,
+- `ocr.py` — Gemini primary, OpenRouter free vision fallback,
   plus `_normalize()` which repairs LLM output (string `"false"`, float rupiah, hallucinated
   totals) so it passes the strict bill-create validation.
 
@@ -152,31 +135,31 @@ clears it).
 
 Bill create/update validate hard (`subtotal == sum(price - discount)`, `total == subtotal +
 tax + service`, `tax_included` implies `tax == 0`) and 400 rather than persist a bill whose
-split can never reconcile. `db.update_bill()` diffs items by id so existing selections survive
-an edit; ids not belonging to the bill are inserted as new rather than clobbering rows.
+split can never reconcile. `discountIdr > subtotal` is rejected; the UI disables the save
+button and explains it in the discount field rather than showing a negative total.
+`db.update_bill()` diffs items by id so existing selections survive an edit; ids not
+belonging to the bill are inserted as new rather than clobbering rows.
 
-**Frontend** (`frontend/static/`):
+**Frontend** (`frontend/src/`):
 
-- `app.js` — state, `localStorage` helpers (all wrapped in try/catch — private mode must not
-  break the app), the `api()` fetch wrapper that injects `X-Identity-Id`, and a hash router
-  (`#/b/<bill_id>`, `#/settings`, `#/create`, `#/create/verify`). `#/history` is gone (v68 —
-  home owns the one bill list, with filter/sort/paging) and redirects to `#/`. The router
-  also carries a leave-guard so a system Back out of the verify editor asks before
-  discarding a re-typed receipt.
-- `screens.js` — onboarding, home (the one bill list: status chips, year/month, sort and
-  paging — behind an "Atur" sheet on phones, inline at >=1040px), settings/payment accounts,
-  create + OCR verify editor, and the rupiah input helpers (`rupiahFmt`/`rupiahParse`/`bindRupiahInput` — inputs
-  hold dot-formatted text, so **never `parseInt` an input value directly**).
-- `bill.js` — the bill screens: guest picker, creator view, edit bill, pay sheet, slot manager.
-
-Selection writes are serialized through a promise chain (`saveSelectionsViaChain`) because
-parallel POSTs could land out of order and lose taps.
+- `router.tsx` — rute nyata (TanStack Router, path Indonesia): `/` (beranda), `/bills`,
+  `/create`, `/b/$billId`, `/b/$billId/edit`, `/recap`, `/kontak`, `/masuk`, `/settings`.
+  Tidak ada hash router, dan rute rekap adalah `/recap` — bukan `/rekap`.
+- `screens/` — satu berkas per layar; `BillDetail.tsx` menangani pemilih tamu, tampilan
+  pembuat, dan aksi bayar. `Create.tsx` / `EditBill.tsx` memegang OCR + editor item.
+- `lib/api.ts` — fetch wrapper yang menyisipkan `X-Identity-Id`/`X-Identity-Secret`;
+  `lib/session.ts` menyimpan identitas di `localStorage` (selalu dibungkus try/catch —
+  private mode tidak boleh mematikan aplikasi); `lib/money.ts` memformat rupiah.
+- `design-system.css` — token warna/jarak/radius + komponen (`ds-*`). Perubahan visual
+  lewat token, bukan nilai ad hoc, supaya layar tetap konsisten.
+- Selection writes diserialkan supaya POST paralel tidak saling mendahului dan menelan tap.
 
 ## Conventions worth keeping
 
 - Comments in this codebase explain *bugs that happened* (`(bug: ...)`). They are load-bearing
   history — don't delete them when refactoring nearby code.
-- Every bug-fix pass ships regression tests in a `test_regressions_vNN.py` named after the
-  frontend version, and a `SPEC.md` changelog entry.
+- Every bug-fix pass ships regression tests in `backend/test_regressions_vNN.py` named after
+  the frontend version, and a `SPEC.md` changelog entry. End-to-end behaviour lives in
+  `frontend/tests/*.spec.ts` (Playwright, mobile viewport).
 - Errors returned to the client are 4xx even for upstream OCR failures (5xx bodies get
   swallowed by Cloudflare and replaced with an HTML error page).

@@ -5,7 +5,7 @@ lulus. Google client ID sungguhan sudah terpasang dan tombolnya terverifikasi
 terbuka ke akun Google (lihat bagian Google di bawah).
 
 > **Dokumen historis (catatan rencana, bukan petunjuk kerja).** Sejak 2 Nov 2026
-> hanya ada satu folder `/opt/projects/bagiin` dengan branch `react`, satu
+> hanya ada satu folder `/opt/projects/bagiin` dengan branch `main` (versi 1), satu
 > layanan produksi `bagiin-api` (8096), DB `/var/lib/bagiin/bagiin.db`, dan satu
 > domain. Semua penyebutan worktree, port 8082/8090, DB sandbox, serta
 > `bagiin-react.ardhiqi.com` di bawah ini menggambarkan keadaan saat rencana
