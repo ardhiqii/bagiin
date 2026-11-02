@@ -120,6 +120,9 @@ test.describe('Kotak hitam — orang baru, tanpa penjelasan', () => {
     await page.locator('#item-price-0').fill('1234567890')
     await page.getByRole('button', { name: 'Buat bill' }).click()
     await expect(page).toHaveURL(/\/b\//, { timeout: 20000 })
+    // Tunggu nominalnya benar-benar tergambar; membacanya saat layar masih
+    // memuat menghasilkan string kosong dan tesnya gagal tanpa sebab nyata.
+    await expect(page.locator('.ds-balance-value')).toBeVisible({ timeout: 20000 })
 
     const hasil = await page.evaluate(() => {
       const geser = document.documentElement.scrollWidth - document.documentElement.clientWidth
