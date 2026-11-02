@@ -113,6 +113,64 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     await expect(page.getByText(/Membaca struk…/)).toHaveCount(0)
   })
 
+  test('40b. yang bergerak saat memindai hanya garis hijaunya, bukan ilustrasinya', async ({ page }) => {
+    await freshUser(page, 'Candra')
+    // Tahan keadaan memindai cukup lama untuk diukur.
+    await page.route('**/api/ocr', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 15000))
+      await route.fulfill({
+        status: 422,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'terlalu lama' }),
+      })
+    })
+
+    await page.goto('/create')
+    await pickPhotoThrough(page, 'Scan pakai AI')
+    await expect(page.locator('.ds-scan-beam')).toBeVisible({ timeout: 20000 })
+
+    /* Ilustrasinya harus diam: dulu seluruh gambar diangguk 3 px, dan mata
+       membacanya sebagai gambar goyang, bukan alat yang sedang memindai. */
+    const latar = await page.evaluate(
+      () => getComputedStyle(document.querySelector('.ds-scan-art > img') as Element).transform,
+    )
+    expect(latar, 'ilustrasi tidak boleh ikut bergerak').toBe('none')
+
+    // Garisnya bergerak, dan bergerak dengan transform (kompositor, bukan layout).
+    const baca = () =>
+      page.evaluate(() => {
+        const beam = document.querySelector('.ds-scan-beam') as HTMLElement
+        const art = document.querySelector('.ds-scan-art') as HTMLElement
+        const gaya = getComputedStyle(beam)
+        return {
+          transform: gaya.transform,
+          animasi: gaya.animationName,
+          beam: beam.getBoundingClientRect().toJSON(),
+          art: art.getBoundingClientRect().toJSON(),
+        }
+      })
+
+    const awal = await baca()
+    expect(awal.animasi).toBe('scan-sweep')
+    await page.waitForTimeout(500)
+    const tengah = await baca()
+    expect(tengah.transform, 'garis harus bergerak').not.toBe(awal.transform)
+
+    // Selama bergerak, garis tetap di dalam kotak ilustrasi.
+    for (const f of [awal, tengah]) {
+      expect(f.beam.top, 'garis keluar dari atas kotak').toBeGreaterThanOrEqual(f.art.top - 0.5)
+      expect(f.beam.bottom, 'garis keluar dari bawah kotak').toBeLessThanOrEqual(f.art.bottom + 0.5)
+    }
+
+    // Yang meminta gerak dikurangi: garisnya diam di tengah, bukan melambat.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    const diam = await page.evaluate(() => {
+      const beam = document.querySelector('.ds-scan-beam') as HTMLElement
+      return getComputedStyle(beam).animationName
+    })
+    expect(diam, 'gerak dikurangi berarti animasinya mati').toBe('none')
+  })
+
   test('41. struk yang pajaknya sudah termasuk: kolom pajak dikunci, bill ditandai', async ({ page }) => {
     await freshUser(page, 'Budi')
     await page.route('**/api/ocr', (route) =>

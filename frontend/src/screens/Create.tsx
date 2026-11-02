@@ -9,6 +9,7 @@ import { Alert, Button, DateField, Field, SectionHead, Sheet } from '../ds/primi
 import { Plus, X } from '@phosphor-icons/react'
 import createHeroArt from '../assets/create-hero.webp'
 import scanArt from '../assets/scan.webp'
+import scanLine from '../assets/scan-line.webp'
 import { invalidateMoneyViews } from '../lib/mutations'
 import { useContacts, type Contact } from '../lib/queries'
 import { PeoplePicker } from '../components/PeoplePicker'
@@ -390,7 +391,11 @@ export function Create({ identityId }: { identityId: string | null }) {
         </section>
       ) : photoBusy ? (
         <div className={'ds-create-hero' + (photoBusy === 'ocr' ? ' is-scanning' : '')} role="status">
-          <img src={scanArt} alt="" width={92} height={92} />
+          {/* Ilustrasi diam; hanya garis hijaunya yang menyapu atas-bawah. */}
+          <span className="ds-scan-art">
+            <img src={scanArt} alt="" width={120} height={120} />
+            {photoBusy === 'ocr' ? <img className="ds-scan-beam" src={scanLine} alt="" aria-hidden="true" /> : null}
+          </span>
           <div>
             <b>
               {photoBusy === 'ocr'
