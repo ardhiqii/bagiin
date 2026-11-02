@@ -661,7 +661,12 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                 ))}
               {data.people.map((person) => {
                 const isMe = person.identity_id === identityId
-                const removable = canManage && data.bill.status === 'open' && !isMe
+                /* Mengeluarkan orang mengubah isi bill, dan server menolak
+                   perubahan pada bill yang sudah lunas (`_ensure_editable`).
+                   Dulu tombolnya tetap tampil di bill lunas, lalu klik-nya
+                   berakhir dengan pesan galat — tombol yang pasti gagal lebih
+                   buruk daripada tombol yang tidak ada. */
+                const removable = canManage && data.bill.status === 'open' && !data.settled && !isMe
                 return (
                   <div className="app-row" key={person.identity_id}>
                     <Avatar label={initials(person.display_name ?? person.name)} tone={isMe ? 'teal' : 'navy'} />

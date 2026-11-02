@@ -311,6 +311,12 @@ apa yang bisa dilakukan orang, bukan apa yang bisa dilakukan klien HTTP.
 | `tests/blackbox-seven.spec.ts` | 4 | rekap: kosong, terisi, tandai lunas, kesamaan angka dengan beranda |
 | `tests/blackbox-eight.spec.ts` | 4 | pajak/service/diskon, diskon melebihi tagihan, mengeluarkan tamu |
 | `tests/blackbox-nine.spec.ts` | 4 | rekening ubah/hapus, lunas per orang, kelompok bulan, cari merchant |
+| `tests/blackbox-ten.spec.ts` | 8 | isian janggal: nama kosong, harga nol, qty 99, 12 item, nama 120 karakter + emoji, diskon = subtotal, pajak 100% |
+| `tests/blackbox-eleven.spec.ts` | 7 | batas wewenang: tamu buka `/edit`, tiga peserta, keluarkan peserta, keluar sendiri, gabung lagi, lunas lalu menambah, bill ditutup |
+| `tests/blackbox-twelve.spec.ts` | 7 | keadaan tidak rapi: identitas rusak, data situs dihapus, segarkan di tengah memilih, dua tab, judul 120 karakter di 320 px, tautan salah, bolak-balik Back |
+| `tests/blackbox-thirteen.spec.ts` | 6 | angka: item dibagi tiga, pajak termasuk harga, diskon penuh + pajak, dua item senama, rekap dua bill, harga diubah setelah dipilih |
+| `tests/blackbox-fourteen.spec.ts` | 6 | pintu masuk: gabung ke bill tertutup, dua tamu senama, nama 60 karakter, pemilik buka tautannya sendiri, ditutup saat tamu diam, klik "Ikut" dua kali |
+| `tests/blackbox-fifteen.spec.ts` | 6 | dua orang mengubah hal sama: item dihapus, harga berubah, ditutup di tengah, ganti penalangi, keluar-lalu-masuk, tutup lalu buka |
 
 ### Cacat yang ditemukan gelombang ini
 
@@ -324,10 +330,30 @@ apa yang bisa dilakukan orang, bukan apa yang bisa dilakukan klien HTTP.
 | 6 | "Terima undangan otomatis" tidak pernah dibaca ulang dari server | sesi hanya menggabungkan `name` dan `role` dari `/me` | `mergeIdentity` ikut membawa `auto_accept`, `username`, `handle` |
 | 7 | saringan tanpa hasil mengunci orang: bilah "Bill kamu", tombol Atur, dan kolom cari ikut hilang | keadaan kosong hanya punya satu bentuk | keadaan "Tidak ada bill di saringan ini" + tombol "Tampilkan semua bill" |
 | 8 | diskon melebihi tagihan menampilkan total **minus** (Rp-70.000) dengan alasan "Total masih Rp0" | total dihitung tanpa batas; batas server (diskon ≤ subtotal) tidak dicerminkan di layar | total ditahan di Rp0, kolom diskon menjelaskan, tombol simpan mati — di Buat dan Ubah bill |
+| 9 | tombol "Keluarkan" tetap ditawarkan pada bill yang **sudah lunas**; diklik, ia gagal dan hanya memunculkan pesan galat | daftar Orang memeriksa `canManage` dan status bill, tetapi tidak memeriksa `settled`, sedangkan server menolak perubahan bill lunas (`_ensure_editable`) | `removable` ikut mensyaratkan `!data.settled` (`BillDetail.tsx`) — tombol yang pasti gagal tidak ditampilkan |
 
 ### Jalur yang ternyata sudah benar (tidak diubah)
 
 - item terakhir tidak bisa dihapus di layar Ubah bill (tombolnya memang mati);
 - tiga ketukan "Undang" pada kontak yang sama tetap satu undangan (unique + idempoten);
 - bagian "Transfer ke …" hanya muncul kalau ada orang lain yang berutang;
-- tautan bill tak dikenal mendarat di halaman "tidak ditemukan" berkerangka aplikasi.
+- tautan bill tak dikenal mendarat di halaman "tidak ditemukan" berkerangka aplikasi;
+- tamu yang sudah menandai lunas **tidak bisa** mengetuk item lagi — baris item mati,
+  dan jalan keluarnya "Batalkan status lunas" di Aksi lain. Ini yang mencegah orang
+  menambah utang yang sudah ia nyatakan selesai;
+- setelah keluar dari bill, orangnya dibawa pulang ke beranda, bukan ditahan di bill;
+- bill yang ditutup menampilkan lencana **Ditutup** di badan layar, sedangkan judul
+  layar tetap nama bill — bukan judul "Bill ditutup";
+- tamu yang membuka `/edit` melihat "Hanya yang menalangi bisa mengubah", bukan
+  pesan status bill: batas wewenang diperiksa lebih dulu;
+- dua tamu dengan nama yang sama tetap dua baris terpisah (identitas bukan nama);
+- layar orang lain tidak menyegarkan diri sendiri: angka baru muncul setelah dimuat
+  ulang, dan itu memang perilakunya sekarang;
+- porsi yang tidak habis dibagi rata menaruh sisa 1 rupiah pada yang menalangi
+  (10.000 dibagi 3 → 3.333 / 3.333 / 3.334).
+
+### Catatan gelombang 10–15
+
+Enam gelombang terakhir (40 kasus) tidak menemukan cacat uang: pembagian, pajak
+proporsional, diskon, dan pembulatan tetap konsisten di layar tamu, layar pemilik,
+dan rekap. Satu-satunya cacat baru ada di lapisan tombol (butir 9 di atas).
