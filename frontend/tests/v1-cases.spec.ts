@@ -18,7 +18,8 @@ async function identityId(page: Page): Promise<string> {
 async function startAsGuest(page: Page, name: string) {
   await page.goto('/')
   await page.getByLabel('Nama kamu').fill(name)
-  await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
+  await expect(page.getByRole('button', { name: 'Mulai pakai Bagiin' })).toBeEnabled({ timeout: 20000 })
+    await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
   await expect(page.getByRole('heading', { level: 1 })).toContainText(name)
 }
 

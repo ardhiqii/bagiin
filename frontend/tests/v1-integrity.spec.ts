@@ -70,6 +70,7 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {})
     await page.goto('/')
     await page.getByLabel('Nama kamu').fill('Bagikan ' + stamp)
+    await expect(page.getByRole('button', { name: 'Mulai pakai Bagiin' })).toBeEnabled({ timeout: 20000 })
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
     /* Tunggu identitas benar-benar siap sebelum pindah layar. Tanpa ini,
        /create dibuka saat sesi belum ada, aplikasi mengembalikan ke layar masuk,
@@ -116,6 +117,7 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     })
     await page.goto('/')
     await page.getByLabel('Nama kamu').fill('Getar ' + stamp)
+    await expect(page.getByRole('button', { name: 'Mulai pakai Bagiin' })).toBeEnabled({ timeout: 20000 })
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
     /* Tunggu identitas selesai dibuat sebelum pindah layar: /create yang dibuka
        terlalu cepat dikembalikan ke layar masuk, dan kegagalannya terbaca sebagai
@@ -143,6 +145,7 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     const name = 'Konsisten ' + stamp
     await page.goto('/')
     await page.getByLabel('Nama kamu').fill(name)
+    await expect(page.getByRole('button', { name: 'Mulai pakai Bagiin' })).toBeEnabled({ timeout: 20000 })
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
     const me = await waitForIdentity(page)
 
@@ -185,6 +188,7 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
   test('I-06. setiap layar: nol error konsol, nol gambar rusak, tidak melebar', async ({ page }) => {
     await page.goto('/')
     await page.getByLabel('Nama kamu').fill('Sapu ' + stamp)
+    await expect(page.getByRole('button', { name: 'Mulai pakai Bagiin' })).toBeEnabled({ timeout: 20000 })
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
     /* Tunggu identitas selesai dibuat sebelum pindah layar: /create yang dibuka
        terlalu cepat dikembalikan ke layar masuk, dan kegagalannya terbaca sebagai

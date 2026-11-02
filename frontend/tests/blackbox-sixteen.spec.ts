@@ -17,6 +17,7 @@ async function freshUser(page: Page, name: string) {
   await page.goto('/')
   if (await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).count()) {
     await page.getByLabel('Nama kamu').fill(name)
+    await expect(page.getByRole('button', { name: 'Mulai pakai Bagiin' })).toBeEnabled({ timeout: 20000 })
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
   }
   await expect(page.getByRole('heading', { level: 1 })).toContainText(name, { timeout: 20000 })

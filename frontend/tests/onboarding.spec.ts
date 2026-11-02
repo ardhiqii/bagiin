@@ -6,6 +6,7 @@ async function named(page: Page, name: string) {
   await page.goto('/')
   if (await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).count()) {
     await page.getByLabel('Nama kamu').fill(name)
+    await expect(page.getByRole('button', { name: 'Mulai pakai Bagiin' })).toBeEnabled({ timeout: 20000 })
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
   }
   await expect(page.getByRole('heading', { level: 1 })).toContainText(name)
@@ -33,6 +34,7 @@ test.describe('Bagiin — gerbang nama', () => {
     await page.goto('/create')
     await expect(page.getByRole('heading', { name: 'Mulai atau masuk' })).toBeVisible()
     await page.getByLabel('Nama kamu').fill('Budi')
+    await expect(page.getByRole('button', { name: 'Mulai pakai Bagiin' })).toBeEnabled({ timeout: 20000 })
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
 
     // gerbang hilang dan layar Buat langsung bisa dipakai
