@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import shutil
 import signal
 import socket
@@ -26,7 +27,10 @@ def api():
     env = os.environ.copy()
     env.update(BAGIIN_DB=str(db), BAGIIN_UPLOAD_DIR=str(uploads))
     proc = subprocess.Popen(
-        [str(BACKEND / "venv/bin/python"), "-m", "uvicorn", "main:app",
+        # Worktree v2 tidak punya venv sendiri (venv dipakai bersama di worktree
+        # lain), jadi pakai interpreter yang sedang menjalankan pytest.
+        [(str(BACKEND / "venv/bin/python") if (BACKEND / "venv/bin/python").exists() else sys.executable),
+         "-m", "uvicorn", "main:app",
          "--host", "127.0.0.1", "--port", "8084"],
         cwd=BACKEND, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
     )
@@ -37,8 +41,12 @@ def api():
             if proc.poll() is not None:
                 raise RuntimeError(f"uvicorn exited with {proc.returncode}")
             try:
-                if client.get("/").status_code == 200:
-                    break
+                # Cukup "server menjawab", bukan "GET / 200": di versi 2 backend
+                # tidak lagi menyajikan bundle frontend (nginx yang melayani),
+                # jadi "/" menjawab 404 dan syarat 200 membuat tes menunggu
+                # selamanya lalu gagal karena alasan yang salah.
+                client.get("/")
+                break
             except httpx.HTTPError:
                 pass
             time.sleep(0.1)

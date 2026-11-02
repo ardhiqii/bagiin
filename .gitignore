@@ -19,3 +19,12 @@ backend/.env
 
 # agent scratch (handoff plans, not project source)
 .hermes/
+
+# artefak build TypeScript
+frontend/tsconfig.tsbuildinfo
+
+# skrip ukur sekali pakai (jangan ikut ter-commit)
+frontend/.*.mjs
+
+# snapshot deploy (build & DB) tidak ikut repo
+backups/

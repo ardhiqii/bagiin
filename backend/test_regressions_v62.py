@@ -71,12 +71,12 @@ def _detail(bid, viewer):
 
 def test_placeholder_payer_unconfirmed():
     """paid_by_name at creation = placeholder: confirmed=0, creator manages."""
-    amel = db.new_identity("Amel62a", role="creator")
-    aufa = db.new_identity("Aufa")
-    bid = _mk_bill(amel, paid_by_name="Aufa")
+    sari = db.new_identity("Sari62a", role="creator")
+    wulan = db.new_identity("Wulan")
+    bid = _mk_bill(sari, paid_by_name="Wulan")
 
-    d = _detail(bid, amel)
-    assert d["paid_by_name"] == "Aufa"
+    d = _detail(bid, sari)
+    assert d["paid_by_name"] == "Wulan"
     # placeholder: no identity linked yet, name only
     assert d["paid_by_id"] is None
     assert d["paid_by_confirmed"] is False
@@ -85,40 +85,40 @@ def test_placeholder_payer_unconfirmed():
 
 def test_join_links_identity_but_stays_unconfirmed():
     """Joining under the placeholder name links the identity, confirmed stays 0."""
-    amel = db.new_identity("Amel62b", role="creator")
-    aufa = db.new_identity("Aufa")
-    bid = _mk_bill(amel, paid_by_name="Aufa")
+    sari = db.new_identity("Sari62b", role="creator")
+    wulan = db.new_identity("Wulan")
+    bid = _mk_bill(sari, paid_by_name="Wulan")
 
-    r = c.post(f"/api/bills/{bid}/join", headers=_H(aufa))
+    r = c.post(f"/api/bills/{bid}/join", headers=_H(wulan))
     assert r.status_code == 200, r.text
 
-    d = _detail(bid, amel)
-    assert d["paid_by_id"] == aufa["id"], "join resolved the name to the identity"
+    d = _detail(bid, sari)
+    assert d["paid_by_id"] == wulan["id"], "join resolved the name to the identity"
     assert d["paid_by_confirmed"] is False, "name match is NOT confirmation"
     assert d["can_manage"] is True, "creator still manages"
     # the guest who joined under the payer's name does NOT get powers
-    dg = _detail(bid, aufa)
+    dg = _detail(bid, wulan)
     assert dg["can_manage"] is False, "unconfirmed payer must not manage"
 
 
 def test_confirm_grants_management():
     """Creator confirms via PUT /paid_by {identity_id} -> payer manages."""
-    amel = db.new_identity("Amel62c", role="creator")
-    aufa = db.new_identity("Aufa")
-    bid = _mk_bill(amel, paid_by_name="Aufa")
-    c.post(f"/api/bills/{bid}/join", headers=_H(aufa))
+    sari = db.new_identity("Sari62c", role="creator")
+    wulan = db.new_identity("Wulan")
+    bid = _mk_bill(sari, paid_by_name="Wulan")
+    c.post(f"/api/bills/{bid}/join", headers=_H(wulan))
 
     r = c.put(
         f"/api/bills/{bid}/paid_by",
-        json={"identity_id": aufa["id"]},
-        headers=_H(amel),
+        json={"identity_id": wulan["id"]},
+        headers=_H(sari),
     )
     assert r.status_code == 200, r.text
 
-    d = _detail(bid, amel)
+    d = _detail(bid, sari)
     assert d["paid_by_confirmed"] is True
     assert d["can_manage"] is False, "creator loses management once payer confirmed"
-    da = _detail(bid, aufa)
+    da = _detail(bid, wulan)
     assert da["can_manage"] is True, "confirmed payer is the sole manager"
 
 
@@ -132,35 +132,35 @@ def test_name_resolves_but_never_confirms():
     like a no-op) hands them the bill. Handing it over is the identity_id path
     above, and only that one.
     """
-    amel = db.new_identity("Amel62d", role="creator")
-    aufa = db.new_identity("Aufa")
-    bid = _mk_bill(amel, paid_by_name="Aufa")
-    c.post(f"/api/bills/{bid}/join", headers=_H(aufa))
+    sari = db.new_identity("Sari62d", role="creator")
+    wulan = db.new_identity("Wulan")
+    bid = _mk_bill(sari, paid_by_name="Wulan")
+    c.post(f"/api/bills/{bid}/join", headers=_H(wulan))
 
     r = c.put(
         f"/api/bills/{bid}/paid_by",
-        json={"name": "Aufa"},
-        headers=_H(amel),
+        json={"name": "Wulan"},
+        headers=_H(sari),
     )
     assert r.status_code == 200, r.text
-    d = _detail(bid, aufa)
-    assert d["paid_by_id"] == aufa["id"], "still resolved, so the UI can name them"
+    d = _detail(bid, wulan)
+    assert d["paid_by_id"] == wulan["id"], "still resolved, so the UI can name them"
     assert d["paid_by_confirmed"] is False
     assert d["can_manage"] is False
-    assert _detail(bid, amel)["can_manage"] is True, "creator still holds it"
+    assert _detail(bid, sari)["can_manage"] is True, "creator still holds it"
 
 
 def test_guest_cannot_confirm():
     """Only the current manager may confirm a payer -> 403 for the payer."""
-    amel = db.new_identity("Amel62e", role="creator")
-    aufa = db.new_identity("Aufa")
-    bid = _mk_bill(amel, paid_by_name="Aufa")
-    c.post(f"/api/bills/{bid}/join", headers=_H(aufa))
+    sari = db.new_identity("Sari62e", role="creator")
+    wulan = db.new_identity("Wulan")
+    bid = _mk_bill(sari, paid_by_name="Wulan")
+    c.post(f"/api/bills/{bid}/join", headers=_H(wulan))
 
     r = c.put(
         f"/api/bills/{bid}/paid_by",
-        json={"identity_id": aufa["id"]},
-        headers=_H(aufa),
+        json={"identity_id": wulan["id"]},
+        headers=_H(wulan),
     )
     assert r.status_code == 403, r.text
 

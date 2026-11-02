@@ -31,13 +31,13 @@ def _H(who):
     return h
 
 def test_update_bill_diff():
-    creator = db.new_identity("Aufa", role="creator")
+    creator = db.new_identity("Wulan", role="creator")
     guest = db.new_identity("Rina")
     bill = db.create_bill(
         creator_id=creator["id"], title="Makan", tax_mode="proportional",
         subtotal=30000, tax=0, service=0, total=30000,
         items=[{"name": "A", "price": 10000}, {"name": "B", "price": 10000}, {"name": "C", "price": 10000}],
-        participants=["Aufa", "Rina"],
+        participants=["Wulan", "Rina"],
     )
     data = db.get_bill(bill["id"])
     ids = {it["name"]: it["id"] for it in data["items"]}
@@ -53,7 +53,7 @@ def test_update_bill_diff():
         {"name": "D", "price": 5000},
     ]
     db.update_bill(bill["id"], title="Makan Bareng", merchant="Waroeng", transacted_at="2026-08-09",
-                   participants=["Aufa", "Rina", "Budi"], items=new_items,
+                   participants=["Wulan", "Rina", "Budi"], items=new_items,
                    subtotal=32000, tax=0, service=0, total=32000)
 
     data = db.get_bill(bill["id"])
@@ -61,7 +61,7 @@ def test_update_bill_diff():
     assert data["bill"]["merchant"] == "Waroeng"
     names = sorted(it["name"] for it in data["items"])
     assert names == ["A", "B2", "D"], names
-    assert [p["name"] for p in data["participants"]] == ["Aufa", "Rina", "Budi"]
+    assert [p["name"] for p in data["participants"]] == ["Wulan", "Rina", "Budi"]
     # selections: A preserved, B preserved (as B2), C gone
     sel_by_item = {}
     for s in data["selections"]:
@@ -115,58 +115,58 @@ def test_rename_and_code():
 
 
 def test_claim_participant():
-    """Guest "amel" should claim the creator-typed slot "Amel" (normalized match)."""
-    creator = db.new_identity("Aufa", role="creator")
+    """Guest "sari" should claim the creator-typed slot "Sari" (normalized match)."""
+    creator = db.new_identity("Wulan", role="creator")
     bill = db.create_bill(
         creator_id=creator["id"], title="Makan", tax_mode="proportional",
         subtotal=30000, tax=0, service=0, total=30000,
         items=[{"name": "A", "price": 10000}, {"name": "B", "price": 20000}],
-        participants=["Aufa", "Amel"],
+        participants=["Wulan", "Sari"],
     )
     bid = bill["id"]
 
     # before claim: participant exists unclaimed
     data = db.get_bill(bid)
-    part = next(p for p in data["participants"] if p["name"] == "Amel")
+    part = next(p for p in data["participants"] if p["name"] == "Sari")
     assert part["identity_id"] is None, part
 
     # guest with different casing claims it on selection
-    amel = db.new_identity("amel")
-    db.claim_participant(bid, amel["id"], amel["name"])
+    sari = db.new_identity("sari")
+    db.claim_participant(bid, sari["id"], sari["name"])
     data = db.get_bill(bid)
-    part = next(p for p in data["participants"] if p["name"] == "Amel")
-    assert part["identity_id"] == amel["id"], part
+    part = next(p for p in data["participants"] if p["name"] == "Sari")
+    assert part["identity_id"] == sari["id"], part
 
-    # a second "amel" can't steal the claim
-    amel2 = db.new_identity("AMEL")
-    db.claim_participant(bid, amel2["id"], amel2["name"])
+    # a second "sari" can't steal the claim
+    sari2 = db.new_identity("AMEL")
+    db.claim_participant(bid, sari2["id"], sari2["name"])
     data = db.get_bill(bid)
-    part = next(p for p in data["participants"] if p["name"] == "Amel")
-    assert part["identity_id"] == amel["id"], part
+    part = next(p for p in data["participants"] if p["name"] == "Sari")
+    assert part["identity_id"] == sari["id"], part
 
     # claim survives update_bill (same name keeps its identity link)
     db.update_bill(bid, title="Makan Bareng", merchant=None, transacted_at=None,
-                   participants=["Aufa", "Amel"], items=[{"name": "A", "price": 10000}],
+                   participants=["Wulan", "Sari"], items=[{"name": "A", "price": 10000}],
                    subtotal=10000, tax=0, service=0, total=10000)
     data = db.get_bill(bid)
-    part = next(p for p in data["participants"] if p["name"] == "Amel")
-    assert part["identity_id"] == amel["id"], part
+    part = next(p for p in data["participants"] if p["name"] == "Sari")
+    assert part["identity_id"] == sari["id"], part
 
     # response payload: participants include identity_id, claimed person shows canonical name
     from main import _compute_response
     resp = _compute_response(db.get_bill(bid))
-    part = next(p for p in resp["participants"] if p["name"] == "Amel")
-    assert part["identity_id"] == amel["id"], resp["participants"]
-    db.set_selections(bid, amel["id"], [data["items"][0]["id"]])
+    part = next(p for p in resp["participants"] if p["name"] == "Sari")
+    assert part["identity_id"] == sari["id"], resp["participants"]
+    db.set_selections(bid, sari["id"], [data["items"][0]["id"]])
     resp = _compute_response(db.get_bill(bid))
-    amel_person = next(p for p in resp["people"] if p["identity_id"] == amel["id"])
-    assert amel_person["name"] == "Amel", resp["people"]
+    sari_person = next(p for p in resp["people"] if p["identity_id"] == sari["id"])
+    assert sari_person["name"] == "Sari", resp["people"]
     print("PASS claim participant: normalized matching, no double identity, survives edit")
 
 
 def test_join_and_remove_person():
     """Join-based roster: creator declares count, guests join, creator can delete."""
-    creator = db.new_identity("Aufa", role="creator")
+    creator = db.new_identity("Wulan", role="creator")
     bill = db.create_bill(
         creator_id=creator["id"], title="Makan", tax_mode="proportional",
         subtotal=30000, tax=0, service=0, total=30000,
@@ -178,16 +178,16 @@ def test_join_and_remove_person():
     assert data["bill"]["participant_count"] == 3
 
     # two guests join (no selections yet)
-    amel = db.new_identity("amel")
+    sari = db.new_identity("sari")
     budi = db.new_identity("Budi")
-    db.join_bill(bid, amel["id"], "amel")
+    db.join_bill(bid, sari["id"], "sari")
     db.join_bill(bid, budi["id"], "Budi")
 
     # roster includes joined-but-unselected people
     from main import _compute_response
     resp = _compute_response(db.get_bill(bid))
     names = {p["identity_id"]: p["name"] for p in resp["people"]}
-    assert names[amel["id"]] == "amel", names
+    assert names[sari["id"]] == "sari", names
     assert names[budi["id"]] == "Budi", names
     joined = [p for p in resp["people"] if p["total_idr"] == 0]
     # creator is always in the roster; unpicked items default to the creator,
@@ -197,15 +197,15 @@ def test_join_and_remove_person():
     assert len(resp["people"]) == 3, resp["people"]
 
     # creator removes a wrong/double join -> gone from roster + selections
-    amel_id = amel["id"]
-    db.set_selections(bid, amel_id, [data["items"][0]["id"]])
+    sari_id = sari["id"]
+    db.set_selections(bid, sari_id, [data["items"][0]["id"]])
     assert len(db.get_bill(bid)["selections"]) == 1
-    db.remove_person(bid, amel_id)
+    db.remove_person(bid, sari_id)
     data = db.get_bill(bid)
     assert len(data["selections"]) == 0, data["selections"]
-    assert all(p["identity_id"] != amel_id for p in data["payments"]), data["payments"]
+    assert all(p["identity_id"] != sari_id for p in data["payments"]), data["payments"]
     resp = _compute_response(data)
-    assert all(p["identity_id"] != amel_id for p in resp["people"]), resp["people"]
+    assert all(p["identity_id"] != sari_id for p in resp["people"]), resp["people"]
     # budi still there
     assert any(p["identity_id"] == budi["id"] for p in resp["people"])
     print("PASS join roster + creator removes wrong/double join")
@@ -213,7 +213,7 @@ def test_join_and_remove_person():
 
 def test_delete_bill_and_settled():
     """Creator deletes bill (cascades), settled reflects paid status."""
-    creator = db.new_identity("Aufa", role="creator")
+    creator = db.new_identity("Wulan", role="creator")
     bill = db.create_bill(
         creator_id=creator["id"], title="Makan", tax_mode="proportional",
         subtotal=30000, tax=3000, service=2000, total=35000,
@@ -257,7 +257,7 @@ def test_delete_bill_and_settled():
 
 def test_mark_unpaid():
     """Undo 'sudah bayar' flips settled back to False and clears paid_at."""
-    creator = db.new_identity("Aufa", role="creator")
+    creator = db.new_identity("Wulan", role="creator")
     bill = db.create_bill(
         creator_id=creator["id"], title="Makan", tax_mode="proportional",
         subtotal=30000, tax=0, service=0, total=30000,
@@ -287,21 +287,21 @@ def test_mark_unpaid():
 def test_paid_by():
     """Who paid the bill: default creator, resolve on join, auto-paid, accounts."""
     from main import _compute_response
-    creator = db.new_identity("Aufa", role="creator")
+    creator = db.new_identity("Wulan", role="creator")
     guest = db.new_identity("Budi")
 
     # default: creator pays -> creator auto-paid even with no payment row
     bill = db.create_bill(
         creator_id=creator["id"], title="Makan", tax_mode="proportional",
         subtotal=20000, tax=0, service=0, total=20000,
-        items=[{"name": "A", "price": 20000}], participants=["Aufa", "Budi"],
+        items=[{"name": "A", "price": 20000}], participants=["Wulan", "Budi"],
     )
     bid = bill["id"]
     data = db.get_bill(bid)
     db.set_selections(bid, guest["id"], [data["items"][0]["id"]])
     resp = _compute_response(db.get_bill(bid))
     assert resp["paid_by_id"] == creator["id"]
-    assert resp["paid_by_name"] == "Aufa"
+    assert resp["paid_by_name"] == "Wulan"
     assert next(p for p in resp["people"] if p["identity_id"] == creator["id"])["paid"] == "paid"
     assert next(p for p in resp["people"] if p["identity_id"] == guest["id"])["paid"] == "unpaid"
     assert resp["settled"] is False  # guest hasn't paid
@@ -314,7 +314,7 @@ def test_paid_by():
     bill2 = db.create_bill(
         creator_id=creator["id"], title="Makan2", tax_mode="proportional",
         subtotal=20000, tax=0, service=0, total=20000,
-        items=[{"name": "A", "price": 20000}], participants=["Aufa", "Budi"],
+        items=[{"name": "A", "price": 20000}], participants=["Wulan", "Budi"],
         paid_by_name="Budi",
     )
     bid2 = bill2["id"]
@@ -353,8 +353,8 @@ def test_slot_mode():
     """v27 slot items: per-slot price locked, empty slots uncovered, N change,
     multi-slot pick, release, settled requires no empty slots."""
     from main import _compute_response
-    creator = db.new_identity("Aufa", role="creator")
-    amel = db.new_identity("Amel")
+    creator = db.new_identity("Wulan", role="creator")
+    sari = db.new_identity("Sari")
     budi = db.new_identity("Budi")
 
     # bill: free item (Nasi 30000) + slot item (Es Teh 15000, 3 slots)
@@ -365,7 +365,7 @@ def test_slot_mode():
             {"name": "Nasi", "price": 30000},
             {"name": "Es Teh", "price": 15000, "mode": "slot", "slot_count": 3},
         ],
-        participants=["Aufa", "Amel", "Budi"],
+        participants=["Wulan", "Sari", "Budi"],
     )
     bid = bill["id"]
     data = db.get_bill(bid)
@@ -382,11 +382,11 @@ def test_slot_mode():
     assert resp["uncovered_slots"][0]["empty"] == 3
     assert resp["uncovered_slots"][0]["per_slot"] == 5000
 
-    # Amel takes 2 slots of Es Teh -> 10000 subtotal, 1 slot empty (5000)
-    db.set_selections(bid, amel["id"], [{"item_id": teh["id"], "qty": 2}])
+    # Sari takes 2 slots of Es Teh -> 10000 subtotal, 1 slot empty (5000)
+    db.set_selections(bid, sari["id"], [{"item_id": teh["id"], "qty": 2}])
     resp = _compute_response(db.get_bill(bid))
-    amel_p = next(p for p in resp["people"] if p["identity_id"] == amel["id"])
-    assert amel_p["subtotal_idr"] == 10000, amel_p
+    sari_p = next(p for p in resp["people"] if p["identity_id"] == sari["id"])
+    assert sari_p["subtotal_idr"] == 10000, sari_p
     assert resp["uncovered_idr"] == 5000, resp["uncovered_idr"]
     assert resp["uncovered_slots"][0]["empty"] == 1
 
@@ -400,7 +400,7 @@ def test_slot_mode():
     # rupiah is covered even before someone picks it
     assert resp["total_ok"] is True, resp["total_ok"]
     # once someone picks Nasi, every rupiah is covered -> total_ok
-    db.set_selections(bid, amel["id"], [
+    db.set_selections(bid, sari["id"], [
         {"item_id": teh["id"], "qty": 2},
         {"item_id": nasi["id"], "qty": 1},
     ])
@@ -408,7 +408,7 @@ def test_slot_mode():
     assert resp["total_ok"] is True, resp["total_ok"]
 
     # everyone paid -> settled (payer = creator auto-paid)
-    db.mark_paid(bid, amel["id"])
+    db.mark_paid(bid, sari["id"])
     db.mark_paid(bid, budi["id"])
     resp = _compute_response(db.get_bill(bid))
     assert resp["settled"] is True, resp["settled"]
@@ -425,9 +425,9 @@ def test_slot_mode():
     resp = _compute_response(db.get_bill(bid))
     assert resp["uncovered_idr"] == 3750, resp["uncovered_idr"]  # 15000 - 3750*3
     assert any("Belum ada yang ambil" in w and "Es Teh" in w for w in resp["warnings"]), resp["warnings"]
-    # can't go below taken (2 taken: Amel 2 + Budi 1 = 3)
+    # can't go below taken (2 taken: Sari 2 + Budi 1 = 3)
     # (set_item_slots doesn't validate; the endpoint does — test endpoint guard)
-    # release Budi's slot via db helper (taken drops to 2: Amel x2)
+    # release Budi's slot via db helper (taken drops to 2: Sari x2)
     db.set_selection_qty(bid, budi["id"], teh["id"], 0)
     resp = _compute_response(db.get_bill(bid))
     assert resp["uncovered_idr"] == 7500, resp["uncovered_idr"]  # 15000 - 3750*2
@@ -435,7 +435,7 @@ def test_slot_mode():
     # clamp: switch Es Teh back to free clamps qty to 1
     db.update_bill(
         bid, title="Makan", merchant=None, transacted_at=None,
-        participants=["Aufa", "Amel", "Budi"],
+        participants=["Wulan", "Sari", "Budi"],
         items=[
             {"id": nasi["id"], "name": "Nasi", "price": 30000},
             {"id": teh["id"], "name": "Es Teh", "price": 15000, "mode": "free"},
@@ -454,27 +454,27 @@ def test_free_qty_portions():
     """v31 free items: pickers can take 1+ portions; price splits
     proportionally per portion taken (2 portions = 2x a single portion)."""
     from main import _compute_response
-    creator = db.new_identity("Aufa", role="creator")
-    amel = db.new_identity("Amel")
+    creator = db.new_identity("Wulan", role="creator")
+    sari = db.new_identity("Sari")
     budi = db.new_identity("Budi")
 
     bill = db.create_bill(
         creator_id=creator["id"], title="Es Teh bareng", tax_mode="proportional",
         subtotal=30000, tax=3000, service=0, total=33000,
         items=[{"name": "Es Teh", "price": 30000}],
-        participants=["Aufa", "Amel", "Budi"],
+        participants=["Wulan", "Sari", "Budi"],
     )
     bid = bill["id"]
     data = db.get_bill(bid)
     teh = next(i for i in data["items"])
     assert teh["mode"] == "free"
 
-    # Amel takes 2 portions, Budi 1 -> 3 portions total, 10000/portion
-    db.set_selections(bid, amel["id"], [{"item_id": teh["id"], "qty": 2}])
+    # Sari takes 2 portions, Budi 1 -> 3 portions total, 10000/portion
+    db.set_selections(bid, sari["id"], [{"item_id": teh["id"], "qty": 2}])
     db.set_selections(bid, budi["id"], [{"item_id": teh["id"], "qty": 1}])
     resp = _compute_response(db.get_bill(bid))
     by_id = {p["identity_id"]: p for p in resp["people"]}
-    assert by_id[amel["id"]]["subtotal_idr"] == 20000, by_id
+    assert by_id[sari["id"]]["subtotal_idr"] == 20000, by_id
     assert by_id[budi["id"]]["subtotal_idr"] == 10000, by_id
     assert resp["total_ok"] is True, resp["total_ok"]
     # no empty-slot concept for free items
@@ -485,11 +485,11 @@ def test_free_qty_portions():
         creator_id=creator["id"], title="Rounding", tax_mode="proportional",
         subtotal=10000, tax=0, service=0, total=10000,
         items=[{"name": "Snack", "price": 10000}],
-        participants=["Aufa", "Amel", "Budi"],
+        participants=["Wulan", "Sari", "Budi"],
     )
     data2 = db.get_bill(bill2["id"])
     snack = next(i for i in data2["items"])
-    db.set_selections(bill2["id"], amel["id"], [{"item_id": snack["id"], "qty": 2}])
+    db.set_selections(bill2["id"], sari["id"], [{"item_id": snack["id"], "qty": 2}])
     db.set_selections(bill2["id"], budi["id"], [{"item_id": snack["id"], "qty": 1}])
     resp2 = _compute_response(db.get_bill(bill2["id"]))
     total_sub = sum(p["subtotal_idr"] for p in resp2["people"])
@@ -500,8 +500,8 @@ def test_free_qty_portions():
 def test_item_discount():
     """v32 per-item discount: effective price (price - discount) drives math."""
     from main import _compute_response
-    creator = db.new_identity("Aufa", role="creator")
-    amel = db.new_identity("Amel")
+    creator = db.new_identity("Wulan", role="creator")
+    sari = db.new_identity("Sari")
 
     bill = db.create_bill(
         creator_id=creator["id"], title="Diskon", tax_mode="proportional",
@@ -510,7 +510,7 @@ def test_item_discount():
             {"name": "Krispy", "price": 23500, "discount": 5500},
             {"name": "Es Teh", "price": 15000, "discount": 3000, "mode": "slot", "slot_count": 3},
         ],
-        participants=["Aufa", "Amel"],
+        participants=["Wulan", "Sari"],
     )
     bid = bill["id"]
     data = db.get_bill(bid)
@@ -519,15 +519,15 @@ def test_item_discount():
     assert krispy["discount_idr"] == 5500
     assert teh["discount_idr"] == 3000
 
-    # free item: Amel takes Krispy -> pays effective 23500-5500 = 18000
-    db.set_selections(bid, amel["id"], [{"item_id": krispy["id"], "qty": 1}])
+    # free item: Sari takes Krispy -> pays effective 23500-5500 = 18000
+    db.set_selections(bid, sari["id"], [{"item_id": krispy["id"], "qty": 1}])
     resp = _compute_response(db.get_bill(bid))
-    amel_p = next(p for p in resp["people"] if p["identity_id"] == amel["id"])
-    assert amel_p["subtotal_idr"] == 18000, amel_p
+    sari_p = next(p for p in resp["people"] if p["identity_id"] == sari["id"])
+    assert sari_p["subtotal_idr"] == 18000, sari_p
     assert resp["total_ok"] is False  # Es Teh not picked yet
 
     # slot item: per-slot = (15000-3000)/3 = 4000; 1 taken -> 2 empty = 8000
-    db.set_selections(bid, amel["id"], [
+    db.set_selections(bid, sari["id"], [
         {"item_id": krispy["id"], "qty": 1},
         {"item_id": teh["id"], "qty": 1},
     ])
@@ -540,8 +540,8 @@ def test_item_discount():
 def test_tax_included():
     """v33 tax_included bill: prices already include tax -> no tax added on top."""
     from main import _compute_response
-    creator = db.new_identity("Aufa", role="creator")
-    amel = db.new_identity("Amel")
+    creator = db.new_identity("Wulan", role="creator")
+    sari = db.new_identity("Sari")
 
     bill = db.create_bill(
         creator_id=creator["id"], title="McD", tax_mode="proportional",
@@ -551,7 +551,7 @@ def test_tax_included():
             {"name": "Krispy", "price": 23500, "discount": 5500},
             {"name": "Rice", "price": 10000, "discount": 3000},
         ],
-        participants=["Aufa", "Amel"],
+        participants=["Wulan", "Sari"],
     )
     bid = bill["id"]
     data = db.get_bill(bid)
@@ -559,16 +559,16 @@ def test_tax_included():
     krispy = next(i for i in data["items"] if i["name"] == "Krispy")
     rice = next(i for i in data["items"] if i["name"] == "Rice")
 
-    # Amel takes Krispy (18000 eff), Aufa takes Rice (7000 eff) -> no tax
-    db.set_selections(bid, amel["id"], [{"item_id": krispy["id"], "qty": 1}])
+    # Sari takes Krispy (18000 eff), Wulan takes Rice (7000 eff) -> no tax
+    db.set_selections(bid, sari["id"], [{"item_id": krispy["id"], "qty": 1}])
     db.set_selections(bid, creator["id"], [{"item_id": rice["id"], "qty": 1}])
     resp = _compute_response(db.get_bill(bid))
     for p in resp["people"]:
         assert p["tax_idr"] == 0, p
         assert p["total_idr"] == p["subtotal_idr"], p
     by_name = {p["name"]: p for p in resp["people"]}
-    assert by_name["Amel"]["total_idr"] == 18000, by_name
-    assert by_name["Aufa"]["total_idr"] == 7000, by_name
+    assert by_name["Sari"]["total_idr"] == 18000, by_name
+    assert by_name["Wulan"]["total_idr"] == 7000, by_name
     assert resp["total_ok"] is True, resp["total_ok"]
     print("PASS tax_included: no tax added, totals = effective items")
 
@@ -579,41 +579,41 @@ def test_creator_toggle_paid():
     status. mark_paid endpoint guards both directions."""
     from fastapi.testclient import TestClient
     from main import app, _compute_response
-    creator = db.new_identity("Aufa", role="creator")
-    amel = db.new_identity("Amel")
+    creator = db.new_identity("Wulan", role="creator")
+    sari = db.new_identity("Sari")
     budi = db.new_identity("Budi")
 
     bill = db.create_bill(
         creator_id=creator["id"], title="Makan", tax_mode="proportional",
         subtotal=20000, tax=0, service=0, total=20000,
-        items=[{"name": "A", "price": 20000}], participants=["Aufa", "Amel"],
+        items=[{"name": "A", "price": 20000}], participants=["Wulan", "Sari"],
     )
     bid = bill["id"]
     data = db.get_bill(bid)
-    db.join_bill(bid, amel["id"], "Amel")
-    db.set_selections(bid, amel["id"], [data["items"][0]["id"]])
+    db.join_bill(bid, sari["id"], "Sari")
+    db.set_selections(bid, sari["id"], [data["items"][0]["id"]])
 
     c = TestClient(app)
     H = _H(creator["id"])
-    Ha = _H(amel["id"])
+    Ha = _H(sari["id"])
     Hb = _H(budi["id"])
 
-    # stranger can't mark Amel paid
-    r = c.post(f"/api/bills/{bid}/payments/{amel['id']}/paid", headers=Hb)
+    # stranger can't mark Sari paid
+    r = c.post(f"/api/bills/{bid}/payments/{sari['id']}/paid", headers=Hb)
     assert r.status_code == 403, (r.status_code, r.text)
-    # Amel can mark herself
-    r = c.post(f"/api/bills/{bid}/payments/{amel['id']}/paid", headers=Ha)
+    # Sari can mark herself
+    r = c.post(f"/api/bills/{bid}/payments/{sari['id']}/paid", headers=Ha)
     assert r.status_code == 200, (r.status_code, r.text)
     assert r.json()["settled"] is True
     # creator can unmark her
-    r = c.post(f"/api/bills/{bid}/payments/{amel['id']}/unpaid", headers=H)
+    r = c.post(f"/api/bills/{bid}/payments/{sari['id']}/unpaid", headers=H)
     assert r.status_code == 200, (r.status_code, r.text)
     assert r.json()["settled"] is False
     # creator can mark her paid again
-    r = c.post(f"/api/bills/{bid}/payments/{amel['id']}/paid", headers=H)
+    r = c.post(f"/api/bills/{bid}/payments/{sari['id']}/paid", headers=H)
     assert r.status_code == 200 and r.json()["settled"] is True
     # stranger still can't unmark
-    r = c.post(f"/api/bills/{bid}/payments/{amel['id']}/unpaid", headers=Hb)
+    r = c.post(f"/api/bills/{bid}/payments/{sari['id']}/unpaid", headers=Hb)
     assert r.status_code == 403, (r.status_code, r.text)
     print("PASS creator toggles paid/unpaid, others blocked")
 

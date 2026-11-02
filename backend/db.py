@@ -369,6 +369,12 @@ def init_db():
                     "INSERT INTO bill_photo (bill_id, path, sort_order) VALUES (?, ?, 0)",
                     (row["id"], row["photo_path"]),
                 )
+    # Skema akun (device, oauth, alias kontak) dan kolom identity baru. Import
+    # di dalam fungsi supaya accounts.py tetap boleh mengimpor db di level modul
+    # tanpa lingkaran impor.
+    import accounts
+    accounts.init_accounts_schema(conn)
+    accounts.backfill_handles(conn)
     conn.commit()
     conn.close()
 
@@ -383,6 +389,8 @@ def hash_code(code: str) -> str:
 
 
 def new_identity(name: str, role: str = "guest") -> dict:
+    import accounts  # impor lokal: accounts mengimpor db, jadi tidak boleh di atas
+
     conn = get_db()
     ident_id = new_id()
     conn.execute(
@@ -391,6 +399,19 @@ def new_identity(name: str, role: str = "guest") -> dict:
     )
     conn.commit()
     row = conn.execute("SELECT * FROM identity WHERE id = ?", (ident_id,)).fetchone()
+    # Pembeda publik ditulis saat orangnya dibuat, bukan menunggu boot berikutnya.
+    # Dulu kolom ini hanya diisi `backfill_handles()` saat server start, jadi
+    # identitas baru menyimpan kolom kosong — tidak terasa di UI (pembeda dihitung
+    # dari id saat dibaca) tapi bikin kolomnya tidak bisa dipercaya.
+    # Kolomnya belum tentu ada: DB 0.9 baru mendapatkannya lewat migrasi, dan
+    # `new_identity` bisa dipanggil sebelum itu. Karena itu dicek dulu.
+    if "handle" in row.keys():
+        conn.execute(
+            "UPDATE identity SET handle = ? WHERE id = ?",
+            (accounts.handle_for(ident_id), ident_id),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM identity WHERE id = ?", (ident_id,)).fetchone()
     conn.close()
     return dict(row)
 
@@ -472,36 +493,144 @@ def get_contacts(identity_id: str, q: str | None = None) -> list[dict]:
         with recently first.
         """
     conn = get_db()
+    # Satu query, empat hal yang dibutuhkan picker: nama pembeda milik SAYA
+    # (alias), pembeda publik (@username / handle), kapan terakhir bareng, dan
+    # berapa bill. Sebelumnya hanya {id, name, last_shared}, jadi dua orang
+    # bernama sama tampil identik dan undangan bisa salah orang.
     query = """
-        SELECT i.id, i.name, MAX(b.created_at) AS last_shared
-        FROM identity i
-        JOIN (
+        WITH shared AS (
             -- people on a bill = creator OR anyone with a payment row there.
             -- UNION (not COALESCE): with a payment present the creator used to
-            -- vanish, so contacts were one-directional (Budi saw Aufa's bill
-            -- but not Aufa as a contact).
-            SELECT b.id, b.created_at, b.creator_identity_id AS person_id
+            -- vanish, so contacts were one-directional (Budi saw Wulan's bill
+            -- but not Wulan as a contact).
+            SELECT b.id AS bill_id, b.created_at, b.title,
+                   b.creator_identity_id AS person_id
             FROM bill b
             UNION ALL
-            SELECT b.id, b.created_at, p.identity_id AS person_id
+            SELECT b.id, b.created_at, b.title, p.identity_id AS person_id
             FROM payment p
             JOIN bill b ON b.id = p.bill_id
-        ) b ON b.person_id = i.id
-        WHERE b.id IN (
+        ),
+        mine AS (
             SELECT b2.id FROM bill b2
             WHERE b2.creator_identity_id = ?
                OR b2.id IN (SELECT bill_id FROM payment WHERE identity_id = ?)
         )
-        AND i.id != ?
+        SELECT i.id, i.name, i.username, i.handle, a.alias,
+               MAX(s.created_at) AS last_shared,
+               COUNT(DISTINCT s.bill_id) AS shared_count,
+               (SELECT s2.title FROM shared s2
+                 WHERE s2.person_id = i.id AND s2.bill_id IN (SELECT id FROM mine)
+                 ORDER BY s2.created_at DESC LIMIT 1) AS last_bill_title
+        FROM identity i
+        JOIN shared s ON s.person_id = i.id AND s.bill_id IN (SELECT id FROM mine)
+        LEFT JOIN contact_alias a ON a.owner_id = ? AND a.contact_id = i.id
+        WHERE i.id != ?
     """
-    params: list = [identity_id, identity_id, identity_id]
+    params: list = [identity_id, identity_id, identity_id, identity_id]
+    # Daftar kontak menampilkan pembeda publik "#SW9C" — jadi orang wajar
+    # mengetiknya di kotak cari. Sebelumnya pencarian hanya menyaring nama,
+    # alias, dan username, sehingga mengetik pembeda yang terpampang di layar
+    # menghasilkan "tidak ada". Pembeda tidak disimpan untuk semua baris (dia
+    # turunan id), jadi penyaringan pembeda dilakukan setelah baris terbaca.
+    handle_query: str | None = None
     if q:
-        query += " AND i.name LIKE ?"
-        params.append(f"%{q}%")
-    query += " GROUP BY i.id, i.name ORDER BY last_shared DESC, i.name LIMIT 50"
+        raw = q.strip().lstrip("#").strip().upper()
+        looks_like_handle = q.strip().startswith("#") or (len(raw) == 4 and raw.isalnum() and raw == raw.upper())
+        if looks_like_handle:
+            # Jangan saring di SQL: pembeda tidak tersimpan untuk semua baris.
+            # Saring di bawah setelah pembeda tiap baris dihitung, dan tetap
+            # cocokkan nama/alias/username supaya kata 4 huruf biasa tidak mati.
+            handle_query = raw
+        else:
+            query += " AND (i.name LIKE ? OR a.alias LIKE ? OR i.username LIKE ?)"
+            params.extend([f"%{q}%"] * 3)
+    query += " GROUP BY i.id ORDER BY last_shared DESC, i.name LIMIT 50"
     rows = conn.execute(query, params).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    import accounts
+
+    out = []
+    for row in rows:
+        item = dict(row)
+        item["handle"] = item.get("handle") or accounts.handle_for(item["id"])
+        item["display_name"] = item.get("alias") or item.get("name")
+        out.append(item)
+    if handle_query:
+        needle = (q or '').strip().lower()
+        out = [
+            item
+            for item in out
+            if str(item.get("handle") or "").upper().startswith(handle_query)
+            or needle in str(item.get("name") or "").lower()
+            or needle in str(item.get("alias") or "").lower()
+            or needle in str(item.get("username") or "").lower()
+        ]
+    return out
+
+
+def participant_link_candidates() -> list[dict]:
+    """Baris peserta yang namanya bisa ditautkan ke satu orang dengan pasti.
+
+    Bill yang dibuat sebelum peserta dari kontak membawa identity_id hanya
+    menyimpan NAMA. Akibatnya orang yang sudah dipilih tidak pernah menerima
+    undangan, dan Rekap tidak bisa membentuk saldo karena tidak ada pasangan
+    identitas — angka rekap terlihat "tidak berubah" walau bill terus
+    bertambah.
+
+    Fungsi ini hanya mengembalikan baris yang tidak ambigu: nama peserta harus
+    sama (tanpa beda huruf besar/kecil dan spasi) dengan nama atau alias milik
+    SATU kontak pembuat bill. Kalau ada dua orang yang cocok, baris itu
+    dilewati — salah taut lebih buruk daripada tidak menaut.
+    """
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """
+            WITH shared AS (
+                SELECT b.id AS bill_id, b.creator_identity_id AS person_id
+                FROM bill b
+                UNION ALL
+                SELECT b.id, p.identity_id FROM payment p
+                JOIN bill b ON b.id = p.bill_id
+            ),
+            pairs AS (
+                SELECT a.person_id AS me, b.person_id AS them
+                FROM shared a JOIN shared b ON a.bill_id = b.bill_id
+                WHERE a.person_id <> b.person_id
+                GROUP BY a.person_id, b.person_id
+            )
+            SELECT bp.bill_id, bp.name, b.creator_identity_id AS creator_id,
+                   GROUP_CONCAT(DISTINCT i.id) AS ids
+            FROM bill_participant bp
+            JOIN bill b ON b.id = bp.bill_id
+            JOIN identity i ON i.id <> b.creator_identity_id
+            JOIN pairs pr ON pr.me = b.creator_identity_id AND pr.them = i.id
+            LEFT JOIN contact_alias ca
+                   ON ca.owner_id = b.creator_identity_id AND ca.contact_id = i.id
+            WHERE bp.identity_id IS NULL
+              AND b.status = 'open'
+              AND (
+                    LOWER(TRIM(i.name)) = LOWER(TRIM(bp.name))
+                 OR LOWER(TRIM(COALESCE(ca.alias, ''))) = LOWER(TRIM(bp.name))
+              )
+            GROUP BY bp.bill_id, bp.name, b.creator_identity_id
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for row in rows:
+        ids = [x for x in (row["ids"] or "").split(",") if x]
+        if len(ids) != 1:
+            continue
+        out.append({
+            "bill_id": row["bill_id"],
+            "name": row["name"],
+            "creator_id": row["creator_id"],
+            "identity_id": ids[0],
+        })
+    return out
 
 
 def is_contact(identity_id: str, other_id: str) -> bool:
@@ -970,6 +1099,20 @@ def update_bill(bill_id: str, title: str, merchant=UNCHANGED,
                 "INSERT INTO bill_participant (bill_id, name, identity_id, sort_order) VALUES (?, ?, ?, ?)",
                 (bill_id, name, claims.get(name), i),
             )
+        # Undangan yang masih menggantung untuk nama yang baru saja dihapus ikut
+        # dibatalkan. Tanpa ini layar bill menyimpan kartu "Undangan menunggu"
+        # untuk orang yang sudah tidak ada di daftar nama.
+        conn.execute(
+            """
+            DELETE FROM bill_invite
+            WHERE bill_id = ? AND status = 'pending'
+              AND identity_id NOT IN (
+                    SELECT identity_id FROM bill_participant
+                    WHERE bill_id = ? AND identity_id IS NOT NULL
+              )
+            """,
+            (bill_id, bill_id),
+        )
     # items diff
     existing = {r["id"] for r in conn.execute(
         "SELECT id FROM item WHERE bill_id = ?", (bill_id,))}
@@ -1024,8 +1167,8 @@ def update_bill(bill_id: str, title: str, merchant=UNCHANGED,
 def claim_participant(bill_id: str, identity_id: str, name: str):
     """Link a real identity to a creator-typed participant slot.
 
-    Matching is normalized (trimmed + case-insensitive) so "Amel" typed by the
-    creator and "amel" typed by the guest resolve to the same person. Only
+    Matching is normalized (trimmed + case-insensitive) so "Sari" typed by the
+    creator and "sari" typed by the guest resolve to the same person. Only
     unclaimed slots are taken; claiming is idempotent.
     """
     if not name or not name.strip():
@@ -1518,7 +1661,29 @@ def _bill_settled(bill_data: dict | None) -> bool:
     )
 
 
-def get_bills_for_identity(identity_id: str):
+def bill_months_for_identity(identity_id: str) -> list[dict]:
+    """Jumlah bill per bulan untuk satu identitas, terbaru dulu.
+
+    Satu query GROUP BY: tidak ada satu pun `get_bill()` di sini, jadi beranda
+    bisa menampilkan seluruh riwayat sebagai daftar bulan tanpa membayar harga
+    memuat isinya.
+    """
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT strftime('%Y-%m', COALESCE(b.transacted_at, b.created_at)) AS month,
+                  COUNT(DISTINCT b.id) AS bill_count
+          FROM bill b
+          LEFT JOIN payment p ON p.bill_id = b.id AND p.identity_id = ?
+          WHERE (b.creator_identity_id = ? AND b.creator_left = 0) OR p.id IS NOT NULL
+          GROUP BY month
+          ORDER BY month DESC""",
+        (identity_id, identity_id),
+    ).fetchall()
+    conn.close()
+    return [{"month": r["month"], "bill_count": r["bill_count"]} for r in rows if r["month"]]
+
+
+def get_bills_for_identity(identity_id: str, month: str | None = None):
     """Bills where identity is creator OR has selections/payments.
 
     A creator who left the bill (v58) drops out of it like anyone else: the
@@ -1536,17 +1701,24 @@ def get_bills_for_identity(identity_id: str):
     and additive, not part of the public API.)
     """
     conn = get_db()
-    rows = conn.execute(
-        """SELECT DISTINCT b.id, b.title, b.merchant, b.transacted_at,
+    # `month` (YYYY-MM) menyaring di SQL, bukan di Python: beranda hanya memuat
+    # bulan yang benar-benar dibuka, jadi biaya memuat satu bulan tidak ikut
+    # menanggung seluruh riwayat. Ekspresi waktunya HARUS sama dengan yang
+    # dipakai ORDER BY di bawah — kalau berbeda, satu bill bisa muncul di bulan
+    # yang tidak sesuai urutannya.
+    sql = """SELECT DISTINCT b.id, b.title, b.merchant, b.transacted_at,
                   b.total_idr, b.order_discount_idr, b.cashback_idr,
                   b.status, b.created_at, b.closed_at,
                   b.creator_identity_id, b.paid_by_identity_id, b.paid_by_confirmed
           FROM bill b
           LEFT JOIN payment p ON p.bill_id = b.id AND p.identity_id = ?
-          WHERE (b.creator_identity_id = ? AND b.creator_left = 0) OR p.id IS NOT NULL
-          ORDER BY COALESCE(b.transacted_at, b.created_at) DESC, b.created_at DESC""",
-        (identity_id, identity_id),
-    ).fetchall()
+          WHERE ((b.creator_identity_id = ? AND b.creator_left = 0) OR p.id IS NOT NULL)"""
+    params: list = [identity_id, identity_id]
+    if month:
+        sql += " AND strftime('%Y-%m', COALESCE(b.transacted_at, b.created_at)) = ?"
+        params.append(month)
+    sql += " ORDER BY COALESCE(b.transacted_at, b.created_at) DESC, b.created_at DESC"
+    rows = conn.execute(sql, params).fetchall()
     conn.close()
     out = []
     for r in rows:

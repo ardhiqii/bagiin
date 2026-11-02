@@ -77,85 +77,85 @@ def _list_row(bid, ident):
 def test_solo_bill_manual_settle():
     """Solo bill: auto NOT settled, owner settles -> settled in detail AND
     list, unsettle flips back."""
-    aufa = db.new_identity("Aufa60", role="creator")
-    bid = _mk_bill(aufa, items=[{"name": "A", "price": 100000}],
+    wulan = db.new_identity("Wulan60", role="creator")
+    bid = _mk_bill(wulan, items=[{"name": "A", "price": 100000}],
                    subtotal=100000, total=100000)
     iid = _item_ids(bid)[0]
-    c.post(f"/api/bills/{bid}/selections", headers=_H(aufa),
+    c.post(f"/api/bills/{bid}/selections", headers=_H(wulan),
            json={"picks": [{"item_id": iid, "qty": 1}]})
 
     # auto: not settled (nobody joined the creator)
-    data = _detail(bid, aufa)
+    data = _detail(bid, wulan)
     assert data["settled"] is False
     assert data["settled_manual"] is False
 
     # owner taps Tandai Lunas
-    r = c.post(f"/api/bills/{bid}/settle", headers=_H(aufa))
+    r = c.post(f"/api/bills/{bid}/settle", headers=_H(wulan))
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["settled"] is True, f"manual settle must settle solo bill: {data['settled']}"
     assert data["settled_manual"] is True
     assert data["all_paid"] is True
-    row = _list_row(bid, aufa)
+    row = _list_row(bid, wulan)
     assert row is not None and row["settled"] is True, f"list must agree: {row}"
 
     # undo
-    r = c.post(f"/api/bills/{bid}/unsettle", headers=_H(aufa))
+    r = c.post(f"/api/bills/{bid}/unsettle", headers=_H(wulan))
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["settled"] is False
     assert data["settled_manual"] is False
-    row = _list_row(bid, aufa)
+    row = _list_row(bid, wulan)
     assert row["settled"] is False
 
 
 def test_group_bill_with_unpaid_guest_manual_settle():
     """A guest who hasn't paid keeps the bill auto-unsettled, but the owner
     can still declare the whole bill lunas (e.g. cash settled outside app)."""
-    aufa = db.new_identity("Aufa60b", role="creator")
-    amel = db.new_identity("Amel60b")
-    bid = _mk_bill(aufa, items=[{"name": "A", "price": 100000}],
+    wulan = db.new_identity("Wulan60b", role="creator")
+    sari = db.new_identity("Sari60b")
+    bid = _mk_bill(wulan, items=[{"name": "A", "price": 100000}],
                    subtotal=100000, total=100000,
-                   participants=["Aufa60b", "Amel60b"])
-    c.post(f"/api/bills/{bid}/join", headers=_H(amel))
+                   participants=["Wulan60b", "Sari60b"])
+    c.post(f"/api/bills/{bid}/join", headers=_H(sari))
     iid = _item_ids(bid)[0]
-    c.post(f"/api/bills/{bid}/selections", headers=_H(amel),
+    c.post(f"/api/bills/{bid}/selections", headers=_H(sari),
            json={"picks": [{"item_id": iid, "qty": 1}]})
 
-    assert _detail(bid, aufa)["settled"] is False  # guest unpaid
+    assert _detail(bid, wulan)["settled"] is False  # guest unpaid
 
-    r = c.post(f"/api/bills/{bid}/settle", headers=_H(aufa))
+    r = c.post(f"/api/bills/{bid}/settle", headers=_H(wulan))
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["settled"] is True
     assert data["settled_manual"] is True
     # the guest's own row is still unpaid — manual settle is a bill-level
     # declaration, not a rewrite of each person's payment state
-    guest = next(p for p in data["people"] if p["identity_id"] == amel["id"])
+    guest = next(p for p in data["people"] if p["identity_id"] == sari["id"])
     assert guest["paid"] == "unpaid", guest["paid"]
 
 
 def test_non_owner_cannot_settle():
     """Only the owner (confirmed payer, else creator) may settle the bill."""
-    aufa = db.new_identity("Aufa60c", role="creator")
-    amel = db.new_identity("Amel60c")
-    bid = _mk_bill(aufa)
-    c.post(f"/api/bills/{bid}/join", headers=_H(amel))
+    wulan = db.new_identity("Wulan60c", role="creator")
+    sari = db.new_identity("Sari60c")
+    bid = _mk_bill(wulan)
+    c.post(f"/api/bills/{bid}/join", headers=_H(sari))
 
-    assert c.post(f"/api/bills/{bid}/settle", headers=_H(amel)).status_code == 403
-    assert c.post(f"/api/bills/{bid}/unsettle", headers=_H(amel)).status_code == 403
+    assert c.post(f"/api/bills/{bid}/settle", headers=_H(sari)).status_code == 403
+    assert c.post(f"/api/bills/{bid}/unsettle", headers=_H(sari)).status_code == 403
     # creator still can
-    assert c.post(f"/api/bills/{bid}/settle", headers=_H(aufa)).status_code == 200
+    assert c.post(f"/api/bills/{bid}/settle", headers=_H(wulan)).status_code == 200
 
 
 def test_manual_settle_on_closed_bill():
     """Settle works even after the bill is closed (the split is final, but
     the owner can still declare it lunas)."""
-    aufa = db.new_identity("Aufa60d", role="creator")
-    bid = _mk_bill(aufa)
-    assert c.post(f"/api/bills/{bid}/close", headers=_H(aufa)).status_code == 200
+    wulan = db.new_identity("Wulan60d", role="creator")
+    bid = _mk_bill(wulan)
+    assert c.post(f"/api/bills/{bid}/close", headers=_H(wulan)).status_code == 200
 
-    r = c.post(f"/api/bills/{bid}/settle", headers=_H(aufa))
+    r = c.post(f"/api/bills/{bid}/settle", headers=_H(wulan))
     assert r.status_code == 200, r.text
     assert r.json()["settled"] is True
     assert r.json()["bill"]["status"] == "closed"

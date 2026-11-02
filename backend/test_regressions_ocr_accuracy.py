@@ -236,8 +236,9 @@ def test_openrouter_model_config_preserves_order_and_legacy_override():
     ) == ("second:free", "first:free")
     assert ocr._parse_openrouter_models("", "legacy:free") == ("legacy:free",)
     assert ocr._parse_openrouter_models("paid/model", "legacy:free") == ocr.DEFAULT_OPENROUTER_OCR_MODELS
-    assert ocr.DEFAULT_OPENROUTER_OCR_MODELS[0] == "google/gemma-4-26b-a4b-it:free"
-    assert ocr.DEFAULT_OPENROUTER_OCR_MODELS[-1] == "openrouter/free"
+    # Urutan default = urutan hasil ukur (yang benar-benar menjawab lebih dulu).
+    assert ocr.DEFAULT_OPENROUTER_OCR_MODELS[0] == "nvidia/nemotron-3.5-super-vl:free"
+    assert "openrouter/free" in ocr.DEFAULT_OPENROUTER_OCR_MODELS
     assert all(ocr._is_free_openrouter_model(model) for model in ocr.DEFAULT_OPENROUTER_OCR_MODELS)
 
 
@@ -437,3 +438,127 @@ if __name__ == "__main__":
     import pytest
 
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_gemini_sends_downscaled_image(monkeypatch):
+    """Gemini wajib menerima gambar yang sudah dikecilkan.
+
+    Bug 1 Nov 2026: `_downscale` cuma dipanggil di jalur OpenRouter, sementara
+    Pillow belum terpasang di venv sehingga fungsinya mengembalikan byte asli.
+    Foto HP 3-4 MB dikirim apa adanya, permintaan Gemini melewati batas 15 detik
+    per percobaan DUA KALI, dan 30 dari 45 detik anggaran habis sebelum satu pun
+    model cadangan dicoba. Tes ini mengunci dua hal: hasil _downscale yang
+    dipakai, dan mime ikut berubah jadi JPEG saat byte-nya berubah.
+    """
+    captured = {}
+
+    class _Response:
+        def read(self):
+            return json.dumps({
+                "candidates": [{"content": {"parts": [{"text": json.dumps({
+                    "merchant": "Kecil",
+                    "items": [],
+                    "subtotal": 0,
+                    "tax": 0,
+                    "service": 0,
+                    "total": 0,
+                    "tax_included": False,
+                })}]}}],
+            }).encode()
+
+    def fake_urlopen(request, timeout=None):
+        captured["payload"] = json.loads(request.data)
+        return _Response()
+
+    monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
+    monkeypatch.setattr(ocr, "_downscale", lambda raw, max_side=1280: b"kecil-jpeg")
+    monkeypatch.setattr(ocr.urllib.request, "urlopen", fake_urlopen)
+
+    result = ocr._gemini_ocr(b"x" * 5000, "image/png", time.monotonic() + 5)
+
+    part = captured["payload"]["contents"][0]["parts"][0]["inline_data"]
+    assert part["data"] == base64.b64encode(b"kecil-jpeg").decode()
+    assert part["mime_type"] == "image/jpeg"
+    assert result["merchant"] == "Kecil"
+
+
+def test_gemini_quota_moves_to_next_key(monkeypatch):
+    """429 kuota harus pindah KUNCI, bukan pindah model.
+
+    Kuota gratis dihitung per project, jadi kunci yang habis akan menjawab 429
+    untuk model apa pun. Kalau 429 malah dijawab dengan pindah model, seluruh
+    daftar model habis dan kunci kedua yang masih punya kuota tidak pernah
+    dicoba — itu kesalahan yang justru membuat fitur ini terlihat "tidak ada
+    fallback".
+    """
+    used = []
+
+    def fake(image_bytes, mime_type="image/jpeg", deadline=None, model=None, api_key=None):
+        used.append((model, api_key))
+        if api_key == "kunci-habis":
+            raise ocr._GeminiFailure("quota", "kuota harian habis (reset tengah malam)", 429)
+        return {"merchant": "Kedua", "items": [], "total": 0}
+
+    monkeypatch.setattr(ocr, "_gemini_ocr", fake)
+    monkeypatch.setattr(ocr, "GEMINI_API_KEYS", ("kunci-habis", "kunci-segar"))
+    monkeypatch.setattr(ocr, "OR_API_KEY", "")
+
+    result = ocr.ocr_receipt(b"image", "image/jpeg")
+
+    assert result["merchant"] == "Kedua"
+    # model pertama dicoba di kedua kunci sebelum pindah model
+    assert used[:2] == [(ocr.GEMINI_MODELS[0], "kunci-habis"), (ocr.GEMINI_MODELS[0], "kunci-segar")]
+
+
+def test_gemini_timeout_moves_to_next_model_not_next_key(monkeypatch):
+    """Timeout itu antrean model, bukan kuota: kunci lain tidak menolong."""
+    used = []
+
+    def fake(image_bytes, mime_type="image/jpeg", deadline=None, model=None, api_key=None):
+        used.append((model, api_key))
+        if model == ocr.GEMINI_MODELS[0]:
+            raise ocr._GeminiFailure("timeout", "Permintaan OCR gagal (waktu habis)")
+        return {"merchant": "ModelKedua", "items": [], "total": 0}
+
+    monkeypatch.setattr(ocr, "_gemini_ocr", fake)
+    monkeypatch.setattr(ocr, "GEMINI_API_KEYS", ("kunci-satu", "kunci-dua"))
+    monkeypatch.setattr(ocr, "OR_API_KEY", "")
+
+    result = ocr.ocr_receipt(b"image", "image/jpeg")
+
+    assert result["merchant"] == "ModelKedua"
+    assert used[0] == (ocr.GEMINI_MODELS[0], "kunci-satu")
+    assert used[1][0] == ocr.GEMINI_MODELS[1]
+    # kunci kedua tidak dicoba untuk model pertama
+    assert not [entry for entry in used if entry == (ocr.GEMINI_MODELS[0], "kunci-dua")]
+
+
+def test_paid_openrouter_models_tried_before_free(monkeypatch):
+    """Jalur berbayar murah dicoba sebelum model gratis yang butuh 48-168 detik."""
+    calls = []
+
+    def fake_openrouter(image_bytes, deadline, mime_type="image/jpeg", models=None):
+        calls.append(models)
+        return {"merchant": "Berbayar", "items": [], "total": 0}
+
+    monkeypatch.setattr(ocr, "GEMINI_API_KEYS", ())
+    monkeypatch.setattr(ocr, "GEMINI_API_KEY", "")
+    monkeypatch.setattr(ocr, "OR_API_KEY", "kunci-openrouter")
+    monkeypatch.setattr(ocr, "PAID_OPENROUTER_OCR_MODELS", ("google/gemini-2.5-flash:nitro",))
+    monkeypatch.setattr(ocr, "_openrouter_ocr", fake_openrouter)
+
+    result = ocr.ocr_receipt(b"image", "image/jpeg")
+
+    assert result["merchant"] == "Berbayar"
+    assert calls[0] == ("google/gemini-2.5-flash:nitro",)
+
+
+def test_paid_models_not_offered_when_disallowed(monkeypatch):
+    """Saklar biaya: BAGIIN_OCR_ALLOW_PAID=0 mengosongkan daftar berbayar."""
+    monkeypatch.setenv("BAGIIN_OCR_ALLOW_PAID", "0")
+    monkeypatch.delenv("BAGIIN_OCR_PAID_MODELS", raising=False)
+    assert ocr._parse_paid_openrouter_models() == ()
+
+    monkeypatch.setenv("BAGIIN_OCR_ALLOW_PAID", "1")
+    models = ocr._parse_paid_openrouter_models()
+    assert models and all(not ocr._is_free_openrouter_model(model) for model in models)

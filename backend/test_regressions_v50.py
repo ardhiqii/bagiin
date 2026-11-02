@@ -57,7 +57,7 @@ def _mk_bill(creator, title="Makan", subtotal=0, tax=0, service=0, total=0,
         creator_id=creator["id"], title=title, tax_mode=tax_mode,
         subtotal=subtotal, tax=tax, service=service, total=total,
         items=items or [{"name": "A", "price": subtotal or 1}],
-        participants=participants or ["Aufa", "Budi"],
+        participants=participants or ["Wulan", "Budi"],
         tax_included=tax_included, paid_by_name=paid_by_name,
     )["id"]
 
@@ -78,25 +78,25 @@ def _row_for(ident, bid):
 def test_my_paid_personal_status_in_list():
     """Payer auto-paid, unpaid guest false, paid guest true, settled only when
     everyone with a share has paid."""
-    aufa = db.new_identity("Aufa50")
-    amel = db.new_identity("Amel50")
+    wulan = db.new_identity("Wulan50")
+    sari = db.new_identity("Sari50")
     budi = db.new_identity("Budi50")
-    bid = _mk_bill(aufa, subtotal=300000, total=300000,
+    bid = _mk_bill(wulan, subtotal=300000, total=300000,
                    items=[{"name": "A", "price": 300000}],
-                   participants=["Aufa50", "Amel50", "Budi50"],
-                   paid_by_name="Amel50")
-    HAa = _H(amel["id"])
+                   participants=["Wulan50", "Sari50", "Budi50"],
+                   paid_by_name="Sari50")
+    HAa = _H(sari["id"])
     HB = _H(budi["id"])
     c.post(f"/api/bills/{bid}/join", headers=HAa, json={})
     c.post(f"/api/bills/{bid}/join", headers=HB, json={})
     item_id = db.get_bill(bid)["items"][0]["id"]
     # everyone takes one share so all three owe money
-    _pick(bid, aufa, item_id)
-    _pick(bid, amel, item_id)
+    _pick(bid, wulan, item_id)
+    _pick(bid, sari, item_id)
     _pick(bid, budi, item_id)
 
     # payer: auto-paid even though others haven't paid -> bill NOT settled
-    row = _row_for(amel, bid)
+    row = _row_for(sari, bid)
     assert row["my_paid"] is True, row
     assert row["settled"] is False, row
 
@@ -105,7 +105,7 @@ def test_my_paid_personal_status_in_list():
     assert row["my_paid"] is False, row
     assert row["settled"] is False, row
 
-    # guest marks paid -> my_paid true, but bill still unsettled (Aufa left)
+    # guest marks paid -> my_paid true, but bill still unsettled (Wulan left)
     r = c.post(f"/api/bills/{bid}/payments/{budi['id']}/paid", headers=HB)
     assert r.status_code == 200, r.text
     row = _row_for(budi, bid)
@@ -113,7 +113,7 @@ def test_my_paid_personal_status_in_list():
     assert row["settled"] is False, f"should stay unsettled: {row}"
 
     # creator pays too -> everyone settled
-    r = c.post(f"/api/bills/{bid}/payments/{aufa['id']}/paid", headers=_H(aufa))
+    r = c.post(f"/api/bills/{bid}/payments/{wulan['id']}/paid", headers=_H(wulan))
     assert r.status_code == 200, r.text
     row = _row_for(budi, bid)
     assert row["my_paid"] is True, row
@@ -123,32 +123,32 @@ def test_my_paid_personal_status_in_list():
 def test_my_paid_false_for_creator_without_share():
     """Creator who hasn't paid and has no share -> my_paid false (so the UI
     shows 'Kamu belum bayar')."""
-    aufa = db.new_identity("Aufa50b")
-    amel = db.new_identity("Amel50b")
+    wulan = db.new_identity("Wulan50b")
+    sari = db.new_identity("Sari50b")
     budi = db.new_identity("Budi50b")
-    bid = _mk_bill(aufa, subtotal=300000, total=300000,
+    bid = _mk_bill(wulan, subtotal=300000, total=300000,
                    items=[{"name": "A", "price": 300000}],
-                   participants=["Aufa50b", "Amel50b", "Budi50b"],
-                   paid_by_name="Amel50b")
-    HAa = _H(amel["id"])
+                   participants=["Wulan50b", "Sari50b", "Budi50b"],
+                   paid_by_name="Sari50b")
+    HAa = _H(sari["id"])
     HB = _H(budi["id"])
     c.post(f"/api/bills/{bid}/join", headers=HAa, json={})
     c.post(f"/api/bills/{bid}/join", headers=HB, json={})
     item_id = db.get_bill(bid)["items"][0]["id"]
-    _pick(bid, amel, item_id)
+    _pick(bid, sari, item_id)
     _pick(bid, budi, item_id)
 
     # payer paid; both guests paid; creator has NO share and hasn't picked
     r = c.post(f"/api/bills/{bid}/payments/{budi['id']}/paid", headers=HB)
     assert r.status_code == 200, r.text
-    row = _row_for(aufa, bid)
+    row = _row_for(wulan, bid)
     assert row["my_paid"] is False, row
     # v68: creator is a pending picker (picked nothing) — they BLOCK settle
     # even though their unclaimed share falls back to the payer
     assert row["settled"] is False, f"pending picker must block settle: {row}"
-    _pick(bid, aufa, item_id)
-    c.post(f"/api/bills/{bid}/payments/{aufa['id']}/paid", headers=_H(aufa["id"]))
-    row = _row_for(aufa, bid)
+    _pick(bid, wulan, item_id)
+    c.post(f"/api/bills/{bid}/payments/{wulan['id']}/paid", headers=_H(wulan["id"]))
+    row = _row_for(wulan, bid)
     assert row["settled"] is True, f"everyone picked+paid settles: {row}"
 
 

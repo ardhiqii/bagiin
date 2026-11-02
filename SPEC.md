@@ -99,7 +99,7 @@ Alur guest (S4-S5) single-page penuh, fokus, tanpa tab.
   membuat payment row, atau menandai siapa pun lunas.
 - Creator daftar nama peserta pas bikin bill (nama doang, tanpa akun) - INI FLOW
   STANDAR, bukan opsional. Flow: kelar makan -> creator bikin bill -> tulis nama
-  peserta ("Aufa, Rina") -> share link -> semua centang item -> Rekap menghitung alokasi.
+  peserta ("Budi, Rina") -> share link -> semua centang item -> Rekap menghitung alokasi.
   Gunanya: sistem tau SIAPA yang belum centang -> warning "Rina belum pilih".
   (Angka doang "3 orang" KURANG berguna: tau "1 dari 3 belum pilih" tapi gak tau
   siapa. Nama = 5 detik ngetik, dan itu yang ngejawab kebutuhan "gak lupa siapa
@@ -179,7 +179,7 @@ payment_profile   -- milik identity, opsional
   id INTEGER PK, identity_id FK
   type TEXT ('bank'|'ewallet')
   label TEXT            -- "BCA", "DANA"
-  detail TEXT           -- "1234567890 a.n. Aufa" / "0812xxxx"
+  detail TEXT           -- "1234567890 a.n. Budi" / "0812xxxx"
 ```
 
 Perhitungan total per orang TIDAK disimpan - dihitung on-the-fly dari items +
@@ -380,7 +380,7 @@ Obsidian/VS Code (selera user), satu accent orange, hijau/merah CUMI untuk statu
 - Onboarding: "Siapa namamu?" / "Biar temenmu tau ini kamu."
 - Buat bill: "Foto struknya" / "Biar gak ribet ngetik manual"
 - Picker: "Centang yang kamu tanggung" / "Total kamu: Rp 81.667"
-- Bayar: "Tandai sudah bayar" / "Kirim ke: BCA 1234567890 a.n. Aufa"
+- Bayar: "Tandai sudah bayar" / "Kirim ke: BCA 1234567890 a.n. Budi"
 - Summary creator: "Belum bayar: Rina (Rp 81.667)" / "Bagian kosong: Rp 40.000"
 - Identity code: "Simpan kode ini. Jangan dishare ke siapa pun."
 
@@ -913,8 +913,8 @@ resmi jadi "peserta biasa" — tapi satu-satunya orang yang gak boleh keluar.
   numpuk item bebas yang gak dipilih siapa-siapa, pajak tanpa basis, dan sisa
   pembulatan ke pembuat bill (`creator_id`) — sekarang ke `fallback_id`, yaitu
   **yang nalangin** (payer confirmed, kalau gak ada ya pembuat). Ini bukan cuma
-  demi fitur keluar: selama ini kalau Amel yang nombokin, item yang gak keambil
-  malah ditagihin ke Aufa yang gak ngeluarin duit sepeser pun. Peringatannya ikut
+  selama ini kalau Sari yang nombokin, item yang gak keambil
+  malah ditagihin ke Budi yang gak ngeluarin duit sepeser pun.
   diperbaiki: "masuk ke pembuat bill" → "masuk ke yang nalangin".
 - Estimasi lokal di HP ikut disamain (`iAmCreator` → `iAmOwner`) — kalau gak, angka
   di dock beda sama angka server, persis kelas bug yang dijaga `e2e_smoke.mjs`.
@@ -1085,7 +1085,8 @@ Kode sama persis dengan v51. Folder `static/v51` di-serve ulang sebagai `static/
 karena Cloudflare nyimpen draft partial yang sempat ke-request lewat domain live pas
 pengembangan (app.js cuma 3,5KB, screens/bill.js juga versi lama). File bener ada di
 git; CF tetap nyajian versi rusak sampai path-nya ganti. Bump versi folder = mekanisme
-cache-busting resmi project (lihat CLAUDE.md).
+cache-busting resmi project saat itu. Mekanisme saat ini memakai content hash
+di `backend/main.py`.
 
 ### v53 (2026-08-12) — polish copy: kapitalisasi konsisten
 
@@ -1123,7 +1124,7 @@ bump v54, lalu v55 (versi final). Ketiganya isinya sama di git; v55 yang dirujuk
 
 Model kepemilikan diubah (keputusan Aufa): **payer yang di-confirm = satu-satunya
 manager.** Sebelum ada payer confirmed → creator yang pegang. Setelah creator
-confirm Amel sebagai payer → power pindah TOTAL ke Amel; creator jadi peserta
+confirm Sari sebagai payer → power pindah TOTAL ke Sari; creator jadi peserta
 biasa (bisa pilih item, tandai lunas diri, lihat metode — gak bisa edit/close/
 delete/set-payer/tandai lunas orang lain).
 
@@ -1154,7 +1155,7 @@ delete/set-payer/tandai lunas orang lain).
 - Fix: "Total kamu" preview now mirrors backend tax calc (proportional to selected subtotal).
 
 ### v12 (2026-08-09) — participant claiming
-- Guest with matching name (case-insensitive) claims the creator-typed slot — "Amel" vs "amel" = same person.
+- Guest with matching name (case-insensitive) claims the creator-typed slot — "Sari" vs "sari" = same person.
 - (Superseded by v13's join model; claim still runs for legacy bills.)
 
 ### 2026-08-09 (v7) — feedback user dari test langsung
@@ -1179,7 +1180,7 @@ delete/set-payer/tandai lunas orang lain).
   Backend restart: `sudo systemctl restart bagiin.service`.
 - Test E2E (CDP :9222, live): foto ke-load (naturalWidth>0), harga format titik,
   total Rp 317.619, edit 100000 → "100.000", warning diskon muncul, creator pick
-  flow jalan (item share "Aufa", split proporsional bener), bill test dibersihkan
+  flow jalan (item share "Budi", split proporsional bener), bill test dibersihkan
   dari DB prod setelah verifikasi.
 
 ### 2026-08-09 (v8-v9) — feedback round 2

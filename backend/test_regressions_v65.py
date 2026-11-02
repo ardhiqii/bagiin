@@ -61,18 +61,18 @@ def test_stranger_cannot_take_the_bill_by_matching_the_payer_name():
     fine. What must NOT happen: the manager tapping "Pakai Nama Ini" (which
     sends {name}, and looks like a no-op) confirming them as the sole owner.
     """
-    aufa = db.new_identity("Aufa65", role="creator")
+    wulan = db.new_identity("Wulan65", role="creator")
     mallory = db.new_identity("Mallory65")
-    bid = _mk_bill(aufa, paid_by_name="Budi65")
+    bid = _mk_bill(wulan, paid_by_name="Budi65")
 
     c.post(f"/api/identities/{mallory['id']}/name", json={"name": "budi65"}, headers=_H(mallory))
     c.post(f"/api/bills/{bid}/join", headers=_H(mallory))
 
-    r = c.put(f"/api/bills/{bid}/paid_by", json={"name": "Budi65"}, headers=_H(aufa))
+    r = c.put(f"/api/bills/{bid}/paid_by", json={"name": "Budi65"}, headers=_H(wulan))
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["paid_by_id"] == mallory["id"], "still resolved for display"
-    assert data["owner_id"] == aufa["id"], "but the creator still holds the bill"
+    assert data["owner_id"] == wulan["id"], "but the creator still holds the bill"
     assert data["bill"]["paid_by_confirmed"] == 0
 
     # ...and none of the owner powers came with it
@@ -84,15 +84,15 @@ def test_stranger_cannot_take_the_bill_by_matching_the_payer_name():
 def test_explicit_identity_still_hands_the_bill_over():
     """The deliberate path (the v62 confirm banner sends identity_id) is the
     one that transfers ownership — that must keep working."""
-    aufa = db.new_identity("Aufa65b", role="creator")
-    amel = db.new_identity("Amel65b")
-    bid = _mk_bill(aufa)
-    c.post(f"/api/bills/{bid}/join", headers=_H(amel))
+    wulan = db.new_identity("Wulan65b", role="creator")
+    sari = db.new_identity("Sari65b")
+    bid = _mk_bill(wulan)
+    c.post(f"/api/bills/{bid}/join", headers=_H(sari))
 
-    r = c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": amel["id"]}, headers=_H(aufa))
+    r = c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": sari["id"]}, headers=_H(wulan))
     assert r.status_code == 200, r.text
-    assert r.json()["owner_id"] == amel["id"]
-    assert c.get(f"/api/bills/{bid}", headers=_H(amel)).json()["can_manage"] is True
+    assert r.json()["owner_id"] == sari["id"]
+    assert c.get(f"/api/bills/{bid}", headers=_H(sari)).json()["can_manage"] is True
 
 
 # ---------- 2. photos belong to their bill ----------
@@ -143,15 +143,15 @@ def test_deleted_photo_stays_deleted_across_a_restart():
     """init_db backfills legacy bill.photo_path into bill_photo on every boot,
     so deleting a photo without clearing the legacy column brought it back on
     the next `systemctl restart` — pointing at an unlinked file."""
-    aufa = db.new_identity("Aufa65d", role="creator")
-    bid = _mk_bill(aufa)
+    wulan = db.new_identity("Wulan65d", role="creator")
+    bid = _mk_bill(wulan)
     conn = db.get_db()
     conn.execute("UPDATE bill SET photo_path = ? WHERE id = ?", ("/tmp/legacy65.jpg", bid))
     conn.commit()
     conn.close()
     pid = db.add_bill_photo(bid, "/tmp/legacy65.jpg")
 
-    assert c.delete(f"/api/bills/{bid}/photos/{pid}", headers=_H(aufa)).status_code == 200
+    assert c.delete(f"/api/bills/{bid}/photos/{pid}", headers=_H(wulan)).status_code == 200
     db.init_db()   # = a service restart
     assert db.get_bill(bid)["photos"] == [], "deleted photo came back"
 
@@ -162,19 +162,19 @@ def test_declined_invite_can_be_sent_again():
     """A decline is "no thanks", not a permanent ban. create_invite returned
     the declined row, so the owner was told "undangan dikirim" for an invite
     the invitee could never see."""
-    aufa = db.new_identity("Aufa65e", role="creator")
+    wulan = db.new_identity("Wulan65e", role="creator")
     rina = db.new_identity("Rina65e")
-    bid = _mk_bill(aufa)
-    shared = _mk_bill(aufa, title="Shared")
+    bid = _mk_bill(wulan)
+    shared = _mk_bill(wulan, title="Shared")
     c.post(f"/api/bills/{shared}/join", headers=_H(rina))     # kontak terbukti
     c.post(f"/api/identities/{rina['id']}/auto_accept", json={"auto_accept": False}, headers=_H(rina))
 
-    r = c.post(f"/api/bills/{bid}/invite", json={"identity_id": rina["id"]}, headers=_H(aufa))
+    r = c.post(f"/api/bills/{bid}/invite", json={"identity_id": rina["id"]}, headers=_H(wulan))
     assert r.json()["status"] == "pending", r.text
     inv = c.get(f"/api/identities/{rina['id']}/invites", headers=_H(rina)).json()[0]
     assert c.post(f"/api/bills/{bid}/invites/{inv['id']}/decline", headers=_H(rina)).status_code == 200
 
-    r = c.post(f"/api/bills/{bid}/invite", json={"identity_id": rina["id"]}, headers=_H(aufa))
+    r = c.post(f"/api/bills/{bid}/invite", json={"identity_id": rina["id"]}, headers=_H(wulan))
     assert r.json()["status"] == "pending", r.text
     again = c.get(f"/api/identities/{rina['id']}/invites", headers=_H(rina)).json()
     assert any(i["bill_id"] == bid for i in again), "the re-invite must be visible"
@@ -184,21 +184,21 @@ def test_contact_check_is_not_capped_at_the_pickers_page_size():
     """get_contacts caps at 50 for the picker; the invite endpoint tested
     membership against that same truncated list, so contact #51 was offered by
     search and then rejected with 'belum pernah share bill'."""
-    aufa = db.new_identity("Aufa65f", role="creator")
+    wulan = db.new_identity("Wulan65f", role="creator")
     older = db.new_identity("Older65")
-    old_bill = _mk_bill(aufa, title="Lama")
+    old_bill = _mk_bill(wulan, title="Lama")
     c.post(f"/api/bills/{old_bill}/join", headers=_H(older))
     # bury them under more recent shared bills than the picker's page size
     for i in range(52):
         mate = db.new_identity(f"Mate65{i:03d}")
-        b = _mk_bill(aufa, title=f"B{i}")
+        b = _mk_bill(wulan, title=f"B{i}")
         c.post(f"/api/bills/{b}/join", headers=_H(mate))
 
-    assert all(x["id"] != older["id"] for x in db.get_contacts(aufa["id"])), "past the page"
-    assert db.is_contact(aufa["id"], older["id"]) is True
+    assert all(x["id"] != older["id"] for x in db.get_contacts(wulan["id"])), "past the page"
+    assert db.is_contact(wulan["id"], older["id"]) is True
 
-    target = _mk_bill(aufa, title="Undang")
-    r = c.post(f"/api/bills/{target}/invite", json={"identity_id": older["id"]}, headers=_H(aufa))
+    target = _mk_bill(wulan, title="Undang")
+    r = c.post(f"/api/bills/{target}/invite", json={"identity_id": older["id"]}, headers=_H(wulan))
     assert r.status_code == 200, r.text
 
 
@@ -207,23 +207,23 @@ def test_bill_with_invites_can_be_deleted():
     had ever been invited to could not be deleted at all: IntegrityError -> 500
     (Cloudflare swallows the body) and the failed transaction stayed open, so
     the next writes ANYWHERE failed with "database is locked"."""
-    aufa = db.new_identity("Aufa65i", role="creator")
+    wulan = db.new_identity("Wulan65i", role="creator")
     rina = db.new_identity("Rina65i")
-    shared = _mk_bill(aufa, title="Shared")
+    shared = _mk_bill(wulan, title="Shared")
     c.post(f"/api/bills/{shared}/join", headers=_H(rina))     # kontak terbukti
 
     for auto_accept in (True, False):
         c.post(f"/api/identities/{rina['id']}/auto_accept",
                json={"auto_accept": auto_accept}, headers=_H(rina))
-        bid = _mk_bill(aufa, title=f"Undang {auto_accept}")
+        bid = _mk_bill(wulan, title=f"Undang {auto_accept}")
         assert c.post(f"/api/bills/{bid}/invite", json={"identity_id": rina["id"]},
-                      headers=_H(aufa)).status_code == 200
-        assert c.delete(f"/api/bills/{bid}", headers=_H(aufa)).status_code == 200
+                      headers=_H(wulan)).status_code == 200
+        assert c.delete(f"/api/bills/{bid}", headers=_H(wulan)).status_code == 200
         # the invite rows go with it, and nothing is left holding the write lock
         assert db.get_bill(bid) is None
-        assert c.get(f"/api/identities/{aufa['id']}/bills", headers=_H(aufa)).status_code == 200
-        assert c.post(f"/api/bills/{shared}/close", headers=_H(aufa)).status_code == 200
-        assert c.post(f"/api/bills/{shared}/reopen", headers=_H(aufa)).status_code == 200
+        assert c.get(f"/api/identities/{wulan['id']}/bills", headers=_H(wulan)).status_code == 200
+        assert c.post(f"/api/bills/{shared}/close", headers=_H(wulan)).status_code == 200
+        assert c.post(f"/api/bills/{shared}/reopen", headers=_H(wulan)).status_code == 200
 
 
 # ---------- 4. bad input is 4xx, never 5xx ----------
@@ -232,8 +232,8 @@ def test_malformed_fields_are_400_not_500():
     """Cloudflare replaces 5xx bodies with its own HTML error page, so a 500
     reaches the user as "something went wrong" with no message. Anything a
     client can send has to be rejected as 4xx."""
-    aufa = db.new_identity("Aufa65h", role="creator")
-    H = _H(aufa)
+    wulan = db.new_identity("Wulan65h", role="creator")
+    H = _H(wulan)
     base = {"items": [{"name": "A", "price": 1000}], "subtotal": 1000,
             "tax": 0, "service": 0, "total": 1000}
 
@@ -250,13 +250,13 @@ def test_malformed_fields_are_400_not_500():
     if r.status_code == 200:
         assert db.get_bill(r.json()["id"])["photos"] == []
 
-    bid = _mk_bill(aufa)
+    bid = _mk_bill(wulan)
     assert c.put(f"/api/bills/{bid}/paid_by", json={"identity_id": {"a": 1}}, headers=H).status_code == 400
     assert c.put(f"/api/bills/{bid}/paid_by", json={"name": ["a"]}, headers=H).status_code == 400
     assert c.post(f"/api/bills/{bid}/invite", json={"identity_id": {"a": 1}}, headers=H).status_code == 400
     assert c.post("/api/identities", json={"name": {"a": 1}}).status_code == 400
-    assert c.post(f"/api/identities/{aufa['id']}/name", json={"name": ["a"]}, headers=H).status_code == 400
-    assert c.post(f"/api/identities/{aufa['id']}/accounts",
+    assert c.post(f"/api/identities/{wulan['id']}/name", json={"name": ["a"]}, headers=H).status_code == 400
+    assert c.post(f"/api/identities/{wulan['id']}/accounts",
                   json={"brand": {"a": 1}, "account_no": "1"}, headers=H).status_code == 400
 
 
@@ -267,12 +267,12 @@ def test_manually_settled_solo_bill_is_settled_in_the_list_too():
     endpoint bailed out on "nobody picked anything" before it ever looked at
     the manual flag, so the bill read Lunas on its own screen and "Belum ada
     yang milih" one screen up."""
-    aufa = db.new_identity("Aufa65g", role="creator")
-    bid = _mk_bill(aufa)
-    assert c.post(f"/api/bills/{bid}/settle", headers=_H(aufa)).status_code == 200
+    wulan = db.new_identity("Wulan65g", role="creator")
+    bid = _mk_bill(wulan)
+    assert c.post(f"/api/bills/{bid}/settle", headers=_H(wulan)).status_code == 200
 
-    detail = c.get(f"/api/bills/{bid}", headers=_H(aufa)).json()
-    row = next(b for b in c.get(f"/api/identities/{aufa['id']}/bills", headers=_H(aufa)).json()
+    detail = c.get(f"/api/bills/{bid}", headers=_H(wulan)).json()
+    row = next(b for b in c.get(f"/api/identities/{wulan['id']}/bills", headers=_H(wulan)).json()
                if b["id"] == bid)
     assert detail["settled"] is True
     assert row["settled"] is True, "list must agree with the bill screen"

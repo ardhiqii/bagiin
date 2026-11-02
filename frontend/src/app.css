@@ -1,0 +1,1434 @@
+/* Layout aplikasi nyata. Design system (ds-*) tetap sumber komponen;
+   file ini cuma mengatur chrome: header, area scroll, nav bawah. */
+
+/* Margin bawaan body menambah 16px di luar frame dan memunculkan scrollbar
+   halaman di samping scrollbar isi. */
+body { margin: 0; }
+
+/* Body dan kontrol form ikut font design system. Tanpa ini, apa pun yang
+   di-portal ke <body> (toast, sheet) jatuh ke Times New Roman bawaan browser
+   sementara isi .app-shell pakai DM Sans — kelihatan seperti dua font campur. */
+html,
+body {
+  font-family: var(--ds-font-body);
+  color: var(--ds-navy);
+  background: var(--ds-bg);
+}
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+.app-shell, .app-shell *, .app-shell *::before, .app-shell *::after { box-sizing: border-box; }
+
+.app-shell {
+  min-height: 100dvh;
+  background: var(--ds-bg);
+  color: var(--ds-navy);
+  font-family: var(--ds-font-body);
+  font-size: var(--ds-text-base);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  display: flex;
+  justify-content: center;
+}
+
+/* Angka selalu rata kolom supaya Rp tidak menari antar baris. */
+.app-shell, .app-row .amt, .ds-balance-value, .ds-money { font-variant-numeric: tabular-nums; }
+
+/* Satu sumber untuk jarak kiri-kanan isi layar.
+   Header, isi, DAN bar bawah memakai nilai ini, jadi tepinya selalu lurus di
+   lebar layar mana pun. Dulu tiap bagian menulis angkanya sendiri: isi 20/24/34
+   px menurut breakpoint, bar bawah selalu 20 px — di laptop bedanya 14 px dan
+   bar bawahnya terlihat menjorok ke dalam. */
+.app-shell {
+  --ds-content-x: var(--ds-gutter);
+  /* Jarak kiri-kanan ISI. Frame-nya sendiri selebar layar (permukaan bar harus
+     sampai tepi), tapi isi tidak ikut melar: di atas 480 px sisa ruangnya dibagi
+     dua dan masuk ke padding, jadi lebar isi bertahan di 440 px — 20 px gutter
+     ditambah sisa/2. Di 384 px sisa itu nol, jadi ponsel sempit tidak berubah. */
+  --ds-content-pad: calc(var(--ds-content-x) + max(0px, (100% - 480px) / 2));
+}
+
+.app-frame {
+  width: 100%;
+  /* TANPA max-width di ponsel. Dulu 480 px, dan itu hanya kelihatan di
+     perangkat yang lebar CSS-nya >480 (Galaxy dengan "screen zoom" kecil,
+     Chrome dengan page zoom, atau tablet kecil): frame-nya jadi kolom 480 px
+     di tengah, menyisakan pita kosong di kiri-kanan. Karena warna frame sama
+     dengan warna halaman, satu-satunya yang memperlihatkan pita itu adalah
+     garis navigasi bawah — persis terbaca sebagai "garisnya nggak full".
+     Di 384 px tidak ada selisih, jadi emulator tidak pernah menunjukkannya:
+     pada 506 px pita itu 13 px di tiap sisi, dan itu angka yang cocok dengan
+     tangkapan layar perangkat. */
+  max-width: none;
+  /* tinggi tetap, bukan min-height: isi yang scroll di dalam, bar bawah dan
+     navigasi selalu menempel di dasar frame */
+  height: 100dvh;
+  max-height: 100dvh;
+  background: var(--ds-bg);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.app-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-3) var(--ds-content-pad);
+  background: color-mix(in srgb, var(--ds-bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 70%, transparent);
+}
+
+.app-top h1 {
+  font-family: var(--ds-font-display);
+  font-size: var(--ds-text-lg);
+  font-weight: var(--ds-weight-strong);
+  letter-spacing: -.02em;
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-top .app-top-sub {
+  display: block;
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-medium);
+  color: var(--ds-muted);
+  letter-spacing: 0;
+}
+
+.app-back {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 0;
+  background: var(--ds-surface);
+  color: var(--ds-navy);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: var(--ds-shadow-content);
+  flex: none;
+}
+.app-back:active { transform: scale(.94); }
+
+/* Anak .app-body tidak boleh menyusut. Tanpa ini, saat total isi lebih tinggi
+   dari layar, flexbox mengompres tiap kartu — .ds-balance pernah jatuh ke 40 px
+   sehingga angka totalnya terpotong dan tidak kelihatan sama sekali. */
+.app-body > * { flex: 0 0 auto; }
+
+.app-body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--ds-gutter) var(--ds-content-pad) var(--ds-space-6);
+  scroll-padding-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-5);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app-bottom {
+  flex: none;
+  position: relative;
+  z-index: 30;
+  /* Samping memakai --ds-content-x yang SAMA dengan .app-body dan .app-top,
+     jadi tepi bar bawah selalu lurus dengan tepi kartu di atasnya di setiap
+     lebar layar. Sebelumnya nilai ini ditulis ulang dengan --ds-gutter (20 px),
+     padahal isi memakai 24 px di ≥720 dan 34 px di ≥900: di laptop bar bawahnya
+     menjorok 14 px ke dalam dari kartu. */
+  /* Tanpa padding bawah dan tanpa bayangan: bar aksi dan navigasi bawah satu
+     permukaan. Sebelumnya ada pita 8 px kosong di bawah tombol plus bayangan
+     jatuh ke atas, jadi bar-nya terbaca sebagai panel mengambang yang punya
+     jarak sendiri ke navigasi. */
+  padding: var(--ds-space-3) var(--ds-content-pad) 0;
+  /* Satu permukaan dengan navigasi di bawahnya: kalau bar aksi memakai warna
+     halaman sementara navigasi putih, keduanya terbaca dua panel bertumpuk. */
+  background: color-mix(in srgb, var(--ds-surface) 92%, transparent);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid color-mix(in srgb, var(--ds-border) 92%, transparent);
+}
+
+.app-nav {
+  width: 100%;
+  display: flex;
+  justify-content: space-around;
+  padding: var(--ds-space-2) var(--ds-gutter) calc(var(--ds-space-2) + env(safe-area-inset-bottom));
+  /* Permukaan sendiri, bukan warna halaman: dengan latar yang sama, satu-satunya
+     tanda batas adalah garis 1 px beralfa 0.55 yang hampir hilang, sehingga yang
+     terbaca justru bayangan kartu di atasnya dan bar-nya terlihat tidak selebar
+     layar. Putih 92% + blur = bar bawah yang jelas miliknya sendiri. */
+  background: color-mix(in srgb, var(--ds-surface) 92%, transparent);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid color-mix(in srgb, var(--ds-border) 92%, transparent);
+}
+
+/* Kalau bar ini justru elemen paling bawah (tanpa navigasi), ia tetap butuh
+   napas bawah dan safe area iPhone. */
+.app-frame > .app-bottom:last-child {
+  padding-bottom: calc(var(--ds-space-2) + env(safe-area-inset-bottom));
+}
+
+/* Kalau di atasnya ada bar aksi, garis pemisahnya sudah diberikan .app-bottom.
+   Dua garis 1 px berjarak 0 px terbaca sebagai celah tipis, bukan pemisah. */
+.app-bottom + .app-nav { border-top: 0; }
+
+.app-nav a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ds-space-1);
+  min-height: 46px;
+  justify-content: center;
+  text-decoration: none;
+  color: var(--ds-muted-soft);
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-medium);
+  letter-spacing: .01em;
+  border-radius: 12px;
+}
+
+.app-nav a.is-active { color: var(--ds-teal); font-weight: var(--ds-weight-strong); }
+.app-nav a:active svg { transform: scale(.92); }
+
+
+.app-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  padding: 14px 16px;
+  background: var(--ds-surface);
+  border: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.app-row + .app-row { border-top: 1px solid var(--ds-border); }
+.app-row:first-child { border-radius: 20px 20px 0 0; }
+.app-row:last-child { border-radius: 0 0 20px 20px; }
+.app-row:only-child { border-radius: 20px; }
+
+.app-row .grow { flex: 1; min-width: 0; }
+/* hindari satu kata menggantung di baris kedua ("... belum / bayar") */
+.app-row small { text-wrap: pretty; }
+.app-row b { display: block; font-size: var(--ds-text-base); font-weight: var(--ds-weight-medium); letter-spacing: -.01em; }
+.app-stack > strong { font-family: var(--ds-font-display); }
+/* 12 px, bukan 11: meta baris ("26 Okt · 1 orang belum bayar", "dari Rp46.000")
+   dibaca sambil lewat, dan di 11 px ia jadi hiasan yang tidak terbaca. */
+.app-row small { display: block; font-size: var(--ds-text-sm); color: var(--ds-muted); margin-top: 3px; line-height: var(--ds-leading-snug); }
+.app-row .amt { text-align: right; font-variant-numeric: tabular-nums; font-weight: var(--ds-weight-strong); font-size: var(--ds-text-base); }
+
+.app-stack { display: flex; flex-direction: column; gap: var(--ds-space-3); }
+.app-inline { display: flex; align-items: center; gap: var(--ds-space-2); flex-wrap: wrap; }
+.app-spacer { flex: 1; }
+
+/* Kalimat pendek di layar sempit gampang berakhir dengan satu kata menggantung.
+   Chrome 114+ bisa menyeimbangkan sendiri; browser lain mengabaikan. */
+p, small, .app-note { text-wrap: pretty; }
+
+.app-note {
+  font-size: var(--ds-text-sm);
+  color: var(--ds-muted);
+  line-height: 1.5;
+}
+/* Input di atas kartu mint butuh permukaan putih supaya tetap terbaca;
+   tanpa ini placeholder dan tombol nonaktif nyaris hilang. Varian navy sudah
+   dihapus bersama komponen Card. */
+.ds-card-mint .ds-field input {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+}
+.ds-button:disabled {
+  opacity: 1;
+  color: var(--ds-muted);
+  background: color-mix(in srgb, var(--ds-border) 55%, #fff);
+  box-shadow: none;
+}
+
+.app-toast {
+  position: fixed;
+  left: 50%;
+  /* di bawah header sticky, supaya judul layar tidak tertutup */
+  top: 74px;
+  transform: translate(-50%, -12px);
+  background: var(--ds-navy);
+  color: #fff;
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-medium);
+  padding: 11px 16px;
+  border-radius: 999px;
+  box-shadow: 0 12px 30px rgba(20, 47, 58, .3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+  z-index: 60;
+  max-width: min(88vw, 420px);
+  text-align: center;
+}
+.app-toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* Bar ringkasan di layar buat bill: total selalu kelihatan, tombol simpan
+   tidak pernah tenggelam di bawah lipatan. */
+/* Padding samping TIDAK diulang di sini: .app-bottom sudah memberi gutter.
+   Dulu dua-duanya memberi 20 px, jadi total dan tombol "Buat bill" menjorok
+   40 px dari tepi sementara semua kartu di atasnya 20 px — bar bawahnya
+   terbaca tidak selebar layar. */
+.create-dock {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-4);
+  /* Tanpa border atas sendiri: .app-bottom sudah memberinya satu. Dua garis
+     berjarak 12 px terbaca sebagai dua permukaan. */
+  padding: var(--ds-space-3) 0;
+}
+.create-dock .tot { flex: 1; min-width: 0; display: grid; gap: var(--ds-space-half); }
+.create-dock .tot small {
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-strong);
+  color: var(--ds-muted);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.create-dock .tot b {
+  font-family: var(--ds-font-display);
+  font-size: var(--ds-text-2xl);
+  font-weight: var(--ds-weight-strong);
+  letter-spacing: -.035em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.create-dock .ds-button { flex: none; min-width: 132px; }
+
+/* Layar kenalan: satu kartu di tengah, tanpa navigasi bawah. */
+/* Kartu dengan ilustrasi: gambar di kiri, teks di kanan, sejajar atas.
+   Dipakai untuk keadaan yang menjelaskan satu aksi utama, bukan di samping
+   deretan angka. */
+.art-card {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: var(--ds-space-3);
+  align-items: center;
+}
+/* Gambar WAJIB mengikuti lebar kolom grid. Dulu atribut width/height di <img>
+   (150) menang atas kolom 120, jadi ilustrasi meluber dan menimpa judul kartu. */
+.art-card img,
+.art-head img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: var(--ds-radius-lg);
+  object-fit: contain;
+}
+
+.art-head {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: var(--ds-space-3);
+  align-items: center;
+}
+
+.art-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--ds-space-1-5);
+  padding: 8px 0 4px;
+}
+.art-empty img { border-radius: 20px; object-fit: cover; }
+
+.welcome-art { border-radius: 22px; object-fit: cover; }
+
+.ds-create-hero.is-scanning img {
+  animation: scan-settle 1.6s ease-in-out infinite;
+}
+@keyframes scan-settle {
+  0%, 100% { transform: translateY(0) }
+  50% { transform: translateY(-3px) }
+}
+
+.welcome-body {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+}
+.welcome-card {
+  display: grid;
+  justify-items: center;
+  gap: var(--ds-space-3);
+  padding: 24px 20px 22px;
+  background: var(--ds-surface);
+  border-radius: 24px;
+  box-shadow: 0 10px 30px rgba(20, 47, 58, 0.08);
+}
+.welcome-card img { border-radius: 20px; }
+.welcome-card h1 { margin: 0; font: var(--ds-weight-strong) var(--ds-text-xl)/1.2 var(--ds-font-body); letter-spacing: -.02em; }
+
+/* Satu kartu untuk satu daftar: baris di dalamnya berbagi sudut dan pemisah,
+   bukan masing-masing jadi pill mengambang. */
+.app-list {
+  background: var(--ds-surface);
+  border-radius: 20px;
+  overflow: hidden;
+}
+.app-list > * + * { border-top: 1px solid var(--ds-border); }
+.app-list .app-row { border-radius: 0 !important; }
+
+/* Undangan yang menunggu: satu kartu, satu keputusan. Tombolnya di kanan supaya
+   mata berhenti di nama bill dulu, bukan di tombol. */
+.invite-card {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-3) var(--ds-space-4);
+  background: var(--ds-surface);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-content);
+}
+.invite-copy { min-width: 0; flex: 1; }
+.invite-copy b { display: block; font: var(--ds-weight-strong) var(--ds-text-base)/1.25 var(--ds-font-body); }
+.invite-copy small { display: block; margin-top: 2px; color: var(--ds-muted); font: var(--ds-weight-regular) var(--ds-text-sm)/var(--ds-leading-snug) var(--ds-font-body); text-wrap: pretty; }
+.invite-actions { display: flex; align-items: center; gap: var(--ds-space-1); flex: none; }
+
+.chip-row { display: flex; flex-wrap: wrap; gap: var(--ds-space-2); }
+.chip-filter {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface);
+  color: var(--ds-navy);
+  font: var(--ds-weight-medium) var(--ds-text-sm) var(--ds-font-body);
+  cursor: pointer;
+}
+.chip-filter.is-active {
+  background: var(--ds-teal);
+  border-color: var(--ds-teal);
+  color: #fff;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1-5);
+  padding: 7px 10px 7px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ds-teal) 12%, #fff);
+  color: var(--ds-teal);
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-medium);
+}
+.chip button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: var(--ds-text-base);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+/* Hero ilustrasi dipakai di layar Buat dan Ubah bill: gambar 120 px + teks.
+   Tanpa aturan ini kelasnya tidak punya CSS sama sekali dan gambarnya menempel
+   kotak-kotak di kiri. */
+.ds-create-hero {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: var(--ds-space-3);
+  align-items: center;
+  padding: 14px;
+  background: var(--ds-surface);
+  border-radius: 20px;
+}
+.ds-create-hero img {
+  width: 120px;
+  height: 120px;
+  border-radius: 16px;
+  display: block;
+  flex: none;
+}
+.ds-create-hero b { display: block; font-size: var(--ds-text-base); font-weight: var(--ds-weight-strong); letter-spacing: -.01em; }
+.ds-create-hero p { margin: 4px 0 0; }
+
+/* Foto struk: kecil, bisa diketuk untuk melihat ukuran penuh. */
+.ds-sheet-head { display: flex; align-items: center; gap: var(--ds-space-3); }
+.ds-sheet-head h3 { margin: 0; }
+.ds-sheet-art { width: 54px; height: 54px; border-radius: 14px; flex: none; }
+
+
+.receipt-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ds-space-3);
+  padding: 12px;
+  border-radius: var(--ds-radius-lg);
+  background: var(--ds-surface);
+  box-shadow: inset 0 0 0 1px var(--ds-border);
+}
+.receipt-preview .grow { min-width: 0; }
+.receipt-preview b { font-size: var(--ds-text-base); }
+
+/* Kartu pilihan foto: ilustrasi kecil di kiri, judul + dua tombol sebaris. */
+.ds-create-hero.is-choice {
+  grid-template-columns: 64px 1fr;
+  align-items: start;
+  gap: var(--ds-space-3);
+  padding: 14px 14px 12px;
+}
+.ds-create-hero.is-choice img { width: 64px; height: 64px; }
+.ds-create-hero b { font-family: var(--ds-font-display); letter-spacing: -.01em; }
+.ds-create-hero.is-choice b { font-size: var(--ds-text-base); }
+
+/* Dua niat berdampingan, bukan menumpuk tiga baris tombol. */
+.photo-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--ds-space-2);
+  margin-top: var(--ds-space-3);
+}
+.photo-actions .ds-button {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 10px;
+  font-size: var(--ds-text-sm);
+  white-space: nowrap;
+}
+.link-quiet {
+  border: 0;
+  background: none;
+  /* target sentuh 44 px walau tampilannya cuma teks: padding dinaikkan lalu
+     dikompensasi margin negatif supaya tinggi baris tidak berubah */
+  min-height: var(--ds-touch);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--ds-space-1);
+  margin: calc(-1 * var(--ds-space-3)) calc(-1 * var(--ds-space-1));
+  font: var(--ds-weight-medium) var(--ds-text-sm) var(--ds-font-body);
+  color: var(--ds-teal);
+  cursor: pointer;
+}
+.link-quiet:hover { color: var(--ds-teal-hover); }
+
+/* Status di dalam kartu total: pil terang di atas navy. */
+.nowrap { white-space: nowrap; }
+
+.bill-hero-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-1-5);
+  margin-top: 12px;
+}
+.bill-hero-chips .ds-badge {
+  background: rgba(255, 255, 255, .14);
+  color: #eaf4f4;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
+}
+.bill-hero-chips .ds-tone-success { background: rgba(22, 115, 84, .55); color: #eafff6; }
+.bill-hero-chips .ds-tone-pending { background: rgba(255, 209, 138, .22); color: #ffe9c4; }
+
+/* Toolbar aksi di zona jempol. Ikon sekunder di kiri, aksi utama mengisi sisa
+   lebar. Dulu dua tombol dengan bobot berbeda (teks + pill) terbaca sebagai
+   tombol yang salah ukuran; ikon menghapus perbandingan itu. */
+.bill-action-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+}
+.bill-bar-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: var(--ds-radius-md);
+  /* netral, bukan mint: satu-satunya elemen berwarna di bar harus aksi utama.
+     Dua tombol mint di samping pill hijau membuat mata membaca tiga ajakan. */
+  background: rgba(20, 47, 58, .06);
+  color: var(--ds-navy);
+  cursor: pointer;
+  transition: background .16s var(--ds-ease), transform .12s var(--ds-ease);
+}
+.bill-bar-icon:hover { background: rgba(20, 47, 58, .1); }
+.bill-bar-icon:active { transform: scale(.94); }
+.bill-bar-icon:focus-visible { outline: 2px solid var(--ds-teal); outline-offset: 2px; }
+.bill-action-bar .ds-button { flex: 1; min-height: 48px; }
+.bill-bar-state {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: var(--ds-muted);
+  font: var(--ds-weight-regular) var(--ds-text-sm)/1.3 var(--ds-font-body);
+}
+
+/* Baris "pilih orang": satu baris utuh dengan tanda + dan garis putus-putus.
+   Sebelumnya tombol teks tenang berukuran 44 px; di layar yang penuh isian
+   baris teks tanpa kotak tidak terbaca sebagai tombol — pemiliknya sendiri
+   sampai tidak sadar tombolnya ada. */
+.add-person {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  width: 100%;
+  min-height: 56px;
+  padding: 0 var(--ds-space-4);
+  border: 1.5px dashed color-mix(in srgb, var(--ds-teal) 42%, transparent);
+  border-radius: var(--ds-radius-md);
+  background: color-mix(in srgb, var(--ds-mint) 50%, transparent);
+  color: var(--ds-teal);
+  font: var(--ds-weight-strong) var(--ds-text-base)/1.2 var(--ds-font-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background .15s ease, transform .12s ease;
+}
+.add-person:active { transform: scale(.99); background: color-mix(in srgb, var(--ds-mint) 78%, transparent); }
+.add-person .add-count {
+  margin-left: auto;
+  font: var(--ds-weight-regular) var(--ds-text-sm)/1 var(--ds-font-body);
+  color: var(--ds-muted);
+}
+
+/* Sheet aksi: tombol berjarak rapat, bukan menumpuk penuh. */
+.app-stack-tight { display: grid; gap: var(--ds-space-2); margin-top: var(--ds-space-2); }
+/* Kode pemulihan ditampilkan monospace supaya huruf/angka mirip tidak tertukar
+   saat diketik di HP lain. */
+.recovery-code {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-3);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-mint);
+}
+.recovery-code code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: var(--ds-text-base);
+  font-weight: var(--ds-weight-medium);
+  letter-spacing: .06em;
+  color: var(--ds-navy);
+}
+/* ---------- Rekap ----------
+   Rekap berisi pekerjaan yang belum selesai, bukan arsip: bill yang sudah
+   lunas tidak dikirim backend, jadi tiap baris di sini butuh tindakan.
+   Dua sumbu dipisah tegas — pembagian (jelas / belum jelas) dan uang
+   (lunas / belum lunas) — karena mencampurnya membuat orang transfer angka
+   yang masih bisa berubah. */
+
+/* Baris per orang. Satu permukaan (ds-group) dengan hairline di dalam, jadi
+   daftarnya terbaca sebagai satu objek, bukan tumpukan kotak. */
+.recap-person {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  width: 100%;
+  min-height: 64px;
+  padding: 14px var(--ds-space-4);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background .16s var(--ds-ease);
+}
+.recap-person:hover { background: rgba(20, 47, 58, .025); }
+.recap-person:active { background: rgba(20, 47, 58, .045); }
+/* hairline mulai dari tepi teks (16 + 34 avatar + 12 gap), bukan dari tepi
+   kartu — garis yang menembus avatar terbaca sebagai tabel */
+.recap-person + .recap-person::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 62px;
+  right: var(--ds-space-4);
+  height: 1px;
+  background: var(--ds-hairline);
+}
+.recap-person-copy { flex: 1; min-width: 0; display: grid; gap: var(--ds-space-half); }
+.recap-person-copy b {
+  font-size: var(--ds-text-base);
+  font-weight: var(--ds-weight-medium);
+  letter-spacing: -.01em;
+  color: var(--ds-navy);
+}
+.recap-person-copy small {
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-regular);
+  color: var(--ds-muted);
+  text-wrap: pretty;
+}
+/* bruto arah sebaliknya: tetap terlihat walau angka utama memakai net */
+.recap-person-copy .recap-recip { color: var(--ds-teal); font-weight: var(--ds-weight-medium); }
+.recap-person-amt { display: grid; gap: var(--ds-space-half); justify-items: end; text-align: right; }
+.recap-person-amt b {
+  font-size: var(--ds-text-base);
+  font-weight: var(--ds-weight-strong);
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-navy);
+}
+.recap-person-amt small { font-size: var(--ds-text-xs); font-weight: var(--ds-weight-medium); color: var(--ds-muted); }
+.recap-chevron { flex: none; color: var(--ds-muted-soft); }
+
+/* Baris bill yang pembagiannya belum jelas: teks di kiri (bisa dibuka),
+   tombol tutup di kanan sebagai aksi terpisah supaya tidak ikut tertekan. */
+.recap-open {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding: 14px var(--ds-space-3) 14px var(--ds-space-4);
+}
+.recap-open + .recap-open::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--ds-space-4);
+  right: var(--ds-space-3);
+  height: 1px;
+  background: var(--ds-hairline);
+}
+.recap-open-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: var(--ds-space-half);
+  min-height: var(--ds-touch);
+  align-content: center;
+  text-decoration: none;
+  color: inherit;
+}
+.recap-open-main b {
+  font-size: var(--ds-text-base);
+  font-weight: var(--ds-weight-medium);
+  letter-spacing: -.01em;
+}
+.recap-open-main small {
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-regular);
+  color: var(--ds-muted);
+  text-wrap: pretty;
+}
+/* Penanggung sisa ditulis sebagai label kecil, bukan kalimat abu-abu di baris
+   yang sama dengan alasannya — dua hal ini beda peran. */
+.recap-payer {
+  justify-self: start;
+  margin-top: var(--ds-space-1);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--ds-pending-bg);
+  color: var(--ds-pending);
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-medium);
+  /* nama orang bisa panjang ("temen terbaik budi"); pill tidak boleh melebar
+     sampai menekan tombol di kanan, jadi dipotong dengan elipsis */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Sheet per orang: angka utama di atas, rincian bill di bawah. */
+.recap-sheet-total { display: grid; gap: var(--ds-space-half); }
+.recap-sheet-label {
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-strong);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ds-muted);
+}
+.recap-sheet-value {
+  font: var(--ds-weight-strong) var(--ds-text-2xl)/1.1 var(--ds-font-display);
+  letter-spacing: -.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-navy);
+}
+.recap-sheet-total small { font-size: var(--ds-text-sm); color: var(--ds-muted); }
+.recap-bill-row { text-decoration: none; color: inherit; }
+
+/* Empty state rekap memakai aset paid.webp (stempel centang) — 150 px sesuai
+   kontrak aset, bukan diskalakan dari 216 px. */
+.recap-empty-art {
+  display: block;
+  width: 150px;
+  height: 150px;
+  object-fit: contain;
+  margin: 2px 0 6px;
+}
+
+/* Fokus keyboard harus kelihatan: baris ini tombol/tautan, bukan div. */
+.recap-person:focus-visible,
+.recap-open-main:focus-visible,
+.recap-bill-row:focus-visible {
+  outline: 2px solid var(--ds-teal);
+  outline-offset: 2px;
+  border-radius: var(--ds-radius-md);
+}
+
+/* Pencarian ringkas: ikon di dalam kolom, tinggi 44 px, tanpa label terpisah.
+   Label di atas kolom membuat layar daftar terasa seperti formulir. */
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-height: var(--ds-touch);
+  padding: 0 var(--ds-space-3);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-surface);
+  color: var(--ds-muted);
+  box-shadow: var(--ds-shadow-content);
+}
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--ds-text-base);
+  color: var(--ds-navy);
+  outline: none;
+  padding: var(--ds-space-3) 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.search-field input::placeholder { color: var(--ds-muted-soft); }
+.search-field input::-webkit-search-cancel-button { display: none; }
+.search-clear {
+  border: 0;
+  background: var(--ds-bg-deep);
+  color: var(--ds-muted);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: var(--ds-text-lg);
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+/* Banner tipis yang bisa diketuk: pengganti Alert besar supaya daftar tidak
+   terdorong jauh ke bawah layar. */
+.app-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  width: 100%;
+  text-align: left;
+  padding: var(--ds-space-3);
+  border: 0;
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-surface);
+  box-shadow: var(--ds-shadow-content);
+  color: var(--ds-navy);
+  font: inherit;
+  cursor: pointer;
+}
+.app-banner-text { display: grid; gap: var(--ds-space-half); flex: 1; min-width: 0; }
+.app-banner-text b { font-size: var(--ds-text-md); }
+.app-banner-text small { font-size: var(--ds-text-xs); color: var(--ds-muted); }
+.app-banner.is-pending { background: var(--ds-pending-bg); color: var(--ds-pending); }
+
+/* Angka besar di kiri banner: satu-satunya angka "perlu tindakan" di layar.
+   tabular-nums supaya lebarnya tidak melompat saat angkanya berubah. */
+.banner-count {
+  flex: none;
+  min-width: var(--ds-space-8);
+  text-align: center;
+  /* 20 px, bukan 24: kartu navy di atasnya yang memegang fokus utama. Kalau
+     angka ini sebesar itu juga, layar punya dua pusat perhatian. */
+  font: var(--ds-weight-strong) var(--ds-text-xl)/1 var(--ds-font-display);
+  font-variant-numeric: tabular-nums;
+}
+.app-banner.is-pending small { color: var(--ds-pending); opacity: .8; }
+
+.sheet-divider { border-top: 1px solid var(--ds-border); margin: 4px 0 2px; }
+
+/* Thumbnail struk bisa diketuk untuk dilihat penuh. */
+.receipt-open {
+  border: 0;
+  padding: 0;
+  background: none;
+  display: block;
+  border-radius: 14px;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+.receipt-open img { display: block; height: 112px; width: 84px; object-fit: cover; }
+.receipt-open { box-shadow: 0 0 0 1px var(--ds-border), var(--ds-shadow-soft, 0 2px 8px rgba(20, 47, 58, .08)); }
+.receipt-open:hover { box-shadow: 0 0 0 1px var(--ds-teal), var(--ds-shadow-soft, 0 2px 8px rgba(20, 47, 58, .08)); }
+
+/* Viewer foto: struk penuh di tengah, navigasi di bawahnya. */
+.photo-viewer { display: grid; gap: var(--ds-space-3); }
+.photo-viewer img {
+  width: 100%;
+  max-height: 62dvh;
+  object-fit: contain;
+  border-radius: 16px;
+  background: var(--ds-bg-deep);
+}
+.photo-viewer-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-2);
+}
+
+/* Beberapa foto: struk panjang, atau screenshot pesanan dari aplikasi lain. */
+.photo-block {
+  display: grid;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-3);
+  border-radius: 20px;
+  background: var(--ds-surface);
+  box-shadow: inset 0 0 0 1px var(--ds-border);
+}
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--ds-space-2);
+}
+.photo-tile {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  aspect-ratio: 3 / 4;
+  background: var(--ds-bg-deep);
+}
+.photo-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Ketuk foto = lihat penuh. Sebelumnya foto di layar buat bill hanya gambar
+   mati: hasil AI tidak bisa diperiksa ulang padahal justru di situ orang perlu
+   memastikan bacaan struknya benar. */
+.photo-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.photo-tag {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(20, 47, 58, .82);
+  color: #fff;
+  font: var(--ds-weight-medium) var(--ds-text-2xs) var(--ds-font-body);
+  letter-spacing: .02em;
+}
+.photo-tag.is-ai { background: var(--ds-teal); }
+.photo-tile .photo-kill {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .92);
+  color: var(--ds-navy);
+  font-size: var(--ds-text-base);
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 2;
+}
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ds-space-2);
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--ds-surface);
+  box-shadow: inset 0 0 0 1px var(--ds-border);
+  font-size: var(--ds-text-md);
+  font-weight: var(--ds-weight-medium);
+}
+.check-row input {
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  accent-color: var(--ds-teal);
+  flex: none;
+}
+.check-row small {
+  display: block;
+  margin-top: 2px;
+  font-weight: var(--ds-weight-medium);
+  font-size: var(--ds-text-sm);
+  color: var(--ds-muted);
+}
+.receipt-preview img { width: 56px; height: 56px; object-fit: cover; border-radius: 12px; }
+.receipt-strip { display: flex; gap: var(--ds-space-2); overflow-x: auto; padding-bottom: 2px; }
+.receipt-item { position: relative; flex: none; }
+.receipt-kill {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--ds-surface);
+  background: var(--ds-danger);
+  color: #fff;
+  font-size: var(--ds-text-base);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.receipt-strip img { width: 76px; height: 76px; object-fit: cover; border-radius: 14px; display: block; }
+
+/* Kartu rekening: info di atas, aksi di baris sendiri supaya tidak berdesakan. */
+.account-card {
+  /* logo jadi kolom kiri yang menampung seluruh isi kartu: nomor rekening dan
+     aksi ikut rata dengan nama brand, bukan menempel ke tepi kartu (dulu baris
+     kedua mulai di tepi kiri sementara baris pertama menjorok 72 px). */
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  column-gap: var(--ds-space-3);
+  align-items: start;
+  padding: 14px 16px;
+  background: var(--ds-surface);
+  border-radius: var(--ds-radius-lg);
+}
+.account-main { min-width: 0; }
+/* Kotak logo 24 px, baris pertamanya (nama brand 15 px) cuma ~18 px: tanpa
+   koreksi ini logonya duduk 3 px lebih rendah dari teksnya dan terlihat
+   menggantung di antara nama dan nomor rekening. */
+.account-card > .ds-provider { margin-top: -3px; }
+.account-card + .account-card { margin-top: 8px; }
+.account-no {
+  margin-top: 4px;
+  font: var(--ds-weight-medium) var(--ds-text-base)/1.3 var(--ds-font-body);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+}
+.account-actions { display: flex; gap: var(--ds-space-3); margin-top: 10px; }
+.link-action {
+  border: 0;
+  background: none;
+  padding: 6px 0;
+  font: var(--ds-weight-medium) var(--ds-text-sm) var(--ds-font-body);
+  color: var(--ds-teal);
+  cursor: pointer;
+}
+.link-action.is-danger { color: var(--ds-danger); }
+
+/* Baris item di layar bill: teks selebar kartu, stepper porsi di bawah kanan.
+   Dulu stepper duduk di kolom kanan dan memakan 108px, jadi subjudul baris
+   terlipat padahal isinya pendek. */
+.item-line {
+  display: grid;
+  grid-template-columns: 1fr;
+  background: var(--ds-surface);
+  border-radius: var(--ds-radius-lg);
+  overflow: hidden;
+}
+.item-line + .item-line { margin-top: 8px; }
+.item-line .ds-item { border-radius: 0; background: transparent; }
+
+.slot-ctl {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ds-space-half);
+  justify-self: end;
+  padding: 0 15px 12px;
+}
+/* 44 px: tombol 30 px gagal target sentuh dan gampang salah tekan saat
+   menambah porsi. Ikonnya tetap kecil, kotaknya yang dibesarkan. */
+.slot-ctl button {
+  width: var(--ds-touch);
+  height: var(--ds-touch);
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ds-teal) 10%, #fff);
+  color: var(--ds-teal);
+  font-size: var(--ds-text-lg);
+  font-weight: var(--ds-weight-strong);
+  line-height: 1;
+  cursor: pointer;
+}
+.slot-ctl button:disabled { opacity: .35; cursor: not-allowed; }
+.slot-ctl span { min-width: 34px; text-align: center; font-size: var(--ds-text-sm); font-weight: var(--ds-weight-strong); font-variant-numeric: tabular-nums; }
+
+/* Baris item: satu baris ringkas, bukan kartu di dalam kartu. */
+.item-row {
+  display: grid;
+  gap: var(--ds-space-2);
+  padding: 12px 14px;
+}
+.item-row + .item-row { border-top: 1px solid var(--ds-border); }
+.item-meta {
+  display: grid;
+  grid-template-columns: 60px 1fr 34px;
+  gap: var(--ds-space-2);
+  align-items: end;
+}
+.item-row .ds-field { gap: var(--ds-space-1); }
+.item-row .ds-field label { font-size: var(--ds-text-2xs); letter-spacing: .02em; text-transform: uppercase; color: var(--ds-muted); }
+.item-row .ds-field input { padding: 9px 10px; font-size: var(--ds-text-base); }
+
+.item-row .kill {
+  width: 34px; height: 38px; border: 0; border-radius: 10px;
+  background: color-mix(in srgb, var(--ds-danger) 10%, #fff);
+  color: var(--ds-danger); cursor: pointer; display: grid; place-items: center;
+}
+
+/* ---------------------------------------------------------------
+   Layar lebar.
+
+   Sampai 720px aplikasi memakai tinggi layar penuh dan isinya yang
+   men-scroll: bar bawah dan navigasi duduk di dasar frame, tidak ada
+   scrollbar halaman.
+
+   Di atas 720px frame berhenti jadi ponsel: tinggi mengikuti isi,
+   halaman yang men-scroll, bar bawah menempel dengan sticky. Satu
+   scrollbar, bukan dua.
+
+   Di atas 1080px navigasi bawah pindah jadi rail di kiri, mengikuti
+   pola adaptive navigation (bottom bar → rail → sidebar) yang dipakai
+   Material dan UX Patterns Guide, dan kolom isi melebar.
+   --------------------------------------------------------------- */
+
+.app-brand { display: none; }
+.app-nav a.app-rail-extra { display: none; }
+
+@media (min-width: 720px) {
+  .app-shell { --ds-content-x: var(--ds-space-6); --ds-content-pad: var(--ds-content-x); }
+  .app-frame {
+    display: block;
+    height: auto;
+    max-height: none;
+    min-height: 100dvh;
+    max-width: 560px;
+    border-left: 1px solid color-mix(in srgb, var(--ds-border) 45%, transparent);
+    border-right: 1px solid color-mix(in srgb, var(--ds-border) 45%, transparent);
+  }
+  .app-body {
+    flex: none;
+    overflow: visible;
+    min-height: calc(100dvh - 122px);
+    padding: var(--ds-space-6) var(--ds-space-6) var(--ds-space-8);
+  }
+  /* sticky, bukan fixed: tetap memakan ruangnya sendiri sehingga isi
+     terakhir tidak pernah tertutup */
+  .app-bottom { position: sticky; bottom: 0; }
+  .app-nav {
+    position: sticky;
+    bottom: 0;
+    padding-bottom: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
+  }
+}
+
+@media (min-width: 900px) {
+  .app-shell { --rail: 208px; --ds-content-x: 34px; --ds-content-pad: var(--ds-content-x); }
+  .app-frame {
+    display: grid;
+    grid-template-columns: 208px minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
+    align-items: start;
+    max-width: 1020px;
+    min-height: 100dvh;
+  }
+
+  .app-top {
+    grid-column: 2;
+    grid-row: 1;
+    /* padding kiri-kanan header disamakan dengan isi supaya tepinya lurus */
+    padding: 16px 34px;
+  }
+
+
+  .app-body {
+    grid-column: 2;
+    grid-row: 2;
+    min-height: calc(100dvh - 72px);
+    padding: 26px 34px 34px;
+  }
+
+  .app-bottom { grid-column: 2; grid-row: 3; }
+
+  .app-nav {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: var(--ds-space-half);
+    padding: 24px 14px;
+    border-top: 0;
+    border-right: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
+  }
+
+  .app-brand {
+    display: block;
+    padding: 0 var(--ds-space-3) var(--ds-space-6);
+    font-family: var(--ds-font-display);
+    font-size: var(--ds-text-xl);
+    font-weight: var(--ds-weight-strong);
+    letter-spacing: -.035em;
+    color: var(--ds-navy);
+  }
+
+  .app-nav a {
+    flex: none;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: var(--ds-space-3);
+    min-height: 56px;
+    padding: 0 14px;
+    border-radius: 14px;
+    font-size: var(--ds-text-md);
+    font-weight: var(--ds-weight-medium);
+  }
+  .app-nav a.is-active {
+    background: var(--ds-mint);
+    color: var(--ds-teal);
+  }
+  .app-nav a:hover { background: color-mix(in srgb, var(--ds-mint) 55%, transparent); }
+}
+
+@media (min-width: 900px) {
+  .app-nav a.app-rail-extra {
+    display: flex;
+    align-items: center;
+    gap: var(--ds-space-3);
+    margin-top: auto;
+    padding: 9px 12px;
+    border-radius: 14px;
+    text-decoration: none;
+    color: var(--ds-muted);
+    font-size: var(--ds-text-sm);
+    font-weight: var(--ds-weight-medium);
+    min-width: 0;
+  }
+  .app-rail-extra:hover { background: color-mix(in srgb, var(--ds-mint) 55%, transparent); }
+  .app-rail-avatar {
+    width: 30px;
+    height: 30px;
+    flex: none;
+    border-radius: 999px;
+    background: var(--ds-surface);
+    color: var(--ds-navy);
+    display: grid;
+    place-items: center;
+    font-family: var(--ds-font-display);
+    font-weight: var(--ds-weight-strong);
+    font-size: var(--ds-text-sm);
+    box-shadow: var(--ds-shadow-content);
+  }
+  .app-rail-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (min-width: 1200px) {
+  .app-shell { --rail: 236px; }
+  .app-frame { grid-template-columns: 236px minmax(0, 1fr); }
+}
+
+/* Toast dirender di luar .app-shell, jadi var(--rail) tidak sampai ke sana:
+   offsetnya ditulis langsung per breakpoint (setengah lebar rail). */
+@media (min-width: 900px) and (max-width: 1199px) {
+  .app-toast { left: calc(50% + 104px); }
+}
+@media (min-width: 1200px) {
+  .app-toast { left: calc(50% + 118px); }
+}
+
+/* Rincian struk di layar bill: baris angka, bukan kartu di dalam kartu. */
+.bill-breakdown { display: grid; gap: var(--ds-space-2); }
+.bill-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+  font-size: var(--ds-text-md);
+  color: var(--ds-muted);
+}
+.bill-line b { color: var(--ds-navy); font-weight: var(--ds-weight-medium); font-variant-numeric: tabular-nums; }
+.bill-line.is-credit b { color: var(--ds-success, #167354); }
+.bill-line.is-total {
+  margin-top: 3px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ds-border);
+  font-size: var(--ds-text-base);
+  font-weight: var(--ds-weight-strong);
+  color: var(--ds-navy);
+}
+.bill-line.is-total b { font-family: var(--ds-font-display); font-size: var(--ds-text-lg); letter-spacing: -.02em; }
+
+/* Layar masuk: ilustrasi lebih kecil dari layar kenalan. Halaman ini punya
+   formulir + tiga cara masuk; ilustrasi besar mendorong tombol utama keluar
+   dari jangkauan jempol begitu keyboard terbuka. */
+.welcome-art--login { width: 96px; height: 96px; }
+
+/* Layar masuk/beranda-tanpa-identitas tidak punya rail navigasi, jadi frame-nya
+   juga tidak boleh menyisakan kolom rail. Dulu kolom 208 px itu tetap ada walau
+   kosong, sehingga kartu di layar PC terdorong ke kanan dan terlihat tidak
+   center. */
+@media (min-width: 900px) {
+  .app-frame--plain {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 560px;
+  }
+  .app-frame--plain .app-body {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 100dvh;
+  }
+}
+
+/* Ilustrasi di layar masuk lebih kecil daripada di layar lain: kartu ini berisi
+   tab + isian + tombol + Google, jadi ruang vertikal lebih berharga daripada
+   gambar. */
+.welcome-art--entry {
+  width: 80px;
+  height: 80px;
+}
+
+/* Tiga tab: Nama | Kode | Akun. Lebar sama supaya tidak ada tab yang terasa
+   "lebih penting" hanya karena labelnya lebih panjang. */
+.auth-modes { grid-template-columns: repeat(3, 1fr); }
+
+/* Di layar tanpa navigasi, garis tepi frame cuma terbaca sebagai sisa kolom
+   tata letak lama ("kenapa ada dua garis tegak di kiri-kanan kartu?").
+   Kartu putihnya sudah memberi batas; garis itu tidak menambah apa pun. */
+@media (min-width: 720px) {
+  .app-frame--plain {
+    border-left: 0;
+    border-right: 0;
+  }
+}
+
+/* Pengingat "amankan akun": satu kartu tenang, bukan spanduk kuning besar.
+   Amber hanya dipakai sebagai garis tepi tipis, karena isinya informasi, bukan
+   peringatan yang menuntut tindakan sebelum layar ini bisa dipakai. */
+.nudge-card {
+  display: grid;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-4);
+  background: var(--ds-surface);
+  border-radius: var(--ds-radius-lg);
+  border: 1px solid color-mix(in srgb, var(--ds-pending) 26%, transparent);
+  box-shadow: var(--ds-shadow-card, none);
+}
+.nudge-copy { display: grid; gap: 4px; }
+.nudge-copy b {
+  font: var(--ds-weight-strong) var(--ds-text-base)/1.3 var(--ds-font-body);
+  color: var(--ds-navy);
+}
+.nudge-copy small {
+  font-size: var(--ds-text-sm);
+  color: var(--ds-muted);
+  line-height: 1.45;
+}
+/* Tombol aksi dan "Nanti" duduk dalam satu baris: menutup pengingat harus
+   semudah menuruti, kalau tidak ini jadi iklan. */
+.nudge-actions { display: flex; align-items: center; gap: var(--ds-space-3); }
+.nudge-actions .link-quiet { margin: 0; }
+
+/* ============================================================
+   Target sentuh minimum
+   Diukur di 390 px: .app-back 36x36, .kill 34x38, .receipt-kill 24x24,
+   .search-clear 24x24, tombol di dalam .chip ±16 px. Apple HIG minta 44x44.
+   Yang dibesarkan hanya AREA TANGKAP, bukan bentuknya: lapisan transparan
+   (::after) supaya tata letak dan tampilan tidak bergeser satu piksel pun.
+   Untuk tombol yang berdesakan (chip, silang pencarian, silang foto) dipakai
+   padding + margin negatif — bukan lapisan 44 px — karena lapisan sebesar itu
+   akan menutupi tombol sebelahnya dan ketukan mendarat di tempat yang salah.
+   ============================================================ */
+.app-back,
+.kill {
+  position: relative;
+}
+.app-back::after,
+.kill::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+}
+
+.chip button {
+  padding: 11px 5px;
+  margin: -11px -3px;
+}
+/* .receipt-kill itu position:absolute (menempel di pojok foto). Padding +
+   margin negatif MENGGESER posisinya, dan fotonya punya overflow:hidden —
+   akibatnya tombol hapus terdorong keluar kotak dan tidak bisa ditekan (tes 43
+   gagal karena klik tidak pernah mendarat). Jadi lapisan ::after lagi: posisi
+   tetap, area tangkap yang membesar. */
+.search-clear,
+.receipt-kill {
+  position: relative;
+}
+.search-clear::after,
+.receipt-kill::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+}
+
+/* Sisa target sentuh yang masih di bawah 44 px setelah pengukuran ulang.
+   Chip saringan memang boleh tumbuh (dia aksi utama di beranda), sedangkan
+   .link-action di Pengaturan dinaikkan area tangkapnya lalu dikompensasi margin
+   vertikal negatif supaya baris rekening tidak melar. */
+.chip-filter {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.link-action {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  margin-block: -8px;
+}
+.nudge-actions button {
+  min-width: 44px;
+}
+
+/* Alasan tombol simpan mati. Tingginya DIPAKU dua baris, termasuk saat kosong,
+   supaya tinggi dock tidak berubah dan tombol tidak bergeser di bawah jempol.
+   Diukur sebelum ini: tombol "Buat bill" bergeser 20 px antara keadaan kosong
+   dan terisi — cukup untuk bikin ketukan mendarat di tempat yang salah. */
+.dock-reason {
+  display: block;
+  min-height: 2.4em;
+  margin-top: 2px;
+  line-height: 1.2;
+  font-size: 11.5px;
+  color: var(--ds-muted);
+}

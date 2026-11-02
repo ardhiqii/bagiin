@@ -18,7 +18,7 @@ Indonesian. Match that when adding user-facing strings.
 ```bash
 cd backend
 source venv/bin/activate                 # venv is committed-adjacent but gitignored
-uvicorn main:app --reload --port 8082    # serves API + frontend at http://localhost:8082
+./venv/bin/uvicorn main:app --reload --port 8090   # API saja; UI dijalankan Vite (frontend/, :5199)
 
 venv/bin/python -m pytest -q                       # full suite (~140 tests, ~7s)
 venv/bin/python -m pytest test_behaviors.py -q     # one file

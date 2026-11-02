@@ -29,6 +29,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 import db
+import accounts
 import calc
 from ocr import ocr_receipt
 
@@ -38,6 +39,16 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
+
+# Semua batas laju dihitung per IP, jadi orang-orang di satu Wi-Fi/NAT berbagi
+# jatah yang sama. Karena itu semuanya bisa dituning lewat env tanpa mengubah
+# kode; nilai bawaan tetap ketat.
+RL_REGISTER = os.environ.get("BAGIIN_RL_REGISTER", "10/minute")
+RL_LOGIN = os.environ.get("BAGIIN_RL_LOGIN", "10/minute")
+RL_GOOGLE = os.environ.get("BAGIIN_RL_GOOGLE", "20/minute")
+RL_BILL = os.environ.get("BAGIIN_RL_BILL", "10/minute")
+RL_ACCOUNT = os.environ.get("BAGIIN_RL_ACCOUNT", "10/minute")
+RL_UPLOAD = os.environ.get("BAGIIN_RL_UPLOAD", "10/minute")
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
@@ -77,10 +88,19 @@ def _identity_from_request(request: Request):
     if not ident:
         raise HTTPException(404, "Identitas tidak ditemukan")
     stored = ident.get("secret")
+    given = request.headers.get("X-Identity-Secret", "")
+    if stored and given and secrets.compare_digest(str(stored), given):
+        return ident
+    # Sesi perangkat (fitur akun): token dari /api/auth/login bukan
+    # identity.secret, jadi diperiksa ke tabel device. Identitas yang
+    # dikembalikan harus sama dengan header id — token satu perangkat tidak
+    # boleh dipakai mengaku identitas lain hanya dengan mengganti header.
+    if given:
+        row = accounts.resolve_device(given)
+        if row and row["id"] == ident_id:
+            return row
     if stored:
-        given = request.headers.get("X-Identity-Secret", "")
-        if not given or not secrets.compare_digest(str(stored), given):
-            raise HTTPException(403, "Sesi tidak valid, coba masuk ulang")
+        raise HTTPException(403, "Sesi tidak valid, coba masuk ulang")
     return ident
 
 
@@ -353,7 +373,14 @@ def _normalize_item(raw, *, include_id: bool = False) -> dict:
 
 
 def _normalize_participants(value) -> list[str]:
-    """Validate the optional creator-declared participant list."""
+    """Validate the optional creator-declared participant list.
+
+    Entries may be a bare name (legacy, and still the shape for guests who have
+    no account) or `{"name": ..., "identity_id": ...}` when the creator picked
+    someone from their contacts. The identity id is optional here and is
+    resolved separately by `_participant_links`, so an unknown or malformed id
+    never loses the name.
+    """
     if value is None:
         return []
     if not isinstance(value, list):
@@ -361,14 +388,111 @@ def _normalize_participants(value) -> list[str]:
     participants = []
     seen = set()
     for participant in value:
-        if not isinstance(participant, str) or not participant.strip():
+        if isinstance(participant, dict):
+            raw_name = participant.get("name")
+        else:
+            raw_name = participant
+        if not isinstance(raw_name, str) or not raw_name.strip():
             continue
-        name = participant.strip()
+        name = raw_name.strip()
         key = name.lower()
         if key not in seen:
             seen.add(key)
             participants.append(name)
     return participants
+
+
+def _participant_links(value) -> list[tuple[str, str]]:
+    """(nama, identity_id) untuk peserta yang dipilih dari kontak."""
+    links: list[tuple[str, str]] = []
+    if not isinstance(value, list):
+        return links
+    seen: set[str] = set()
+    for participant in value:
+        if not isinstance(participant, dict):
+            continue
+        name = participant.get("name")
+        identity_id = participant.get("identity_id")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        if not isinstance(identity_id, str) or not identity_id.strip():
+            continue
+        identity_id = identity_id.strip()
+        if identity_id in seen:
+            continue
+        seen.add(identity_id)
+        links.append((name.strip(), identity_id))
+    return links
+
+
+def _link_and_invite_participants(
+    bill_id: str, participants_value, invited_by: str
+) -> None:
+    """Peserta yang dipilih dari kontak langsung terhubung dan diundang.
+
+    Sebelumnya layar Buat bill hanya mengirim NAMA: baris peserta tersimpan
+    tanpa identitas, tidak ada baris undangan, dan orang yang sudah dipilih
+    tidak pernah menerima apa pun — bill-nya ada, tetapi dia tidak tahu. Karena
+    peserta tanpa identitas juga tidak bisa membentuk saldo di Rekap, angka
+    rekap ikut terlihat "tidak berubah" walau bill baru terus bertambah.
+
+    Aturan undangannya sama dengan `POST /api/bills/{id}/invite`: hanya orang
+    yang pernah berbagi bill. Kontak dengan auto_accept bergabung langsung;
+    sisanya mendapat kartu undangan untuk diterima sendiri.
+    """
+    for name, identity_id in _participant_links(participants_value):
+        if identity_id == invited_by:
+            continue
+        target = db.get_identity(identity_id)
+        if not target:
+            continue
+        if not db.is_contact(invited_by, identity_id):
+            continue
+        # tautkan baris placeholder yang namanya kita kirim, supaya nama itu
+        # tidak muncul dua kali (satu baris teks, satu baris orang sungguhan)
+        if name:
+            db.claim_participant(bill_id, identity_id, name)
+        if db.identity_on_bill(bill_id, identity_id):
+            continue
+        inv = db.create_invite(bill_id, identity_id, invited_by)
+        if inv.get("reopened_from_decline"):
+            continue
+        if bool(target.get("auto_accept", 1)):
+            db.mark_invite_accepted(inv["id"])
+            db.join_bill(bill_id, identity_id, target["name"])
+
+
+def _backfill_participant_links() -> None:
+    """Sekali jalan saat start: tautkan peserta lama yang namanya jelas.
+
+    Bill yang dibuat sebelum Buat bill mengirim identity_id hanya menyimpan nama,
+    jadi orang yang sudah dipilih tidak pernah menerima undangan dan tidak
+    pernah muncul di Rekap. Tanpa ini, perbaikan hanya berlaku untuk bill baru
+    dan pemilik harus membuat ulang bill lamanya.
+    """
+    if os.environ.get("BAGIIN_SKIP_PARTICIPANT_BACKFILL") == "1":
+        return
+    try:
+        candidates = db.participant_link_candidates()
+    except Exception as exc:  # jangan gagalkan start karena backfill
+        print("backfill peserta dilewati:", exc)
+        return
+    done = 0
+    for item in candidates:
+        try:
+            _link_and_invite_participants(
+                item["bill_id"],
+                [{"name": item["name"], "identity_id": item["identity_id"]}],
+                item["creator_id"],
+            )
+            done += 1
+        except Exception:
+            continue
+    if done:
+        print("backfill peserta: %d baris ditautkan dan diundang" % done)
+
+
+_backfill_participant_links()
 
 
 _ALLOWED_PHOTO_MIME = {"image/jpeg", "image/png", "image/webp"}
@@ -499,7 +623,7 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
     result["people"].sort(key=lambda p: -p["total_idr"])
     all_ids = [p["identity_id"] for p in result["people"]]
     names = _names_for_identities(all_ids)
-    # claimed participants -> canonical display name (creator-typed casing, e.g. "Amel")
+    # claimed participants -> canonical display name (creator-typed casing, e.g. "Sari")
     claimed = {p["identity_id"]: p["name"] for p in bill_data["participants"]
                if p.get("identity_id")}
     for p in result["people"]:
@@ -562,6 +686,21 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
                 "name": target["name"] if target else "?",
                 "created_at": inv["created_at"],
             })
+    # Nama pembeda milik PENAMPIL, dipakai untuk semua nama orang di layar ini.
+    # Satu peta, satu tempat: kalau tiap layar menyelesaikan aliases sendiri,
+    # cepat atau lambat ada layar yang lupa dan menampilkan nama asli.
+    # Penampil tanpa identitas (link publik) -> peta kosong, nama asli dipakai.
+    alias_map = accounts.aliases_for(
+        viewer_id,
+        [p.get("identity_id") for p in result["people"]]
+        + [p.get("identity_id") for p in bill_data["participants"]]
+        + [inv["identity_id"] for inv in pending_invites],
+    )
+    for person in result["people"]:
+        person["display_name"] = alias_map.get(person.get("identity_id")) or person["name"]
+    for inv in pending_invites:
+        inv["display_name"] = alias_map.get(inv["identity_id"]) or inv["name"]
+
     return {
         "all_paid": all_paid,
         "settled_manual": settled_manual,
@@ -581,7 +720,14 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
         "paid_by_accounts": db.get_accounts(paid_by_id),
         "items": bill_data["items"],
         "photos": bill_data.get("photos", []),
-        "participants": [{"name": p["name"], "identity_id": p["identity_id"]} for p in bill_data["participants"]],
+        "participants": [
+            {
+                "name": p["name"],
+                "identity_id": p["identity_id"],
+                "display_name": alias_map.get(p["identity_id"]) or p["name"],
+            }
+            for p in bill_data["participants"]
+        ],
         "people": result["people"],
         "sel_by_item": sel_by_item,
         "warnings": result["warnings"],
@@ -835,6 +981,32 @@ def _recap_current_user_state(
     }
 
 
+def _action_kind(fields: dict) -> str | None:
+    """Satu-satunya alasan sebuah bill butuh tindakan penampilnya.
+
+    Dipakai dua tempat: daftar bill (`/bills`) dan ringkasan beranda (`/recap`).
+    Kalau aturannya ditulis dua kali, angka di blok kuning beranda dan daftar
+    bisa bercerita beda — persis jenis kesalahan yang layar ini pernah punya
+    (tiga penghitung untuk himpunan yang tumpang tindih).
+
+    Urutannya tegas: pembagian yang belum lengkap lebih dulu, karena menagih
+    pembayaran untuk angka yang masih bisa berubah tidak masuk akal.
+    """
+    if fields.get("settled"):
+        return None
+    # bill bernilai nol tidak menuntut apa pun: tidak ada yang bisa dipilih,
+    # tidak ada yang bisa dibayar
+    if not fields.get("total_idr"):
+        return None
+    if not fields.get("has_picks"):
+        return "split"
+    if (not fields.get("my_paid")) and (fields.get("my_total_idr") or 0) > 0:
+        return "pay"
+    if fields.get("i_am_payer") and (fields.get("uncovered_idr") or 0) > 0:
+        return "split"
+    return None
+
+
 def _recap_action(
     kind: str,
     owner: str,
@@ -896,11 +1068,35 @@ def _recap_provisional_bill(
         }
         for slot in response.get("uncovered_slots", []) or []
     ]
+    # Alasan tindakan dihitung dengan helper yang sama seperti daftar bill,
+    # dari fungsi yang sama pula (`_list_pick_state`) — beranda menjumlahkan ini
+    # untuk SELURUH bulan, bukan cuma bulan yang sedang dibuka.
+    pending_names, _total_unpaid, people, uncovered_idr, _all_paid, settled = _list_pick_state(bill_data)
+    payer_id, _ = db.resolve_payer(bill_data)
+    payload_action = _action_kind(
+        {
+            "settled": settled,
+            "total_idr": int(bill.get("total_idr", 0) or 0),
+            "has_picks": bool(bill_data["selections"]),
+            "my_paid": payer_id == viewer_id
+            or any(
+                p["identity_id"] == viewer_id and p["status"] == "paid"
+                for p in bill_data["payments"]
+            ),
+            "my_total_idr": next(
+                (p.get("total_idr", 0) for p in people if p.get("identity_id") == viewer_id),
+                0,
+            ),
+            "i_am_payer": payer_id == viewer_id,
+            "uncovered_idr": uncovered_idr,
+        }
+    )
     payload = {
         "bill_id": bill["id"],
         "title": bill["title"],
         "status": bill.get("status", "open"),
         "created_at": bill.get("created_at"),
+        "action": payload_action,
         "reason_codes": _recap_reason_codes(
             bill_data, response, pending_workflow=pending_workflow,
         ),
@@ -1202,6 +1398,12 @@ def _build_identity_recap(identity: dict) -> dict:
             pending[section] += 1
             pending["bill_ids"].add(action["bill_id"])
 
+    _recap_alias_map = accounts.aliases_for(viewer_id, list(counterparties.keys()))
+    _recap_user_map = {}
+    for _oid in counterparties.keys():
+        _row = db.get_identity(_oid)
+        if _row:
+            _recap_user_map[_oid] = _row
     final_rows = []
     for other_id, counterparty in counterparties.items():
         net = counterparty["receivable_idr"] - counterparty["payable_idr"]
@@ -1211,9 +1413,14 @@ def _build_identity_recap(identity: dict) -> dict:
             counterparty["bills"],
             key=lambda row: (row["sort_key"], row["bill"]["direction"], row["bill"]["amount_idr"]),
         )
+        other_name = _recap_identity_name(other_id, counterparty["people"], name_cache)
         final_rows.append({
             "identity_id": other_id,
-            "name": _recap_identity_name(other_id, counterparty["people"], name_cache),
+            "name": other_name,
+            # nama pembeda milik penampil (kalau ada) + pembeda publik
+            "display_name": _recap_alias_map.get(other_id) or other_name,
+            "username": _recap_user_map.get(other_id, {}).get("username"),
+            "handle": accounts.handle_for(other_id),
             # bruto per arah: orang bisa sekaligus piutang dan utang, dan net
             # saja menyembunyikan dua fakta itu
             "payable_idr": counterparty["payable_idr"],
@@ -1292,11 +1499,11 @@ async def create_identity(request: Request):
     if not name:
         raise HTTPException(400, "Nama wajib diisi")
     ident = db.new_identity(name, role="creator" if data.get("creator") else "guest")
-    return ident
+    return accounts.public_identity(ident, include_secret=True)
 
 
 @app.post("/api/identities/restore")
-@limiter.limit("10/minute")
+@limiter.limit(RL_ACCOUNT)
 async def restore_identity(request: Request):
     data = await _read_json(request)
     # unauthenticated endpoint (no identity/secret needed to restore) -- a
@@ -1306,7 +1513,12 @@ async def restore_identity(request: Request):
     ident = db.restore_identity(code)
     if not ident:
         raise HTTPException(404, "Code tidak dikenal")
-    return ident
+    # Perangkat yang dipulihkan dapat token sendiri (bisa dicabut), sementara
+    # `secret` tetap dikirim karena aplikasi vanilla di branch main masih
+    # membacanya. Klien baru memakai `token`.
+    payload = accounts.public_identity(ident, include_secret=True)
+    payload["token"] = accounts.create_device(ident["id"], request.headers.get("user-agent"))
+    return payload
 
 
 @app.post("/api/identities/{identity_id}/bind")
@@ -1367,6 +1579,277 @@ async def update_name(identity_id: str, request: Request):
     return {"ok": True}
 
 
+# ------------------------------------------------------------------ akun (v87)
+#
+# Tiga cara masuk yang hidup berdampingan:
+#   1. kode pemulihan (lama, tetap jadi jaring terakhir)
+#   2. username + password
+#   3. Google (ID token dari Google Identity Services)
+#
+# Semua cara bermuara pada hal yang sama: satu token perangkat. `identity.secret`
+# lama tetap diterima supaya aplikasi vanilla di branch main tidak patah, tapi
+# klien baru memakai token yang bisa dicabut satu per satu.
+
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+_GOOGLE_STUB = os.environ.get("BAGIIN_GOOGLE_STUB") == "1"
+# Origin yang terdaftar di OAuth client. Kosong = jangan batasi (perilaku lama,
+# untuk pengembangan lokal). Di produksi diisi supaya tombol Google tidak
+# dirender di domain yang belum terdaftar — Google menolaknya dengan 403 dan
+# pengguna hanya melihat tombol mati.
+_GOOGLE_ORIGINS = [
+    item.strip()
+    for item in os.environ.get("BAGIIN_GOOGLE_ORIGINS", "").split(",")
+    if item.strip()
+]
+_APP_ENV = os.environ.get("BAGIIN_ENV", "development").strip().lower()
+if _GOOGLE_STUB and _APP_ENV in ("production", "prod"):
+    # Stub Google menerima token buatan sendiri. Di produksi itu sama dengan
+    # pintu masuk tanpa password, jadi server menolak start.
+    raise SystemExit("BAGIIN_GOOGLE_STUB tidak boleh dinyalakan di produksi")
+
+
+def _verify_google_id_token(raw: str) -> dict:
+    """ID token Google -> {sub, email, name}. Melempar HTTPException kalau tidak sah.
+
+    Verifikasi dilakukan di server, bukan dengan mempercayai klaim klien:
+    tanda tangan dicek ke kunci publik Google, lalu `aud` harus CLIENT_ID kita,
+    `iss` harus Google, dan email harus terverifikasi.
+    """
+    if not raw or not isinstance(raw, str):
+        raise HTTPException(400, "Token Google kosong")
+
+    if _GOOGLE_STUB:
+        # Hanya untuk pengujian di lingkungan non-produksi (dijaga di atas).
+        if not raw.startswith("stub:"):
+            raise HTTPException(401, "Token Google tidak valid")
+        parts = raw.split(":")
+        if len(parts) < 3 or not parts[1]:
+            raise HTTPException(401, "Token Google tidak valid")
+        return {
+            "sub": parts[1],
+            "email": parts[2] if len(parts) > 2 else None,
+            "name": parts[3] if len(parts) > 3 else None,
+        }
+
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(
+            503,
+            "Login Google belum dikonfigurasi di server. Pakai kode pemulihan atau username dulu.",
+        )
+    from google.auth.transport import requests as google_requests
+    from google.oauth2 import id_token as google_id_token
+
+    try:
+        info = google_id_token.verify_oauth2_token(
+            raw, google_requests.Request(), GOOGLE_CLIENT_ID
+        )
+    except ValueError:
+        raise HTTPException(401, "Token Google tidak valid atau sudah kedaluwarsa")
+    if info.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+        raise HTTPException(401, "Token Google bukan dari Google")
+    if not info.get("email_verified", False):
+        raise HTTPException(401, "Email Google belum terverifikasi")
+    if not info.get("sub"):
+        raise HTTPException(401, "Token Google tidak memuat identitas")
+    return {"sub": info["sub"], "email": info.get("email"), "name": info.get("name")}
+
+
+def _session_payload(ident: dict, token: str, recovery_code: str | None = None) -> dict:
+    """Bentuk jawaban semua jalur masuk. Secret global sengaja TIDAK ikut.
+
+    Kalau secret global ikut terkirim, setiap login baru memegang kunci yang
+    sama dengan semua perangkat lain — dan "Keluarkan perangkat" jadi omong
+    kosong.
+    """
+    payload = {"identity": accounts.public_identity(ident), "token": token}
+    if recovery_code:
+        payload["recovery_code"] = recovery_code
+    return payload
+
+
+@app.post("/api/auth/register")
+@limiter.limit(RL_REGISTER)
+async def auth_register(request: Request):
+    data = await _read_json(request)
+    username = accounts.normalize_username(_to_str(data.get("username"), "Username", maxlen=30) or "")
+    password = _to_str(data.get("password"), "Password", maxlen=200) or ""
+    problem = accounts.username_problem(username) or accounts.password_problem(password)
+    if problem:
+        raise HTTPException(400, problem)
+    name = _to_str(data.get("name"), "Nama", maxlen=60) or username
+    if accounts.find_by_username(username):
+        raise HTTPException(409, "Username ini sudah dipakai orang lain")
+    ident = db.new_identity(name, role="creator")
+    accounts.set_username(ident["id"], username)
+    accounts.set_password(ident["id"], password)
+    code = generate_readable_code()
+    db.set_identity_code(ident["id"], code)
+    token = accounts.create_device(ident["id"], request.headers.get("user-agent"))
+    return _session_payload(db.get_identity(ident["id"]), token, code)
+
+
+@app.post("/api/auth/login")
+@limiter.limit(RL_LOGIN)
+async def auth_login(request: Request):
+    data = await _read_json(request)
+    username = _to_str(data.get("username"), "Username", maxlen=30) or ""
+    password = _to_str(data.get("password"), "Password", maxlen=200) or ""
+    ident = accounts.authenticate(username, password)
+    if not ident:
+        # satu kalimat untuk semua kegagalan: username tidak ada, password
+        # salah, atau akun belum punya password. Membedakannya = memberi tahu
+        # penyerang username mana yang hidup.
+        raise HTTPException(401, "Username atau password salah")
+    token = accounts.create_device(ident["id"], request.headers.get("user-agent"))
+    return _session_payload(ident, token)
+
+
+@app.post("/api/auth/google")
+@limiter.limit(RL_GOOGLE)
+async def auth_google(request: Request):
+    data = await _read_json(request)
+    info = _verify_google_id_token(_to_str(data.get("id_token"), "Token Google", maxlen=4096) or "")
+    mode = (data.get("mode") or "login").strip().lower()
+
+    if mode == "link":
+        ident = _identity_from_request(request)
+        try:
+            accounts.link_google(ident["id"], info["sub"], info.get("email"))
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
+        return {"linked": True, "email": info.get("email")}
+
+    if mode != "login":
+        raise HTTPException(400, "Mode tidak dikenal")
+
+    ident_id = accounts.google_identity_id(info["sub"])
+    if ident_id:
+        ident = db.get_identity(ident_id)
+        if not ident:
+            raise HTTPException(404, "Identitas untuk akun Google ini sudah tidak ada")
+        token = accounts.create_device(ident["id"], request.headers.get("user-agent"))
+        return _session_payload(ident, token)
+
+    # Belum tertaut: buat identitas baru. Kode pemulihan tetap diberikan supaya
+    # kehilangan akses ke akun Google tidak berarti kehilangan bill.
+    name = (info.get("name") or (info.get("email") or "").split("@")[0] or "Tanpa nama").strip()[:60]
+    ident = db.new_identity(name or "Tanpa nama", role="creator")
+    accounts.link_google(ident["id"], info["sub"], info.get("email"))
+    code = generate_readable_code()
+    db.set_identity_code(ident["id"], code)
+    token = accounts.create_device(ident["id"], request.headers.get("user-agent"))
+    return _session_payload(db.get_identity(ident["id"]), token, code)
+
+
+@app.post("/api/auth/password")
+@limiter.limit(RL_ACCOUNT)
+async def auth_set_password(request: Request):
+    ident = _identity_from_request(request)
+    data = await _read_json(request)
+    new_password = _to_str(data.get("new_password"), "Password", maxlen=200) or ""
+    problem = accounts.password_problem(new_password)
+    if problem:
+        raise HTTPException(400, problem)
+    if ident.get("password_hash"):
+        current = _to_str(data.get("current_password"), "Password lama", maxlen=200) or ""
+        if not accounts.verify_password(ident["password_hash"], current):
+            raise HTTPException(403, "Password lama salah")
+    accounts.set_password(ident["id"], new_password)
+    # Sesi lain dicabut: kalau password diganti karena curiga akun dipakai orang
+    # lain, membiarkan sesi lama hidup membuat penggantian itu tidak ada artinya.
+    accounts.revoke_other_devices(ident["id"], _caller_token(request))
+    return {"ok": True, "has_password": True}
+
+
+@app.post("/api/auth/username")
+@limiter.limit(RL_ACCOUNT)
+async def auth_set_username(request: Request):
+    ident = _identity_from_request(request)
+    data = await _read_json(request)
+    try:
+        username = accounts.set_username(ident["id"], _to_str(data.get("username"), "Username", maxlen=30) or "")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {"username": username}
+
+
+@app.post("/api/auth/recovery")
+@limiter.limit("5/minute")
+async def auth_new_recovery_code(request: Request):
+    ident = _identity_from_request(request)
+    code = generate_readable_code()
+    db.set_identity_code(ident["id"], code)
+    return {"code": code}
+
+
+@app.post("/api/auth/google/unlink")
+@limiter.limit(RL_ACCOUNT)
+async def auth_google_unlink(request: Request):
+    ident = _identity_from_request(request)
+    # Jangan sampai orang mengunci dirinya sendiri: harus tersisa satu cara masuk.
+    remaining = bool(ident.get("password_hash")) or bool(ident.get("identity_code_hash"))
+    if not remaining:
+        raise HTTPException(
+            400,
+            "Buat dulu password atau kode pemulihan sebelum melepas Google, biar akun nggak kehilangan jalan masuk.",
+        )
+    accounts.unlink_google(ident["id"])
+    return {"linked": False}
+
+
+@app.post("/api/auth/logout")
+@limiter.limit("30/minute")
+def auth_logout(request: Request):
+    ident = _identity_from_request(request)
+    token = _caller_token(request)
+    device_id = accounts.device_id_for_token(token)
+    if device_id:
+        accounts.revoke_device(ident["id"], device_id)
+    # Secret lama tidak bisa dicabut (bukan token perangkat). Klien tetap
+    # menghapusnya dari perangkat ini.
+    return {"ok": True, "revoked": bool(device_id)}
+
+
+@app.get("/api/auth/config")
+def auth_config():
+    """Konfigurasi publik untuk layar masuk.
+
+    Client ID Google memang publik (dipakai browser untuk meminta ID token),
+    jadi tidak ada rahasia di sini. Yang tidak pernah dikirim: client secret,
+    daftar username, atau apa pun tentang akun tertentu.
+    """
+    return {
+        "google_client_id": GOOGLE_CLIENT_ID or None,
+        "google_stub": _GOOGLE_STUB,
+        # Origin yang terdaftar di OAuth client Google. Tombol Google dirender
+        # hanya kalau hostname halaman ada di daftar ini: kalau tidak, Google
+        # menolak (403 di accounts.google.com/gsi/button) dan yang terlihat
+        # pengguna cuma tombol mati tanpa penjelasan.
+        "google_origins": _GOOGLE_ORIGINS,
+    }
+
+
+@app.get("/api/auth/state")
+def auth_state(request: Request):
+    ident = _identity_from_request(request)
+    state = accounts.account_state(ident["id"], _caller_token(request))
+    state["google_configured"] = bool(GOOGLE_CLIENT_ID) or _GOOGLE_STUB
+    return state
+
+
+@app.delete("/api/auth/devices/{device_id}")
+@limiter.limit("30/minute")
+def auth_revoke_device(device_id: str, request: Request):
+    ident = _identity_from_request(request)
+    if not accounts.revoke_device(ident["id"], device_id):
+        raise HTTPException(404, "Perangkat tidak ditemukan")
+    return {"ok": True}
+
+
+def _caller_token(request: Request) -> str:
+    return request.headers.get("X-Identity-Secret", "")
+
+
 @app.get("/api/identities/{identity_id}/me")
 def get_me(identity_id: str, request: Request):
     """Own profile. `has_code` drives the settings copy — the screen used to
@@ -1380,6 +1863,12 @@ def get_me(identity_id: str, request: Request):
         "name": ident["name"],
         "has_code": bool(ident.get("identity_code_hash")),
         "auto_accept": bool(ident.get("auto_accept", 1)),
+        # status akun dipakai layar Pengaturan: tanpa ini setiap layar harus
+        # memanggil /api/auth/state sendiri
+        "username": ident.get("username"),
+        "handle": accounts.handle_for(ident["id"]),
+        "has_password": bool(ident.get("password_hash")),
+        "google_linked": accounts.google_identity_id_for_self(ident["id"]),
     }
 
 
@@ -1389,6 +1878,41 @@ def list_accounts(identity_id: str, request: Request):
     if identity_id != ident["id"]:
         raise HTTPException(403, "Identitas tidak cocok")
     return db.get_accounts(identity_id)
+
+
+@app.put("/api/identities/{identity_id}/contacts/{contact_id}/alias")
+@limiter.limit("60/minute")
+async def put_contact_alias(identity_id: str, contact_id: str, request: Request):
+    """Beri nama pembeda untuk satu kontak. Satu arah: hanya penampil ini yang
+    melihatnya, dan orang yang diberi nama tidak pernah menerimanya.
+
+    Dedup alias per pemilik dijaga di DB (unique index case-insensitive) supaya
+    "dua Sari" tidak berubah jadi dua baris bernama sama lagi.
+    """
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas tidak cocok")
+    if not db.get_identity(contact_id):
+        raise HTTPException(404, "Orang ini tidak ditemukan")
+    data = await _read_json(request)
+    try:
+        value = accounts.set_alias(
+            identity_id, contact_id, _to_str(data.get("alias"), "Nama pembeda", maxlen=40) or ""
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {"alias": value, "display_name": value}
+
+
+@app.delete("/api/identities/{identity_id}/contacts/{contact_id}/alias")
+@limiter.limit("60/minute")
+def delete_contact_alias(identity_id: str, contact_id: str, request: Request):
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas tidak cocok")
+    accounts.clear_alias(identity_id, contact_id)
+    target = db.get_identity(contact_id)
+    return {"alias": None, "display_name": target["name"] if target else None}
 
 
 @app.get("/api/identities/{identity_id}/contacts")
@@ -1504,12 +2028,35 @@ def _list_pick_state(
     return pending, total_unpaid, people, result["uncovered_idr"], all_paid, settled
 
 
-@app.get("/api/identities/{identity_id}/bills")
-def my_bills(identity_id: str, request: Request):
+_MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+@app.get("/api/identities/{identity_id}/bills/months")
+def my_bill_months(identity_id: str, request: Request):
+    """Ringkasan jumlah bill per bulan, tanpa memuat isi bill-nya.
+
+    Beranda memakai ini untuk menampilkan daftar bulan sekaligus: yang terbaru
+    langsung dibuka, bulan lain cuma satu baris berisi jumlah. Isi bulan baru
+    diambil saat orangnya benar-benar membuka bulan itu — memuat seluruh riwayat
+    di awal jadi makin mahal seiring waktu, padahal yang dibuka biasanya cuma
+    bulan berjalan.
+
+    Kosong berarti belum ada bill sama sekali (bukan error).
+    """
     ident = _identity_from_request(request)
     if identity_id != ident["id"]:
         raise HTTPException(403, "Identitas tidak cocok")
-    rows = db.get_bills_for_identity(identity_id)
+    return {"months": db.bill_months_for_identity(identity_id)}
+
+
+@app.get("/api/identities/{identity_id}/bills")
+def my_bills(identity_id: str, request: Request, month: str | None = None):
+    ident = _identity_from_request(request)
+    if identity_id != ident["id"]:
+        raise HTTPException(403, "Identitas tidak cocok")
+    if month is not None and not _MONTH_RE.match(month):
+        raise HTTPException(400, "Format bulan harus YYYY-MM")
+    rows = db.get_bills_for_identity(identity_id, month)
     # expose the effective owner (resolved payer, else creator) so the UI can
     # show owner-only actions (delete) — mirrors _owner_id, including the
     # placeholder-name resolution that paid_by_identity_id alone misses
@@ -1553,12 +2100,15 @@ def my_bills(identity_id: str, request: Request):
             # without this the list showed a red "Belum lunas" next to a green
             # "Kamu udah bayar" on a bill where nothing had happened yet
             row["has_picks"] = bool(bill_data["selections"])
+            # satu alasan tindakan per bill, dihitung server supaya beranda dan
+            # daftar memakai aturan yang sama persis
+            row["action"] = _action_kind(row)
         else:
             # defensive fallback (bill row exists but get_bill failed): mirror
             # _owner_id exactly -- confirmed payer, else creator. This branch
             # used to grant can_manage off paid_by_identity_id alone, without
             # paid_by_confirmed: a payer resolved only by matching
-            # `paid_by_name` (display-only, per CLAUDE.md) got management
+            # `paid_by_name` (display-only until explicit confirmation) got management
             # powers here even though the real _owner_id path never grants
             # them that (bug: v66 audit, `get_bills_for_identity` didn't even
             # select paid_by_confirmed, now added).
@@ -1591,7 +2141,7 @@ def identity_recap(identity_id: str, request: Request):
 # ---------- bills ----------
 
 @app.post("/api/bills")
-@limiter.limit("10/minute")
+@limiter.limit(RL_BILL)
 async def create_bill(request: Request):
     data = await _read_json(request)
     ident = _identity_from_request(request)
@@ -1689,6 +2239,9 @@ async def create_bill(request: Request):
         photos=photos,
         paid_by_name=paid_by_name,
     )
+    _link_and_invite_participants(created["id"], data.get("participants"), ident["id"])
+    # bentuk respons tetap {"id": ...} seperti sebelumnya: layar Buat bill
+    # memakainya untuk pindah ke bill yang baru dibuat
     return created
 
 
@@ -1810,6 +2363,7 @@ async def update_bill(bill_id: str, request: Request):
         total=total_v,
         tax_included=1 if tax_included_v else 0,
     )
+    _link_and_invite_participants(bill_id, data.get("participants"), ident["id"])
     return _compute_response(db.get_bill(bill_id), ident["id"])
 
 
@@ -1898,12 +2452,36 @@ def close_bill(bill_id: str, request: Request):
 
 
 @app.post("/api/bills/{bill_id}/join")
-def join_bill_via_link(bill_id: str, request: Request):
+async def join_bill_via_link(bill_id: str, request: Request):
+    """Tamu bergabung lewat link. Yang didaftarkan selalu PEMANGGIL.
+
+    Body lama (0.9) masih mengirim `identity_id`. Dulu field itu diabaikan
+    diam-diam: pemanggil yang mengira sedang mendaftarkan orang lain tetap
+    mendapat 200 tanpa ada yang berubah — kelihatan seperti berhasil (temuan
+    waktu menguji DB 0.9 di 1.0). Sekarang nama orang lain ditolak terang-terangan.
+    """
     bill_data = _bill_or_404(bill_id)
     if bill_data["bill"]["status"] != "open":
         raise HTTPException(403, "Bill sudah ditutup")
     _ensure_editable(bill_data)
     ident = _identity_from_request(request)
+    raw = await request.body()
+    if raw:
+        try:
+            body = json.loads(raw)
+        except Exception:
+            raise HTTPException(400, "Format JSON tidak valid")
+        if not isinstance(body, dict):
+            raise HTTPException(400, "Isi permintaan harus objek")
+        diklaim = _to_str(body.get("identity_id"), "Identity id", maxlen=64)
+        if diklaim and diklaim != ident["id"]:
+            raise HTTPException(403, "Join hanya untuk diri sendiri")
+    # Pembuat bill sudah ada di bill ini secara implisit (dia muncul di daftar
+    # orang tanpa baris payment). Tanpa penjagaan ini, menekan join di bill
+    # sendiri membuat baris payment untuknya — baris yang tidak dibutuhkan siapa
+    # pun dan membuat "siapa yang ikut" jadi tidak jujur.
+    if ident["id"] == bill_data["bill"]["creator_identity_id"] and not bill_data["bill"].get("creator_left"):
+        return _compute_response(bill_data, ident["id"])
     db.join_bill(bill_id, ident["id"], ident["name"])
     # joining through the link is accepting — void any pending invite for this
     # pair so the home card doesn't keep saying "Gabung" for someone already in
@@ -2292,7 +2870,7 @@ def unsettle_bill(bill_id: str, request: Request):
 
 
 @app.post("/api/bills/{bill_id}/photo")
-@limiter.limit("10/minute")
+@limiter.limit(RL_UPLOAD)
 async def upload_photo(bill_id: str, request: Request, file: UploadFile = File(...)):
     """Attach another receipt photo (v61: multi-photo, no longer a single
     replace). Legacy URL kept; the payload no longer carries photo_path
@@ -2349,7 +2927,7 @@ def delete_photo(bill_id: str, photo_id: int, request: Request):
 
 
 @app.post("/api/photos")
-@limiter.limit("10/minute")
+@limiter.limit(RL_UPLOAD)
 async def upload_photo_standalone(request: Request, file: UploadFile = File(...)):
     """Upload a receipt photo WITHOUT scanning (v61) — for the manual create
     flow. Returns the saved path so the client can attach it to a bill."""
@@ -2400,7 +2978,7 @@ def delete_photo_standalone(filename: str, request: Request):
 
 
 @app.post("/api/ocr")
-@limiter.limit("10/minute")
+@limiter.limit(RL_UPLOAD)
 async def ocr_upload(request: Request, file: list[UploadFile] = File(...)):
     """OCR one or two receipt photos as one draft request.
 
@@ -2521,6 +3099,12 @@ def serve_photo(filename: str):
 #   * No more manual version bumps (v57 etc.) - the hash IS the version.
 
 STATIC_DIR = FRONTEND_DIR / "static"
+# Versi 2: frontend React dilayani nginx dari `frontend/dist`, jadi backend ini
+# TIDAK lagi membawa bundle vanilla (index.html/manifest/static). Mount dan
+# template hanya dipakai kalau bundle itu benar-benar ada — di branch `main`
+# (versi 0.x) dia ada, di branch `react` tidak. Tanpa penjagaan ini server
+# menolak start sama sekali: StaticFiles melempar RuntimeError saat import.
+HAS_VANILLA_BUNDLE = (FRONTEND_DIR / "index.html").is_file() and STATIC_DIR.is_dir()
 _HASH_RE = re.compile(rb"@HASH:([a-zA-Z0-9._-]+)@")
 
 
@@ -2552,6 +3136,8 @@ def _no_cache_response(content: bytes, media_type: str, request: Request) -> Res
 
 @app.api_route("/static/manifest.json", methods=["GET", "HEAD"])
 def manifest(request: Request):
+    if not HAS_VANILLA_BUNDLE:
+        raise HTTPException(404, "Frontend dilayani terpisah oleh nginx")
     return _no_cache_response(
         _render_template(FRONTEND_DIR / "manifest.json"),
         "application/manifest+json", request,
@@ -2560,10 +3146,13 @@ def manifest(request: Request):
 
 @app.api_route("/", methods=["GET", "HEAD"])
 def index(request: Request):
+    if not HAS_VANILLA_BUNDLE:
+        raise HTTPException(404, "Frontend dilayani terpisah oleh nginx")
     return _no_cache_response(
         _render_template(FRONTEND_DIR / "index.html"),
         "text/html; charset=utf-8", request,
     )
 
 
-app.mount("/static", ImmutableStaticFiles(directory=str(STATIC_DIR)), name="static")
+if HAS_VANILLA_BUNDLE:
+    app.mount("/static", ImmutableStaticFiles(directory=str(STATIC_DIR)), name="static")

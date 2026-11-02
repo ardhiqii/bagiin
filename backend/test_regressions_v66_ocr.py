@@ -18,7 +18,7 @@ Covers:
   and total/subtotal reconciliation.
 
 No TestClient needed - this file never imports main/db, only ocr directly.
-Sets BAGIIN_DB anyway (CLAUDE.md rule: any new test file must do this before
+Sets BAGIIN_DB anyway (each test file must do this before
 anything in the suite could import db) because conftest.py's autouse session
 fixture imports main, which imports db, before the first test body runs.
 
@@ -151,7 +151,11 @@ def test_slow_gemini_cannot_consume_reserved_openrouter_budget(monkeypatch):
     """A Gemini failure at its primary deadline still leaves fallback time."""
     monkeypatch.setattr(ocr, "GEMINI_API_KEY", "fake-gemini-key")
     monkeypatch.setattr(ocr, "OR_API_KEY", "fake-openrouter-key")
-    monkeypatch.setattr(ocr, "OCR_BUDGET_SECONDS", 3.0)
+    # Anggaran asli (80 detik) dengan jam palsu: waktunya tidak benar-benar
+    # berjalan, jadi tesnya tetap cepat. Angka kecil seperti 3 detik membuat
+    # irisan model pertama jatuh di bawah _MIN_ATTEMPT_SECONDS, sehingga Gemini
+    # tidak dicoba sama sekali — jalur yang berbeda dari yang mau diuji di sini.
+    monkeypatch.setattr(ocr, "OCR_BUDGET_SECONDS", 60.0)
 
     class _Clock:
         def __init__(self):
@@ -174,8 +178,10 @@ def test_slow_gemini_cannot_consume_reserved_openrouter_budget(monkeypatch):
         "tax_included": False,
     }
 
-    def slow_gemini(image_bytes, mime_type, deadline):
-        observed["start"] = clock.now
+    def slow_gemini(image_bytes, mime_type, deadline, model=None, api_key=None):
+        # Tiap model Gemini dapat potongan anggarannya sendiri; yang pertama
+        # memakai seluruh potongannya, jadi dianggap lambat sampai habis.
+        observed.setdefault("start", clock.now)
         observed["gemini_deadline"] = deadline
         clock.now = deadline
         raise RuntimeError("simulated slow provider")
@@ -194,7 +200,11 @@ def test_slow_gemini_cannot_consume_reserved_openrouter_budget(monkeypatch):
         ocr._OPENROUTER_FALLBACK_MAX_SECONDS,
         ocr.OCR_BUDGET_SECONDS * ocr._OPENROUTER_FALLBACK_RATIO,
     )
-    assert observed["openrouter_deadline"] - observed["gemini_deadline"] == expected_reserve
+    # Inti yang dijaga tes ini bukan "Gemini memakai seluruh anggaran utama",
+    # melainkan "cadangan tetap kebagian waktunya". Sejak tiap model Gemini
+    # dapat potongan sendiri, model pertama hanya memegang sebagian anggaran
+    # utama — jadi yang diuji sekarang: batas cadangan tidak ikut dimakan.
+    assert observed["gemini_deadline"] <= observed["openrouter_deadline"] - expected_reserve
     assert observed["fallback_remaining"] == expected_reserve
     assert observed["openrouter_deadline"] - observed["start"] == ocr.OCR_BUDGET_SECONDS
     assert observed["fallback_remaining"] > 0
@@ -227,6 +237,9 @@ def test_gemini_attempt_stops_once_budget_spent():
 # ---------- B5: honest, non-leaking "not configured" message ----------
 
 def test_no_provider_configured_message_does_not_leak_env_var_names(monkeypatch):
+    # Sejak kunci Gemini jadi daftar, "tidak ada penyedia" berarti daftarnya
+    # kosong — bukan cuma nama lama `GEMINI_API_KEY` yang dikosongkan.
+    monkeypatch.setattr(ocr, "GEMINI_API_KEYS", ())
     monkeypatch.setattr(ocr, "GEMINI_API_KEY", "")
     monkeypatch.setattr(ocr, "OR_API_KEY", "")
     try:
@@ -241,8 +254,10 @@ def test_no_provider_configured_message_does_not_leak_env_var_names(monkeypatch)
 
 
 def test_no_provider_configured_message_is_indonesian_and_actionable():
-    monkeypatch_gemini = ocr.GEMINI_API_KEY
-    monkeypatch_or = ocr.OR_API_KEY
+    saved_keys = ocr.GEMINI_API_KEYS
+    saved_gemini = ocr.GEMINI_API_KEY
+    saved_or = ocr.OR_API_KEY
+    ocr.GEMINI_API_KEYS = ()
     ocr.GEMINI_API_KEY = ""
     ocr.OR_API_KEY = ""
     try:
@@ -253,8 +268,9 @@ def test_no_provider_configured_message_is_indonesian_and_actionable():
             msg = str(e)
             assert "manual" in msg.lower()
     finally:
-        ocr.GEMINI_API_KEY = monkeypatch_gemini
-        ocr.OR_API_KEY = monkeypatch_or
+        ocr.GEMINI_API_KEYS = saved_keys
+        ocr.GEMINI_API_KEY = saved_gemini
+        ocr.OR_API_KEY = saved_or
 
 
 # ---------- documented repairs must keep working ----------

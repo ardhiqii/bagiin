@@ -1,0 +1,522 @@
+import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
+import { AppShell } from '../components/AppShell'
+import { useToast } from '../components/Toast'
+import { billActions, useBill, useBillAction, useContacts, type Contact } from '../lib/queries'
+import { PeoplePicker } from '../components/PeoplePicker'
+import { invalidateMoneyViews } from '../lib/mutations'
+import { formatRp, parseRupiah } from '../lib/money'
+import { Alert, Button, DateField, Field, SectionHead, Sheet, SkeletonCard, SkeletonList } from '../ds/primitives'
+import manualArt from '../assets/manual.webp'
+import type { BillItem } from '../lib/types'
+
+const formatRd = (value: number): string => formatRp(value).replace('Rp', '')
+
+/** "2026-10-31 12:00:00" -> "2026-10-31", bentuk yang diterima <input type=date>. */
+const isoDate = (value?: string | null): string => (value ? value.slice(0, 10) : '')
+
+/** Jam asli dipertahankan saat hanya tanggalnya yang diganti, supaya urutan
+    riwayat tidak berubah untuk bill yang dicatat sore atau malam. */
+const timeOf = (value?: string | null): string =>
+  value && value.length >= 19 ? value.slice(11, 19) : '12:00:00'
+
+type Draft = {
+  id?: number
+  key: string
+  name: string
+  qty: string
+  price: string
+  /** bill lama bisa masih bermode slot; nilainya dibawa apa adanya, tak ditampilkan */
+  mode: 'free' | 'slot'
+  slotCount: number | null
+}
+
+const draftFrom = (item: BillItem): Draft => ({
+  id: item.id,
+  key: String(item.id),
+  name: item.name,
+  qty: String(item.quantity),
+  price: formatRd(item.price_idr),
+  mode: item.mode === 'slot' ? 'slot' : 'free',
+  slotCount: item.mode === 'slot' ? (item.slot_count ?? null) : null,
+})
+
+export function EditBill({ billId, identityId }: { billId: string; identityId: string | null }) {
+  const bill = useBill(billId)
+  const action = useBillAction(billId, identityId)
+  const toast = useToast()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  const data = bill.data
+  const [title, setTitle] = useState<string | null>(null)
+  const [merchant, setMerchant] = useState<string | null>(null)
+  const [tax, setTax] = useState<string | null>(null)
+  const [service, setService] = useState<string | null>(null)
+  const [discount, setDiscount] = useState<string | null>(null)
+  const [items, setItems] = useState<Draft[] | null>(null)
+  const [error, setError] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [roster, setRoster] = useState<string[] | null>(null)
+  const [billDate, setBillDate] = useState<string | null>(null)
+  const [viewer, setViewer] = useState<number | null>(null)
+  // Tambah peserta lewat daftar orang yang pernah sebill, bukan nama bebas.
+  // Nama yang sudah terlanjur ada di bill (termasuk dari versi lama) tetap
+  // ditampilkan dan tetap bisa dihapus.
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const contacts = useContacts(identityId, Boolean(identityId))
+
+  // Nilai awal diambil sekali dari server, sesudah itu state lokal yang menang.
+  const titleValue = title ?? data?.bill.title ?? ''
+  const merchantValue = merchant ?? data?.bill.merchant ?? ''
+  const taxValue = tax ?? (data ? formatRd(data.bill.tax_idr) : '')
+  const serviceValue = service ?? (data ? formatRd(data.bill.service_idr) : '')
+  const discountValue = discount ?? (data ? formatRd(data.bill.order_discount_idr) : '')
+  // Tanggal transaksi, bukan tanggal pencatatan: bill bisa dibuat hari ini
+  // untuk makan yang terjadi kemarin atau tanggal yang akan datang.
+  const dateValue = billDate ?? isoDate(data?.bill.transacted_at)
+  const drafts = items ?? (data ? data.items.map(draftFrom) : [])
+  const rosterDraft = roster ?? (data ? data.participants.map((participant) => participant.name) : [])
+  // Yang tampil tercentang hanya kontak yang namanya sudah ada di daftar ini.
+  // Nama dari bill lama tidak punya pasangan kontak, jadi tidak bisa dicentang —
+  // tapi barisnya tetap tampil di atas dan bisa dihapus.
+  const pickedContacts = (contacts.data ?? []).filter((contact) =>
+    rosterDraft.includes(contact.display_name),
+  )
+  // Nama dikunci hanya kalau orangnya benar-benar sudah bergabung (punya baris
+  // pembayaran di bill ini). Peserta yang baru diundang — misalnya penerima
+  // mematikan "terima undangan otomatis" — masih boleh dihapus/diganti, dan
+  // mengeluarkan orang yang sudah masuk tetap lewat tombol "Keluarkan".
+  const joinedIds = new Set((data?.people ?? []).map((person) => person.identity_id))
+  const claimed = new Set(
+    (data?.participants ?? [])
+      .filter((p) => p.identity_id && joinedIds.has(p.identity_id))
+      .map((p) => p.name),
+  )
+
+  const parsed = drafts.map((draft) => ({
+    id: draft.id,
+    name: draft.name.trim(),
+    qty: Math.max(1, Number.parseInt(draft.qty || '1', 10) || 1),
+    price: parseRupiah(draft.price),
+    mode: draft.id ? draft.mode : ('free' as const),
+    slotCount: draft.id ? draft.slotCount : null,
+  }))
+  const subtotal = parsed.reduce((sum, item) => sum + item.price * item.qty, 0)
+  const taxIdr = parseRupiah(taxValue)
+  const serviceIdr = parseRupiah(serviceValue)
+  const discountIdr = parseRupiah(discountValue)
+  const grossTotal = subtotal + taxIdr + serviceIdr
+  /* Diskon melebihi tagihan tidak boleh menghasilkan total minus; totalnya
+     ditahan di Rp0 dan kolom diskonnya yang diberi tahu. */
+  // batas yang sama dengan server: diskon tidak boleh melebihi subtotal
+  const discountTooBig = discountIdr > subtotal
+  const total = Math.max(0, grossTotal - discountIdr)
+  const valid = parsed.length > 0 && parsed.every((item) => item.name && item.price > 0) && total > 0
+  /* Alasan tombol Simpan mati harus kelihatan. Tanpa ini orang menebak apakah
+     yang salah judulnya, harganya, atau qty-nya. */
+  const blockedReason =
+    parsed.length === 0
+      ? 'Butuh minimal satu item.'
+      : parsed.some((item) => !item.name)
+        ? 'Ada item tanpa nama.'
+        : parsed.some((item) => item.price <= 0)
+          ? 'Ada harga masih Rp0.'
+          : total <= 0
+            ? 'Total tidak boleh Rp0.'
+            : ''
+
+  async function save() {
+    if (!data || !valid) return
+    setError('')
+    try {
+      await action.mutateAsync({
+        path: '/api/bills/' + billId,
+        method: 'PUT',
+        body: {
+          title: titleValue.trim() || data.bill.title,
+          merchant: merchantValue.trim(),
+          // kosong = biarkan apa adanya, bukan menghapus tanggal
+          transacted_at: dateValue
+            ? dateValue + ' ' + timeOf(data.bill.transacted_at)
+            : (data.bill.transacted_at ?? null),
+          tax: taxIdr,
+          service: serviceIdr,
+          order_discount: discountIdr,
+          cashback: data.bill.cashback_idr,
+          subtotal,
+          total,
+          // Kontak yang dipilih ikut membawa identity_id: server memakainya
+          // untuk menautkan baris nama ke orangnya dan mengirim undangan,
+          // sama seperti saat bill dibuat. Nama tanpa akun tetap dikirim
+          // sebagai teks biasa.
+          participants: rosterDraft.map((name) => {
+            const contact = pickedContacts.find((c) => c.display_name === name)
+            return contact ? { name, identity_id: contact.id } : name
+          }),
+          tax_mode: data.bill.tax_mode,
+          tax_included: Boolean(data.bill.tax_included),
+          // daftar item harus lengkap: id yang tidak dikirim akan dihapus
+          items: parsed.map((item) => ({
+            ...(item.id ? { id: item.id } : {}),
+            name: item.name,
+            price: item.price,
+            discount: 0,
+            quantity: item.qty,
+            // bill lama yang bermode slot dikirim balik dengan mode aslinya:
+            // mengubahnya jadi bebas akan mengubah pembagian yang sudah jalan
+            mode: item.mode,
+            slot_count: item.mode === 'slot' ? item.slotCount : null,
+          })),
+        },
+      })
+      // harga/item berubah -> beranda dan rekap ikut berubah
+      invalidateMoneyViews(queryClient, { billId, identityId })
+      toast('Perubahan bill disimpan')
+      navigate({ to: '/b/$billId', params: { billId } })
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  return (
+    <AppShell
+      title="Ubah bill"
+      subtitle="Perbaiki judul, item, atau pajak"
+      back
+      active="home"
+      footer={
+        // tamu yang membuka /edit tidak boleh melihat tombol simpan sama sekali;
+        // bill lunas/tertutup juga tidak: server menolak menyimpannya
+        data?.can_manage && !data.settled && data.bill.status === 'open' ? (
+          <div className="create-dock">
+            <div className="tot">
+              <small>Total baru</small>
+              <b>{formatRp(total)}</b>
+              {/* idem Create: tinggi dock tidak boleh berubah, kalau tidak
+                  tombol Simpan bergeser di bawah jempol. */}
+              <small className="dock-reason" role="status" aria-live="polite">
+                {blockedReason || '\u00a0'}
+              </small>
+            </div>
+            <Button loading={action.isPending} disabled={!valid} onClick={save}>
+              Simpan perubahan
+            </Button>
+          </div>
+        ) : null
+      }
+    >
+      {bill.isPending ? (
+        <>
+          <SkeletonCard label="Memuat bill" />
+          <SkeletonList rows={3} label="Memuat bill" />
+        </>
+      ) : null}
+      {bill.isError ? <Alert tone="danger" title="Bill tidak bisa dibuka">{(bill.error as Error).message}</Alert> : null}
+
+      {data && !data.can_manage ? (
+        <Alert tone="pending" title="Hanya yang menalangi bisa mengubah">
+          Minta {data.paid_by_name} mengubah bill ini.
+        </Alert>
+      ) : null}
+
+      {/* Bill lunas atau tertutup tidak bisa disunting: server menolak dengan
+          403/409. Formulir yang tetap terbuka lalu gagal saat disimpan bikin
+          orang mengetik ulang tanpa hasil, jadi keadaannya dijelaskan di sini. */}
+      {data && data.can_manage && (data.settled || data.bill.status !== 'open') ? (
+        <Alert tone="pending" title={data.settled ? 'Bill sudah lunas' : 'Bill sudah ditutup'}>
+          {data.settled
+            ? 'Buka tanda lunas di layar bill dulu kalau memang mau mengubah item atau nominalnya.'
+            : 'Buka lagi bill-nya di layar bill kalau memang mau mengubah isinya.'}
+        </Alert>
+      ) : null}
+
+      {data && data.can_manage && !data.settled && data.bill.status === 'open' ? (
+        <>
+          {error ? <Alert tone="danger" title="Perubahan gagal disimpan">{error}</Alert> : null}
+
+          <div className="ds-create-hero">
+            <img src={manualArt} alt="" width={120} height={120} />
+            <div>
+              <b>Perbaiki tanpa bikin ulang</b>
+              <p className="app-note">Ubah judul, harga, atau pajak. Pilihan yang sudah diambil orang lain tetap menempel.</p>
+            </div>
+          </div>
+
+          <section className="app-stack">
+            <Field id="edit-title" label="Nama bill" value={titleValue} onChange={setTitle} />
+            <Field id="edit-merchant" label="Merchant (opsional)" value={merchantValue} onChange={setMerchant} />
+            <DateField
+              id="edit-date"
+              label="Tanggal bill"
+              value={dateValue}
+              onChange={setBillDate}
+              hint="Tanggal transaksinya, ditulis tanggal/bulan/tahun."
+            />
+          </section>
+
+          {data.photos.length > 0 ? (
+            <section className="photo-block">
+              <SectionHead meta={<>{data.photos.length} foto</>}>Foto struk</SectionHead>
+              <div className="photo-grid">
+                {data.photos.map((photo, index) => (
+                  <div className="photo-tile" key={photo.path}>
+                    {/* Ketuk = lihat penuh, supaya hasil bacaan AI bisa dicek
+                        ulang saat mengubah bill, sama seperti di layar bill. */}
+                    <button
+                      type="button"
+                      className="photo-open"
+                      aria-label={'Lihat foto ' + (index + 1)}
+                      onClick={() => setViewer(index)}
+                    >
+                      <img
+                        src={'/uploads/' + photo.path.split('/').pop()}
+                        alt={'Foto struk ' + (index + 1)}
+                      />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="app-note">Ketuk foto untuk melihat penuh. Menambah atau menghapus foto dilakukan di layar bill.</p>
+            </section>
+          ) : null}
+
+          <section className="app-stack">
+            <div className="app-inline">
+              <SectionHead>Item</SectionHead>
+              <span className="app-spacer" />
+              <button
+                type="button"
+                className="link-action"
+                onClick={() =>
+                  setItems((prev) => [
+                    ...(prev ?? drafts),
+                    { key: 'new-' + Math.random().toString(36).slice(2), name: '', qty: '1', price: '', mode: 'free', slotCount: null },
+                  ])
+                }
+              >
+                + Tambah item
+              </button>
+            </div>
+
+            {drafts.map((draft, index) => (
+              <div className="ds-group" key={draft.key} style={{ border: '1px solid var(--ds-border)', background: 'var(--ds-surface)', borderRadius: 18, overflow: 'hidden' }}>
+                <div className="item-row">
+                  <Field
+                    id={'edit-item-name-' + index}
+                    label={'Item ' + (index + 1)}
+                    value={draft.name}
+                    onChange={(value) =>
+                      setItems((prev) => (prev ?? drafts).map((it) => (it.key === draft.key ? { ...it, name: value } : it)))
+                    }
+                  />
+                  <div className="item-meta">
+                    <Field
+                      id={'edit-item-qty-' + index}
+                      label="Qty"
+                      value={draft.qty}
+                      inputMode="numeric"
+                      onChange={(value) =>
+                        setItems((prev) =>
+                          (prev ?? drafts).map((it) => (it.key === draft.key ? { ...it, qty: value.replace(/[^0-9]/g, '') } : it)),
+                        )
+                      }
+                    />
+                    <Field
+                      id={'edit-item-price-' + index}
+                      label="Harga satuan"
+                      value={draft.price}
+                      inputMode="numeric"
+                      onChange={(value) =>
+                        setItems((prev) =>
+                          (prev ?? drafts).map((it) => (it.key === draft.key ? { ...it, price: formatRd(parseRupiah(value)) } : it)),
+                        )
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="kill"
+                      aria-label={'Hapus baris ' + (index + 1)}
+                      disabled={drafts.length === 1}
+                      onClick={() => setItems((prev) => (prev ?? drafts).filter((it) => it.key !== draft.key))}
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </section>
+
+          <section className="app-stack">
+            <SectionHead>Siapa saja yang ikut</SectionHead>
+            <p className="app-note">
+              Nama yang belum diklaim bisa diganti atau dihapus di sini. Nama yang sudah bergabung dikunci. Kalau mau
+              mengeluarkan orangnya, pakai tombol Keluarkan di layar bill.
+            </p>
+            {rosterDraft.length > 0 ? (
+              <div className="chip-row">
+                {rosterDraft.map((person) => (
+                  <span className="chip" key={person}>
+                    {person}
+                    {claimed.has(person) ? (
+                      <span style={{ fontSize: 'var(--ds-text-xs)', fontWeight: 'var(--ds-weight-medium)', opacity: 0.7 }}>· bergabung</span>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label={'Hapus nama ' + person}
+                        onClick={() => setRoster(rosterDraft.filter((name) => name !== person))}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="app-note">Belum ada nama yang disiapkan.</div>
+            )}
+            <Button variant="quiet" onClick={() => setPickerOpen(true)}>
+              + Pilih orang
+            </Button>
+          </section>
+
+          <PeoplePicker
+            open={pickerOpen}
+            contacts={contacts.data}
+            isPending={contacts.isPending}
+            isError={contacts.isError}
+            picked={pickedContacts}
+            onToggle={(contact: Contact) => {
+              const exists = rosterDraft.includes(contact.display_name)
+              setRoster(
+                exists
+                  ? rosterDraft.filter((name) => name !== contact.display_name)
+                  : [...rosterDraft, contact.display_name],
+              )
+            }}
+            onClose={() => setPickerOpen(false)}
+          />
+
+          <section className="app-stack">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <Field id="edit-tax" label="Pajak" value={taxValue} inputMode="numeric" onChange={(v) => setTax(formatRd(parseRupiah(v)))} />
+              <Field id="edit-service" label="Service" value={serviceValue} inputMode="numeric" onChange={(v) => setService(formatRd(parseRupiah(v)))} />
+            </div>
+            <Field
+              id="edit-discount"
+              label="Diskon pesanan"
+              value={discountValue}
+              inputMode="numeric"
+              onChange={(v) => setDiscount(formatRd(parseRupiah(v)))}
+              hint={
+                discountTooBig
+                  ? 'Diskon lebih besar dari total bill. Kecilkan angkanya.'
+                  : 'Diskon yang berlaku untuk seluruh bill'
+              }
+            />
+            {discountTooBig ? (
+              <div className="app-note" style={{ color: 'var(--ds-danger)', marginTop: -4 }}>
+                Diskon {formatRp(discountIdr)} melebihi subtotal {formatRp(subtotal)}.
+                Kecilkan angkanya dulu.
+              </div>
+            ) : null}
+          </section>
+
+          <div className="ds-card ds-card-mint ds-pad-md">
+            <div className="app-inline">
+              <span style={{ fontSize: 'var(--ds-text-md)', fontWeight: 700 }}>Subtotal</span>
+              <span className="app-spacer" />
+              <span>{formatRp(subtotal)}</span>
+            </div>
+            <div className="app-inline" style={{ marginTop: 6 }}>
+              <span style={{ fontSize: 'var(--ds-text-md)', fontWeight: 700 }}>Pajak + service</span>
+              <span className="app-spacer" />
+              <span>{formatRp(taxIdr + serviceIdr)}</span>
+            </div>
+            {discountIdr > 0 ? (
+              <div className="app-inline" style={{ marginTop: 6 }}>
+                <span style={{ fontSize: 'var(--ds-text-md)', fontWeight: 700 }}>Diskon</span>
+                <span className="app-spacer" />
+                <span>−{formatRp(discountIdr)}</span>
+              </div>
+            ) : null}
+          </div>
+
+          <section className="app-stack">
+            <SectionHead>Hapus bill</SectionHead>
+            <p className="app-note">
+              Bill beserta semua item, pilihan, dan status lunasnya dihapus permanen. Tautan yang sudah kamu bagikan tidak akan bisa dibuka lagi.
+            </p>
+            {confirmDelete ? (
+              <Alert tone="danger" title="Yakin menghapus bill ini?">
+                Tidak ada cara mengembalikannya. Kalau cuma ingin menghentikan perubahan, tutup bill saja.
+              </Alert>
+            ) : null}
+            {confirmDelete ? (
+              <div className="app-inline">
+                <Button
+                  variant="danger"
+                  loading={action.isPending}
+                  onClick={async () => {
+                    try {
+                      await action.mutateAsync(billActions.removeBill(billId))
+                      invalidateMoneyViews(queryClient, { identityId })
+                      toast('Bill dihapus')
+                      navigate({ to: '/' })
+                    } catch (err) {
+                      setError((err as Error).message)
+                    }
+                  }}
+                >
+                  Ya, hapus permanen
+                </Button>
+                <Button variant="quiet" onClick={() => setConfirmDelete(false)}>
+                  Batal
+                </Button>
+              </div>
+            ) : (
+              <Button variant="danger" block onClick={() => setConfirmDelete(true)}>
+                Hapus bill ini
+              </Button>
+            )}
+          </section>
+
+        </>
+      ) : null}
+
+      {/* Penampil foto yang sama dengan layar bill: hasil bacaan AI harus bisa
+          diperiksa saat mengubah bill, bukan cuma setelah bill jadi. */}
+      <Sheet open={viewer !== null} title="Foto struk" onClose={() => setViewer(null)}>
+        {data && viewer !== null && data.photos[viewer] ? (
+          <div className="photo-viewer">
+            <img
+              src={'/uploads/' + data.photos[viewer].path.split('/').pop()}
+              alt={'Foto struk ' + (viewer + 1)}
+            />
+            <div className="photo-viewer-nav">
+              <Button
+                variant="secondary"
+                disabled={viewer === 0}
+                onClick={() => setViewer((v) => Math.max(0, (v ?? 0) - 1))}
+              >
+                Sebelumnya
+              </Button>
+              <small className="app-note">
+                {viewer + 1} dari {data.photos.length}
+              </small>
+              <Button
+                variant="secondary"
+                disabled={viewer >= data.photos.length - 1}
+                onClick={() => setViewer((v) => Math.min(data.photos.length - 1, (v ?? 0) + 1))}
+              >
+                Berikutnya
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Sheet>
+    </AppShell>
+  )
+}

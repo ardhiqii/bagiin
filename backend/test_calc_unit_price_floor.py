@@ -43,8 +43,8 @@ def totals(result):
 def test_single_claim_on_two_units_pays_one_unit():
     # RE Blok M: tiket 2 x 62.000, satu orang ambil satu. Dulu dia ditagih 124.000.
     items = [{"id": 1, "name": "tiket", "price_idr": 62000, "mode": "free", "quantity": 2}]
-    r = run(items, [(1, "amel", 1)])
-    assert totals(r) == {"amel": 62000}, totals(r)
+    r = run(items, [(1, "sari", 1)])
+    assert totals(r) == {"sari": 62000}, totals(r)
     assert r["uncovered_idr"] == 62000, r["uncovered_idr"]
     slot = r["uncovered_slots"][0]
     assert slot["name"] == "tiket" and slot["empty"] == 1 and slot["per_slot"] == 62000, slot
@@ -53,8 +53,8 @@ def test_single_claim_on_two_units_pays_one_unit():
 
 def test_single_claim_on_three_units_pays_one_unit():
     items = [{"id": 1, "name": "Es teh", "price_idr": 5000, "mode": "free", "quantity": 3}]
-    r = run(items, [(1, "amel", 1)])
-    assert totals(r) == {"amel": 5000}, totals(r)
+    r = run(items, [(1, "sari", 1)])
+    assert totals(r) == {"sari": 5000}, totals(r)
     assert r["uncovered_idr"] == 10000, r["uncovered_idr"]
     assert r["uncovered_slots"][0]["empty"] == 2, r["uncovered_slots"]
 
@@ -85,16 +85,16 @@ def test_one_portion_shared_by_two_people():
 
 def test_one_person_takes_two_of_three_units():
     items = [{"id": 1, "name": "Es teh", "price_idr": 5000, "mode": "free", "quantity": 3}]
-    r = run(items, [(1, "amel", 2)])
-    assert totals(r) == {"amel": 10000}, totals(r)
+    r = run(items, [(1, "sari", 2)])
+    assert totals(r) == {"sari": 10000}, totals(r)
     assert r["uncovered_idr"] == 5000, r["uncovered_idr"]
 
 
 def test_invariant_holds_with_tax_and_partial_claim():
     items = [{"id": 1, "name": "tiket", "price_idr": 62000, "mode": "free", "quantity": 2}]
     bill, item_list = bill_for(items, tax=6200, service=3100)
-    sel = [{"item_id": 1, "identity_id": "amel", "qty": 1}]
-    r = calc.compute(bill, item_list, sel, ["amel"], "amel")
+    sel = [{"item_id": 1, "identity_id": "sari", "qty": 1}]
+    r = calc.compute(bill, item_list, sel, ["sari"], "sari")
     assert r["total_ok"] is True, r
     paid = sum(p["total_idr"] for p in r["people"])
     assert paid + r["uncovered_idr"] + r["remaining_to_creator"] == bill["total_idr"], (
