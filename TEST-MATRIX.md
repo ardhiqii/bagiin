@@ -327,6 +327,17 @@ Sejak bug sheet iPhone, setiap kasus dijalankan di **dua mesin**: `mobile-chrome
 
 Jumlah seluruhnya: **626 penjalanan** (313 kasus × 2 mesin).
 
+**Hasil putaran penuh terakhir (serial, dua mesin): 606 lulus, 20 dilewati,
+0 gagal, 1,5 jam.** Yang dilewati adalah kasus yang memang butuh OCR asli,
+login Google asli, atau kamera fisik.
+
+Satu bug aplikasi lagi ditemukan justru karena putaran penuh ini: di WebKit,
+pendaftaran nama kadang berhenti separuh jalan — identitas benar-benar dibuat
+(server 200, `localStorage` terisi) tetapi layar tetap di "Mulai atau masuk",
+tanpa pesan apa pun. Sekarang layar masuk memasang jaring pengaman: kalau masih
+terpasang 1,2 detik setelah pendaftaran berhasil, ia memuat ulang ke beranda.
+Jalur masuk lewat kode pemulihan dan login akun memakai jaring yang sama.
+
 **Suite ini harus serial (`workers: 1`).** Percobaan dengan tiga pekerja
 memunculkan kegagalan palsu — E4 "dua tab identitas yang sama" gagal sekali,
 lalu lulus 3/3 ketika dijalankan sendiri; C2 dan U5 juga membaca layar yang
