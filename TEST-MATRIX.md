@@ -293,3 +293,41 @@ Dijalankan di Chromium headful yang sudah punya sesi Google, terhadap build live
   (`ExecStart=/opt/projects/bagiin/backend/venv/bin/uvicorn`). Bekerja, tapi
   artinya perubahan paket untuk 1.0 menyentuh runtime 0.9. Sebaiknya 1.0 punya
   venv sendiri sebelum cutover.
+
+## Kotak hitam 1.0 — e2e sebagai orang yang belum pernah melihat aplikasi
+
+Sembilan berkas, **74 kasus**, semuanya dijalankan lewat layar: tidak ada satu
+pun pemanggilan API langsung untuk menyiapkan keadaan, karena yang diuji adalah
+apa yang bisa dilakukan orang, bukan apa yang bisa dilakukan klien HTTP.
+
+| Berkas | Kasus | Isi |
+|---|---|---|
+| `tests/blackbox.spec.ts` | 19 | masuk/layar awal, buat bill, layar bill, navigasi dan spam klik |
+| `tests/blackbox-two-users.spec.ts` | 11 | tamu lewat link, dua tamu berebut item, beranda & rekap, pengaturan |
+| `tests/blackbox-three.spec.ts` | 11 | saringan beranda, kontak & nama pembeda, undangan, ganti pembayar, kode pemulihan |
+| `tests/blackbox-four.spec.ts` | 6 | akun & pindah perangkat, foto struk, alur scan yang dibatalkan, "Mulai dari nol" |
+| `tests/blackbox-five.spec.ts` | 9 | nudge pengamanan, tautan bill tak dikenal, kembali berulang, bill dikunci, keluar, tolak undangan, item terakhir, pajak+diskon, pencarian kosong |
+| `tests/blackbox-six.spec.ts` | 6 | rekening, tiga item, porsi qty 3, "Lampirkan saja", ganti nama |
+| `tests/blackbox-seven.spec.ts` | 4 | rekap: kosong, terisi, tandai lunas, kesamaan angka dengan beranda |
+| `tests/blackbox-eight.spec.ts` | 4 | pajak/service/diskon, diskon melebihi tagihan, mengeluarkan tamu |
+| `tests/blackbox-nine.spec.ts` | 4 | rekening ubah/hapus, lunas per orang, kelompok bulan, cari merchant |
+
+### Cacat yang ditemukan gelombang ini
+
+| # | Gejala | Akar | Perbaikan |
+|---|---|---|---|
+| 1 | dua ketukan cepat "Buat bill" melahirkan **dua** bill | `setBusy(true)` belum berlaku pada putaran render yang sama, jadi kedua ketukan lolos | kunci sinkron `useRef` di samping status tombol (`Create.tsx`) |
+| 2 | tanggal `32/13/2026` diterima diam-diam | mask hanya memeriksa bentuk, bukan keberadaan tanggal di kalender | `DateField` menandai `aria-invalid` + hint merah, dan mengembalikan nilai sah saat ditinggal |
+| 3 | qty item bisa 0 di Buat bill, padahal Ubah bill memaksa 1 | dua layar, dua aturan | `Math.max(1, …)` + clamp saat kolom ditinggal |
+| 4 | peserta yang diundang tapi belum bergabung hilang dari daftar Orang, dan terkunci sebagai "bergabung" di Ubah bill | `waiting`/`claimed` memakai `identity_id`, bukan keanggotaan nyata | `waiting` mengecualikan `pending_invites`; `claimed` dari `data.people` |
+| 5 | hapus nama peserta menyisakan kartu "Undangan menunggu" | undangan pending tidak dicabut | `set_participants` menghapus `bill_invite` pending yang identitasnya sudah tidak ada |
+| 6 | "Terima undangan otomatis" tidak pernah dibaca ulang dari server | sesi hanya menggabungkan `name` dan `role` dari `/me` | `mergeIdentity` ikut membawa `auto_accept`, `username`, `handle` |
+| 7 | saringan tanpa hasil mengunci orang: bilah "Bill kamu", tombol Atur, dan kolom cari ikut hilang | keadaan kosong hanya punya satu bentuk | keadaan "Tidak ada bill di saringan ini" + tombol "Tampilkan semua bill" |
+| 8 | diskon melebihi tagihan menampilkan total **minus** (Rp-70.000) dengan alasan "Total masih Rp0" | total dihitung tanpa batas; batas server (diskon ≤ subtotal) tidak dicerminkan di layar | total ditahan di Rp0, kolom diskon menjelaskan, tombol simpan mati — di Buat dan Ubah bill |
+
+### Jalur yang ternyata sudah benar (tidak diubah)
+
+- item terakhir tidak bisa dihapus di layar Ubah bill (tombolnya memang mati);
+- tiga ketukan "Undang" pada kontak yang sama tetap satu undangan (unique + idempoten);
+- bagian "Transfer ke …" hanya muncul kalau ada orang lain yang berutang;
+- tautan bill tak dikenal mendarat di halaman "tidak ditemukan" berkerangka aplikasi.
