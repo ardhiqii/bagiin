@@ -9,7 +9,7 @@ yang lama.
 
 | Apa | Di mana | Keterangan |
 | --- | --- | --- |
-| Kode | `/opt/projects/bagiin` | branch `react`, satu-satunya checkout |
+| Kode | `/opt/projects/bagiin` | branch `main` (versi 1), satu-satunya checkout |
 | DB produksi | `/var/lib/bagiin/bagiin.db` | di luar repo; satu-satunya sumber kebenaran |
 | API produksi | `bagiin-api.service`, port **8096** | venv `backend/venv`, `BAGIIN_ENV=production` |
 | UI produksi | `/var/www/bagiin` | dilayani nginx; `/api/` + `/uploads/` → 8096 |

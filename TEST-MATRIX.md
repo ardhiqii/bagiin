@@ -1,6 +1,6 @@
 # Matriks pengujian versi 1
 
-Dokumen ini adalah **sumber kebenaran pengujian** untuk branch `react` (versi 1).
+Dokumen ini adalah **sumber kebenaran pengujian** untuk versi 1 (branch `main`).
 Isinya: siapa aktornya, cerita pengguna yang harus jalan, dan daftar kasus yang
 dipakai e2e. Setiap kasus punya ID dan nama tes — kalau satu kasus tidak punya
 tes, itu celah, bukan "nanti saja".

@@ -1,6 +1,6 @@
 # Frontend stack — Bagiin
 
-Status: usulan, belum dieksekusi. Target: branch `react`.
+Status: **sudah dieksekusi.** Ini catatan usulan awal; hasilnya sekarang hidup di branch `main` (versi 1).
 
 ## Kondisi sekarang
 

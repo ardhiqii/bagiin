@@ -13,7 +13,7 @@ sejarah, tapi tidak lagi dijalankan di mesin ini. Domain lama
 ## Struktur
 
 ```
-/opt/projects/bagiin          # satu-satunya checkout, branch react
+/opt/projects/bagiin          # satu-satunya checkout, branch main (versi 1)
 ├── backend/                  # FastAPI + SQLite (venv lokal di backend/venv)
 ├── frontend/                 # React 19 + TypeScript + Vite
 ├── scripts/                  # deploy, rollback, salinan konfigurasi nginx
