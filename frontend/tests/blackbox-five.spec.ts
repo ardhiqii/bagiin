@@ -79,7 +79,7 @@ test.describe('Kotak hitam — pengamanan dan tautan aneh', () => {
     await manualBill(page, 'Bill balik ' + stamp, 16000)
     for (let i = 0; i < 3; i++) {
       await page.goto('/')
-      await page.goto('/rekap')
+      await page.goto('/recap')
       await page.goto('/kontak')
       await page.goto('/settings')
       await page.goBack()

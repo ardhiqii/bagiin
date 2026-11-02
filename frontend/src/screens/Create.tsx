@@ -218,7 +218,16 @@ export function Create({ identityId }: { identityId: string | null }) {
   const taxIdr = parseRupiah(tax)
   const serviceIdr = parseRupiah(service)
   const discountIdr = parseRupiah(discount)
-  const total = subtotal + taxIdr + serviceIdr - discountIdr
+  const grossTotal = subtotal + taxIdr + serviceIdr
+  /* Diskon yang lebih besar dari tagihan tidak boleh menghasilkan total minus:
+     layar sempat menampilkan "Rp-70.000" untuk diskon 90.000 pada bill 20.000,
+     dan itu angka yang tidak bisa dibayar siapa pun. Totalnya ditahan di Rp0
+     dan kolom diskonnya yang diberi tahu. */
+  // Aturan server: diskon pesanan tidak boleh melebihi subtotal (main.py).
+  // Layar memakai batas yang sama supaya tombol tidak menyala untuk isian yang
+  // pasti ditolak.
+  const discountTooBig = discountIdr > subtotal
+  const total = Math.max(0, grossTotal - discountIdr)
 
   const hasNamedItem = parsed.some((i) => i.name && i.price > 0)
   const canSubmit = Boolean(identityId) && hasNamedItem && total > 0 && !busy
@@ -232,6 +241,8 @@ export function Create({ identityId }: { identityId: string | null }) {
     ? 'Menyiapkan… sebentar.'
     : !hasNamedItem
       ? 'Isi nama item & harga dulu.'
+      : discountTooBig
+        ? 'Diskonnya lebih besar dari total bill.'
       : total <= 0
         ? 'Total masih Rp0.'
         : ''
@@ -669,8 +680,18 @@ export function Create({ identityId }: { identityId: string | null }) {
           value={discount}
           inputMode="numeric"
           onChange={(v) => setDiscount(formatRp(parseRupiah(v)).replace('Rp', ''))}
-          hint="Diskon yang berlaku untuk seluruh bill"
+          hint={
+            discountTooBig
+              ? 'Diskon lebih besar dari total bill. Kecilkan angkanya.'
+              : 'Diskon yang berlaku untuk seluruh bill'
+          }
         />
+        {discountTooBig ? (
+          <div className="app-note" style={{ color: 'var(--ds-danger)', marginTop: -4 }}>
+            Diskon {formatRp(discountIdr)} melebihi subtotal {formatRp(subtotal)}. Kecilkan
+            angkanya dulu.
+          </div>
+        ) : null}
         <Field id="bill-payer" label="Yang bayar duluan (opsional)" value={payerName} onChange={setPayerName} hint="Kosongkan kalau kamu sendiri yang bayar" />
       </section>
 

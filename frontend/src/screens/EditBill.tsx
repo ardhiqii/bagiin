@@ -107,7 +107,12 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
   const taxIdr = parseRupiah(taxValue)
   const serviceIdr = parseRupiah(serviceValue)
   const discountIdr = parseRupiah(discountValue)
-  const total = subtotal + taxIdr + serviceIdr - discountIdr
+  const grossTotal = subtotal + taxIdr + serviceIdr
+  /* Diskon melebihi tagihan tidak boleh menghasilkan total minus; totalnya
+     ditahan di Rp0 dan kolom diskonnya yang diberi tahu. */
+  // batas yang sama dengan server: diskon tidak boleh melebihi subtotal
+  const discountTooBig = discountIdr > subtotal
+  const total = Math.max(0, grossTotal - discountIdr)
   const valid = parsed.length > 0 && parsed.every((item) => item.name && item.price > 0) && total > 0
   /* Alasan tombol Simpan mati harus kelihatan. Tanpa ini orang menebak apakah
      yang salah judulnya, harganya, atau qty-nya. */
@@ -405,8 +410,18 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
               value={discountValue}
               inputMode="numeric"
               onChange={(v) => setDiscount(formatRd(parseRupiah(v)))}
-              hint="Diskon yang berlaku untuk seluruh bill"
+              hint={
+                discountTooBig
+                  ? 'Diskon lebih besar dari total bill. Kecilkan angkanya.'
+                  : 'Diskon yang berlaku untuk seluruh bill'
+              }
             />
+            {discountTooBig ? (
+              <div className="app-note" style={{ color: 'var(--ds-danger)', marginTop: -4 }}>
+                Diskon {formatRp(discountIdr)} melebihi subtotal {formatRp(subtotal)}.
+                Kecilkan angkanya dulu.
+              </div>
+            ) : null}
           </section>
 
           <div className="ds-card ds-card-mint ds-pad-md">
