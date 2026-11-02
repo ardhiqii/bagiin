@@ -34,13 +34,17 @@ test.describe('Kotak hitam — orang baru, tanpa penjelasan', () => {
     const tamu = await ctx.newPage()
     try {
       await tamu.goto(url)
+      /* Tunggu layarnya selesai memuat dulu. Membaca innerText langsung setelah
+         goto menangkap kerangka "Memuat bill…" di mesin yang lebih lambat, dan
+         tesnya gagal bukan karena aplikasinya salah. */
+      const ajakan = tamu.getByRole('button', { name: /Ikut bill ini|Gabung/ })
+      await expect(ajakan).toHaveCount(1, { timeout: 20000 })
+      await expect(ajakan).toBeVisible({ timeout: 20000 })
+
       const teks = await tamu.locator('body').innerText()
       // Nama bill dan nominalnya harus terbaca sebelum orang diminta apa pun.
       expect(teks).toContain('Makan siang kantor')
       expect(teks).toMatch(/27\.000/)
-      // Harus ada satu ajakan yang jelas, bukan dua tombol bersaing.
-      const ajakan = tamu.getByRole('button', { name: /Ikut bill ini|Gabung/ })
-      await expect(ajakan).toHaveCount(1, { timeout: 20000 })
       // Dan satu kalimat yang menjelaskan kenapa ia melihat ini.
       expect(teks.length, 'layar pertama tidak boleh kosong').toBeGreaterThan(40)
     } finally {
@@ -81,6 +85,9 @@ test.describe('Kotak hitam — orang baru, tanpa penjelasan', () => {
   test('U3. tautan bill yang salah tidak berakhir di layar kosong', async ({ page }) => {
     await freshUser(page, 'Cakra')
     await page.goto('/b/inikodeyangtidakada123')
+    // Tunggu sampai kerangka muat selesai; kalau tidak, yang terbaca "Memuat…".
+    await expect(page.getByText(/tidak ditemukan|tidak ada|sudah dihapus|[Bb]eranda/i).first())
+      .toBeVisible({ timeout: 20000 })
     const teks = await page.locator('body').innerText()
     // Pesan manusiawi + jalan pulang.
     expect(teks).not.toContain('Something went wrong')

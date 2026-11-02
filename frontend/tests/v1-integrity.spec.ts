@@ -117,6 +117,10 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     await page.goto('/')
     await page.getByLabel('Nama kamu').fill('Getar ' + stamp)
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
+    /* Tunggu identitas selesai dibuat sebelum pindah layar: /create yang dibuka
+       terlalu cepat dikembalikan ke layar masuk, dan kegagalannya terbaca sebagai
+       "form tidak muncul". */
+    await expect(page.getByRole('button', { name: 'Mulai pakai Bagiin' })).toHaveCount(0, { timeout: 20000 })
     await page.goto('/create')
     await page.getByLabel('Nama bill').fill('Getar ' + stamp)
     await page.getByLabel('Item 1').fill('Kopi')
@@ -182,6 +186,10 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
     await page.goto('/')
     await page.getByLabel('Nama kamu').fill('Sapu ' + stamp)
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
+    /* Tunggu identitas selesai dibuat sebelum pindah layar: /create yang dibuka
+       terlalu cepat dikembalikan ke layar masuk, dan kegagalannya terbaca sebagai
+       "form tidak muncul". */
+    await expect(page.getByRole('button', { name: 'Mulai pakai Bagiin' })).toHaveCount(0, { timeout: 20000 })
     await page.goto('/create')
     await page.getByLabel('Nama bill').fill('Sapu ' + stamp)
     await page.getByLabel('Item 1').fill('Kopi')
