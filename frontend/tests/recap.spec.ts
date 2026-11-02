@@ -8,6 +8,11 @@ async function onboard(page: import('@playwright/test').Page, name: string) {
   if (await nameField.isVisible().catch(() => false)) {
     await nameField.fill(name)
     await page.getByRole('button', { name: /Lanjut|Mulai/ }).first().click()
+    /* Tunggu sampai identitas selesai dibuat sebelum layar berikutnya dibuka.
+       Tanpa ini, /create dibuka saat permintaan identitas masih berjalan,
+       aplikasi (benar) mengembalikan ke layar masuk, dan tesnya gagal dengan
+       keluhan "form tidak muncul" — terutama di WebKit yang lebih lambat. */
+    await expect(page.getByRole('button', { name: /Mulai pakai Bagiin/ })).toHaveCount(0, { timeout: 20000 })
   }
 }
 
@@ -163,6 +168,8 @@ test.describe('Bagiin — satu angka untuk uang yang sama', () => {
     await onboard(t, 'Tamu Piutang ' + stamp)
     await t.goto(linkTerima)
     await t.getByRole('button', { name: 'Ikut bill ini' }).click()
+    // Tunggu sampai benar-benar ikut: baris item masih mati sebelum itu.
+    await expect(t.getByRole('button', { name: 'Ikut bill ini' })).toHaveCount(0, { timeout: 20000 })
     await t.getByRole('button', { name: /Sate, ketuk/ }).click()
     await t.waitForTimeout(1000)
 
@@ -236,6 +243,8 @@ test.describe('Bagiin — angka besar bisa ditanya', () => {
     await onboard(t, 'Tamu Tanya ' + stamp)
     await t.goto(linkTerima)
     await t.getByRole('button', { name: 'Ikut bill ini' }).click()
+    // Tunggu sampai benar-benar ikut: baris item masih mati sebelum itu.
+    await expect(t.getByRole('button', { name: 'Ikut bill ini' })).toHaveCount(0, { timeout: 20000 })
     await t.getByRole('button', { name: /Sate, ketuk/ }).click()
     await t.waitForTimeout(1000)
 

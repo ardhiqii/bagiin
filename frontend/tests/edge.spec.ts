@@ -101,14 +101,18 @@ test.describe('Bagiin — kasus pinggir', () => {
     await expect(page.getByText('Bill ditutup')).toBeVisible()
     await expect(page.getByText('Ditutup', { exact: true })).toBeVisible()
 
-    const item = page.getByRole('button', { name: /Ayam, ketuk/ })
+    /* Baris yang terkunci menyatakan alasannya di aria-label, bukan mengajak
+       mengetuk, jadi locator-nya memakai barisnya. */
+    const item = page.locator('.ds-item', { hasText: 'Ayam' }).first()
     await expect(item).toBeDisabled()
+    await expect(item).toHaveAttribute('aria-label', /tidak bisa dipilih/)
 
     await openActions(page)
 
     await page.getByRole('button', { name: 'Buka lagi' }).click()
     await expect(page.getByText('Bill dibuka lagi')).toBeVisible()
     await expect(item).toBeEnabled()
+    await expect(item).toHaveAttribute('aria-label', /ketuk/)
   })
 
   test('13. tamu membatalkan status lunas', async ({ page, browser }) => {

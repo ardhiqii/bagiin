@@ -532,8 +532,15 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                     onClick={() => (editable ? toggleItem(item.id) : undefined)}
                     disabled={!editable || busyItem === item.id}
                     aria-pressed={mine > 0}
+                    /* Label hanya mengajak mengetuk kalau ketukan itu memang
+                       diterima. Baris yang mati (bill ditutup, sudah lunas, atau
+                       penampil belum ikut) dulu tetap berbunyi "ketuk untuk
+                       memilih" — pembaca layar mengumumkan tombol yang tidak
+                       melakukan apa pun, dan orang menyimpulkan aplikasinya macet. */
                     aria-label={
-                      item.name + ', ketuk untuk ' + (mine >= (item.mode === 'slot' ? (item.slot_count ?? 1) : item.quantity) ? 'membatalkan' : mine > 0 ? 'menambah porsi' : 'memilih')
+                      editable
+                        ? item.name + ', ketuk untuk ' + (mine >= (item.mode === 'slot' ? (item.slot_count ?? 1) : item.quantity) ? 'membatalkan' : mine > 0 ? 'menambah porsi' : 'memilih')
+                        : item.name + ', tidak bisa dipilih sekarang'
                     }
                   >
                     <span className="ds-item-check" aria-hidden="true">

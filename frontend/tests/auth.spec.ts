@@ -32,6 +32,11 @@ async function onboard(page: import('@playwright/test').Page, name: string) {
   if (await field.isVisible().catch(() => false)) {
     await field.fill(name)
     await page.getByRole('button', { name: /Mulai pakai Bagiin/ }).click()
+    /* Tunggu sampai beranda benar-benar milik orang ini. Tanpa ini, layar
+       berikutnya dibuka sebelum identitas selesai dibuat, aplikasi (dengan
+       benar) mengembalikan ke layar masuk, dan tesnya gagal dengan keluhan
+       "form tidak muncul" — tes yang menyalip aplikasinya sendiri. */
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(name, { timeout: 20000 })
   }
 }
 

@@ -146,8 +146,12 @@ test.describe('Kotak hitam — pintu masuk bill', () => {
 
       await guest.bringToFront()
       await guest.reload()
-      // Item terkunci; yang belum dipilih tetap tercatat sebagai sisa.
-      await expect(guest.getByRole('button', { name: /Sate padang, ketuk untuk memilih/ })).toBeDisabled({ timeout: 20000 })
+      /* Item terkunci. Labelnya sekarang menyatakan alasannya ("tidak bisa
+         dipilih sekarang"), bukan mengajak mengetuk — jadi locator-nya memakai
+         barisnya, dan labelnya ikut diperiksa. */
+      const baris = guest.locator('.ds-item', { hasText: 'Sate padang' }).first()
+      await expect(baris).toBeDisabled({ timeout: 20000 })
+      await expect(baris).toHaveAttribute('aria-label', /tidak bisa dipilih/)
       await expect(guest.getByText(/belum dipilih|Ada sisa yang belum diambil/i).first()).toBeVisible({ timeout: 20000 })
     } finally {
       await ctx.close()

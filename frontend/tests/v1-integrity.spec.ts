@@ -66,11 +66,18 @@ test.describe('1.0 — integritas yang tidak kelihatan', () => {
   })
 
   test('I-02. tombol bagikan menyalin tautan bill, bukan cuma bergetar tanpa hasil', async ({ page, context }) => {
-    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    // WebKit menolak nama izin ini dan menggagalkan seluruh konteks.
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {})
     await page.goto('/')
     await page.getByLabel('Nama kamu').fill('Bagikan ' + stamp)
     await page.getByRole('button', { name: 'Mulai pakai Bagiin' }).click()
+    /* Tunggu identitas benar-benar siap sebelum pindah layar. Tanpa ini,
+       /create dibuka saat sesi belum ada, aplikasi mengembalikan ke layar masuk,
+       dan kegagalannya terbaca sebagai "form tidak muncul" — padahal yang salah
+       adalah tes yang berjalan lebih cepat dari aplikasinya. */
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Bagikan ' + stamp, { timeout: 20000 })
     await page.goto('/create')
+    await expect(page.locator('#bill-title')).toBeVisible({ timeout: 20000 })
     await page.getByLabel('Nama bill').fill('Bagikan ' + stamp)
     await page.getByLabel('Item 1').fill('Kopi')
     await page.getByLabel('Harga satuan').first().fill('20000')

@@ -38,6 +38,11 @@ async function joinAsGuest(browser: any, url: string, name: string, itemLabel = 
     await guest.getByLabel('Nama kamu').fill(name)
     await guest.getByRole('button', { name: /Simpan nama & ikut bill/ }).click()
   }
+  /* Tunggu sampai benar-benar JOINED, bukan sekadar selesai mengetuk: sesudah
+     ini ada tes yang menekan baris item, dan baris item mati selama orangnya
+     belum tercatat ikut. Di mesin lambat, tanpa penantian ini, ketukan pertama
+     jatuh ke tombol mati dan hilang tanpa jejak. */
+  await expect(guest.getByRole('button', { name: /Ikut bill ini|Gabung/ })).toHaveCount(0, { timeout: 20000 })
   await expect(guest.getByText(new RegExp(itemLabel)).first()).toBeVisible({ timeout: 20000 })
   return { ctx, guest }
 }

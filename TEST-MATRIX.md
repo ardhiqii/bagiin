@@ -323,6 +323,7 @@ Sejak bug sheet iPhone, setiap kasus dijalankan di **dua mesin**: `mobile-chrome
 | `tests/blackbox-sixteen.spec.ts` | 2 | sheet harus milik viewport: dipasang di `<body>`, menutupi bar bawah, isi panjang digulir sendiri |
 | `tests/blackbox-seventeen.spec.ts` | 6 | realitas iPhone: ketukan cepat tidak jadi zoom, papan ketik menutupi layar, ponsel mendatar, nama beremoji, cari dengan huruf besar & spasi, tarik-ke-bawah tidak memuat ulang |
 | `tests/blackbox-eighteen.spec.ts` | 6 | orang yang belum tahu apa-apa: tautan bill dari orang asing, langkah berikutnya setelah memilih, tautan salah, jaringan mati, nominal miliaran di 320 px, bahasa daftar aksi |
+| `tests/blackbox-nineteen.spec.ts` | 6 | isian uang seperti orang mengetik: tempel "Rp 25.000", ketik "25rb", jumlah dikosongkan lalu 0, jumlah 999, nama item hanya spasi, tempel nama menu beberapa baris |
 
 ### Cacat yang ditemukan gelombang ini
 
