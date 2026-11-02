@@ -18,8 +18,15 @@ yang lama.
 | Domain | `bagiin.ardhiqi.com` | satu-satunya; domain `bagiin-react` sudah dihapus |
 
 Konfigurasi nginx yang berlaku disimpan di repo:
-`scripts/nginx/bagiin.ardhiqi.com.v1.conf`. Jangan mengedit `/etc/nginx`
-langsung tanpa menyalin perubahannya balik ke file itu.
+`scripts/nginx/bagiin.ardhiqi.com.v1.conf` dan `scripts/nginx/000-catch-all.conf`
+(catch-all menutup Host yang tidak punya vhost, supaya domain lama tidak
+diam-diam menampilkan produk). Jangan mengedit `/etc/nginx` langsung tanpa
+menyalin perubahannya balik ke file itu.
+
+**Sisa yang bukan urusan mesin ini:** record DNS `bagiin-react.ardhiqi.com`
+masih ada di Cloudflare, dan origin-nya sudah tidak punya sertifikat, jadi
+pengunjung melihat halaman error 526 — bukan aplikasi. Hapus record itu di
+Cloudflare (DNS → Records) supaya domainnya mati total.
 
 ## Deploy
 
