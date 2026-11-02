@@ -21,7 +21,8 @@ satu-satunya garis yang hidup; tidak ada lagi dua jalur vanilla/React.
 
 Versi vanilla 0.9 sudah pensiun: kodenya hanya ada di riwayat git, tidak ada
 `frontend/static/`, tidak ada `prototype/`, dan `main` sekarang berisi versi 1.
-`bagiin-react.ardhiqi.com` hanya 301 ke domain utama.
+Domain `bagiin-react.ardhiqi.com` sudah **dihapus** (vhost, sertifikat, arsip)
+sejak 2 Nov 2026 — jangan dihidupkan lagi.
 
 ## Aturan kerja
 

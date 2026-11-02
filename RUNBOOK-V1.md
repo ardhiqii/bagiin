@@ -15,7 +15,7 @@ yang lama.
 | UI produksi | `/var/www/bagiin` | dilayani nginx; `/api/` + `/uploads/` → 8096 |
 | Uploads | `/var/www/bagiin-uploads` | dipakai hanya oleh produksi |
 | API uji (e2e) | `bagiin-dev.service`, port **8090** | DB `/var/lib/bagiin-dev/bagiin.db` |
-| Domain | `bagiin.ardhiqi.com` | `bagiin-react.ardhiqi.com` → 301 ke sini |
+| Domain | `bagiin.ardhiqi.com` | satu-satunya; domain `bagiin-react` sudah dihapus |
 
 Konfigurasi nginx yang berlaku disimpan di repo:
 `scripts/nginx/bagiin.ardhiqi.com.v1.conf`. Jangan mengedit `/etc/nginx`
@@ -90,9 +90,9 @@ pengguna cuma tombol mati. Karena itu `/api/auth/config` mengirim
 tombol Google kalau `location.hostname` ada di daftar itu (kosong = tanpa
 batas, untuk pengembangan lokal).
 
-Domain yang terdaftar: `https://bagiin.ardhiqi.com`,
-`https://bagiin-react.ardhiqi.com` (masih terdaftar walau sekarang hanya
-redirect), dan `http://localhost:5199`.
+Domain yang terdaftar: `https://bagiin.ardhiqi.com` dan `http://localhost:5199`.
+`https://bagiin-react.ardhiqi.com` masih tercatat di Google Console tapi
+situsnya sudah tidak ada; kalau sempat, hapus dari daftar itu juga.
 
 Kalau nanti ada domain baru:
 

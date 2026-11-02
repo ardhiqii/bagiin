@@ -8,7 +8,7 @@ gateway, just a link.
 Sejak 2 Nov 2026 hanya ada **satu** aplikasi, **satu** folder, **satu** DB, dan
 **satu** nama versi: versi 1. Tidak ada lagi jalur "React" terpisah — React
 adalah cara aplikasi ini dibangun, bukan nama rilis. Versi vanilla (0.9) hanya
-tinggal di riwayat git. Domain lama dialihkan 301 ke domain utama.
+tinggal di riwayat git. Domain lama sudah dihapus, bukan dialihkan.
 
 ## Struktur
 
