@@ -13,6 +13,13 @@ body {
   font-family: var(--ds-font-body);
   color: var(--ds-navy);
   background: var(--ds-bg);
+  /* iOS memperbesar teks sendiri saat ponsel diputar mendatar, dan Safari
+     memuat ulang halaman kalau daftar ditarik melewati puncaknya — di tengah
+     mengisi bill, itu kehilangan pekerjaan. Keduanya dimatikan di sini: aplikasi
+     mengatur skalanya sendiri, dan tarikan berlebih tidak boleh jadi navigasi. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior-y: contain;
 }
 button,
 input,
@@ -24,6 +31,7 @@ textarea {
 .app-shell, .app-shell *, .app-shell *::before, .app-shell *::after { box-sizing: border-box; }
 
 .app-shell {
+  min-height: 100vh;
   min-height: 100dvh;
   background: var(--ds-bg);
   color: var(--ds-navy);
@@ -67,7 +75,9 @@ textarea {
   max-width: none;
   /* tinggi tetap, bukan min-height: isi yang scroll di dalam, bar bawah dan
      navigasi selalu menempel di dasar frame */
+  height: 100vh;
   height: 100dvh;
+  max-height: 100vh;
   max-height: 100dvh;
   background: var(--ds-bg);
   display: flex;
@@ -82,8 +92,13 @@ textarea {
   display: flex;
   align-items: center;
   gap: var(--ds-space-3);
-  padding: var(--ds-space-3) var(--ds-content-pad);
+  /* Saat dibuka dari ikon di layar utama (apple-mobile-web-app-capable),
+     Safari tidak menyisakan ruang untuk jam dan baterai: tanpa padding ini,
+     judul layar tertimpa status bar. Di tab biasa nilainya 0. */
+  padding: calc(var(--ds-space-3) + env(safe-area-inset-top)) var(--ds-content-pad) var(--ds-space-3);
+  background: var(--ds-bg);
   background: color-mix(in srgb, var(--ds-bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 70%, transparent);
 }
@@ -157,7 +172,9 @@ textarea {
   padding: var(--ds-space-3) var(--ds-content-pad) 0;
   /* Satu permukaan dengan navigasi di bawahnya: kalau bar aksi memakai warna
      halaman sementara navigasi putih, keduanya terbaca dua panel bertumpuk. */
+  background: var(--ds-surface);
   background: color-mix(in srgb, var(--ds-surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
   border-top: 1px solid color-mix(in srgb, var(--ds-border) 92%, transparent);
 }
@@ -171,7 +188,9 @@ textarea {
      tanda batas adalah garis 1 px beralfa 0.55 yang hampir hilang, sehingga yang
      terbaca justru bayangan kartu di atasnya dan bar-nya terlihat tidak selebar
      layar. Putih 92% + blur = bar bawah yang jelas miliknya sendiri. */
+  background: var(--ds-surface);
   background: color-mix(in srgb, var(--ds-surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
   border-top: 1px solid color-mix(in srgb, var(--ds-border) 92%, transparent);
 }

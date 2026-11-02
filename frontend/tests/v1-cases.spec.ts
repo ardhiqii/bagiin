@@ -123,7 +123,9 @@ test.describe('Bagiin v2 — satu layar masuk', () => {
     expect(box).not.toBeNull()
     expect(Math.round((box?.height ?? 0) + (box?.y ?? 0))).toBeLessThanOrEqual(844)
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth)
-    expect(overflow, 'tidak ada geser horizontal').toBeLessThanOrEqual(390 + 1)
+    // Lebar mengikuti viewport proyek (Pixel 390, iPhone 15 393), bukan angka tetap.
+    const lebar = await page.evaluate(() => window.innerWidth)
+    expect(overflow, 'tidak ada geser horizontal').toBeLessThanOrEqual(lebar + 1)
   })
 
   test('V-04. /masuk membuka tab Kode, beranda membuka tab Nama', async ({ page }) => {
@@ -159,7 +161,7 @@ test.describe('Bagiin v2 — batas tampilan', () => {
     const heading = page.getByRole('heading', { level: 1 })
     await expect(heading).toContainText('🦖')
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth)
-    expect(overflow).toBeLessThanOrEqual(390 + 1)
+    expect(overflow).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth) + 1)
   })
 
   test('V-07. layar masuk di 1280 px benar-benar center', async ({ browser }) => {

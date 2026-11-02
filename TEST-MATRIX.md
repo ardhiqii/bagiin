@@ -296,9 +296,12 @@ Dijalankan di Chromium headful yang sudah punya sesi Google, terhadap build live
 
 ## Kotak hitam 1.0 — e2e sebagai orang yang belum pernah melihat aplikasi
 
-Enam belas berkas, **116 kasus**, semuanya dijalankan lewat layar: tidak ada satu
-pun pemanggilan API langsung untuk menyiapkan keadaan, karena yang diuji adalah
-apa yang bisa dilakukan orang, bukan apa yang bisa dilakukan klien HTTP.
+Delapan belas berkas, **128 kasus**, semuanya dijalankan lewat layar: tidak ada
+satu pun pemanggilan API langsung untuk menyiapkan keadaan, karena yang diuji
+adalah apa yang bisa dilakukan orang, bukan apa yang bisa dilakukan klien HTTP.
+
+Sejak bug sheet iPhone, setiap kasus dijalankan di **dua mesin**: `mobile-chrome`
+(Pixel 7) dan `mobile-safari` (WebKit, iPhone 15).
 
 | Berkas | Kasus | Isi |
 |---|---|---|
@@ -318,6 +321,8 @@ apa yang bisa dilakukan orang, bukan apa yang bisa dilakukan klien HTTP.
 | `tests/blackbox-fourteen.spec.ts` | 6 | pintu masuk: gabung ke bill tertutup, dua tamu senama, nama 60 karakter, pemilik buka tautannya sendiri, ditutup saat tamu diam, klik "Ikut" dua kali |
 | `tests/blackbox-fifteen.spec.ts` | 6 | dua orang mengubah hal sama: item dihapus, harga berubah, ditutup di tengah, ganti penalangi, keluar-lalu-masuk, tutup lalu buka |
 | `tests/blackbox-sixteen.spec.ts` | 2 | sheet harus milik viewport: dipasang di `<body>`, menutupi bar bawah, isi panjang digulir sendiri |
+| `tests/blackbox-seventeen.spec.ts` | 6 | realitas iPhone: ketukan cepat tidak jadi zoom, papan ketik menutupi layar, ponsel mendatar, nama beremoji, cari dengan huruf besar & spasi, tarik-ke-bawah tidak memuat ulang |
+| `tests/blackbox-eighteen.spec.ts` | 6 | orang yang belum tahu apa-apa: tautan bill dari orang asing, langkah berikutnya setelah memilih, tautan salah, jaringan mati, nominal miliaran di 320 px, bahasa daftar aksi |
 
 ### Cacat yang ditemukan gelombang ini
 
@@ -353,7 +358,34 @@ apa yang bisa dilakukan orang, bukan apa yang bisa dilakukan klien HTTP.
 - porsi yang tidak habis dibagi rata menaruh sisa 1 rupiah pada yang menalangi
   (10.000 dibagi 3 → 3.333 / 3.333 / 3.334).
 
-| 10 | di iPhone 15, sheet "Siapa yang ikut?" **tidak bisa digulir**: isinya terpotong tepat di atas bar "Total bill"/navigasi, dan sisanya tidak terjangkau jari | sheet dirender di dalam `<main class="app-body">`, dan elemen itu memakai `-webkit-overflow-scrolling: touch` + `overflow-y: auto`. Di iOS Safari wadah gulir seperti itu menjadi containing block untuk `position: fixed`, jadi overlay terkurung di kotak isi; Chromium tidak mereproduksinya karena `fixed` di sana tetap menempel ke viewport | `Sheet` dipasang lewat `createPortal` ke `document.body` (`ds/primitives.tsx`), plus `body.sheet-open .app-body { overflow: hidden }` supaya halaman di belakang berhenti menggulir. Dijaga `blackbox-sixteen.spec.ts` |
+| 10 | nominal **Rp1.234.567.890 terpotong** di layar 320 px: angka hero 34 px lebih lebar dari kartunya, jadi angkanya meluber keluar kotak | ukuran angka hero tetap (`--ds-text-4xl`) berapa pun panjang nominalnya | `.ds-balance-value.is-long` / `.is-xl` menurunkan ukuran satu-dua tingkat menurut panjang angka; dipakai kartu saldo dan total bill (`ds/primitives.tsx`, `BillDetail.tsx`, `design-system.css`) |
+| 11 | di iPhone 15, sheet "Siapa yang ikut?" **tidak bisa digulir**: isinya terpotong tepat di atas bar "Total bill"/navigasi, dan sisanya tidak terjangkau jari | sheet dirender di dalam `<main class="app-body">`, dan elemen itu memakai `-webkit-overflow-scrolling: touch` + `overflow-y: auto`. Di iOS Safari wadah gulir seperti itu menjadi containing block untuk `position: fixed`, jadi overlay terkurung di kotak isi; Chromium tidak mereproduksinya karena `fixed` di sana tetap menempel ke viewport | `Sheet` dipasang lewat `createPortal` ke `document.body` (`ds/primitives.tsx`), plus `body.sheet-open .app-body { overflow: hidden }` supaya halaman di belakang berhenti menggulir. Dijaga `blackbox-sixteen.spec.ts` |
+
+### Yang khas Safari dan tidak terlihat di Chromium
+
+Enam hal ini ditemukan dengan menjalankan suite yang sama di WebKit, bukan dengan
+membaca CSS. Semuanya diperbaiki, dan yang bisa dijaga lewat tes sudah dijaga.
+
+1. **`position: fixed` di dalam `.app-body` terkurung** karena
+   `-webkit-overflow-scrolling: touch` (cacat 11).
+2. **`backdrop-filter` tanpa `-webkit-`**: Safari < 18 mengabaikannya, jadi bar
+   bawah kehilangan blur. Sekarang ditulis berpasangan.
+3. **`color-mix()` tanpa cadangan**: di iOS < 16.2 seluruh deklarasi `background`
+   dibuang, dan bar bawah jadi bening — teks halaman terbaca menembusnya.
+   Sekarang ada `background` solid sebelum `color-mix`.
+4. **`height: 100dvh` tanpa cadangan `vh`**: di iOS < 15.4 frame aplikasi tidak
+   punya tinggi, dan isi tidak bisa digulir. Sekarang `vh` ditulis lebih dulu.
+5. **Tidak ada `touch-action`**: dua ketukan cepat pada tombol + / − memicu
+   zoom halaman di iOS, dan halaman tidak kembali sendiri. Semua kontrol yang
+   bisa diketuk sekarang `touch-action: manipulation` (dijaga T1).
+6. **Status bar menimpa header saat dipasang ke layar utama** (PWA standalone):
+   `.app-top` sekarang menambah `env(safe-area-inset-top)`.
+
+Dua hal kecil lain: `-webkit-text-size-adjust: 100%` supaya iOS tidak membesarkan
+teks sendiri, `overscroll-behavior-y: contain` supaya tarikan ke bawah tidak
+memuat ulang halaman di tengah mengisi bill (dijaga T6), dan kolom pencarian
+memakai `autoCapitalize="none" autoCorrect="off"` supaya kata kunci tidak diubah
+mesin (`budi` tidak menjadi `Budi`).
 
 ### Catatan gelombang 10–15
 

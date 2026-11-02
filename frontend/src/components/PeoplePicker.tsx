@@ -81,6 +81,14 @@ export function PeoplePicker({
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Cari nama atau @username"
           aria-label="Cari teman"
+          /* iOS mengapitalkan huruf pertama dan "membetulkan" nama orang secara
+             otomatis. Di kolom pencarian itu mengubah kata kunci yang diketik
+             (budi -> Budi, @aufaa -> @Aufaa) dan hasilnya kosong padahal
+             orangnya ada. */
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="search"
         />
         {query ? (
           <button type="button" className="search-clear" onClick={() => setQuery('')} aria-label="Hapus pencarian">

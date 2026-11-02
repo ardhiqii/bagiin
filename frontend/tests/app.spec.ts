@@ -162,8 +162,13 @@ test.describe('Bagiin — perilaku user', () => {
     // baris di sheet: namanya "Bagikan link" + catatan kecil di bawahnya
     await page.getByRole('button', { name: /^Bagikan link/ }).click()
     await expect(page.getByText('Link disalin. Kirim ke teman kamu.')).toBeVisible()
-    const clip = await page.evaluate(() => navigator.clipboard.readText())
-    expect(clip).toContain('/b/')
+    /* WebKit tidak memberi izin baca clipboard ke konteks otomatis, jadi isi
+       papan klip hanya diperiksa di Chromium; toast-nya tetap diperiksa di kedua
+       mesin karena itu yang dilihat orang. */
+    if (test.info().project.name.includes('chrome')) {
+      const clip = await page.evaluate(() => navigator.clipboard.readText())
+      expect(clip).toContain('/b/')
+    }
   })
 
   test('8. navigasi bawah pindah layar tanpa error', async ({ page }) => {

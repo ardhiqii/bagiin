@@ -18,9 +18,25 @@ export default defineConfig({
     viewport: { width: 390, height: 844 },
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    permissions: ['clipboard-read', 'clipboard-write'],
   },
-  projects: [{ name: 'mobile-chrome', use: { ...devices['Pixel 7'] , viewport: { width: 390, height: 844 } } }],
+  projects: [
+    {
+      name: 'mobile-chrome',
+      use: {
+        ...devices['Pixel 7'],
+        viewport: { width: 390, height: 844 },
+        /* WebKit menolak nama izin ini dan menggagalkan seluruh konteks, jadi
+           izin clipboard hanya diberikan di jalur Chromium. */
+        permissions: ['clipboard-read', 'clipboard-write'],
+      },
+    },
+    /* Jalur kedua: WebKit, mesin yang dipakai Safari. Bukan hiasan — bug sheet
+       yang dilaporkan di iPhone 15 tidak muncul sama sekali di Chromium, karena
+       `position: fixed` di dalam wadah `-webkit-overflow-scrolling: touch`
+       terkurung di iOS. Tanpa proyek ini, seluruh suite hijau sementara Safari
+       rusak. */
+    { name: 'mobile-safari', use: { ...devices['iPhone 15'] } },
+  ],
   /**
    * Server dev dinyalakan sendiri kalau belum ada. Sebelumnya suite berjalan
    * dengan asumsi port 5199 sudah hidup: begitu prosesnya mati, seluruh tes

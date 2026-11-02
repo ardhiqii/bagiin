@@ -216,11 +216,18 @@ export function BalanceCard({
   const zero = Math.round(value) === 0
   const sign = zero || !signed ? '' : value < 0 ? '−' : '+'
   const tone = toneProp ?? (zero ? 'zero' : !signed ? 'flat' : value < 0 ? 'neg' : 'pos')
+  /* Angka hero tidak boleh terpotong. Di layar 320 px, "Rp1.234.567.890" pada
+     34 px lebih lebar dari kartunya: angkanya meluber keluar kotak dan orang
+     membaca nominal yang salah. Ukurannya turun satu tingkat setiap kali
+     angkanya bertambah panjang — bukan dipotong elipsis, karena nominal yang
+     disingkat di aplikasi uang sama saja dengan nominal yang salah. */
+  const teksAngka = Math.round(Math.abs(value)).toLocaleString('id-ID')
+  const panjangAngka = teksAngka.length > 12 ? ' is-xl' : teksAngka.length > 8 ? ' is-long' : ''
   const angka = (
     <>
       {sign ? <span className="ds-balance-sign">{sign}</span> : null}
       <span className="ds-balance-cur">Rp</span>
-      {Math.round(Math.abs(value)).toLocaleString('id-ID')}
+      {teksAngka}
     </>
   )
   return <div className="ds-balance">
@@ -228,7 +235,7 @@ export function BalanceCard({
     {onOpenDetail ? (
       <button
         type="button"
-        className={`ds-balance-value ds-balance-tap ds-amount--${tone}`}
+        className={`ds-balance-value ds-balance-tap ds-amount--${tone}${panjangAngka}`}
         onClick={onOpenDetail}
         aria-haspopup="dialog"
       >
@@ -236,7 +243,7 @@ export function BalanceCard({
         <CaretRight size={18} weight="bold" className="ds-balance-caret" aria-hidden="true" />
       </button>
     ) : (
-      <strong className={`ds-balance-value ds-amount--${tone}`}>{angka}</strong>
+      <strong className={`ds-balance-value ds-amount--${tone}${panjangAngka}`}>{angka}</strong>
     )}
     {rows && rows.length > 0 ? (
       <>
@@ -367,6 +374,7 @@ export type ItemState = 'idle' | 'picked' | 'shared'
 export function Field({
   label, value, onChange, hint, error, inputMode, id, disabled,
   type = 'text', autoComplete, maxLength, onBlur,
+  autoCapitalize = 'sentences', autoCorrect = 'off',
 }: {
   label: string
   value: string
@@ -382,6 +390,14 @@ export function Field({
   type?: 'text' | 'password' | 'email' | 'date'
   autoComplete?: string
   maxLength?: number
+  /* Dua pengaturan ini khas iOS dan tidak punya padanan di desktop.
+     `autoCorrect` dimatikan sebagai bawaan: di aplikasi uang, nama orang dan
+     nama menu yang "dibetulkan" otomatis lebih sering salah daripada menolong
+     (mengetik "Aufa" menjadi "Aura"), dan yang salah tidak pernah diberi tahu.
+     `autoCapitalize` tetap 'sentences' supaya kalimat biasa tidak berubah jadi
+     huruf kecil semua; kolom nama memakai 'words', kolom teknis 'none'. */
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters'
+  autoCorrect?: 'on' | 'off'
 }) {
   const describedBy = [hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined
   return <div className={`ds-field${error ? ' has-error' : ''}`}>
@@ -392,6 +408,9 @@ export function Field({
       type={type}
       inputMode={inputMode}
       autoComplete={autoComplete}
+      autoCapitalize={autoCapitalize}
+      autoCorrect={autoCorrect}
+      spellCheck={autoCorrect === 'off' ? false : undefined}
       maxLength={maxLength}
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}

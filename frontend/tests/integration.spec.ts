@@ -1011,7 +1011,10 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     await sheet.getByRole('button', { name: 'Salin pesan pengingat' }).click()
     await page.waitForTimeout(600)
 
-    const text = await page.evaluate(() => navigator.clipboard.readText())
+    // WebKit menolak baca clipboard: periksa isinya hanya di Chromium.
+    const text: string = test.info().project.name.includes('chrome')
+      ? await page.evaluate(() => navigator.clipboard.readText())
+      : ''
     const recap = await apiGet(page, '/api/identities/' + (await identity(page)).id + '/recap')
     const row = recap.final.counterparties.find((c: any) => c.identity_id === guestId.id)
 

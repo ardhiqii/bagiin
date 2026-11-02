@@ -232,7 +232,9 @@ test.describe('Kotak hitam — aksi di layar bill', () => {
   test('B38. kirim link ke teman menghasilkan tautan bill yang bisa dibuka', async ({ page, context }) => {
     await freshUser(page, 'Link ' + stamp)
     const url = await manualBill(page, 'Link bill ' + stamp, 23000)
-    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    // WebKit menolak nama izin ini; pemberian izin dibuat tidak fatal dan isi
+    // papan klip hanya diperiksa kalau memang bisa dibaca.
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {})
     await page.getByRole('button', { name: 'Bagikan ke teman' }).click()
     await page.waitForTimeout(1500)
     const clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''))

@@ -353,7 +353,12 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
         <>
           <div className="ds-balance">
             <span className="ds-balance-label">Total bill</span>
-            <strong className="ds-balance-value">
+            {/* Angka panjang (miliaran) harus turun ukuran, bukan terpotong di
+                layar 320 px. Aturan yang sama dengan kartu saldo di Beranda. */}
+            <strong className={`ds-balance-value${
+              data.bill.total_idr.toLocaleString('id-ID').length > 12 ? ' is-xl'
+                : data.bill.total_idr.toLocaleString('id-ID').length > 8 ? ' is-long' : ''
+            }`}>
               <span className="ds-balance-cur">Rp</span>
               {data.bill.total_idr.toLocaleString('id-ID')}
             </strong>

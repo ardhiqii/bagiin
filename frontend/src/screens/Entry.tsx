@@ -319,6 +319,7 @@ export function Entry({
                   <Field
                     id="entry-name"
                     label="Nama kamu"
+                    autoCapitalize="words"
                     value={name}
                     onChange={(next) => {
                       setName(next)
