@@ -4,6 +4,13 @@ Status: **selesai & terverifikasi.** 19 tes akun/kontak + suite penuh 119 tes
 lulus. Google client ID sungguhan sudah terpasang dan tombolnya terverifikasi
 terbuka ke akun Google (lihat bagian Google di bawah).
 
+> **Dokumen historis (catatan rencana, bukan petunjuk kerja).** Sejak 2 Nov 2026
+> hanya ada satu folder `/opt/projects/bagiin` dengan branch `react`, satu
+> layanan produksi `bagiin-api` (8096), DB `/var/lib/bagiin/bagiin.db`, dan satu
+> domain. Semua penyebutan worktree, port 8082/8090, DB sandbox, serta
+> `bagiin-react.ardhiqi.com` di bawah ini menggambarkan keadaan saat rencana
+> dikerjakan. Untuk keadaan sekarang lihat `RUNBOOK-V1.md`.
+
 ## Di mana kode ini hidup (v1)
 
 Repo ini satu repo, tiga worktree. Sejak fase ini selesai, **versi 1 = branch

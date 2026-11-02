@@ -25,3 +25,6 @@ frontend/tsconfig.tsbuildinfo
 
 # skrip ukur sekali pakai (jangan ikut ter-commit)
 frontend/.*.mjs
+
+# snapshot deploy (build & DB) tidak ikut repo
+backups/

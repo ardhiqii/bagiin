@@ -3,30 +3,31 @@
 Bagi bill bareng jadi gak ribet. Split bills with friends — no accounts, no payment
 gateway, just a link.
 
-**Live:** https://bagiin-react.ardhiqi.com (v1) · https://bagiin.ardhiqi.com (v0.9)
+**Live:** https://bagiin.ardhiqi.com
 
-## Versi
+Sejak 2 Nov 2026 hanya ada **satu** aplikasi dan **satu** folder. Versi vanilla
+(0.9) sudah pensiun: kodenya tetap ada di branch `main` di GitHub sebagai
+sejarah, tapi tidak lagi dijalankan di mesin ini. Domain lama
+`bagiin-react.ardhiqi.com` sekarang 301 ke domain utama.
 
-Ada dua jalur rilis. Nomornya dipakai di commit, dokumen, dan percakapan — jadi
-sebut "0.9" atau "1.0", bukan "yang lama" dan "yang baru".
+## Struktur
 
-| Versi | Isi | Branch | Worktree | Live |
-|---|---|---|---|---|
-| **0.9** | Vanilla JS: `app.js` + `bill.js` satu file besar, HTML disajikan backend | `main` | `/opt/projects/bagiin` | bagiin.ardhiqi.com |
-| **1.0** | React + TypeScript, design system Seimbang/Saldo, FastAPI terpisah, akun berlapis (kode pemulihan / username / Google), kontak ber-alias | `react` | `/opt/projects/bagiin-react` | bagiin-react.ardhiqi.com |
+```
+/opt/projects/bagiin          # satu-satunya checkout, branch react
+├── backend/                  # FastAPI + SQLite (venv lokal di backend/venv)
+├── frontend/                 # React 19 + TypeScript + Vite
+├── scripts/                  # deploy, rollback, salinan konfigurasi nginx
+└── *.md                      # SPEC, PRODUCT, DESIGN_SYSTEM, TEST-MATRIX, RUNBOOK
 
-Aturan main:
+/var/www/bagiin               # hasil build (dilayani nginx)
+/var/www/bagiin-uploads       # foto struk produksi
+/var/lib/bagiin/bagiin.db     # DB produksi (di luar repo, sengaja)
+/var/lib/bagiin-dev/          # DB + uploads instance uji e2e
+```
 
-- **0.9 = garis perbaikan.** Tidak ada fitur baru di sana; hanya bug produksi
-  yang mendesak. Dia yang sedang melayani pengguna sungguhan.
-- **1.0 = tempat semua pengembangan.** Fitur, perbaikan, dan eksperimen masuk ke
-  branch `react`, bukan ke `main`.
-- Perubahan 1.0 yang perlu ikut ke 0.9 di-cherry-pick manual dan sebaliknya —
-  jangan merge dua arah, kode frontendnya beda total.
-- Deploy **bukan** hasil `git push`. 0.9 dibaca langsung dari
-  `/opt/projects/bagiin`; 1.0 dibangun ke `frontend/dist` lalu disalin ke
-  `/var/www/bagiin-react`. Jangan menyunting file di checkout yang sedang hidup.
-
+Layanan: `bagiin-api.service` (produksi, 8096) dan `bagiin-dev.service`
+(uji e2e, 8090). Detail, cara deploy, dan cara membatalkan deploy ada di
+`RUNBOOK-V1.md`.
 
 ## How it works
 
@@ -42,68 +43,51 @@ Aturan main:
 
 ## Features
 
-- 📷 **Receipt OCR** via Google Gemini free tier — items, prices, merchant, date
+- 📷 **Receipt OCR** — item, harga, merchant, tanggal; beberapa penyedia dengan cadangan
 - 🔗 **Link sharing, no accounts** — identity is just a name on the device
-- 🔑 **Recovery/transfer code** — move your identity to another browser with a
-  generated code (regenerating kills the old code)
+- 🔑 **Akun berlapis** — kode pemulihan, username/password, atau Google; pindah HP tanpa kehilangan bill
 - ✏️ **Edit bills** while open — item diff preserves existing selections
 - 🖐️ **Creator can pick items too** (not just guests)
-- 🏦 **Payment profiles** — 33 Indonesian banks, digital banks & e-wallets with
-  brand-colored chips, shown in the pay sheet with one-tap copy
+- 🏦 **Payment profiles** — bank/e-wallet dengan chip merek dan tombol salin
 - 🧮 **Fair split math** — shared items divided evenly, proportional tax, rupiah
   rounding invariants covered by tests
-- 📱 **Mobile-first**, dark/light mode, no build step (vanilla JS)
+- 📱 **Mobile-first**, terang/gelap, PWA (manifest, ikon, layar penuh)
 
 ## Tech stack
 
 | Layer | Choice |
 |---|---|
 | Backend | FastAPI + SQLite (stdlib `sqlite3`) |
-| Frontend | Vanilla JS SPA (no framework, no build step) |
-| OCR | Google Gemini (`gemini-3.5-flash`, free tier) |
+| Frontend | React 19 + TypeScript + Vite, design system Seimbang/Saldo |
+| OCR | penyedia visi berantai (Gemini/OpenRouter) dengan batas ukuran gambar |
 | Deploy | nginx + Let's Encrypt, Cloudflare DNS, systemd |
-| Tests | Python stdlib scripts (`test_calc_regression.py`, `test_features.py`) |
+| Tests | pytest (422 kasus backend) + Playwright (253 kasus e2e) |
 
-## Project structure
-
-```
-bagiin/
-├── backend/
-│   ├── main.py      # FastAPI app & endpoints
-│   ├── db.py        # SQLite schema + queries
-│   ├── calc.py      # split calculation engine
-│   ├── ocr.py       # Gemini OCR wrapper
-│   ├── test_calc_regression.py
-│   └── test_features.py
-├── frontend/
-│   ├── index.html   # shell + inline CSS
-│   └── static/v10/  # app.js (router/state), screens.js, bill.js
-└── SPEC.md          # product spec & changelog
-```
-
-## Local development
+## Development
 
 ```bash
 cd backend
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt   # fastapi, uvicorn, slowapi, google-genai (or as installed)
-export GEMINI_API_KEY=...          # required for OCR; other features work without it
-uvicorn main:app --reload --port 8082
+python3 -m venv venv && ./venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+./venv/bin/python -m pytest -q          # 422 kasus
+
+cd ../frontend
+npm install
+npm run dev                             # http://localhost:5199, /api -> 8090
+npx playwright test                     # e2e, butuh bagiin-dev.service hidup
 ```
 
-Open http://localhost:8082
+Instance uji memakai DB sendiri (`/var/lib/bagiin-dev/bagiin.db`), jadi
+menjalankan e2e tidak menyentuh data produksi.
 
-> Static frontend is served from `frontend/static/`. The backend inserts a
-> content hash into each script URL and revalidates `index.html`; no version
-> folder or manual cache-busting step is needed.
-
-## Tests
+## Deploy
 
 ```bash
-cd backend
-venv/bin/python test_calc_regression.py   # split math invariants
-BAGIIN_DB=/tmp/bagiin_test.db venv/bin/python test_features.py  # edit diff, accounts, codes
+bash scripts/deploy-web.sh     # build, salin, restart API, lalu buktikan lewat HTTP
+bash scripts/rollback-web.sh   # kembalikan tampilan ke build sebelumnya
 ```
+
+Skrip deploy menyimpan salinan build dan DB sebelum menimpa apa pun; tanpa
+salinan itu rollback cuma jadi niat. Penjelasan lengkap: `RUNBOOK-V1.md`.
 
 ## License
 

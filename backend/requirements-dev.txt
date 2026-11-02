@@ -1,0 +1,4 @@
+# Paket yang hanya dipakai tes, bukan oleh aplikasi. Dipisah supaya produksi
+# tidak perlu memasang pytest/httpx hanya untuk melayani pengguna.
+pytest
+httpx

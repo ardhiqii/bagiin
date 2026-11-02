@@ -1,86 +1,85 @@
-# Runbook: v1 penuh (satu UI, satu backend, satu DB)
+# Runbook: satu aplikasi, satu folder, satu DB
 
-Sejak 31 Okt 2026 **semua trafik produksi** dilayani v1. Rollback ke v0.9
-tersedia sebagai skrip satu perintah, bukan sebagai jalur harian.
+Sejak 2 Nov 2026 hanya ada satu aplikasi (React v1) dan satu folder kerja.
+Versi vanilla (0.9) sudah pensiun: kodenya diarsipkan, layanannya dimatikan,
+dan domainnya dialihkan. Catatan di bawah ini menggantikan runbook dua-jalur
+yang lama.
+
+## Topologi
 
 | Apa | Di mana | Keterangan |
 | --- | --- | --- |
-| DB produksi | `/opt/projects/bagiin/backend/bagiin.db` | satu-satunya sumber kebenaran, skema v1 |
-| Backend v1 (penulis) | `bagiin-v1.service`, port **8096** | kode branch `react` |
-| UI v1 | `/var/www/bagiin-react`, disajikan nginx | `/api/` + `/uploads/` → 8096, sisanya `index.html` |
-| Domain | `bagiin.ardhiqi.com` (utama), `bagiin-react.ardhiqi.com` | dua-duanya v1 |
-| Backend 0.9 (siaga) | `bagiin.service`, port **8082** | tidak menerima trafik; target rollback |
-| Backend sandbox (mati) | `bagiin-react-api.service`, port 8090 | DB sandbox sudah tidak dipakai |
+| Kode | `/opt/projects/bagiin` | branch `react`, satu-satunya checkout |
+| DB produksi | `/var/lib/bagiin/bagiin.db` | di luar repo; satu-satunya sumber kebenaran |
+| API produksi | `bagiin-api.service`, port **8096** | venv `backend/venv`, `BAGIIN_ENV=production` |
+| UI produksi | `/var/www/bagiin` | dilayani nginx; `/api/` + `/uploads/` → 8096 |
+| Uploads | `/var/www/bagiin-uploads` | dipakai hanya oleh produksi |
+| API uji (e2e) | `bagiin-dev.service`, port **8090** | DB `/var/lib/bagiin-dev/bagiin.db` |
+| Domain | `bagiin.ardhiqi.com` | `bagiin-react.ardhiqi.com` → 301 ke sini |
 
-Konfigurasi nginx v1 yang berlaku disimpan di repo:
+Konfigurasi nginx yang berlaku disimpan di repo:
 `scripts/nginx/bagiin.ardhiqi.com.v1.conf`. Jangan mengedit `/etc/nginx`
 langsung tanpa menyalin perubahannya balik ke file itu.
 
-## Rollback ke 0.9
+## Deploy
 
 ```bash
-sudo bash /opt/projects/bagiin-react/scripts/rollback-to-09.sh
+bash scripts/deploy-web.sh
 ```
 
-Mengembalikan dua file nginx dari `*.conf.pre-v1` (bagiin.ardhiqi.com → UI 0.9 +
-API 8082, domain beta → UI React + API sandbox 8090), reload, lalu menyalakan
-`bagiin.service`. Hitungan detik; tidak ada deploy.
+Urutannya: build frontend → salin DB ke `backups/db-<waktu>.db` → tarball build
+yang sekarang hidup ke `backups/dist-<waktu>.tar.gz` → rsync `dist/` →
+**restart `bagiin-api`** (kode backend baru tidak pernah hidup sendiri) → lalu
+membuktikan hasilnya lewat HTTP: `/` harus `text/html`,
+`/manifest.webmanifest` harus `application/manifest+json`, `/api/auth/config`
+harus `application/json`, dan `/recap` harus 200 (rute SPA jatuh ke
+`index.html`).
 
-**DB tidak dikembalikan dan tidak perlu dimigrasi ulang.** Migrasi v1 aditif —
-kolom baru nullable, tiga tabel baru tidak dipakai 0.9 — dan backend 0.9 sudah
-diuji membaca DB hasil migrasi (baca data, jumlah baris, dan menulis bill baru
-normal). Rollback hanya memindahkan *siapa yang menjawab permintaan*.
+Tanpa langkah pembuktian itu, nginx yang salah peta MIME pernah membuat seluruh
+situs jadi unduhan sementara build, rsync, dan reload semuanya "sukses".
 
-Bukti yang dicetak skrip:
-
-- `penanda UI 0.9 di beranda: 1` — beranda memuat `/static/app.js` (build 0.9)
-- `api/auth/config: 404` — rute akun tidak ada di 0.9
-
-## Maju lagi ke v1
+## Rollback deploy
 
 ```bash
-sudo bash /opt/projects/bagiin-react/scripts/promote-to-v1.sh
+bash scripts/rollback-web.sh                    # build sebelumnya
+bash scripts/rollback-web.sh backups/dist-20261102-0915.tar.gz
 ```
 
-Idempoten: cadangan `*.conf.pre-v1` dibuat sekali dan tidak pernah ditimpa,
-memastikan `bagiin-v1` hidup, memasang konfigurasi v1, reload, lalu memverifikasi
-`api/auth/config = 200` dan beranda memuat `/assets/` (build v1).
+Menyalin balik tarball build, me-restart API, lalu memeriksa ulang lewat HTTP.
+DB tidak ikut dikembalikan: transaksi yang sudah masuk tidak boleh hilang
+karena tampilan yang salah. Salinan DB dari setiap deploy ada di
+`backups/db-<waktu>.db` kalau memang perlu dipulihkan manual — itu berarti
+kehilangan transaksi setelah snapshot tersebut.
 
-## Kenapa DB-nya DB produksi, bukan DB branch
+## Kalau perlu kembali ke 0.9 (darurat saja)
 
-DB branch (`/var/lib/bagiin-sandbox/bagiin.db`) adalah **salinan** DB produksi
-yang dibuat 31 Okt pagi lalu dipakai untuk pengujian. Setelah diperiksa, seluruh
-isinya yang tidak ada di produksi adalah artefak uji Playwright: 10 bill
-("Piutang 842754", "Utang 842754", "Bima Nalangin 842754", …) dan 14 identitas
-uji ("Aufa Saldo 842754", "Tamu Piutang 842754", …).
+0.9 tidak lagi hidup di mesin ini. Untuk menghidupkannya lagi perlu tiga hal
+yang semuanya disimpan di `/home/hermes/backups/bagiin-consolidation-<waktu>/`:
 
-Memakai DB branch berarti membuang transaksi nyata yang masuk setelah salinan
-itu dibuat. Jadi yang dipakai adalah DB produksi sendiri, dimigrasi di tempat.
-Salinan sandbox disimpan sebagai `bagiin.db.bak-20261031` kalau masih perlu
-dilihat, dan tidak lagi dilayani siapa pun.
+1. `bagiin-0.9.tar.gz` — kode + venv 0.9 apa adanya.
+2. `bagiin-prod.db` — salinan DB saat konsolidasi.
+3. `nginx-sites-enabled/` — konfigurasi nginx sebelum konsolidasi, plus
+   `bagiin.service.txt` dan `bagiin-v1.service.txt` untuk unit systemd-nya.
 
-## Aturan selama v0.9 masih bisa dihidupkan
+Langkahnya: ekstrak tarball ke `/opt/projects/bagiin-0.9`, pasang kembali unit
+`bagiin.service` (port 8082, DB produksi), kembalikan konfigurasi nginx lama,
+reload. Skema v1 aditif, jadi DB v1 masih bisa dibaca 0.9 — tetapi transaksi
+yang dibuat lewat UI v1 setelah konsolidasi hanya terlihat lagi kalau v1
+dinaikkan kembali.
 
-1. **Skema hanya boleh nambah.** Kolom/tabel baru aman; menghapus atau mengubah
-   tipe kolom lama membuat rollback tidak bisa membaca DB.
-2. **Angka duit tidak boleh berubah tanpa sadar.** Mesin hitung 0.9 dan v1
-   identik saat cutover; perubahan di `db.py` bagian hitungan langsung berlaku
-   untuk semua user.
-3. Rollback hanya untuk keadaan darurat. Kalau dipakai, catat waktunya: setiap
-   bill yang dibuat lewat UI v1 setelah itu tetap ada di DB, tapi user 0.9 tidak
-   akan melihat fitur akun (username/password, perangkat, alias kontak).
+Rollback yang **wajar** dipakai sehari-hari adalah `rollback-web.sh` di atas,
+bukan menghidupkan 0.9.
 
-## Kalau ada yang salah
+## Verifikasi cepat setelah apa pun berubah
 
 ```bash
-systemctl status bagiin-v1 bagiin.service
-journalctl -u bagiin-v1 -n 100 --no-pager | grep -i 'error\|traceback'
-sudo bash /opt/projects/bagiin-react/scripts/rollback-to-09.sh
+systemctl is-active bagiin-api bagiin-dev
+ss -tlnp | grep -E ':8096|:8090'
+curl -s -o /dev/null -w '%{http_code} %{content_type}\n' https://bagiin.ardhiqi.com/
+curl -s -o /dev/null -w '%{http_code}\n' https://bagiin.ardhiqi.com/recap
+curl -s -o /dev/null -w '%{http_code}\n' https://bagiin.ardhiqi.com/api/auth/config
+journalctl -u bagiin-api -n 100 --no-pager | grep -i 'error\|traceback'
 ```
-
-Cadangan DB sebelum migrasi: `/opt/projects/bagiin/backend/bagiin.db.bak-v1-20261031`
-(md5 `cf3830…`, skema 0.9, 10 tabel). Memulihkannya berarti kehilangan semua
-transaksi setelah 2026-10-31 13:56 — pakai hanya kalau rollback nginx tidak cukup.
 
 ## Login Google hanya di domain yang terdaftar
 
@@ -91,30 +90,28 @@ pengguna cuma tombol mati. Karena itu `/api/auth/config` mengirim
 tombol Google kalau `location.hostname` ada di daftar itu (kosong = tanpa
 batas, untuk pengembangan lokal).
 
-Per 31 Okt 2026 OAuth client sudah mendaftarkan `http://localhost:5199`,
-`https://bagiin-react.ardhiqi.com`, dan `https://bagiin.ardhiqi.com`; env berisi
-dua domain produksi, dan tombol Google terverifikasi render (1 iframe, 44 px,
-nol respons 4xx) di domain utama.
+Domain yang terdaftar: `https://bagiin.ardhiqi.com`,
+`https://bagiin-react.ardhiqi.com` (masih terdaftar walau sekarang hanya
+redirect), dan `http://localhost:5199`.
 
-Kalau nanti ada domain baru, urutannya:
+Kalau nanti ada domain baru:
 
 1. Google Cloud Console → APIs & Services → Credentials → OAuth client
    `9976223407401-…apps.googleusercontent.com` (Web application).
 2. **Authorized JavaScript origins** → tambahkan `https://<domain-baru>`.
 3. Save, tunggu beberapa menit.
 4. Tambahkan domain itu ke `BAGIIN_GOOGLE_ORIGINS` di
-   `/etc/systemd/system/bagiin-v1.service`, lalu
-   `sudo systemctl daemon-reload && sudo systemctl restart bagiin-v1`.
+   `/etc/systemd/system/bagiin-api.service`, lalu
+   `sudo systemctl daemon-reload && sudo systemctl restart bagiin-api`.
 
-Tanpa langkah itu, user di domain tersebut tetap bisa masuk lewat nama, kode
-pemulihan, atau username/password — hanya tombol Google yang disembunyikan.
+## Catatan
 
-## Catatan yang masih menggantung
-
-- `bagiin-v1` masih meminjam venv 0.9 (`/opt/projects/bagiin/backend/venv`).
-  Aman selama `requirements.txt` v1 belum menambah paket baru.
-- Rate limit 10/menit per IP (parity dengan 0.9), bukan 60 seperti di `.env` uji.
-- `BAGIIN_GOOGLE_STUB=0`, `BAGIIN_ENV=production`: login Google memakai
-  verifikasi sungguhan.
-- Dua domain masih menyajikan aplikasi yang sama. Kalau mau, domain beta bisa
-  dijadikan redirect 301 ke domain utama supaya bookmark lama tidak bingung.
+- Venv v1 sekarang milik sendiri: `/opt/projects/bagiin/backend/venv`
+  (Python 3.14). Sebelumnya produksi meminjam venv 0.9 — itu sebabnya dulu
+  folder 0.9 tidak boleh disentuh sama sekali.
+- Rate limit produksi 10/menit per IP untuk bill/akun/upload, bawaan kode.
+  Instance uji memakai 60/menit lewat `bagiin-dev.service`.
+- `BAGIIN_GOOGLE_STUB=0` dan `BAGIIN_ENV=production` di produksi; instance uji
+  memakai stub supaya e2e tidak butuh kredensial Google.
+- Dua domain yang dulu menyajikan aplikasi yang sama sekarang satu: domain beta
+  301 ke domain utama, jadi tautan bill lama tetap sampai ke bill yang benar.
