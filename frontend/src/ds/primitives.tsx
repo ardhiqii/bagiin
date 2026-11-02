@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import loadingReceipt from '../assets/anim/receipt-app.webp'
 import loadingCoin from '../assets/anim/coin-app.webp'
 import { PROVIDERS, opticalHeight, providerKey } from '../lib/providers'
@@ -546,18 +547,41 @@ export function Sheet({
   children: ReactNode
   onClose: () => void
 }) {
+  /* Selama sheet terbuka, gulirkan hanya sheet-nya. Tanpa ini, geseran jari di
+     sheet yang sudah mentok diteruskan ke halaman di belakangnya (iOS), jadi
+     orang kehilangan tempatnya di layar setelah menutup sheet. */
+  useEffect(() => {
+    if (!open) return
+    document.body.classList.add('sheet-open')
+    return () => { document.body.classList.remove('sheet-open') }
+  }, [open])
+
   if (!open) return null
-  return <div className="ds-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-    <section className="ds-sheet" role="dialog" aria-modal="true" aria-label={title}>
-      <span className="ds-sheet-handle" aria-hidden="true" />
-      <button type="button" className="ds-sheet-close" onClick={onClose} aria-label="Tutup"><X size={20} /></button>
-      <div className="ds-sheet-head">
-        {art ? <img className="ds-sheet-art" src={art} alt="" width={108} height={108} /> : null}
-        <h3>{title}</h3>
-      </div>
-      {children}
-    </section>
-  </div>
+  /* Portal ke <body>, BUKAN dirender di tempat pemanggilnya.
+     Sheet dulu hidup di dalam <main class="app-body">, dan elemen itu memakai
+     `-webkit-overflow-scrolling: touch` + `overflow-y: auto`. Di iOS Safari
+     wadah gulir seperti itu menjadi containing block untuk `position: fixed`,
+     jadi overlay-nya terkurung di kotak isi: sheet terpotong tepat di atas bar
+     "Total bill"/navigasi bawah, sisa isinya tidak pernah bisa dicapai jari
+     (dilaporkan di iPhone 15: sheet "Siapa yang ikut?" tidak bisa digulir).
+     Chromium tidak mereproduksinya karena `fixed` di sana tetap menempel ke
+     viewport — maka bug ini lolos dari semua tes yang ada.
+     Dengan portal, sheet selalu milik viewport: menutupi bar bawah, dan
+     gulirannya milik sheet itu sendiri. */
+  return createPortal(
+    <div className="ds-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <section className="ds-sheet" role="dialog" aria-modal="true" aria-label={title}>
+        <span className="ds-sheet-handle" aria-hidden="true" />
+        <button type="button" className="ds-sheet-close" onClick={onClose} aria-label="Tutup"><X size={20} /></button>
+        <div className="ds-sheet-head">
+          {art ? <img className="ds-sheet-art" src={art} alt="" width={108} height={108} /> : null}
+          <h3>{title}</h3>
+        </div>
+        {children}
+      </section>
+    </div>,
+    document.body,
+  )
 }
 
 /**

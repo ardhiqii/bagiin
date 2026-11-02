@@ -296,7 +296,7 @@ Dijalankan di Chromium headful yang sudah punya sesi Google, terhadap build live
 
 ## Kotak hitam 1.0 — e2e sebagai orang yang belum pernah melihat aplikasi
 
-Sembilan berkas, **74 kasus**, semuanya dijalankan lewat layar: tidak ada satu
+Enam belas berkas, **116 kasus**, semuanya dijalankan lewat layar: tidak ada satu
 pun pemanggilan API langsung untuk menyiapkan keadaan, karena yang diuji adalah
 apa yang bisa dilakukan orang, bukan apa yang bisa dilakukan klien HTTP.
 
@@ -317,6 +317,7 @@ apa yang bisa dilakukan orang, bukan apa yang bisa dilakukan klien HTTP.
 | `tests/blackbox-thirteen.spec.ts` | 6 | angka: item dibagi tiga, pajak termasuk harga, diskon penuh + pajak, dua item senama, rekap dua bill, harga diubah setelah dipilih |
 | `tests/blackbox-fourteen.spec.ts` | 6 | pintu masuk: gabung ke bill tertutup, dua tamu senama, nama 60 karakter, pemilik buka tautannya sendiri, ditutup saat tamu diam, klik "Ikut" dua kali |
 | `tests/blackbox-fifteen.spec.ts` | 6 | dua orang mengubah hal sama: item dihapus, harga berubah, ditutup di tengah, ganti penalangi, keluar-lalu-masuk, tutup lalu buka |
+| `tests/blackbox-sixteen.spec.ts` | 2 | sheet harus milik viewport: dipasang di `<body>`, menutupi bar bawah, isi panjang digulir sendiri |
 
 ### Cacat yang ditemukan gelombang ini
 
@@ -351,6 +352,8 @@ apa yang bisa dilakukan orang, bukan apa yang bisa dilakukan klien HTTP.
   ulang, dan itu memang perilakunya sekarang;
 - porsi yang tidak habis dibagi rata menaruh sisa 1 rupiah pada yang menalangi
   (10.000 dibagi 3 → 3.333 / 3.333 / 3.334).
+
+| 10 | di iPhone 15, sheet "Siapa yang ikut?" **tidak bisa digulir**: isinya terpotong tepat di atas bar "Total bill"/navigasi, dan sisanya tidak terjangkau jari | sheet dirender di dalam `<main class="app-body">`, dan elemen itu memakai `-webkit-overflow-scrolling: touch` + `overflow-y: auto`. Di iOS Safari wadah gulir seperti itu menjadi containing block untuk `position: fixed`, jadi overlay terkurung di kotak isi; Chromium tidak mereproduksinya karena `fixed` di sana tetap menempel ke viewport | `Sheet` dipasang lewat `createPortal` ke `document.body` (`ds/primitives.tsx`), plus `body.sheet-open .app-body { overflow: hidden }` supaya halaman di belakang berhenti menggulir. Dijaga `blackbox-sixteen.spec.ts` |
 
 ### Catatan gelombang 10–15
 
