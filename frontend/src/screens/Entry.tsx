@@ -119,6 +119,24 @@ export function Entry({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [google?.client_id])
 
+  /**
+   * Jaring pengaman setelah masuk berhasil.
+   *
+   * Layar masuk seharusnya ditinggalkan sendiri begitu identitas tersimpan.
+   * Di WebKit kadang tidak: tombol ditekan, identitas benar-benar dibuat
+   * (server 200), lalu layar diam di "Mulai atau masuk". Bagi orang yang baru
+   * pertama memakai aplikasi ini, itu terbaca sebagai aplikasi rusak — tidak
+   * ada pesan, tidak ada perubahan, dan satu-satunya jalan adalah menutup
+   * aplikasi. Jadi kalau layar masuk masih terpasang setelah satu ketukan
+   * napas, muat ulang ke beranda: identitasnya sudah ada, jadi beranda pasti
+   * terbuka.
+   */
+  function pastikanKeluar() {
+    window.setTimeout(() => {
+      if (document.querySelector('.welcome-body')) window.location.replace('/')
+    }, 1200)
+  }
+
   async function afterLogin(who: string) {
     markAuthed()
     await queryClient.invalidateQueries()
@@ -129,6 +147,7 @@ export function Entry({
       window.location.replace(intent)
       return
     }
+    pastikanKeluar()
     await navigate({ to: '/' })
   }
 
@@ -146,7 +165,11 @@ export function Entry({
       toast('Halo, ' + name.trim())
       await onDone?.()
       const intent = takeIntent()
-      if (intent) window.location.replace(intent)
+      if (intent) {
+        window.location.replace(intent)
+      } else {
+        pastikanKeluar()
+      }
     } catch (err) {
       setError((err as Error).message)
     } finally {

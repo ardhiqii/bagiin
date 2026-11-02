@@ -296,7 +296,7 @@ Dijalankan di Chromium headful yang sudah punya sesi Google, terhadap build live
 
 ## Kotak hitam 1.0 — e2e sebagai orang yang belum pernah melihat aplikasi
 
-Delapan belas berkas, **128 kasus**, semuanya dijalankan lewat layar: tidak ada
+Sembilan belas berkas, **134 kasus**, semuanya dijalankan lewat layar: tidak ada
 satu pun pemanggilan API langsung untuk menyiapkan keadaan, karena yang diuji
 adalah apa yang bisa dilakukan orang, bukan apa yang bisa dilakukan klien HTTP.
 
@@ -324,6 +324,14 @@ Sejak bug sheet iPhone, setiap kasus dijalankan di **dua mesin**: `mobile-chrome
 | `tests/blackbox-seventeen.spec.ts` | 6 | realitas iPhone: ketukan cepat tidak jadi zoom, papan ketik menutupi layar, ponsel mendatar, nama beremoji, cari dengan huruf besar & spasi, tarik-ke-bawah tidak memuat ulang |
 | `tests/blackbox-eighteen.spec.ts` | 6 | orang yang belum tahu apa-apa: tautan bill dari orang asing, langkah berikutnya setelah memilih, tautan salah, jaringan mati, nominal miliaran di 320 px, bahasa daftar aksi |
 | `tests/blackbox-nineteen.spec.ts` | 6 | isian uang seperti orang mengetik: tempel "Rp 25.000", ketik "25rb", jumlah dikosongkan lalu 0, jumlah 999, nama item hanya spasi, tempel nama menu beberapa baris |
+
+Jumlah seluruhnya: **626 penjalanan** (313 kasus × 2 mesin).
+
+**Suite ini harus serial (`workers: 1`).** Percobaan dengan tiga pekerja
+memunculkan kegagalan palsu — E4 "dua tab identitas yang sama" gagal sekali,
+lalu lulus 3/3 ketika dijalankan sendiri; C2 dan U5 juga membaca layar yang
+belum selesai dimuat. Kalau ada yang merah, jalankan ulang kasus itu sendiri
+sebelum menyimpulkan ada bug.
 
 ### Cacat yang ditemukan gelombang ini
 
