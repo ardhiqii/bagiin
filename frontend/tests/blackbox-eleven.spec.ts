@@ -187,14 +187,19 @@ test.describe('Kotak hitam — batas wewenang dan banyak peserta', () => {
       await guest.getByRole('button', { name: /Tandai lunas/ }).click()
       await expect(guest.getByText(/Lunas/).first()).toBeVisible({ timeout: 20000 })
 
-      // Setelah lunas, baris item terkunci untuk orang itu: dia tidak bisa
-      // diam-diam menambah utang yang sudah dinyatakan selesai.
-      await expect(guest.getByRole('button', { name: /Item B, ketuk untuk memilih/ })).toBeDisabled()
+      /* Setelah lunas, baris item terkunci untuk orang itu: dia tidak bisa
+         diam-diam menambah utang yang sudah dinyatakan selesai. Baris yang mati
+         menyatakan alasannya di label ("tidak bisa dipilih sekarang"), jadi
+         locator-nya memakai barisnya dan labelnya ikut diperiksa. */
+      const barisTerkunci = guest.locator('.ds-item', { hasText: 'Item B' }).first()
+      await expect(barisTerkunci).toBeDisabled()
+      await expect(barisTerkunci).toHaveAttribute('aria-label', /tidak bisa dipilih/)
 
       // Jalan keluarnya harus ada dan kelihatan: batalkan lunas, ubah, lalu lunas lagi.
       await guest.getByRole('button', { name: 'Aksi lain' }).click()
       await guest.getByRole('button', { name: 'Batalkan status lunas' }).click()
-      await expect(guest.getByRole('button', { name: /Item B, ketuk untuk memilih/ })).toBeEnabled({ timeout: 20000 })
+      await expect(barisTerkunci).toBeEnabled({ timeout: 20000 })
+      await expect(barisTerkunci).toHaveAttribute('aria-label', /ketuk untuk/)
       await pickItem(guest, 'Item B')
       await expect(guest.getByRole('button', { name: /Tandai lunas · Rp20\.000/ })).toBeVisible({ timeout: 20000 })
     } finally {
@@ -214,7 +219,9 @@ test.describe('Kotak hitam — batas wewenang dan banyak peserta', () => {
       await page.getByRole('button', { name: 'Tutup bill' }).click()
       await expect(page.getByRole('heading', { name: /Bill ditutup/ })).toBeVisible({ timeout: 20000 })
       // Item terkunci untuk semua orang setelah ditutup.
-      await expect(page.getByRole('button', { name: /Item A, ketuk untuk memilih/ })).toBeDisabled()
+      const barisTutup = page.locator('.ds-item', { hasText: 'Item A' }).first()
+      await expect(barisTutup).toBeDisabled()
+      await expect(barisTutup).toHaveAttribute('aria-label', /tidak bisa dipilih/)
 
       // Yang menalangi membuka /edit: alasannya disebut, formulirnya tidak dibuka.
       await page.goto(url + '/edit')

@@ -127,7 +127,10 @@ test.describe('Kotak hitam — dua orang mengubah hal yang sama', () => {
         await item.click()
       }
       await guest.reload()
-      await expect(guest.getByRole('button', { name: /Martabak, ketuk untuk memilih/ })).toBeDisabled({ timeout: 20000 })
+      /* Baris yang terkunci menyebut alasannya, tidak lagi mengajak mengetuk. */
+      const barisTutup = guest.locator('.ds-item', { hasText: 'Martabak' }).first()
+      await expect(barisTutup).toBeDisabled({ timeout: 20000 })
+      await expect(barisTutup).toHaveAttribute('aria-label', /tidak bisa dipilih/)
     } finally {
       await ctx.close()
     }
