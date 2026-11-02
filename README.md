@@ -3,12 +3,12 @@
 Bagi bill bareng jadi gak ribet. Split bills with friends — no accounts, no payment
 gateway, just a link.
 
-**Live:** https://bagiin.ardhiqi.com
+**Versi 1.0** · **Live:** https://bagiin.ardhiqi.com
 
-Sejak 2 Nov 2026 hanya ada **satu** aplikasi dan **satu** folder. Versi vanilla
-(0.9) sudah pensiun: kodenya tetap ada di branch `main` di GitHub sebagai
-sejarah, tapi tidak lagi dijalankan di mesin ini. Domain lama
-`bagiin-react.ardhiqi.com` sekarang 301 ke domain utama.
+Sejak 2 Nov 2026 hanya ada **satu** aplikasi, **satu** folder, **satu** DB, dan
+**satu** nama versi: versi 1. Tidak ada lagi jalur "React" terpisah — React
+adalah cara aplikasi ini dibangun, bukan nama rilis. Versi vanilla (0.9) hanya
+tinggal di riwayat git. Domain lama dialihkan 301 ke domain utama.
 
 ## Struktur
 

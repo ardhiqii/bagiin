@@ -56,7 +56,7 @@ Satu bill mempunyai orang yang **nalangin**: orang yang mengeluarkan uang lebih 
 - Data bill lama dan tautan lama **harus tetap bekerja**. Migrasi model data/API boleh dipertimbangkan hanya dengan jalur kompatibilitas dan migrasi data yang aman.
 - Identitas lama yang tersimpan di perangkat dan kode pemulihannya harus memiliki jalur aman menuju opsi Google login, tanpa kehilangan bill, kontak, metode bayar, atau hak pengelolaan yang sudah ada.
 - Saat implementasi Google login, tautkan ID Bagiin ke identifier Google yang stabil (`sub`) setelah token diverifikasi di server; email dan nama tampilan bukan kunci identitas. Rujukan: [Google Identity Services](https://developers.google.com/identity/gsi/web/reference/html-reference).
-- Backend lama adalah FastAPI + SQLite, dengan perhitungan split di `backend/calc.py`. Frontend lama adalah vanilla JS. React/TypeScript/shadcn belum diterapkan di branch ini.
+- Backend adalah FastAPI + SQLite, dengan perhitungan split di `backend/calc.py`. Frontend sekarang React + TypeScript (versi 1, branch `main`); vanilla JS hanya tinggal di riwayat git.
 - Rilis React pertama harus mencakup kemampuan aplikasi yang ada saat ini, termasuk OCR, input manual, pemilihan item, pembayaran, rekap, metode bayar, identitas/pemulihan, serta undangan/kontak. Ini tidak berarti setiap interaksi lama perlu disalin persis; alur dan UI akan dirancang ulang. Data cashback lama harus tetap benar, tetapi cashback bukan konsep utama dalam alur membuat bill baru dan perlu ditaruh sebagai opsi lanjutan atau tahap berikutnya.
 - Angka uang final harus berasal dari aturan kalkulasi yang konsisten di server. Semua nominal rupiah diperlakukan sebagai bilangan bulat.
 

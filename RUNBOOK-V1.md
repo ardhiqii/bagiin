@@ -1,6 +1,6 @@
 # Runbook: satu aplikasi, satu folder, satu DB
 
-Sejak 2 Nov 2026 hanya ada satu aplikasi (React v1) dan satu folder kerja.
+Sejak 2 Nov 2026 hanya ada satu aplikasi — versi 1 — dan satu folder kerja.
 Versi vanilla (0.9) sudah pensiun: kodenya diarsipkan, layanannya dimatikan,
 dan domainnya dialihkan. Catatan di bawah ini menggantikan runbook dua-jalur
 yang lama.
