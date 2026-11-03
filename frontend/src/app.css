@@ -226,7 +226,6 @@ textarea {
 .app-nav a.is-active { color: var(--ds-teal); font-weight: var(--ds-weight-strong); }
 .app-nav a:active svg { transform: scale(.92); }
 
-
 .app-row {
   display: flex;
   align-items: center;
@@ -361,13 +360,6 @@ p, small, .app-note { text-wrap: pretty; }
   aspect-ratio: 1;
   border-radius: var(--ds-radius-lg);
   object-fit: contain;
-}
-
-.art-head {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: var(--ds-space-3);
-  align-items: center;
 }
 
 .art-empty {
@@ -531,19 +523,7 @@ p, small, .app-note { text-wrap: pretty; }
 .ds-sheet-head { display: flex; align-items: center; gap: var(--ds-space-3); }
 .ds-sheet-head h3 { margin: 0; }
 .ds-sheet-art { width: 54px; height: 54px; border-radius: 14px; flex: none; }
-
-
-.receipt-preview {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--ds-space-3);
-  padding: 12px;
-  border-radius: var(--ds-radius-lg);
-  background: var(--ds-surface);
-  box-shadow: inset 0 0 0 1px var(--ds-border);
-}
 .receipt-preview .grow { min-width: 0; }
-.receipt-preview b { font-size: var(--ds-text-base); }
 
 /* Kartu pilihan foto: ilustrasi kecil di kiri, judul + dua tombol sebaris. */
 /* Gambar menyentuh tepi kartu TIDAK dipakai: ilustrasinya persegi, jadi
@@ -808,9 +788,6 @@ p, small, .app-note { text-wrap: pretty; }
   font: var(--ds-weight-regular) var(--ds-text-sm)/1 var(--ds-font-body);
   color: var(--ds-muted);
 }
-
-/* Sheet aksi: tombol berjarak rapat, bukan menumpuk penuh. */
-.app-stack-tight { display: grid; gap: var(--ds-space-2); margin-top: var(--ds-space-2); }
 /* Kode pemulihan ditampilkan monospace supaya huruf/angka mirip tidak tertukar
    saat diketik di HP lain. */
 .recovery-code {
@@ -1064,8 +1041,6 @@ p, small, .app-note { text-wrap: pretty; }
 }
 .app-banner.is-pending small { color: var(--ds-pending); opacity: .8; }
 
-.sheet-divider { border-top: 1px solid var(--ds-border); margin: 4px 0 2px; }
-
 /* Thumbnail struk bisa diketuk untuk dilihat penuh. */
 .receipt-open {
   border: 0;
@@ -1184,7 +1159,6 @@ p, small, .app-note { text-wrap: pretty; }
   font-size: var(--ds-text-sm);
   color: var(--ds-muted);
 }
-.receipt-preview img { width: 56px; height: 56px; object-fit: cover; border-radius: 12px; }
 .receipt-strip { display: flex; gap: var(--ds-space-2); overflow-x: auto; padding-bottom: 2px; }
 .receipt-item { position: relative; flex: none; }
 .receipt-kill {
@@ -1366,7 +1340,6 @@ p, small, .app-note { text-wrap: pretty; }
     padding: 16px 34px;
   }
 
-
   .app-body {
     grid-column: 2;
     grid-row: 2;
@@ -1489,11 +1462,6 @@ p, small, .app-note { text-wrap: pretty; }
   color: var(--ds-navy);
 }
 .bill-line.is-total b { font-family: var(--ds-font-display); font-size: var(--ds-text-lg); letter-spacing: -.02em; }
-
-/* Layar masuk: ilustrasi lebih kecil dari layar kenalan. Halaman ini punya
-   formulir + tiga cara masuk; ilustrasi besar mendorong tombol utama keluar
-   dari jangkauan jempol begitu keyboard terbuka. */
-.welcome-art--login { width: 96px; height: 96px; }
 
 /* Layar masuk/beranda-tanpa-identitas tidak punya rail navigasi, jadi frame-nya
    juga tidak boleh menyisakan kolom rail. Dulu kolom 208 px itu tetap ada walau

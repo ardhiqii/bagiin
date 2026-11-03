@@ -84,12 +84,13 @@ Urutan perbaikan, dari yang paling terasa oleh jari:
 
 ## Sisa yang belum dikerjakan (urut dampak)
 
-1. **155 dari 425 kelas CSS tidak dipakai (~90 KB, ~30%).** Berat buka pertama.
-   Perlu verifikasi visual karena ada kelas yang dibentuk dinamis
-   (`ds-amount--${tone}`).
-2. **Layar bill setelah "Buat bill"**: `POST /api/bills` bisa mengembalikan
-   payload bill seperti `POST /selections`, jadi layar tujuan tidak perlu
-   `GET /bill` lagi.
+1. ~~155 kelas CSS tidak dipakai~~ **selesai**: 142 kelas / 260 aturan dihapus,
+   `design-system.css` 91,7 KB -> **60,6 KB**, CSS hasil build 64 KB mentah /
+   **11,7 KB brotli**. Verifikasi: enam layar direkam sebelum dan sesudah, dan
+   **pikselnya identik** (selisih maksimum 0), plus tsc dan 32 uji E2E hijau.
+2. ~~Layar bill setelah "Buat bill"~~ **selesai**: `POST /api/bills?include=bill`
+   mengembalikan payload seperti `GET /bill` (bentuk lama `{"id"}` tetap untuk
+   pemanggil lain), jadi layar tujuan tidak mengambil ulang. Uji 46.
 3. **Filter bulan di Beranda**: `placeholderData` menahan daftar bulan
    sebelumnya saat pindah bulan, jadi tidak ada kedipan kosong.
 4. **Gambar**: `scan.webp` 384 px dan `home-empty.webp` masih bisa turun;
