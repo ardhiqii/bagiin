@@ -49,10 +49,19 @@ export function useBillMonths(identityId: string | null) {
   })
 }
 
+/**
+ * Ambil satu bill. Dipakai `useBill` dan juga prefetch dari Beranda: begitu
+ * jari menyentuh baris bill, payload-nya sudah berjalan, jadi layar bill terbuka
+ * dengan isi — bukan dengan kerangka.
+ */
+export function ambilBill(billId: string) {
+  return api<BillResponse>('/api/bills/' + billId)
+}
+
 export function useBill(billId: string | null) {
   return useQuery({
     queryKey: keys.bill(billId ?? ''),
-    queryFn: () => api<BillResponse>('/api/bills/' + billId),
+    queryFn: () => ambilBill(billId ?? ''),
     enabled: Boolean(billId),
     retry: (count, error) => {
       const status = (error as { status?: number }).status

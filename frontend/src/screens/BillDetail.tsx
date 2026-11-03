@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import type { BillResponse } from '../lib/types'
@@ -81,6 +81,12 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
   /** Set pilihan terbaru yang belum terkirim (satu kiriman berjalan saja). */
   const antrePilihan = useRef<{ item_id: number; qty: number }[] | null>(null)
   const sibukKirim = useRef(false)
+  /**
+   * Kiriman gagal karena jaringan (bukan ditolak server). Pilihan tetap di
+   * layar dan dikirim ulang begitu sinyal kembali — jangan di-rollback, karena
+   * yang salah bukan pilihannya, cuma jalurnya.
+   */
+  const [menungguSinyal, setMenungguSinyal] = useState(false)
   const [payerOpen, setPayerOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [slotOpen, setSlotOpen] = useState(false)
@@ -236,15 +242,26 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
         antrePilihan.current = null
         try {
           await simpanPilihan.mutateAsync(picks)
+          setMenungguSinyal(false)
           // Tidak ada ketukan yang lebih baru: server sudah memegang keadaan
           // terakhir, jadi tampilan kembali mengikuti payload (bukan salinan
           // lokal yang bisa pelan-pelan berbeda).
           if (!antrePilihan.current) setPicksLokal(null)
         } catch (err) {
-          // Rollback: server menolak (slot habis, bill ditutup), jadi yang
-          // benar adalah payload, bukan yang tadi digambar di layar.
+          const status = (err as { status?: number }).status
+          // Tanpa status = tidak sampai ke server (sinyal putus, tab tidur).
+          // Pilihan dibiarkan tergambar dan dikirim ulang saat sinyal kembali;
+          // me-rollback di sini akan menghapus pilihan yang sebenarnya sah.
+          if (!status) {
+            antrePilihan.current = picks
+            setMenungguSinyal(true)
+            return
+          }
+          // Server menjawab dan menolak (slot habis, bill ditutup): yang benar
+          // adalah payload, bukan yang tadi digambar di layar.
           antrePilihan.current = null
           setPicksLokal(null)
+          setMenungguSinyal(false)
           toast((err as Error).message)
           invalidateMoneyViews(queryClient, { billId, identityId })
           return
@@ -259,6 +276,22 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
       if (antrePilihan.current) void kirimPilihan()
     }
   }
+
+  /* Sinyal kembali: kirim ulang yang tertahan. Pendengar `online` menangkap
+     kasus langsung; interval 5 detik menangkap kasus sinyal yang pulih tanpa
+     memicu peristiwa (pindah dari Wi-Fi ke seluler, tab yang baru dibangunkan). */
+  useEffect(() => {
+    if (!menungguSinyal) return undefined
+    const coba = () => {
+      if (antrePilihan.current) void kirimPilihan()
+    }
+    window.addEventListener('online', coba)
+    const timer = window.setInterval(coba, 5000)
+    return () => {
+      window.removeEventListener('online', coba)
+      window.clearInterval(timer)
+    }
+  }, [menungguSinyal])
 
   async function toggleItem(itemId: number) {
     const item = data?.items.find((it) => it.id === itemId)
@@ -550,6 +583,16 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
               <span className="app-spacer" />
               <span className="app-note">{joined ? 'Ketuk item yang kamu ambil' : 'Masuk untuk memilih'}</span>
             </div>
+
+            {/* Pilihan yang belum sampai ke server harus dikatakan, bukan
+                dibiarkan tampak tersimpan. Kalau tidak, orang menutup aplikasi
+                dengan angka yang tidak pernah tercatat. */}
+            {menungguSinyal ? (
+              <p className="app-note" role="status">
+                Belum terkirim — menunggu sinyal. Pilihanmu tetap di layar ini dan dikirim ulang
+                otomatis.
+              </p>
+            ) : null}
 
             {data.items.map((item) => {
               const selectors = data.sel_by_item[String(item.id)] ?? []

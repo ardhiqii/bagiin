@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { inviteActions, useBills, useInvites, useRecap } from '../lib/queries'
+import { ambilBill, inviteActions, keys, useBills, useInvites, useRecap } from '../lib/queries'
 import { invalidateInviteViews } from '../lib/mutations'
 import { formatRp } from '../lib/money'
 import { api } from '../lib/api'
@@ -117,8 +117,32 @@ function BillRow({
    *  separuh tiga baris dan separuh dua baris terbaca sebagai daftar rusak. */
   status: RowStatus
 }) {
+  /**
+   * Panaskan bill begitu jari menyentuh barisnya.
+   *
+   * Perjalanan Jakarta->server itu bagian yang tidak bisa gua hapus, tapi bisa
+   * dipindah: mulai saat jari turun, bukan setelah layar bill terpasang. Sentuh
+   * yang disusul ketukan (hampir semua ketukan) membuat isinya sudah siap waktu
+   * halaman dibuka. Kalau cuma lewat (hover tanpa ketuk), yang terbuang hanya
+   * satu permintaan 3 KB.
+   */
+  const qc = useQueryClient()
+  const panaskan = () => {
+    if (qc.getQueryData(keys.bill(id))) return
+    void qc.prefetchQuery({
+      queryKey: keys.bill(id),
+      queryFn: () => ambilBill(id),
+      staleTime: 10_000,
+    })
+  }
   return (
-    <Link to="/b/$billId" params={{ billId: id }} style={{ textDecoration: 'none', color: 'inherit' }}>
+    <Link
+      to="/b/$billId"
+      params={{ billId: id }}
+      style={{ textDecoration: 'none', color: 'inherit' }}
+      onPointerEnter={panaskan}
+      onPointerDown={panaskan}
+    >
       <span className="app-row">
         <span className="grow">
           <b>{title}</b>

@@ -96,4 +96,29 @@ test.describe('Pilih item: umpan balik duluan, server menyusul', () => {
       timeout: 20000,
     })
   })
+
+  test('45c. sinyal putus: pilihan tetap di layar, dikirim ulang saat pulih', async ({ page }) => {
+    await buatBillDua(page, 'Sinyal' + stamp)
+
+    let putus = true
+    await page.route('**/api/bills/*/selections', async (route) => {
+      if (putus) await route.abort('failed')
+      else await route.continue()
+    })
+
+    const item = page.locator('.ds-item').first()
+    await item.click()
+
+    // Gagal jaringan bukan penolakan: pilihan tidak boleh dibalik, tapi juga
+    // tidak boleh diam-diam dianggap tersimpan.
+    await expect(item).toHaveAttribute('aria-pressed', 'true', { timeout: 2000 })
+    await expect(page.getByText(/Belum terkirim/)).toBeVisible({ timeout: 10000 })
+
+    putus = false
+    await expect(page.getByText(/Belum terkirim/)).toBeHidden({ timeout: 25000 })
+
+    // Dan benar-benar sampai ke server, bukan cuma hilang dari layar.
+    await page.reload()
+    await expect(page.locator('.ds-item').first()).toHaveAttribute('aria-pressed', 'true', { timeout: 20000 })
+  })
 })
