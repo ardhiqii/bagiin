@@ -1,3 +1,48 @@
+/* Huruf disajikan dari domain sendiri, bukan Google Fonts.
+
+   Sebelumnya halaman memuat satu stylesheet lintas-domain yang memblokir
+   render, lalu dua berkas huruf dari domain lain lagi — tiga perjalanan ke
+   origin yang berbeda sebelum teks bisa tampil benar. Sekarang dua berkas
+   utama (latin) di-preload dari origin yang sama, sisanya menyusul sesuai
+   `unicode-range` hanya kalau memang ada huruf di luar Latin yang dipakai.
+
+   Berkasnya sudah di-subset ke huruf yang dipakai aplikasi ini (Latin dasar,
+   tanda baca, tanda minus, panah, Rp) dan poros optik DM Sans dipatok di 14 —
+   ukuran teks isi aplikasi ini — sehingga 62,5 KB menjadi 34,6 KB tanpa
+   mengubah bentuk huruf pada ukuran yang dipakai. */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/dm-sans-body.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215;
+}
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/dm-sans-body-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF;
+}
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/manrope-display.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215;
+}
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/manrope-display-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF;
+}
+
 /* ==========================================================================
    Bagiin design system — v0.3 "layered"
    Direction: Seimbang structure + Saldo palette, built the way Apple HIG
