@@ -656,7 +656,7 @@ export function Create({ identityId }: { identityId: string | null }) {
             {/* Satu tombol, karena pertanyaannya cuma satu: "fotonya dari mana?".
                 Niatnya (dibacakan AI atau tidak) ditanya setelah fotonya ada —
                 di layar yang sama, saat orang sudah melihat fotonya. */}
-            <div>
+            <div className="photo-cta-wrap">
               <Button onClick={() => setSumberTerbuka(true)}>
                 <span className="photo-cta">
                   <Plus /> Tambah foto
@@ -816,7 +816,7 @@ export function Create({ identityId }: { identityId: string | null }) {
         ) : null}
         <button type="button" className="add-person" onClick={() => setPickerOpen(true)}>
           <Plus size={18} weight="bold" aria-hidden="true" />
-          {picked.length > 0 ? '+ Tambah orang lagi' : '+ Pilih orang'}
+          {picked.length > 0 ? 'Tambah orang lagi' : 'Pilih orang'}
           {picked.length > 0 ? (
             <span className="add-count">{picked.length} orang dipilih</span>
           ) : null}

@@ -538,13 +538,28 @@ p, small, .app-note { text-wrap: pretty; }
 .receipt-preview b { font-size: var(--ds-text-base); }
 
 /* Kartu pilihan foto: ilustrasi kecil di kiri, judul + dua tombol sebaris. */
+/* Setelah teksnya dipangkas jadi dua baris, ilustrasi 64 px terlihat kecil
+   sendirian di kartu selebar ini. Gambarnya yang dibesarkan, bukan teksnya:
+   mata masuk lewat gambar lebih dulu, dan judulnya sudah cukup jelas. */
 .ds-create-hero.is-choice {
-  grid-template-columns: 64px 1fr;
-  align-items: start;
+  grid-template-columns: 96px 1fr;
+  align-items: center;
   gap: var(--ds-space-3);
-  padding: 14px 14px 12px;
+  padding: 14px;
 }
-.ds-create-hero.is-choice img { width: 64px; height: 64px; }
+.ds-create-hero.is-choice img {
+  width: 96px;
+  height: 96px;
+  border-radius: 18px;
+}
+/* Di layar sempit, 96 px memakan kolom tombol sampai tombolnya melewati tepi. */
+@media (max-width: 360px) {
+  .ds-create-hero.is-choice {
+    grid-template-columns: 80px 1fr;
+    gap: 12px;
+  }
+  .ds-create-hero.is-choice img { width: 80px; height: 80px; border-radius: 16px; }
+}
 .ds-create-hero b { font-family: var(--ds-font-display); letter-spacing: -.01em; }
 .ds-create-hero.is-choice b { font-size: var(--ds-text-base); }
 
@@ -571,6 +586,7 @@ p, small, .app-note { text-wrap: pretty; }
   gap: var(--ds-space-2);
 }
 .photo-cta svg { width: 18px; height: 18px; flex: none; }
+.photo-cta-wrap { margin-top: 10px; }
 
 /* Foto yang baru ditempel mengambil alih tempat ilustrasi: sejak ada foto,
    foto itulah subjeknya. */

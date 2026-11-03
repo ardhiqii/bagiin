@@ -23,7 +23,7 @@ async function freshUser(page: Page, name: string) {
  * Helper ini membuka sheet-nya dan mencentang nama yang diminta.
  */
 async function pickPeople(page: Page, names: string[]) {
-  await page.getByRole('button', { name: /\+ Pilih orang|\+ Tambah orang lagi/ }).click()
+  await page.getByRole('button', { name: /Pilih orang|Tambah orang lagi/ }).click()
   const sheet = page.getByRole('dialog', { name: 'Siapa yang ikut?' })
   for (const name of names) {
     await sheet.getByRole('button', { name: new RegExp(name) }).first().click()

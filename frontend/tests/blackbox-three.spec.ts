@@ -145,7 +145,7 @@ test.describe('Kotak hitam — kontak dan nama pembeda', () => {
 
     // dan pemilih orang memakai nama pembeda itu
     await page.goto('/create')
-    await page.getByRole('button', { name: /\+ Pilih orang/ }).click()
+    await page.getByRole('button', { name: /Pilih orang/ }).click()
     const picker = page.getByRole('dialog', { name: 'Siapa yang ikut?' })
     await picker.getByLabel('Cari teman').fill('Kantor ' + stamp)
     await expect(picker.getByText('Kantor ' + stamp).first()).toBeVisible({ timeout: 15000 })

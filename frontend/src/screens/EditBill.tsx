@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Plus } from '@phosphor-icons/react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AppShell } from '../components/AppShell'
@@ -376,7 +377,9 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
               <div className="app-note">Belum ada nama yang disiapkan.</div>
             )}
             <Button variant="quiet" onClick={() => setPickerOpen(true)}>
-              + Pilih orang
+              <span className="photo-cta">
+                <Plus size={18} weight="bold" aria-hidden="true" /> Pilih orang
+              </span>
             </Button>
           </section>
 
