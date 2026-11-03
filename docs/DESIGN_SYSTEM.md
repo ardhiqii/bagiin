@@ -801,6 +801,14 @@ Aturannya, dan alasannya:
    selalu 24 px, jarak label→kontrol selalu 8 px. Bidang yang isinya cuma satu
    select tetap memakai pola ini — kalau tidak, dia jadi "setengah jarak" hanya
    karena isinya sedikit.
+   **Kecuali wadahnya sudah bergap.** `.ds-field + .ds-field` menambah
+   `margin-top` 24 px **di atas** `gap` wadahnya, jadi dua field berturut di
+   dalam `.app-stack` atau `.app-body` mendapat 24 + 20 = **44 px** — terukur di
+   layar Buat bill, dan itulah yang membuat form terasa penuh ruang kosong.
+   Aturannya: di wadah bergap (`.app-body`, `.app-stack`, `.ds-sheet-body`),
+   `margin-top` field bersaudara dinolkan dan jarak diambil dari `gap` wadah.
+   Jarak 24 px tetap berlaku di tempat tanpa `gap`, supaya keduanya tidak
+   pernah menjumlah.
 2. **Angka ganjil dilarang** di CSS komponen (14, 15, 18, 9). Dua elemen yang
    berdampingan dengan angka ganjil tidak pernah benar-benar sejajar, dan
    selisihnya menumpuk jadi daftar yang terlihat miring.

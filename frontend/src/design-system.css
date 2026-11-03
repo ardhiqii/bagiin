@@ -830,6 +830,9 @@
   outline-offset: 2px;
 }
 
+/* Contoh isian harus terbaca sebagai contoh, bukan sebagai isi. */
+.ds-field input::placeholder { color: var(--ds-muted-soft); opacity: 1; }
+.ds-field input:focus::placeholder { opacity: .55; }
 .ds-field input:focus {
   outline: none;
   background: var(--ds-surface);

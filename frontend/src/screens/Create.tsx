@@ -710,11 +710,11 @@ export function Create({ identityId }: { identityId: string | null }) {
         value={title}
         maxLength={MAX_TEXT}
         onChange={setTitle}
-        hint={
-          title.length >= MAX_TEXT - 20
-            ? 'Sisa ' + (MAX_TEXT - title.length) + ' karakter'
-            : 'Contoh: Makan malam di Warteg'
-        }
+        placeholder="Makan malam di Warteg"
+        /* Contohnya pindah ke dalam kolom: baris keterangan yang selalu ada
+           memakan tinggi dan membuat form terasa lebih panjang daripada isinya.
+           Yang tersisa di sini cuma peringatan sisa karakter. */
+        hint={title.length >= MAX_TEXT - 20 ? 'Sisa ' + (MAX_TEXT - title.length) + ' karakter' : undefined}
       />
       <Field
         id="bill-merchant"
@@ -722,13 +722,14 @@ export function Create({ identityId }: { identityId: string | null }) {
         value={merchant}
         maxLength={MAX_TEXT}
         onChange={setMerchant}
+        placeholder="Nama toko atau tempat"
       />
       <DateField
         id="bill-date"
         label="Tanggal bill"
         value={billDate}
         onChange={setBillDate}
-        hint="Bawaannya hari ini, ditulis tanggal/bulan/tahun. Ubah kalau bill-nya untuk tanggal lain."
+        hint="Bawaannya hari ini."
       />
 
       <section className="app-stack">
@@ -748,6 +749,7 @@ export function Create({ identityId }: { identityId: string | null }) {
                 label={'Item ' + (index + 1)}
                 value={item.name}
                 maxLength={MAX_TEXT}
+                placeholder="Nama item"
                 hint={
                   item.name.length >= MAX_TEXT - 20
                     ? 'Sisa ' + (MAX_TEXT - item.name.length) + ' karakter'

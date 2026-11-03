@@ -373,7 +373,7 @@ export type ItemState = 'idle' | 'picked' | 'shared'
 
 export function Field({
   label, value, onChange, hint, error, inputMode, id, disabled,
-  type = 'text', autoComplete, maxLength, onBlur,
+  type = 'text', autoComplete, maxLength, onBlur, placeholder,
   autoCapitalize = 'sentences', autoCorrect = 'off',
 }: {
   label: string
@@ -390,6 +390,8 @@ export function Field({
   type?: 'text' | 'password' | 'email' | 'date'
   autoComplete?: string
   maxLength?: number
+  /** Contoh isian di dalam kolom — lebih hemat ruang daripada baris keterangan. */
+  placeholder?: string
   /* Dua pengaturan ini khas iOS dan tidak punya padanan di desktop.
      `autoCorrect` dimatikan sebagai bawaan: di aplikasi uang, nama orang dan
      nama menu yang "dibetulkan" otomatis lebih sering salah daripada menolong
@@ -412,6 +414,7 @@ export function Field({
       autoCorrect={autoCorrect}
       spellCheck={autoCorrect === 'off' ? false : undefined}
       maxLength={maxLength}
+      placeholder={placeholder}
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
       onBlur={onBlur}

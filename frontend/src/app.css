@@ -151,7 +151,9 @@ textarea {
   scroll-padding-bottom: 24px;
   display: flex;
   flex-direction: column;
-  gap: var(--ds-space-5);
+  /* 16, bukan 20: dengan jarak field yang sudah dirapikan, 20 membuat tiap
+     bagian terasa seperti layar sendiri-sendiri. */
+  gap: var(--ds-space-4);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -254,6 +256,12 @@ textarea {
 .app-row .amt { text-align: right; font-variant-numeric: tabular-nums; font-weight: var(--ds-weight-strong); font-size: var(--ds-text-base); }
 
 .app-stack { display: flex; flex-direction: column; gap: var(--ds-space-3); }
+/* `.ds-field + .ds-field` menambah jarak DI ATAS jarak wadahnya, jadi dua field
+   berturut di dalam flex/grid bergap dapat jarak dua kali — terukur 44 px di
+   layar Buat bill padahal isinya cuma field biasa. Di wadah yang sudah punya
+   gap, jarak wadahnya saja yang berlaku. */
+.app-stack > .ds-field + .ds-field,
+.app-body > .ds-field + .ds-field { margin-top: 0; }
 .app-inline { display: flex; align-items: center; gap: var(--ds-space-2); flex-wrap: wrap; }
 .app-spacer { flex: 1; }
 
@@ -538,27 +546,38 @@ p, small, .app-note { text-wrap: pretty; }
 .receipt-preview b { font-size: var(--ds-text-base); }
 
 /* Kartu pilihan foto: ilustrasi kecil di kiri, judul + dua tombol sebaris. */
-/* Setelah teksnya dipangkas jadi dua baris, ilustrasi 64 px terlihat kecil
-   sendirian di kartu selebar ini. Gambarnya yang dibesarkan, bukan teksnya:
-   mata masuk lewat gambar lebih dulu, dan judulnya sudah cukup jelas. */
+/* Kartu media, bukan kartu dengan gambar kecil di pojok.
+   Sebelumnya ilustrasi 96 px duduk di dalam padding, tombolnya 158 px, dan
+   sisa ~73 px di kanan tombol kosong — kartu terasa setengah jadi. Sekarang
+   gambar menyentuh tepi kiri kartu (setinggi kartu), teks dan tombol mengisi
+   kolom kanan sampai tepi, jadi tidak ada ruang mati yang perlu dijelaskan. */
 .ds-create-hero.is-choice {
-  grid-template-columns: 96px 1fr;
-  align-items: center;
-  gap: var(--ds-space-3);
-  padding: 14px;
+  grid-template-columns: 104px 1fr;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
 }
 .ds-create-hero.is-choice img {
-  width: 96px;
-  height: 96px;
-  border-radius: 18px;
+  width: 104px;
+  height: 100%;
+  min-height: 112px;
+  border-radius: 0;
+  object-fit: cover;
 }
-/* Di layar sempit, 96 px memakan kolom tombol sampai tombolnya melewati tepi. */
+.ds-create-hero.is-choice > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 14px;
+  min-width: 0;
+}
+.ds-create-hero.is-choice .ds-button { width: 100%; }
+/* Di layar sempit, 104 px memakan kolom teks sampai judulnya pecah tiga baris. */
 @media (max-width: 360px) {
-  .ds-create-hero.is-choice {
-    grid-template-columns: 80px 1fr;
-    gap: 12px;
-  }
-  .ds-create-hero.is-choice img { width: 80px; height: 80px; border-radius: 16px; }
+  .ds-create-hero.is-choice { grid-template-columns: 88px 1fr; }
+  .ds-create-hero.is-choice img { width: 88px; }
+  .ds-create-hero.is-choice > div { padding: 12px; }
 }
 .ds-create-hero b { font-family: var(--ds-font-display); letter-spacing: -.01em; }
 .ds-create-hero.is-choice b { font-size: var(--ds-text-base); }
