@@ -658,11 +658,13 @@ export function Create({ identityId }: { identityId: string | null }) {
             {/* Satu tombol, karena pertanyaannya cuma satu: "fotonya dari mana?".
                 Niatnya (dibacakan AI atau tidak) ditanya setelah fotonya ada —
                 di layar yang sama, saat orang sudah melihat fotonya. */}
-            <Button block onClick={() => setSumberTerbuka(true)}>
-              <span className="photo-cta">
-                <Plus /> Tambah foto
-              </span>
-            </Button>
+            <div>
+              <Button onClick={() => setSumberTerbuka(true)}>
+                <span className="photo-cta">
+                  <Plus /> Tambah foto
+                </span>
+              </Button>
+            </div>
           </div>
         </div>
       )}
