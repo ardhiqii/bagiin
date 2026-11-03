@@ -41,15 +41,18 @@ sejak 2 Nov 2026 — jangan dihidupkan lagi.
 
 ## Source of truth, berurutan
 
-1. `PRODUCT.md` — aturan produk dan bisnis dari pemilik (Indonesian). Kalau
-   berbeda dengan kode, PRODUCT.md menang dan selisihnya dibahas dulu.
-2. `DESIGN_SYSTEM.md` — arah visual (Seimbang layout, Saldo palette), token,
+Semua dokumen ada di `docs/`; daftarnya `docs/README.md`.
+
+1. `docs/PRODUCT.md` — aturan produk dan bisnis dari pemilik (Indonesian). Kalau
+   berbeda dengan kode, dokumen ini menang dan selisihnya dibahas dulu.
+2. `docs/DESIGN_SYSTEM.md` — arah visual (Seimbang layout, Saldo palette), token,
    komponen, kosakata status.
-3. `UX_RESEARCH.md` — catatan riset; memisahkan perilaku pihak ketiga dari
+3. `docs/UX_RESEARCH.md` — catatan riset; memisahkan perilaku pihak ketiga dari
    rekomendasi untuk Bagiin.
-4. `RUNBOOK-V1.md` — topologi, deploy, rollback, keadaan darurat.
-5. `CLAUDE.md` — cara backend dan frontend benar-benar bekerja.
-6. `SPEC.md` — changelog implementasi historis.
+4. `docs/RUNBOOK-V1.md` — topologi, deploy, rollback, keadaan darurat.
+5. `CLAUDE.md` — cara backend dan frontend benar-benar bekerja (di akar repo,
+   karena alat agen membacanya dari sana).
+6. `docs/SPEC.md` — changelog implementasi historis.
 
 ## Aturan uang (tidak negotiable)
 

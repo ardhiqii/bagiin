@@ -5,7 +5,7 @@ import { test, expect, type Page } from '@playwright/test'
  * rusak tanpa suara: pratinjau tautan, PWA, angka yang berbeda antar endpoint,
  * dan getaran yang tidak pernah menyala.
  *
- * Kasus I-01..I-05 di `TEST-MATRIX.md`.
+ * Kasus I-01..I-05 di `docs/TEST-MATRIX.md`.
  */
 
 const stamp = Date.now().toString().slice(-6)

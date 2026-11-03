@@ -2,7 +2,7 @@ import { test, expect, type Page, type Browser } from '@playwright/test'
 import { setStatus } from './fixtures/filters'
 
 /**
- * Storyboard integrasi tiga layar (lihat STORYBOARD.md).
+ * Storyboard integrasi tiga layar (lihat docs/STORYBOARD.md).
  *
  * Kenapa file ini ada: tiap layar bisa "lulus" sendiri-sendiri sambil
  * menampilkan angka yang berbeda. Yang diuji di sini janji antar-layar: setelah

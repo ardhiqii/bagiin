@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
 /**
- * Kasus yang lahir dari matriks versi 2 (`TEST-MATRIX.md`).
+ * Kasus yang lahir dari matriks versi 2 (`docs/TEST-MATRIX.md`).
  *
  * Fokusnya bukan mengulang tes lama, tapi menutup celah yang muncul justru
  * karena fitur akun/kontak ada: tamu yang naik jadi akun, layar masuk yang

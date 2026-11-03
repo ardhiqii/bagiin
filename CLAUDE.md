@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Bagiin — a mobile-first bill-splitting web app for Indonesian receipts (photo → OCR →
 share link → everyone taps their items → proportional tax). No accounts, no payment
-gateway. Live at https://bagiin.ardhiqi.com. `SPEC.md` is the product spec + changelog
+gateway. Live at https://bagiin.ardhiqi.com. `docs/SPEC.md` is the product spec + changelog
 (written in Indonesian); it is the record of *why* rules exist and is kept up to date
 per release.
 
 Sejak 2 Nov 2026 hanya ada **satu aplikasi**: React 19 + TypeScript + Vite di
 `frontend/`, FastAPI di `backend/`, branch kerja `main`. Folder dan frontend vanilla
-0.9 sudah tidak ada. Topologi (layanan, port, DB, deploy) ada di `RUNBOOK-V1.md`.
+0.9 sudah tidak ada. Topologi (layanan, port, DB, deploy) ada di `docs/RUNBOOK-V1.md`.
 
 UI copy, error messages (`HTTPException` details), and OCR prompts are all in casual
 Indonesian. Match that when adding user-facing strings.
@@ -159,7 +159,7 @@ belonging to the bill are inserted as new rather than clobbering rows.
 - Comments in this codebase explain *bugs that happened* (`(bug: ...)`). They are load-bearing
   history — don't delete them when refactoring nearby code.
 - Every bug-fix pass ships regression tests in `backend/test_regressions_vNN.py` named after
-  the frontend version, and a `SPEC.md` changelog entry. End-to-end behaviour lives in
+  the frontend version, and a `docs/SPEC.md` changelog entry. End-to-end behaviour lives in
   `frontend/tests/*.spec.ts` (Playwright, mobile viewport).
 - Errors returned to the client are 4xx even for upstream OCR failures (5xx bodies get
   swallowed by Cloudflare and replaced with an HTML error page).

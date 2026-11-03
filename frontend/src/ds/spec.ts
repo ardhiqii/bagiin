@@ -1,7 +1,7 @@
 /**
  * Data for the design system page. Keeping it out of the JSX makes the spec
  * editable without touching layout, and keeps the numbers in one place so the
- * page and DESIGN_SYSTEM.md cannot drift silently.
+ * page and docs/DESIGN_SYSTEM.md cannot drift silently.
  */
 
 export const BRAND_TOKENS = [

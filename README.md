@@ -17,7 +17,8 @@ tinggal di riwayat git. Domain lama sudah dihapus, bukan dialihkan.
 ├── backend/                  # FastAPI + SQLite (venv lokal di backend/venv)
 ├── frontend/                 # React 19 + TypeScript + Vite
 ├── scripts/                  # deploy, rollback, salinan konfigurasi nginx
-└── *.md                      # SPEC, PRODUCT, DESIGN_SYSTEM, TEST-MATRIX, RUNBOOK
+├── docs/                     # semua dokumen: produk, spec, desain, API, uji, runbook
+└── README.md + AGENTS.md + CLAUDE.md   # pintu masuk & aturan kerja agen
 
 /var/www/bagiin               # hasil build (dilayani nginx)
 /var/www/bagiin-uploads       # foto struk produksi
@@ -27,7 +28,17 @@ tinggal di riwayat git. Domain lama sudah dihapus, bukan dialihkan.
 
 Layanan: `bagiin-api.service` (produksi, 8096) dan `bagiin-dev.service`
 (uji e2e, 8090). Detail, cara deploy, dan cara membatalkan deploy ada di
-`RUNBOOK-V1.md`.
+`docs/RUNBOOK-V1.md`.
+
+## Dokumen
+
+Semua ada di `docs/`, daftarnya di `docs/README.md`. Yang paling sering dibuka:
+
+- `docs/PRODUCT.md` — aturan produk dan bisnis; kalau berbeda dengan kode, ini menang.
+- `docs/DESIGN_SYSTEM.md` — arah visual, token, dan aturan tata letak.
+- `docs/API_CONTRACT.md` — bentuk endpoint yang sebenarnya.
+- `docs/RUNBOOK-V1.md` — topologi, deploy, rollback, keadaan darurat.
+- `docs/TEST-MATRIX.md` — kasus uji kotak hitam dan hasil putaran terakhir.
 
 ## How it works
 
@@ -87,7 +98,7 @@ bash scripts/rollback-web.sh   # kembalikan tampilan ke build sebelumnya
 ```
 
 Skrip deploy menyimpan salinan build dan DB sebelum menimpa apa pun; tanpa
-salinan itu rollback cuma jadi niat. Penjelasan lengkap: `RUNBOOK-V1.md`.
+salinan itu rollback cuma jadi niat. Penjelasan lengkap: `docs/RUNBOOK-V1.md`.
 
 ## License
 

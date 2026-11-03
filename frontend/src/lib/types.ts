@@ -1,5 +1,5 @@
 // Bentuk data yang benar-benar dikirim backend. Diambil dari respons nyata
-// (lihat API_CONTRACT.md), bukan ditebak dari nama endpoint.
+// (lihat docs/API_CONTRACT.md), bukan ditebak dari nama endpoint.
 
 export type Identity = {
   id: string
