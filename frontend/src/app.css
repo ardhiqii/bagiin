@@ -562,6 +562,56 @@ p, small, .app-note { text-wrap: pretty; }
   font-size: var(--ds-text-sm);
   white-space: nowrap;
 }
+
+/* Tempel bukan niat ketiga, tapi cara memasukkan foto yang sama. Karena itu ia
+   satu baris tenang selebar kartu — bukan tautan di tengah kalimat, yang tidak
+   terbaca sebagai tombol dan sulit ditekan. */
+.photo-paste-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  /* Di 320 px label ini sempat pecah dua baris dan terlihat seperti tombol yang
+     penuh sesak; satu baris lebih terbaca sebagai satu tindakan. */
+  white-space: nowrap;
+}
+.photo-paste-label svg { width: 20px; height: 20px; flex: none; }
+/* 'atau' memisahkan dua tombol niat dari satu cara lain memasukkan foto yang
+   sama — tanpa garis pemisah, baris tempel terbaca sebagai tombol ketiga. */
+.photo-paste-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--ds-space-2);
+  /* Satu baris, rata kiri dengan tombol di atasnya: 'atau' + tindakannya
+     bukan dua kolom terpisah yang membuat baris ini terlihat mengambang. */
+  padding-inline: 0;
+}
+.photo-paste-row .ds-button { flex: 1; justify-content: flex-start; padding-inline: 0; }
+.photo-or {
+  margin: 0;
+  font-size: var(--ds-text-2xs);
+  line-height: 1;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ds-muted);
+}
+.photo-paste-hint {
+  margin: var(--ds-space-1) 0 0;
+  font-size: var(--ds-text-sm);
+  line-height: 1.45;
+  color: var(--ds-muted);
+}
+/* Gambar yang baru ditempel: thumbnail dulu, baru pertanyaan niatnya. */
+.photo-tempel-thumb {
+  width: 64px;
+  height: 64px;
+  flex: none;
+  border-radius: var(--ds-radius-md);
+  object-fit: cover;
+  background: rgba(20, 47, 58, .06);
+}
+.ds-create-hero.is-tempel > .photo-tempel-thumb { margin-top: 2px; }
+.ds-create-hero.is-tempel .photo-actions { margin-top: var(--ds-space-2); }
 .link-quiet {
   border: 0;
   background: none;

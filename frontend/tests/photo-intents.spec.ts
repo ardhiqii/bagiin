@@ -207,10 +207,44 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
       document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }))
     })
 
+    /* Yang tertempel belum dibaca: niatnya ditanyakan dulu, dan thumbnail-nya
+       tampil supaya orang bisa memastikan itu struk yang benar. */
+    await expect(page.getByText('Screenshot siap dipakai')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('.photo-tempel-thumb')).toBeVisible()
+    expect(dibaca, 'tempelan tidak boleh langsung dibaca tanpa ditanya').toBe(0)
+
+    await page.getByRole('button', { name: 'Baca pakai AI' }).click()
     await expect(page.locator('.ds-create-hero.is-scanning')).toBeVisible({ timeout: 20000 })
     await expect(page.locator('.ds-scan-beam')).toBeVisible()
     await expect(page.locator('#bill-title')).toHaveValue(/Gojek/i, { timeout: 20000 })
-    expect(dibaca, 'gambar yang ditempel harus dibaca AI').toBeGreaterThan(0)
+    expect(dibaca, 'setelah dipilih, tempelan dibaca AI').toBe(1)
+  })
+
+  test('40d. tempelan juga bisa cuma dilampirkan sebagai bukti, tanpa AI', async ({ page }) => {
+    await freshUser(page, 'Zaki')
+    let dibaca = 0
+    await page.route('**/api/ocr', async (route) => {
+      dibaca += 1
+      await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
+    })
+
+    await page.goto('/create')
+    await page.locator('#bill-title').waitFor()
+    await page.evaluate(async () => {
+      const png =
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
+      const blob = await (await fetch(png)).blob()
+      const dt = new DataTransfer()
+      dt.items.add(new File([blob], 'screenshot.png', { type: 'image/png' }))
+      document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }))
+    })
+
+    await expect(page.getByText('Screenshot siap dipakai')).toBeVisible({ timeout: 10000 })
+    await page.getByRole('button', { name: 'Lampirkan saja' }).click()
+
+    await expect(page.getByText(/dilampirkan sebagai bukti/i)).toBeVisible({ timeout: 20000 })
+    await expect(page.locator('.photo-tempel-thumb')).toHaveCount(0)
+    expect(dibaca, 'lampirkan saja tidak boleh memanggil AI').toBe(0)
   })
 
   test('41. struk yang pajaknya sudah termasuk: kolom pajak dikunci, bill ditandai', async ({ page }) => {

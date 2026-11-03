@@ -7,6 +7,7 @@ import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
 import { Alert, Button, DateField, Field, SectionHead, Sheet } from '../ds/primitives'
 import { Plus, X } from '@phosphor-icons/react'
+import { IconPaste } from '../ds/icons'
 import createHeroArt from '../assets/create-hero.webp'
 import scanArt from '../assets/scan.webp'
 import scanLine from '../assets/scan-line.webp'
@@ -93,6 +94,13 @@ export function Create({ identityId }: { identityId: string | null }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   /** Indeks foto yang sedang dilihat penuh; null = tidak ada. */
   const [viewer, setViewer] = useState<number | null>(null)
+  /**
+   * Gambar yang baru ditempel, menunggu diputuskan mau dibacakan AI atau cuma
+   * dilampirkan. Tempelan tidak punya tombol asal seperti "Scan pakai AI", jadi
+   * niatnya harus ditanyakan — dan menampilkan thumbnail-nya sekalian membuat
+   * orang bisa memastikan yang tertempel memang struk yang benar.
+   */
+  const [tempel, setTempel] = useState<{ files: File[]; url: string } | null>(null)
   const contacts = useContacts(identityId, Boolean(identityId))
 
   useEffect(() => {
@@ -109,12 +117,16 @@ export function Create({ identityId }: { identityId: string | null }) {
       const berkas = gambarDariPapanKlip(e.clipboardData)
       if (!berkas.length) return
       e.preventDefault()
-      intentRef.current = 'ocr'
-      onFilesPicked(berkas)
+      terimaTempelan(berkas)
     }
     document.addEventListener('paste', onPaste)
     return () => document.removeEventListener('paste', onPaste)
   }, [photoBusy])
+
+  // URL pratinjau harus dilepas, kalau tidak blob tempelan menahan memori sesi.
+  useEffect(() => () => {
+    if (tempel) URL.revokeObjectURL(tempel.url)
+  }, [tempel])
 
   function pickPhoto(intent: 'ocr' | 'attach') {
     intentRef.current = intent
@@ -144,6 +156,32 @@ export function Create({ identityId }: { identityId: string | null }) {
     return hasil.slice(0, 3)
   }
 
+  /** Tempelan diterima: tampilkan dulu, niatnya diputuskan sesudah ini. */
+  function terimaTempelan(files: File[]) {
+    if (!files.length) return
+    setOcrError('')
+    setTempel((lama) => {
+      if (lama) URL.revokeObjectURL(lama.url)
+      return { files: files.slice(0, 3), url: URL.createObjectURL(files[0]) }
+    })
+  }
+
+  function buangTempelan() {
+    setTempel((lama) => {
+      if (lama) URL.revokeObjectURL(lama.url)
+      return null
+    })
+  }
+
+  /** Tempelan yang sudah diputuskan: jalurnya sama dengan dua tombol di atas. */
+  function pakaiTempelan(intent: 'ocr' | 'attach') {
+    if (!tempel) return
+    const files = tempel.files
+    buangTempelan()
+    intentRef.current = intent
+    onFilesPicked(files)
+  }
+
   async function tempelDariPapanKlip() {
     if (photoBusy) return
     setOcrError('')
@@ -154,9 +192,7 @@ export function Create({ identityId }: { identityId: string | null }) {
         if (!jenis) continue
         const blob = await isi.getType(jenis)
         const ext = jenis.split('/')[1] || 'png'
-        // Sama persis dengan jalur "Scan pakai AI": satu pembaca, dua pintu masuk.
-        intentRef.current = 'ocr'
-        onFilesPicked([new File([blob], `tempel-${Date.now()}.${ext}`, { type: jenis })])
+        terimaTempelan([new File([blob], `tempel-${Date.now()}.${ext}`, { type: jenis })])
         return
       }
       toast('Papan klip tidak berisi gambar. Salin dulu screenshot struknya.')
@@ -480,7 +516,38 @@ export function Create({ identityId }: { identityId: string | null }) {
             ) : null}
           </div>
         </div>
-      ) : ocrError ? null : (
+      ) : ocrError ? null : tempel ? (
+        /* Tempelan ditanya dulu niatnya: dibacakan AI atau cuma jadi bukti.
+           Thumbnail-nya ikut tampil supaya orang bisa memastikan yang tertempel
+           memang struk yang benar, bukan chat yang salah salin. */
+        <div className="ds-create-hero is-choice is-tempel">
+          <img
+            className="photo-tempel-thumb"
+            src={tempel.url}
+            alt="Screenshot yang baru ditempel"
+            width={64}
+            height={64}
+          />
+          <div className="grow">
+            <div className="app-inline">
+              <b>Screenshot siap dipakai</b>
+              <span className="app-spacer" />
+              <button type="button" className="link-quiet" onClick={buangTempelan}>
+                Batal
+              </button>
+            </div>
+            <p className="app-note">
+              Mau dibacakan AI supaya item dan totalnya terisi sendiri, atau cuma dilampirkan sebagai bukti?
+            </p>
+            <div className="photo-actions">
+              <Button onClick={() => pakaiTempelan('ocr')}>Baca pakai AI</Button>
+              <Button variant="secondary" onClick={() => pakaiTempelan('attach')}>
+                Lampirkan saja
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
         <div className="ds-create-hero is-choice">
           <img src={createHeroArt} alt="" width={64} height={64} />
           <div className="grow">
@@ -500,15 +567,6 @@ export function Create({ identityId }: { identityId: string | null }) {
             </div>
             <p className="app-note">
               AI bisa membaca struk atau screenshot pesanan (Gojek, ShopeeFood, Grab). Sampai 3 foto sekaligus.
-              Screenshot di papan klip bisa langsung ditempel:{' '}
-              {bisaTempelGambar ? (
-                <button type="button" className="link-quiet" onClick={() => void tempelDariPapanKlip()}>
-                  tempel dari papan klip
-                </button>
-              ) : (
-                <span>di komputer Ctrl+V, di HP salin dulu lalu tempel di sini</span>
-              )}
-              .
             </p>
             <div className="photo-actions">
               <Button onClick={() => pickPhoto('ocr')}>Scan pakai AI</Button>
@@ -516,6 +574,27 @@ export function Create({ identityId }: { identityId: string | null }) {
                 Lampirkan saja
               </Button>
             </div>
+            {/* Tempel bukan niat ketiga, tapi cara memasukkan foto yang sama —
+                karena itu tombolnya tenang dan niatnya ditanyakan sesudahnya. */}
+            {/* Satu baris: 'atau' + tindakannya. Kalau 'atau' berdiri sendiri di
+                atas tombol, ia terbaca menempel pada tombol kiri saja. */}
+            <div className="photo-paste-row">
+              <p className="photo-or">atau</p>
+              {bisaTempelGambar ? (
+                <Button variant="quiet" onClick={() => void tempelDariPapanKlip()}>
+                  <span className="photo-paste-label">
+                    <IconPaste /> Tempel screenshot
+                  </span>
+                </Button>
+              ) : (
+                <p className="photo-paste-hint">Tekan Ctrl+V untuk menempelkan screenshot.</p>
+              )}
+            </div>
+            <p className="photo-paste-hint">
+              {bisaTempelGambar
+                ? 'Screenshot yang baru disalin bisa langsung ditempel. Di komputer cukup Ctrl+V.'
+                : 'Di komputer, screenshot bisa langsung ditempel dengan Ctrl+V.'}
+            </p>
           </div>
         </div>
       )}

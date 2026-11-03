@@ -30,6 +30,17 @@ export function NavHome({ active }: IconProps) {
   );
 }
 
+/** Papan klip: lembar dengan penjepit di atas, garis isi di bawah. */
+export function IconPaste() {
+  return (
+    <svg {...BASE} strokeWidth={1.7}>
+      <path d="M6.6 5.4h10.8a1.6 1.6 0 0 1 1.6 1.6v12a1.6 1.6 0 0 1-1.6 1.6H6.6A1.6 1.6 0 0 1 5 19V7a1.6 1.6 0 0 1 1.6-1.6Z" />
+      <path d="M9.2 5.4V4.3a1.3 1.3 0 0 1 1.3-1.3h3a1.3 1.3 0 0 1 1.3 1.3v1.1" />
+      <path d="M8.9 11.6h6.2M8.9 15.4h3.9" />
+    </svg>
+  )
+}
+
 export function NavBill({ active }: IconProps) {
   return (
     <svg {...BASE} strokeWidth={active ? 2.2 : 1.7}>
