@@ -1,5 +1,7 @@
 import { Link, useRouter } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { useIdentity } from '../lib/identity'
+import { ambilRecap, keys } from '../lib/queries'
 import { ArrowLeft } from '@phosphor-icons/react'
 import type { ReactNode } from 'react'
 import { NavCreate, NavHome, NavRecap } from '../ds/icons'
@@ -33,6 +35,24 @@ export function AppShell({
 }) {
   const router = useRouter()
   const me = useIdentity()
+  const qc = useQueryClient()
+  /**
+   * Panaskan Rekap begitu jari menyentuh tabnya.
+   *
+   * Rekap menghitung ulang seluruh riwayat, jadi ia layar yang paling terasa
+   * kalau dibuka tanpa persiapan. Sentuhan hampir selalu mendahului ketukan,
+   * jadi yang tadinya menunggu setelah layar dibuka sekarang terjadi selama
+   * jari masih di tab. Kalau cuma lewat tanpa mengetuk, yang terbuang satu
+   * permintaan yang isinya memang akan dipakai lagi nanti.
+   */
+  const panaskanRekap = () => {
+    if (!me?.id || qc.getQueryData(keys.recap(me.id))) return
+    void qc.prefetchQuery({
+      queryKey: keys.recap(me.id),
+      queryFn: () => ambilRecap(me.id),
+      staleTime: 30_000,
+    })
+  }
   const initial = (me?.name ?? 'T').trim().charAt(0).toUpperCase()
   return (
     <div className="app-shell">
@@ -69,6 +89,8 @@ export function AppShell({
                 to={to}
                 className={id === active ? 'is-active' : ''}
                 aria-current={id === active ? 'page' : undefined}
+                onPointerEnter={id === 'recap' ? panaskanRekap : undefined}
+                onPointerDown={id === 'recap' ? panaskanRekap : undefined}
               >
                 <Icon />
                 {label}

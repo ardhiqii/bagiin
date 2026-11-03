@@ -159,10 +159,14 @@ export function useInvites(identityId: string | null) {
   })
 }
 
+export function ambilRecap(identityId: string) {
+  return api<Recap>('/api/identities/' + identityId + '/recap')
+}
+
 export function useRecap(identityId: string | null) {
   return useQuery({
     queryKey: keys.recap(identityId ?? ''),
-    queryFn: () => api<Recap>('/api/identities/' + identityId + '/recap'),
+    queryFn: () => ambilRecap(identityId ?? ''),
     enabled: Boolean(identityId),
   })
 }
