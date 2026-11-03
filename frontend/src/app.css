@@ -563,24 +563,14 @@ p, small, .app-note { text-wrap: pretty; }
   white-space: nowrap;
 }
 
-/* Tempel itu sumber foto, bukan niat ketiga: ikon 48 px di ujung baris aksi.
-   Ikonnya netral (navy di atas isian tipis), bukan mint — dua tombol mint di
-   samping pil hijau membuat mata membaca tiga ajakan sekaligus. */
-.photo-actions.is-three { grid-template-columns: 1fr 1fr 48px; }
-.photo-paste-btn {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--ds-radius-md);
-  background: rgba(20, 47, 58, .06);
-  color: var(--ds-navy);
+/* Satu tombol besar di kartu: isinya ikon tambah + label, bukan dua pil yang
+   saling mengecil di layar 320 px. */
+.photo-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-2);
 }
-.photo-paste-btn:hover { background: rgba(20, 47, 58, .1); }
-.photo-paste-hint {
-  margin: var(--ds-space-1) 0 0;
-  font-size: var(--ds-text-sm);
-  line-height: 1.45;
-  color: var(--ds-muted);
-}
+.photo-cta svg { width: 18px; height: 18px; flex: none; }
 
 /* Foto yang baru ditempel mengambil alih tempat ilustrasi: sejak ada foto,
    foto itulah subjeknya. */

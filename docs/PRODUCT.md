@@ -169,10 +169,19 @@ Satu tempat foto, dua niat, dan tiga cara memasukkan foto. Di HP input berkas
 tidak memakai `capture="environment"` supaya pemilih bawaan menawarkan kamera
 **atau** galeri — beberapa foto sekaligus bisa dipilih.
 
-**Tempel** (2026-11-03) adalah cara ketiga, dan ia sumber foto, bukan niat ketiga:
-`Ctrl+V` di komputer, atau ikon papan klip 48 px di ujung baris aksi untuk HP
-(hanya muncul kalau browser mengizinkan membaca papan klip). Teks yang ditempel
-dibiarkan menempel di kolomnya sendiri; hanya `image/*` yang diambil.
+**Tempel** (2026-11-03) adalah cara ketiga, dan ia sumber foto, bukan niat ketiga.
+Karena itu kartu tidak menaruhnya sebagai tombol: kartu cuma punya satu tombol
+besar **Tambah foto**, yang membuka daftar sumber — **Kamera**, **Galeri**, dan
+**Tempel screenshot** (baris terakhir hanya muncul kalau browser mengizinkan
+membaca papan klip). `Ctrl+V` di komputer tetap jalan tanpa lewat daftar itu, dan
+teks yang ditempel dibiarkan menempel di kolomnya sendiri — hanya `image/*` yang
+diambil.
+
+Satu tombol, bukan tiga, karena kartu hanya perlu menjawab satu pertanyaan:
+"fotonya dari mana?". Pertanyaan kedua — "dibacakan AI atau tidak?" — baru
+ditanya setelah fotonya ada, di layar yang sama, saat orang sudah melihat
+fotonya. Kartu juga tanpa tautan "Isi manual saja": formulirnya ada persis di
+bawah kartu, jadi tautan itu hanya berebut perhatian.
 
 Foto yang masuk dari mana pun — kamera, galeri, tempelan — berhenti di satu
 langkah pemeriksaan sebelum diproses: fotonya mengambil alih tempat ilustrasi,

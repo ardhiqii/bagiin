@@ -156,14 +156,15 @@ test.describe('Kotak hitam — lampirkan struk dan nama', () => {
     await freshUser(page, 'Lampir ' + stamp)
     await page.goto('/create')
     await expect(page.locator('#bill-title')).toBeVisible({ timeout: 20000 })
-    await page.getByRole('button', { name: /Scan pakai AI/ }).click()
-    await page.waitForTimeout(800)
-    const attach = page.getByRole('button', { name: /Lampirkan saja/ }).first()
-    if (!(await attach.count())) test.skip(true, 'tombol lampirkan tidak tersedia')
+    // Sumber foto dipilih di daftar aksi, lalu niatnya di kartu pemeriksaan.
+    await page.getByRole('button', { name: /Tambah foto/ }).click()
     const chooser = page.waitForEvent('filechooser', { timeout: 15000 })
-    await attach.click()
+    await page.getByRole('button', { name: 'Galeri' }).click()
     const fc = await chooser
     await fc.setFiles(FIXTURE)
+    const attach = page.getByRole('button', { name: 'Lampirkan saja' })
+    await expect(attach).toBeVisible({ timeout: 20000 })
+    await attach.click()
     await page.waitForTimeout(3000)
     // item hasil pembacaan ATAU minimal foto terlampir harus tampil
     const body = await page.locator('body').innerText()

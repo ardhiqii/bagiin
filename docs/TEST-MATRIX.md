@@ -439,10 +439,11 @@ lalu niatnya ditanyakan — dibacakan AI atau cuma dilampirkan sebagai bukti. Te
 adalah cara memasukkan foto, bukan niat ketiga, jadi tombolnya tenang (`ATAU` +
 satu baris rata kiri) dan bukan pil ketiga yang bersaing dengan dua tombol niat.
 
-Bentuk akhirnya: ikon papan klip 48 px di ujung baris aksi (bukan "ATAU", bukan
-pil ketiga — tempel itu sumber foto), lalu kartu pemeriksaan dengan foto besar,
+Bentuk akhirnya: kartu **satu tombol** (Tambah foto) yang membuka daftar sumber —
+Kamera, Galeri, Tempel screenshot — lalu kartu pemeriksaan dengan foto besar,
 strip yang memuat **semua** foto, tombol buang per foto, dan hitungan "N dari 10".
-Tempelan menambah, tidak menimpa.
+Tempelan menambah, tidak menimpa. Tes memakai alur tiga langkah itu, jadi tidak
+bisa lolos lewat jalan yang sudah tidak ada.
 
 Dijaga oleh kasus 40c (teks tidak memicu apa pun; gambar menampilkan pilihan, dan
 pembacaan baru jalan setelah "Baca pakai AI" ditekan), 40d (memilih "Lampirkan

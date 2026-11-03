@@ -139,7 +139,7 @@ test.describe('Kotak hitam — foto dan scan', () => {
     await expect(page.locator('#bill-title')).toBeVisible({ timeout: 20000 })
     const before = await page.locator('#bill-title').inputValue()
 
-    await page.getByRole('button', { name: /Scan pakai AI/ }).click()
+    await page.getByRole('button', { name: /Tambah foto/ }).click()
     await page.waitForTimeout(1200)
     // tutup tanpa memilih apa pun
     const close = page.getByRole('button', { name: 'Tutup' }).first()

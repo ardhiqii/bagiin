@@ -13,12 +13,21 @@ async function freshUser(page: Page, name: string) {
   await expect(page.getByRole('heading', { level: 1 })).toContainText(name)
 }
 
-async function pickPhotoThrough(page: Page, button: string) {
+/**
+ * Satu tombol di kartu membuka daftar sumber (Kamera / Galeri / Tempel), lalu
+ * foto berhenti di kartu pemeriksaan yang menanyakan niatnya. Alur tiga langkah
+ * itu yang ditiru di sini, supaya tes tidak bisa lolos lewat jalan yang sudah
+ * tidak ada.
+ */
+async function pickPhotoThrough(page: Page, niat: 'ocr' | 'attach', sumber = 'Galeri') {
+  await page.getByRole('button', { name: /Tambah foto struk|Tambah foto/ }).first().click()
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: button }).click(),
+    page.getByRole('button', { name: new RegExp(sumber) }).click(),
   ])
   await chooser.setFiles(PHOTO)
+  await expect(page.getByText(/siap dipakai/)).toBeVisible({ timeout: 20000 })
+  await page.getByRole('button', { name: niat === 'ocr' ? 'Baca pakai AI' : 'Lampirkan saja' }).click()
 }
 
 test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () => {
@@ -31,7 +40,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     })
 
     await page.goto('/create')
-    await pickPhotoThrough(page, 'Lampirkan saja')
+    await pickPhotoThrough(page, 'attach')
 
     await expect(page.locator('.photo-tile')).toHaveCount(1)
     await expect(page.getByText('bukti', { exact: true })).toBeVisible()
@@ -67,7 +76,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     )
 
     await page.goto('/create')
-    await pickPhotoThrough(page, 'Scan pakai AI')
+    await pickPhotoThrough(page, 'ocr')
 
     await expect(page.getByText('Struk gagal dibaca')).toBeVisible()
     await expect(page.getByText(/Layanan AI gratis sedang penuh/)).toBeVisible()
@@ -102,7 +111,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     })
 
     await page.goto('/create')
-    await pickPhotoThrough(page, 'Scan pakai AI')
+    await pickPhotoThrough(page, 'ocr')
 
     await expect(page.getByText(/Membaca struk…/)).toBeVisible()
     await expect(page.getByText(/Bisa 10-60 detik/)).toBeVisible()
@@ -126,7 +135,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     })
 
     await page.goto('/create')
-    await pickPhotoThrough(page, 'Scan pakai AI')
+    await pickPhotoThrough(page, 'ocr')
     await expect(page.locator('.ds-scan-beam')).toBeVisible({ timeout: 20000 })
 
     /* Ilustrasinya harus diam: dulu seluruh gambar diangguk 3 px, dan mata
@@ -321,7 +330,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     })
 
     await page.goto('/create')
-    await pickPhotoThrough(page, 'Scan pakai AI')
+    await pickPhotoThrough(page, 'ocr')
 
     // pajak tidak boleh ikut ditambahkan lagi
     await expect(page.getByLabel('Pajak (di dalam harga)')).toBeDisabled()
@@ -345,11 +354,15 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     await freshUser(page, 'Budi')
     await page.goto('/create')
 
+    await page.getByRole('button', { name: 'Tambah foto', exact: true }).click()
     const [chooser] = await Promise.all([
       page.waitForEvent('filechooser'),
-      page.getByRole('button', { name: 'Lampirkan saja' }).click(),
+      page.getByRole('button', { name: 'Galeri' }).click(),
     ])
     await chooser.setFiles([PHOTO, PHOTO, PHOTO])
+
+    await expect(page.getByText('3 foto siap dipakai')).toBeVisible({ timeout: 20000 })
+    await page.getByRole('button', { name: 'Lampirkan saja' }).click()
 
     await expect(page.locator('.photo-tile')).toHaveCount(3)
     await expect(page.getByText(/3 dari 10/)).toBeVisible()
@@ -379,9 +392,11 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     await freshUser(page, 'Budi')
     await page.goto('/create')
 
+    await page.getByRole('button', { name: 'Tambah foto', exact: true }).click()
     const chooserPromise = page.waitForEvent('filechooser')
-    await page.getByRole('button', { name: 'Lampirkan saja' }).click()
+    await page.getByRole('button', { name: 'Galeri' }).click()
     const chooser = await chooserPromise
+    const niatLampir = page.getByRole('button', { name: 'Lampirkan saja' })
     // struk kecil apa saja: yang diuji di sini membuka penampil, bukan isi fotonya
     await chooser.setFiles({
       name: 'struk.png',
@@ -391,6 +406,9 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
         'base64',
       ),
     })
+
+    await expect(page.getByText('Screenshot siap dipakai')).toBeVisible({ timeout: 20000 })
+    await niatLampir.click()
 
     await expect(page.locator('.photo-tile')).toHaveCount(1)
     await page.locator('.photo-open').first().click()
@@ -409,7 +427,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
   test('44. foto struk ikut tampil di layar Ubah bill dan bisa dilihat penuh', async ({ page }) => {
     await freshUser(page, 'Budi')
     await page.goto('/create')
-    await pickPhotoThrough(page, 'Lampirkan saja')
+    await pickPhotoThrough(page, 'attach')
     await page.getByLabel('Nama bill').fill('Ubah Foto ' + stamp)
     await page.getByLabel('Item 1').fill('Nasi goreng')
     await page.getByLabel('Harga satuan').first().fill('30000')

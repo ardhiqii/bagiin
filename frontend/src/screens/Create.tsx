@@ -5,8 +5,8 @@ import { api } from '../lib/api'
 import { formatRp, parseRupiah } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import { Alert, Button, DateField, Field, SectionHead, Sheet } from '../ds/primitives'
-import { Plus, X } from '@phosphor-icons/react'
+import { ActionGroup, ActionRow, Alert, Button, DateField, Field, SectionHead, Sheet } from '../ds/primitives'
+import { Camera, Images, Plus, X } from '@phosphor-icons/react'
 import { IconPaste } from '../ds/icons'
 import createHeroArt from '../assets/create-hero.webp'
 import scanArt from '../assets/scan.webp'
@@ -48,6 +48,9 @@ const formatRd = (value: number): string => formatRp(value).replace('Rp', '')
  */
 const bisaTempelGambar = typeof navigator !== 'undefined' && Boolean(navigator.clipboard?.read)
 
+/** Mouse atau trackpad: di situlah Ctrl+V masuk akal untuk disebut. */
+const perangkatPointer = typeof window !== 'undefined' && window.matchMedia('(pointer: fine)').matches
+
 export function Create({ identityId }: { identityId: string | null }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -86,6 +89,9 @@ export function Create({ identityId }: { identityId: string | null }) {
   const [lastFiles, setLastFiles] = useState<File[]>([])
   const [taxIncluded, setTaxIncluded] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const kameraRef = useRef<HTMLInputElement>(null)
+  /** Sheet pemilih sumber foto: kamera, galeri, atau papan klip. */
+  const [sumberTerbuka, setSumberTerbuka] = useState(false)
   const intentRef = useRef<'ocr' | 'attach'>('ocr')
   const abortRef = useRef<AbortController | null>(null)
   // Peserta dipilih dari orang yang pernah sebill, bukan diketik. Yang belum
@@ -100,9 +106,9 @@ export function Create({ identityId }: { identityId: string | null }) {
    * niatnya harus ditanyakan — dan menampilkan thumbnail-nya sekalian membuat
    * orang bisa memastikan yang tertempel memang struk yang benar.
    */
-  const [tempel, setTempel] = useState<{ file: File; url: string }[]>([])
+  const [pending, setPending] = useState<{ file: File; url: string }[]>([])
   /** URL pratinjau yang masih hidup; dilepas saat layar ditutup. */
-  const tempelUrls = useRef<string[]>([])
+  const pendingUrls = useRef<string[]>([])
   const contacts = useContacts(identityId, Boolean(identityId))
 
   useEffect(() => {
@@ -119,28 +125,30 @@ export function Create({ identityId }: { identityId: string | null }) {
       const berkas = gambarDariPapanKlip(e.clipboardData)
       if (!berkas.length) return
       e.preventDefault()
-      terimaTempelan(berkas)
+      terimaFoto(berkas)
     }
     document.addEventListener('paste', onPaste)
     return () => document.removeEventListener('paste', onPaste)
   }, [photoBusy])
 
   // URL pratinjau harus dilepas, kalau tidak blob tempelan menahan memori sesi.
-  // Hanya saat layar ditinggalkan: kalau efek ini bergantung pada `tempel`, ia
+  // Hanya saat layar ditinggalkan: kalau efek ini bergantung pada `pending`, ia
   // akan melepas URL yang baru saja ditambahkan.
   useEffect(() => () => {
-    for (const url of tempelUrls.current) URL.revokeObjectURL(url)
+    for (const url of pendingUrls.current) URL.revokeObjectURL(url)
   }, [])
 
-  function pickPhoto(intent: 'ocr' | 'attach') {
-    intentRef.current = intent
-    fileRef.current?.click()
+  function pilihSumber(sumber: 'kamera' | 'galeri' | 'papan klip') {
+    setSumberTerbuka(false)
+    if (sumber === 'kamera') kameraRef.current?.click()
+    else if (sumber === 'galeri') fileRef.current?.click()
+    else void tempelDariPapanKlip()
   }
 
   /**
    * Gambar dari papan klip. Struk yang paling sering dibagi orang Indonesia
    * bukan berkas — ia screenshot pesanan ojol yang masih nempel di papan klip,
-   * atau struk yang difoto lalu disalin. Tanpa jalur tempel, orang harus
+   * atau struk yang difoto lalu disalin. Tanpa jalur pending, orang harus
    * menyimpan screenshot ke galeri dulu baru bisa memilihnya.
    */
   function gambarDariPapanKlip(data: DataTransfer | null): File[] {
@@ -165,10 +173,10 @@ export function Create({ identityId }: { identityId: string | null }) {
    * paling menyebalkan saat orang menempel berkali-kali: screenshot kedua
    * datang, yang pertama hilang tanpa pernah dipakai.
    */
-  function terimaTempelan(files: File[]) {
+  function terimaFoto(files: File[]) {
     if (!files.length) return
     setOcrError('')
-    setTempel((lama) => {
+    setPending((lama) => {
       const sisa = 10 - lama.length
       if (sisa <= 0) {
         toast('Sudah 10 foto. Buang satu dulu kalau mau menempel yang lain.')
@@ -180,7 +188,7 @@ export function Create({ identityId }: { identityId: string | null }) {
       }
       const baru = masuk.map((file) => {
         const url = URL.createObjectURL(file)
-        tempelUrls.current.push(url)
+        pendingUrls.current.push(url)
         return { file, url }
       })
       return [...lama, ...baru]
@@ -189,7 +197,7 @@ export function Create({ identityId }: { identityId: string | null }) {
 
   /** Foto yang diketuk di strip naik jadi tampilan besar. */
   function jadikanUtama(indeks: number) {
-    setTempel((lama) => {
+    setPending((lama) => {
       if (indeks <= 0 || indeks >= lama.length) return lama
       const urut = [...lama]
       const [pilih] = urut.splice(indeks, 1)
@@ -197,30 +205,30 @@ export function Create({ identityId }: { identityId: string | null }) {
     })
   }
 
-  function buangSatuTempelan(indeks: number) {
-    setTempel((lama) => {
+  function buangPending(indeks: number) {
+    setPending((lama) => {
       const buang = lama[indeks]
       if (buang) {
         URL.revokeObjectURL(buang.url)
-        tempelUrls.current = tempelUrls.current.filter((url) => url !== buang.url)
+        pendingUrls.current = pendingUrls.current.filter((url) => url !== buang.url)
       }
       return lama.filter((_, i) => i !== indeks)
     })
   }
 
-  function bersihkanTempelan() {
-    for (const item of tempel) URL.revokeObjectURL(item.url)
-    tempelUrls.current = []
-    setTempel([])
+  function bersihkanPending() {
+    for (const item of pending) URL.revokeObjectURL(item.url)
+    pendingUrls.current = []
+    setPending([])
   }
 
   /** Tempelan yang sudah diputuskan: jalurnya sama dengan dua tombol di atas. */
-  function pakaiTempelan(intent: 'ocr' | 'attach') {
-    if (!tempel.length) return
-    const files = tempel.map((item) => item.file)
-    for (const item of tempel) URL.revokeObjectURL(item.url)
-    tempelUrls.current = []
-    setTempel([])
+  function pakaiPending(intent: 'ocr' | 'attach') {
+    if (!pending.length) return
+    const files = pending.map((item) => item.file)
+    for (const item of pending) URL.revokeObjectURL(item.url)
+    pendingUrls.current = []
+    setPending([])
     intentRef.current = intent
     onFilesPicked(files)
   }
@@ -235,7 +243,7 @@ export function Create({ identityId }: { identityId: string | null }) {
         if (!jenis) continue
         const blob = await isi.getType(jenis)
         const ext = jenis.split('/')[1] || 'png'
-        terimaTempelan([new File([blob], `tempel-${Date.now()}.${ext}`, { type: jenis })])
+        terimaFoto([new File([blob], `pending-${Date.now()}.${ext}`, { type: jenis })])
         return
       }
       toast('Papan klip tidak berisi gambar. Salin dulu screenshot struknya.')
@@ -488,7 +496,20 @@ export function Create({ identityId }: { identityId: string | null }) {
         multiple
         style={{ display: 'none' }}
         onChange={(event) => {
-          onFilesPicked(Array.from(event.target.files ?? []))
+          terimaFoto(Array.from(event.target.files ?? []))
+          event.target.value = ''
+        }}
+      />
+      {/* Kamera punya input sendiri: `capture` memaksa kamera belakang dan
+          mematikan pilihan galeri, jadi keduanya tidak bisa satu elemen. */}
+      <input
+        ref={kameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={(event) => {
+          terimaFoto(Array.from(event.target.files ?? []))
           event.target.value = ''
         }}
       />
@@ -527,14 +548,9 @@ export function Create({ identityId }: { identityId: string | null }) {
               </div>
             ))}
           </div>
-          <div className="photo-actions">
-            <Button variant="secondary" onClick={() => pickPhoto('ocr')}>
-              Scan foto lagi (AI)
-            </Button>
-            <Button variant="secondary" onClick={() => pickPhoto('attach')}>
-              Tambah bukti
-            </Button>
-          </div>
+          <Button variant="secondary" block onClick={() => setSumberTerbuka(true)}>
+            Tambah foto
+          </Button>
         </section>
       ) : photoBusy ? (
         <div className={'ds-create-hero' + (photoBusy === 'ocr' ? ' is-scanning' : '')} role="status">
@@ -561,28 +577,28 @@ export function Create({ identityId }: { identityId: string | null }) {
             ) : null}
           </div>
         </div>
-      ) : ocrError ? null : tempel.length > 0 ? (
+      ) : ocrError ? null : pending.length > 0 ? (
         /* Sejak foto masuk, foto itulah subjeknya — ilustrasi struk sudah tidak
-           relevan, jadi tempatnya digantikan hasil tempel, bukan ditemani kotak
+           relevan, jadi tempatnya digantikan hasil pending, bukan ditemani kotak
            thumbnail kecil. Niatnya ditanya di sini, bukan di baris tombol. */
         <section className="photo-review">
           <div className="photo-review-frame">
-            <img src={tempel[0].url} alt="Foto yang baru ditempel" />
+            <img src={pending[0].url} alt="Foto yang baru ditempel" />
             <button
               type="button"
               className="photo-review-kill"
               aria-label="Buang foto ke-1"
-              onClick={() => buangSatuTempelan(0)}
+              onClick={() => buangPending(0)}
             >
               ×
             </button>
           </div>
-          {tempel.length > 1 ? (
+          {pending.length > 1 ? (
             /* Semua foto tampil di strip, termasuk yang sedang besar: kalau yang
                besar tidak ikut dihitung, judul "3 foto" di bawahnya bertabrakan
                dengan dua thumbnail yang terlihat. */
             <div className="photo-review-strip">
-              {tempel.map((item, i) => (
+              {pending.map((item, i) => (
                 <div className={'photo-review-item' + (i === 0 ? ' is-active' : '')} key={item.url}>
                   <button
                     type="button"
@@ -596,7 +612,7 @@ export function Create({ identityId }: { identityId: string | null }) {
                     type="button"
                     className="photo-review-kill"
                     aria-label={`Buang foto ke-${i + 1}`}
-                    onClick={() => buangSatuTempelan(i)}
+                    onClick={() => buangPending(i)}
                   >
                     ×
                   </button>
@@ -605,9 +621,9 @@ export function Create({ identityId }: { identityId: string | null }) {
             </div>
           ) : null}
           <div className="app-inline">
-            <b>{tempel.length > 1 ? tempel.length + ' foto siap dipakai' : 'Screenshot siap dipakai'}</b>
+            <b>{pending.length > 1 ? pending.length + ' foto siap dipakai' : 'Screenshot siap dipakai'}</b>
             <span className="app-spacer" />
-            <button type="button" className="link-quiet" onClick={bersihkanTempelan}>
+            <button type="button" className="link-quiet" onClick={bersihkanPending}>
               Buang semua
             </button>
           </div>
@@ -615,8 +631,8 @@ export function Create({ identityId }: { identityId: string | null }) {
             Mau dibacakan AI supaya item dan totalnya terisi sendiri, atau cuma dilampirkan sebagai bukti?
           </p>
           <div className="photo-actions">
-            <Button onClick={() => pakaiTempelan('ocr')}>Baca pakai AI</Button>
-            <Button variant="secondary" onClick={() => pakaiTempelan('attach')}>
+            <Button onClick={() => pakaiPending('ocr')}>Baca pakai AI</Button>
+            <Button variant="secondary" onClick={() => pakaiPending('attach')}>
               Lampirkan saja
             </Button>
           </div>
@@ -627,56 +643,26 @@ export function Create({ identityId }: { identityId: string | null }) {
               </button>
             ) : null}
             <span className="app-spacer" />
-            <span className="photo-review-count">{tempel.length} dari 10</span>
+            <span className="photo-review-count">{pending.length} dari 10</span>
           </div>
         </section>
       ) : (
         <div className="ds-create-hero is-choice">
           <img src={createHeroArt} alt="" width={64} height={64} />
           <div className="grow">
-            <div className="app-inline">
-              <b>Foto struk (opsional)</b>
-              <span className="app-spacer" />
-              <button
-                type="button"
-                className="link-quiet"
-                onClick={() => {
-                  document.getElementById('item-name-0')?.scrollIntoView({ block: 'center' })
-                  document.getElementById('item-name-0')?.focus()
-                }}
-              >
-                Isi manual saja
-              </button>
-            </div>
-            <p className="app-note">
-              AI bisa membaca struk atau screenshot pesanan (Gojek, ShopeeFood, Grab). Sampai 3 foto sekaligus.
-            </p>
-            {/* Tempel itu sumber foto, bukan niat ketiga: karena itu ia ikon
-                48 px di ujung baris aksi, bukan pil atau tautan di tengah
-                kalimat. Ikon netral — dua tombol mint di samping pil hijau
-                membuat mata membaca tiga ajakan sekaligus. */}
-            <div className={'photo-actions' + (bisaTempelGambar ? ' is-three' : '')}>
-              <Button onClick={() => pickPhoto('ocr')}>Scan pakai AI</Button>
-              <Button variant="secondary" onClick={() => pickPhoto('attach')}>
-                Lampirkan saja
-              </Button>
-              {bisaTempelGambar ? (
-                <button
-                  type="button"
-                  className="ds-icon-button photo-paste-btn"
-                  aria-label="Tempel screenshot"
-                  title="Tempel screenshot dari papan klip"
-                  onClick={() => void tempelDariPapanKlip()}
-                >
-                  <IconPaste />
-                </button>
-              ) : null}
-            </div>
-            <p className="photo-paste-hint">
-              {bisaTempelGambar
-                ? 'Screenshot bisa langsung ditempel: tekan ikon papan klip, atau Ctrl+V di komputer.'
-                : 'Screenshot bisa langsung ditempel dengan Ctrl+V di komputer.'}
-            </p>
+            {/* Tanpa tautan "Isi manual saja": formulirnya ada persis di bawah
+                kartu ini, jadi tautan itu cuma berebut perhatian dengan tombol
+                utama tanpa menambah jalan yang belum ada. */}
+            <b>Foto struk (opsional)</b>
+            <p className="app-note">AI bisa baca struk atau screenshot.</p>
+            {/* Satu tombol, karena pertanyaannya cuma satu: "fotonya dari mana?".
+                Niatnya (dibacakan AI atau tidak) ditanya setelah fotonya ada —
+                di layar yang sama, saat orang sudah melihat fotonya. */}
+            <Button block onClick={() => setSumberTerbuka(true)}>
+              <span className="photo-cta">
+                <Plus /> Tambah foto
+              </span>
+            </Button>
           </div>
         </div>
       )}
@@ -709,7 +695,7 @@ export function Create({ identityId }: { identityId: string | null }) {
             >
               Pakai foto struk tadi sebagai bukti
             </Button>
-            <Button variant="quiet" onClick={() => pickPhoto('ocr')}>
+            <Button variant="quiet" onClick={() => setSumberTerbuka(true)}>
               Foto lain
             </Button>
           </span>
@@ -852,6 +838,37 @@ export function Create({ identityId }: { identityId: string | null }) {
         }
         onClose={() => setPickerOpen(false)}
       />
+
+      {/* Sumber foto dipilih di daftar aksi, bukan sebagai tiga tombol di kartu:
+          di sini tempel punya label yang jelas tanpa harus jadi baris teks
+          tambahan di bawah tombol. */}
+      <Sheet open={sumberTerbuka} title="Tambah foto struk" onClose={() => setSumberTerbuka(false)}>
+        <ActionGroup>
+          <ActionRow
+            icon={<Camera size={20} />}
+            label="Kamera"
+            note="Foto struk sekarang"
+            onClick={() => pilihSumber('kamera')}
+          />
+          <ActionRow
+            icon={<Images size={20} />}
+            label="Galeri"
+            note="Pilih foto atau screenshot"
+            onClick={() => pilihSumber('galeri')}
+          />
+          {bisaTempelGambar ? (
+            <ActionRow
+              icon={<IconPaste />}
+              label="Tempel screenshot"
+              note="Dari papan klip"
+              onClick={() => pilihSumber('papan klip')}
+            />
+          ) : null}
+        </ActionGroup>
+        {perangkatPointer ? (
+          <p className="app-note">Di komputer, Ctrl+V juga langsung menempelkan screenshot.</p>
+        ) : null}
+      </Sheet>
 
       <Sheet open={viewer !== null} title="Foto struk" onClose={() => setViewer(null)}>
         {viewer !== null && photos[viewer] ? (
