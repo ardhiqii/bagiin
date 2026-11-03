@@ -296,7 +296,7 @@ Dijalankan di Chromium headful yang sudah punya sesi Google, terhadap build live
 
 ## Kotak hitam 1.0 — e2e sebagai orang yang belum pernah melihat aplikasi
 
-Sembilan belas berkas, **138 kasus**, semuanya dijalankan lewat layar: tidak ada
+Dua puluh berkas, **140 kasus**, semuanya dijalankan lewat layar: tidak ada
 satu pun pemanggilan API langsung untuk menyiapkan keadaan, karena yang diuji
 adalah apa yang bisa dilakukan orang, bukan apa yang bisa dilakukan klien HTTP.
 
@@ -325,7 +325,7 @@ Sejak bug sheet iPhone, setiap kasus dijalankan di **dua mesin**: `mobile-chrome
 | `tests/blackbox-eighteen.spec.ts` | 6 | orang yang belum tahu apa-apa: tautan bill dari orang asing, langkah berikutnya setelah memilih, tautan salah, jaringan mati, nominal miliaran di 320 px, bahasa daftar aksi |
 | `tests/blackbox-nineteen.spec.ts` | 6 | isian uang seperti orang mengetik: tempel "Rp 25.000", ketik "25rb", jumlah dikosongkan lalu 0, jumlah 999, nama item hanya spasi, tempel nama menu beberapa baris |
 
-Jumlah seluruhnya: **634 penjalanan** (317 kasus × 2 mesin).
+Jumlah seluruhnya: **638 penjalanan** (319 kasus × 2 mesin).
 
 **Hasil putaran penuh terakhir (serial, dua mesin): 606 lulus, 20 dilewati,
 0 gagal, 1,5 jam.** Yang dilewati adalah kasus yang memang butuh OCR asli,
@@ -343,6 +343,27 @@ memunculkan kegagalan palsu — E4 "dua tab identitas yang sama" gagal sekali,
 lalu lulus 3/3 ketika dijalankan sendiri; C2 dan U5 juga membaca layar yang
 belum selesai dimuat. Kalau ada yang merah, jalankan ulang kasus itu sendiri
 sebelum menyimpulkan ada bug.
+
+### Ketukan item harus terasa instan (kasus 45a–45b)
+
+Memilih item dulu menunggu dua perjalanan jaringan: `POST /selections`, lalu
+`onSuccess` membuang balasannya dan mengambil ulang `GET /bill` (payload yang
+sama), ditambah `GET /bills` dan `GET /recap` kalau layar itu pernah dibuka.
+Tiga sampai lima permintaan untuk satu ketukan, dan tanda pilih baru muncul di
+akhir.
+
+Sekarang pilihan digambar lebih dulu dari state lokal; balasan POST dipakai
+langsung sebagai cache (`setQueryData`), dan daftar Beranda/Rekap hanya
+ditandai basi (`refetchType: 'none'`) supaya tidak berebut koneksi.
+
+Dua kasus menjaganya:
+
+- **45a** — route `POST /selections` ditahan 1,5 detik; `aria-pressed` harus
+  sudah `true` dalam **< 400 ms**. Versi lama gagal di sini karena tanda pilih
+  menunggu balasan.
+- **45b** — lima ketukan cepat: kiriman **≤ 3** (bukan 5), lalu keadaan akhir
+  dicocokkan dengan layar setelah reload, jadi ketukan yang hilang tetap
+  ketahuan.
 
 ### Cacat yang ditemukan gelombang ini
 

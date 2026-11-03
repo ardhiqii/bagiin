@@ -257,11 +257,6 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_payacct_identity ON payment_account(identity_id);
         CREATE INDEX IF NOT EXISTS idx_billphoto_bill ON bill_photo(bill_id);
         CREATE INDEX IF NOT EXISTS idx_invite_identity ON bill_invite(identity_id, status);
-        -- Beranda memuat satu bulan, bukan seluruh riwayat. Tanpa index pada
-        -- ekspresi bulan, penyaring bulan berjalan sebagai pemindaian penuh dan
-        -- biayanya ikut tumbuh seiring riwayat — persis yang mau dihindari.
-        CREATE INDEX IF NOT EXISTS idx_bill_bulan
-            ON bill(strftime('%Y-%m', COALESCE(transacted_at, created_at)));
         CREATE INDEX IF NOT EXISTS idx_bill_creator ON bill(creator_identity_id);
         CREATE INDEX IF NOT EXISTS idx_invite_bill ON bill_invite(bill_id);
         """
@@ -381,6 +376,13 @@ def init_db():
     import accounts
     accounts.init_accounts_schema(conn)
     accounts.backfill_handles(conn)
+    # Index ini HARUS setelah migrasi kolom di atas: `transacted_at` baru ada
+    # lewat `ALTER TABLE` di tengah fungsi, jadi DB lama gagal dibuatkan index
+    # kalau diletakkan bersama blok skema awal (tertangkap uji v69).
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_bill_bulan"
+        " ON bill(strftime('%Y-%m', COALESCE(transacted_at, created_at)))"
+    )
     conn.commit()
     conn.close()
 

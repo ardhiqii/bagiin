@@ -18,6 +18,26 @@ import { keys } from './queries'
  */
 export type MoneyTarget = { identityId?: string | null; billId?: string | null }
 
+/**
+ * Tandai tampilan uang basi TANPA meminta ulang sekarang.
+ *
+ * Dipakai jalur yang dipakai berulang-cepat (mengetuk item): setiap ketukan
+ * mengubah daftar Beranda dan Rekap, tapi mengirim ulang dua permintaan setiap
+ * ketukan membuat layar yang sedang dipakai berebut koneksi dengan permintaan
+ * yang tidak sedang dilihat. Yang ditandai akan disegarkan saat layarnya dibuka.
+ */
+export function markMoneyViewsStale(
+  qc: QueryClient,
+  t: { identityId?: string | null; billId?: string | null },
+) {
+  const opsi = { refetchType: 'none' as const }
+  if (t.billId) void qc.invalidateQueries({ queryKey: keys.bill(t.billId), ...opsi })
+  if (t.identityId) {
+    void qc.invalidateQueries({ queryKey: keys.billsAll(t.identityId), ...opsi })
+    void qc.invalidateQueries({ queryKey: keys.recap(t.identityId), ...opsi })
+  }
+}
+
 export function invalidateMoneyViews(qc: QueryClient, target: MoneyTarget = {}) {
   const { identityId, billId } = target
   if (billId) void qc.invalidateQueries({ queryKey: keys.bill(billId) })

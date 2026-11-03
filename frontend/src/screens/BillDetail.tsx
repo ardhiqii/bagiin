@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import type { BillResponse } from '../lib/types'
-import { billActions, useBill, useBillAction, useContacts, type Contact } from '../lib/queries'
+import { billActions, useBill, useBillAction, useContacts, useSetPicks, type Contact } from '../lib/queries'
 import { invalidateMoneyViews } from '../lib/mutations'
 import { api, endpoints, isSessionError } from '../lib/api'
 import { startIdentity } from '../lib/identity'
@@ -69,7 +69,18 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
   const queryClient = useQueryClient()
   const toast = useToast()
   const navigate = useNavigate()
-  const [busyItem, setBusyItem] = useState<number | null>(null)
+  const simpanPilihan = useSetPicks(billId, identityId)
+  /**
+   * Pilihan yang belum diakui server. `null` = ikut payload server.
+   *
+   * Sebelumnya pilihan dibaca langsung dari payload, jadi tanda centang baru
+   * muncul setelah POST selesai DAN `GET /bill` berikutnya mendarat. Dua
+   * perjalanan jaringan untuk satu ketukan — itulah delay yang terasa.
+   */
+  const [picksLokal, setPicksLokal] = useState<Map<number, number> | null>(null)
+  /** Set pilihan terbaru yang belum terkirim (satu kiriman berjalan saja). */
+  const antrePilihan = useRef<{ item_id: number; qty: number }[] | null>(null)
+  const sibukKirim = useRef(false)
   const [payerOpen, setPayerOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [slotOpen, setSlotOpen] = useState(false)
@@ -101,8 +112,8 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
   const data: BillResponse | undefined = bill.data
   const me = useMemo(() => data?.people.find((p) => p.identity_id === identityId), [data, identityId])
-  /** item_id -> berapa slot/porsi yang saya ambil. */
-  const myPicks = useMemo(() => {
+  /** item_id -> berapa slot/porsi yang saya ambil menurut server. */
+  const picksServer = useMemo(() => {
     const picked = new Map<number, number>()
     if (!data || !identityId) return picked
     for (const item of data.items) {
@@ -112,6 +123,9 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
     }
     return picked
   }, [data, identityId])
+
+  /** Yang dipakai layar: pilihan lokal kalau ada, selain itu jawaban server. */
+  const myPicks = picksLokal ?? picksServer
 
   const joined = Boolean(me)
   const canManage = data?.can_manage ?? false
@@ -195,18 +209,54 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
    * Backend menyimpan satu set pilihan utuh, jadi setiap ketukan mengirim ulang
    * seluruh pilihan saya dengan qty terbaru — bukan tambah/kurang satu per satu.
    */
-  async function savePicks(next: Map<number, number>, clicked: number) {
+  /**
+   * Ketukan mengubah tampilan lebih dulu, kiriman menyusul.
+   *
+   * Endpoint menerima SATU set pilihan utuh, jadi mengirim tiap ketukan berarti
+   * membuang kiriman yang belum tentu sampai. Yang dipakai: satu kiriman
+   * berjalan; ketukan selama itu tetap mengubah tampilan dan menandai "ada yang
+   * lebih baru", lalu keadaan terbaru dikirim sekali lagi setelahnya.
+   */
+  function savePicks(next: Map<number, number>) {
     if (!identityId || !data) return
     const picks = data.items
       .map((item) => ({ item_id: item.id, qty: next.get(item.id) ?? 0 }))
       .filter((pick) => pick.qty > 0)
-    setBusyItem(clicked)
+    setPicksLokal(next)
+    antrePilihan.current = picks
+    void kirimPilihan()
+  }
+
+  async function kirimPilihan() {
+    if (sibukKirim.current) return
+    sibukKirim.current = true
     try {
-      await action.mutateAsync(billActions.setPicks(billId, picks))
-    } catch (err) {
-      toast((err as Error).message)
+      while (antrePilihan.current) {
+        const picks = antrePilihan.current
+        antrePilihan.current = null
+        try {
+          await simpanPilihan.mutateAsync(picks)
+          // Tidak ada ketukan yang lebih baru: server sudah memegang keadaan
+          // terakhir, jadi tampilan kembali mengikuti payload (bukan salinan
+          // lokal yang bisa pelan-pelan berbeda).
+          if (!antrePilihan.current) setPicksLokal(null)
+        } catch (err) {
+          // Rollback: server menolak (slot habis, bill ditutup), jadi yang
+          // benar adalah payload, bukan yang tadi digambar di layar.
+          antrePilihan.current = null
+          setPicksLokal(null)
+          toast((err as Error).message)
+          invalidateMoneyViews(queryClient, { billId, identityId })
+          return
+        }
+      }
     } finally {
-      setBusyItem(null)
+      sibukKirim.current = false
+      // Ketukan yang mendarat tepat saat kiriman terakhir selesai bisa
+      // tertinggal (pemanggilnya melihat "masih sibuk" lalu pulang). Kalau
+      // antrean masih berisi, jalankan sekali lagi — kalau tidak, ketukan itu
+      // hilang tanpa pesan, dan itu bug uang.
+      if (antrePilihan.current) void kirimPilihan()
     }
   }
 
@@ -227,7 +277,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
     // 8 ms saat melepas, 10 ms saat mengambil: beda getaran jadi konfirmasi
     // tanpa perlu melihat layar.
     buzz(mine >= room ? 8 : 10)
-    await savePicks(next, itemId)
+    savePicks(next)
   }
 
   async function stepPortion(itemId: number, delta: number) {
@@ -236,7 +286,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
     const next = new Map(myPicks)
     if (nextQty <= 0) next.delete(itemId)
     else next.set(itemId, nextQty)
-    await savePicks(next, itemId)
+    savePicks(next)
   }
 
   /** Belum ada nama: minta nama dulu, baru masuk ke bill. */
@@ -530,7 +580,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                     type="button"
                     className={'ds-item is-' + state}
                     onClick={() => (editable ? toggleItem(item.id) : undefined)}
-                    disabled={!editable || busyItem === item.id}
+                    disabled={!editable}
                     aria-pressed={mine > 0}
                     /* Label hanya mengajak mengetuk kalau ketukan itu memang
                        diterima. Baris yang mati (bill ditutup, sudah lunas, atau
@@ -581,17 +631,14 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
                   {(isSlot || item.quantity > 1) && editable ? (
                     <div className="slot-ctl">
-                      <button type="button" onClick={() => stepPortion(item.id, -1)} disabled={mine === 0 || busyItem === item.id} aria-label={'Kurangi porsi ' + item.name}>
+                      <button type="button" onClick={() => stepPortion(item.id, -1)} disabled={mine === 0} aria-label={'Kurangi porsi ' + item.name}>
                         −
                       </button>
                       <span aria-live="polite">{mine}/{stepTotal}</span>
                       <button
                         type="button"
                         onClick={() => stepPortion(item.id, 1)}
-                        disabled={
-                          busyItem === item.id ||
-                          (isSlot ? mine >= slotTotal - (taken - mine) : mine >= item.quantity)
-                        }
+                        disabled={isSlot ? mine >= slotTotal - (taken - mine) : mine >= item.quantity}
                         aria-label={'Tambah porsi ' + item.name}
                       >
                         +

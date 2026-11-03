@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
-import { invalidateMoneyViews } from './mutations'
+import { invalidateMoneyViews, markMoneyViewsStale } from './mutations'
 import type { BillResponse, BillRow, Recap } from './types'
 
 export const keys = {
@@ -170,6 +170,28 @@ export function useBillAction(billId: string | null, identityId: string | null) 
     mutationFn: (action: BillAction) =>
       api<unknown>(action.path, { method: action.method ?? 'POST', body: action.body ?? {} }),
     onSuccess: () => invalidateMoneyViews(qc, { billId, identityId }),
+  })
+}
+
+/**
+ * Menyimpan pilihan item. Bedanya dengan `useBillAction` biasa: balasan
+ * `POST /selections` **sudah** berupa payload bill lengkap, jadi ia langsung
+ * dipakai sebagai cache. Dulu balasan itu dibuang lalu diambil ulang lewat
+ * `GET /bill` — satu round-trip penuh per ketukan, padahal isinya sama.
+ *
+ * Daftar Beranda dan Rekap cuma ditandai basi (`refetchType: 'none'`): selama
+ * orang masih mengetuk-ngetuk item, tidak ada permintaan tambahan yang ikut
+ * berebut; begitu layarnya dibuka, React Query menyegarkan sendiri.
+ */
+export function useSetPicks(billId: string | null, identityId: string | null) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (picks: { item_id: number; qty: number }[]) =>
+      api<BillResponse>('/api/bills/' + billId + '/selections', { method: 'POST', body: { picks } }),
+    onSuccess: (payload) => {
+      if (billId) qc.setQueryData(keys.bill(billId), payload)
+      markMoneyViewsStale(qc, { billId, identityId })
+    },
   })
 }
 

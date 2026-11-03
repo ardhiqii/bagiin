@@ -191,11 +191,14 @@ def _is_bill_member(bill_data: dict, ident_id: str) -> bool:
 
 
 def _names_for_identities(ident_ids: list[str]) -> dict[str, str]:
-    out = {}
-    for iid in ident_ids:
-        ident = db.get_identity(iid)
-        out[iid] = ident["name"] if ident else "?"
-    return out
+    """nama untuk sekumpulan identitas.
+
+    Dulu satu `get_identity()` per orang: satu koneksi SQLite per nama, dan
+    `_compute_response` memanggilnya di setiap permintaan bill — termasuk setiap
+    ketukan pilihan item. Satu kueri untuk semuanya (terukur: 9 koneksi -> 1).
+    """
+    peta = db.get_identities_bulk(ident_ids)
+    return {iid: (peta[iid]["name"] if iid in peta else "?") for iid in ident_ids}
 
 
 def _settlement_flags(
