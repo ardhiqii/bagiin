@@ -563,55 +563,120 @@ p, small, .app-note { text-wrap: pretty; }
   white-space: nowrap;
 }
 
-/* Tempel bukan niat ketiga, tapi cara memasukkan foto yang sama. Karena itu ia
-   satu baris tenang selebar kartu — bukan tautan di tengah kalimat, yang tidak
-   terbaca sebagai tombol dan sulit ditekan. */
-.photo-paste-label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-  /* Di 320 px label ini sempat pecah dua baris dan terlihat seperti tombol yang
-     penuh sesak; satu baris lebih terbaca sebagai satu tindakan. */
-  white-space: nowrap;
+/* Tempel itu sumber foto, bukan niat ketiga: ikon 48 px di ujung baris aksi.
+   Ikonnya netral (navy di atas isian tipis), bukan mint — dua tombol mint di
+   samping pil hijau membuat mata membaca tiga ajakan sekaligus. */
+.photo-actions.is-three { grid-template-columns: 1fr 1fr 48px; }
+.photo-paste-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--ds-radius-md);
+  background: rgba(20, 47, 58, .06);
+  color: var(--ds-navy);
 }
-.photo-paste-label svg { width: 20px; height: 20px; flex: none; }
-/* 'atau' memisahkan dua tombol niat dari satu cara lain memasukkan foto yang
-   sama — tanpa garis pemisah, baris tempel terbaca sebagai tombol ketiga. */
-.photo-paste-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: var(--ds-space-2);
-  /* Satu baris, rata kiri dengan tombol di atasnya: 'atau' + tindakannya
-     bukan dua kolom terpisah yang membuat baris ini terlihat mengambang. */
-  padding-inline: 0;
-}
-.photo-paste-row .ds-button { flex: 1; justify-content: flex-start; padding-inline: 0; }
-.photo-or {
-  margin: 0;
-  font-size: var(--ds-text-2xs);
-  line-height: 1;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--ds-muted);
-}
+.photo-paste-btn:hover { background: rgba(20, 47, 58, .1); }
 .photo-paste-hint {
   margin: var(--ds-space-1) 0 0;
   font-size: var(--ds-text-sm);
   line-height: 1.45;
   color: var(--ds-muted);
 }
-/* Gambar yang baru ditempel: thumbnail dulu, baru pertanyaan niatnya. */
-.photo-tempel-thumb {
-  width: 64px;
-  height: 64px;
-  flex: none;
-  border-radius: var(--ds-radius-md);
-  object-fit: cover;
+
+/* Foto yang baru ditempel mengambil alih tempat ilustrasi: sejak ada foto,
+   foto itulah subjeknya. */
+.photo-review {
+  display: grid;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-3);
+  border-radius: 20px;
+  background: #fff;
+}
+.photo-review-frame {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
   background: rgba(20, 47, 58, .06);
 }
-.ds-create-hero.is-tempel > .photo-tempel-thumb { margin-top: 2px; }
-.ds-create-hero.is-tempel .photo-actions { margin-top: var(--ds-space-2); }
+.photo-review-frame img {
+  display: block;
+  width: 100%;
+  /* `contain`, bukan `cover`: struk itu dokumen tinggi, dan potongan tengah
+     menyembunyikan total serta tepi bawahnya — justru bagian yang mau
+     diperiksa orang sebelum menekan "Baca pakai AI". */
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: rgba(20, 47, 58, .06);
+}
+.photo-review-strip {
+  display: flex;
+  gap: var(--ds-space-2);
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+.photo-review-strip::-webkit-scrollbar { display: none; }
+.photo-review-item {
+  position: relative;
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  /* Foto yang sedang besar ditandai cincin teal, bukan dibesarkan: ukuran strip
+     yang berbeda-beda membuat barisnya bergoyang saat berganti pilihan. */
+  box-shadow: inset 0 0 0 2px transparent;
+}
+.photo-review-item.is-active {
+  /* `outline`, bukan inset shadow: gambar di dalamnya menutup inset, jadi
+     cincinnya tidak pernah kelihatan. */
+  outline: 2px solid var(--ds-teal);
+  outline-offset: 1px;
+}
+.photo-review-pick {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: none;
+  cursor: pointer;
+}
+.photo-review-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-review-kill {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--ds-radius-pill);
+  background: rgba(20, 47, 58, .72);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+/* Area sentuh tetap 44 px walau tintanya 18 px. */
+.photo-review-kill::before {
+  content: '';
+  position: absolute;
+  inset: -13px;
+}
+.photo-review-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  padding-bottom: 2px;
+}
+.photo-review-count {
+  font-size: var(--ds-text-2xs);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ds-muted);
+}
 .link-quiet {
   border: 0;
   background: none;

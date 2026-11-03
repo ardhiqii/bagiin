@@ -165,9 +165,21 @@ Satu cara ambil untuk semua baris, tanpa istilah mode di layar:
 
 ## Foto struk di layar buat bill (2026-10-26)
 
-Satu input file, dua niat. Di HP input ini memakai `capture="environment"`, jadi
-langsung membuka kamera — tidak ada alur tempel, karena Ctrl+V memang tidak ada
-di HP.
+Satu tempat foto, dua niat, dan tiga cara memasukkan foto. Di HP input berkas
+tidak memakai `capture="environment"` supaya pemilih bawaan menawarkan kamera
+**atau** galeri — beberapa foto sekaligus bisa dipilih.
+
+**Tempel** (2026-11-03) adalah cara ketiga, dan ia sumber foto, bukan niat ketiga:
+`Ctrl+V` di komputer, atau ikon papan klip 48 px di ujung baris aksi untuk HP
+(hanya muncul kalau browser mengizinkan membaca papan klip). Teks yang ditempel
+dibiarkan menempel di kolomnya sendiri; hanya `image/*` yang diambil.
+
+Foto yang masuk dari mana pun — kamera, galeri, tempelan — berhenti di satu
+langkah pemeriksaan sebelum diproses: fotonya mengambil alih tempat ilustrasi,
+lalu layar bertanya mau **dibacakan AI** atau **cuma dilampirkan**. Tempelan
+**menambah**, tidak pernah menimpa: strip thumbnail memuat semua foto, tiap foto
+bisa dibuang, dan hitungannya "N dari 10". Sebelum ini tempelan kedua menghapus
+tempelan pertama tanpa kabar.
 
 - **Scan struk, isi otomatis** — foto dikirim ke `/api/ocr`, hasilnya mengisi
   item, pajak, service, diskon, merchant. Selama menunggu, kartu berubah jadi
@@ -179,9 +191,10 @@ di HP.
   untuk orang yang memang mau mengetik manual, untuk struk panjang yang terpotong,
   atau untuk screenshot pesanan dari Gojek/ShopeeFood/Grab — dan tetap hidup saat
   kuota AI habis.
-- **Batas** — maksimal 10 foto per bill. AI membaca paling banyak **2 foto** per
-  permintaan (satu bill panjang yang difoto dua kali); foto ketiga dan seterusnya
-  otomatis dilampirkan sebagai bukti, bukan dibuang.
+- **Batas** — maksimal 10 foto per bill. AI membaca paling banyak **3 foto** per
+  permintaan; foto keempat dan seterusnya otomatis dilampirkan sebagai bukti,
+  bukan dibuang. (Tiga foto terbukti aman: struk 11 item yang dipotong tiga
+  bagian dengan overlap tetap terbaca 11 item dengan total yang sama.)
 - **Kalau AI gagal** — kartu pilihan disembunyikan, muncul blok "Struk gagal
   dibaca" berisi penyebab dari server plus tiga jalan keluar: **Isi manual
   sekarang**, **Coba baca lagi**, **Pakai foto struk tadi sebagai bukti** (dan

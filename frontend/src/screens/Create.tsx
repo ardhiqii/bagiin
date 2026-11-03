@@ -100,7 +100,9 @@ export function Create({ identityId }: { identityId: string | null }) {
    * niatnya harus ditanyakan — dan menampilkan thumbnail-nya sekalian membuat
    * orang bisa memastikan yang tertempel memang struk yang benar.
    */
-  const [tempel, setTempel] = useState<{ files: File[]; url: string } | null>(null)
+  const [tempel, setTempel] = useState<{ file: File; url: string }[]>([])
+  /** URL pratinjau yang masih hidup; dilepas saat layar ditutup. */
+  const tempelUrls = useRef<string[]>([])
   const contacts = useContacts(identityId, Boolean(identityId))
 
   useEffect(() => {
@@ -124,9 +126,11 @@ export function Create({ identityId }: { identityId: string | null }) {
   }, [photoBusy])
 
   // URL pratinjau harus dilepas, kalau tidak blob tempelan menahan memori sesi.
+  // Hanya saat layar ditinggalkan: kalau efek ini bergantung pada `tempel`, ia
+  // akan melepas URL yang baru saja ditambahkan.
   useEffect(() => () => {
-    if (tempel) URL.revokeObjectURL(tempel.url)
-  }, [tempel])
+    for (const url of tempelUrls.current) URL.revokeObjectURL(url)
+  }, [])
 
   function pickPhoto(intent: 'ocr' | 'attach') {
     intentRef.current = intent
@@ -156,28 +160,67 @@ export function Create({ identityId }: { identityId: string | null }) {
     return hasil.slice(0, 3)
   }
 
-  /** Tempelan diterima: tampilkan dulu, niatnya diputuskan sesudah ini. */
+  /**
+   * Tempelan masuk ke daftar, tidak menimpa. Menimpa diam-diam adalah yang
+   * paling menyebalkan saat orang menempel berkali-kali: screenshot kedua
+   * datang, yang pertama hilang tanpa pernah dipakai.
+   */
   function terimaTempelan(files: File[]) {
     if (!files.length) return
     setOcrError('')
     setTempel((lama) => {
-      if (lama) URL.revokeObjectURL(lama.url)
-      return { files: files.slice(0, 3), url: URL.createObjectURL(files[0]) }
+      const sisa = 10 - lama.length
+      if (sisa <= 0) {
+        toast('Sudah 10 foto. Buang satu dulu kalau mau menempel yang lain.')
+        return lama
+      }
+      const masuk = files.slice(0, sisa)
+      if (masuk.length < files.length) {
+        toast('Cuma ' + masuk.length + ' foto yang muat — batas satu bill 10 foto.')
+      }
+      const baru = masuk.map((file) => {
+        const url = URL.createObjectURL(file)
+        tempelUrls.current.push(url)
+        return { file, url }
+      })
+      return [...lama, ...baru]
     })
   }
 
-  function buangTempelan() {
+  /** Foto yang diketuk di strip naik jadi tampilan besar. */
+  function jadikanUtama(indeks: number) {
     setTempel((lama) => {
-      if (lama) URL.revokeObjectURL(lama.url)
-      return null
+      if (indeks <= 0 || indeks >= lama.length) return lama
+      const urut = [...lama]
+      const [pilih] = urut.splice(indeks, 1)
+      return [pilih, ...urut]
     })
+  }
+
+  function buangSatuTempelan(indeks: number) {
+    setTempel((lama) => {
+      const buang = lama[indeks]
+      if (buang) {
+        URL.revokeObjectURL(buang.url)
+        tempelUrls.current = tempelUrls.current.filter((url) => url !== buang.url)
+      }
+      return lama.filter((_, i) => i !== indeks)
+    })
+  }
+
+  function bersihkanTempelan() {
+    for (const item of tempel) URL.revokeObjectURL(item.url)
+    tempelUrls.current = []
+    setTempel([])
   }
 
   /** Tempelan yang sudah diputuskan: jalurnya sama dengan dua tombol di atas. */
   function pakaiTempelan(intent: 'ocr' | 'attach') {
-    if (!tempel) return
-    const files = tempel.files
-    buangTempelan()
+    if (!tempel.length) return
+    const files = tempel.map((item) => item.file)
+    for (const item of tempel) URL.revokeObjectURL(item.url)
+    tempelUrls.current = []
+    setTempel([])
     intentRef.current = intent
     onFilesPicked(files)
   }
@@ -249,7 +292,9 @@ export function Create({ identityId }: { identityId: string | null }) {
     // overlap tetap terbaca 11 item dan total yang sama, tanpa duplikat.
     // Sisanya tetap disimpan sebagai bukti supaya tidak ada foto yang hilang.
     const forAi = files.slice(0, 3)
-    const extras = files.slice(2)
+    // Dulu `slice(2)`: dengan tiga foto, foto ketiga ikut dibaca AI DAN ikut
+    // dilampirkan, jadi muncul dua kali di bill.
+    const extras = files.slice(forAi.length)
     setPhotoBusy('ocr')
     setOcrError('')
     setOcrSeconds(0)
@@ -516,37 +561,75 @@ export function Create({ identityId }: { identityId: string | null }) {
             ) : null}
           </div>
         </div>
-      ) : ocrError ? null : tempel ? (
-        /* Tempelan ditanya dulu niatnya: dibacakan AI atau cuma jadi bukti.
-           Thumbnail-nya ikut tampil supaya orang bisa memastikan yang tertempel
-           memang struk yang benar, bukan chat yang salah salin. */
-        <div className="ds-create-hero is-choice is-tempel">
-          <img
-            className="photo-tempel-thumb"
-            src={tempel.url}
-            alt="Screenshot yang baru ditempel"
-            width={64}
-            height={64}
-          />
-          <div className="grow">
-            <div className="app-inline">
-              <b>Screenshot siap dipakai</b>
-              <span className="app-spacer" />
-              <button type="button" className="link-quiet" onClick={buangTempelan}>
-                Batal
-              </button>
-            </div>
-            <p className="app-note">
-              Mau dibacakan AI supaya item dan totalnya terisi sendiri, atau cuma dilampirkan sebagai bukti?
-            </p>
-            <div className="photo-actions">
-              <Button onClick={() => pakaiTempelan('ocr')}>Baca pakai AI</Button>
-              <Button variant="secondary" onClick={() => pakaiTempelan('attach')}>
-                Lampirkan saja
-              </Button>
-            </div>
+      ) : ocrError ? null : tempel.length > 0 ? (
+        /* Sejak foto masuk, foto itulah subjeknya — ilustrasi struk sudah tidak
+           relevan, jadi tempatnya digantikan hasil tempel, bukan ditemani kotak
+           thumbnail kecil. Niatnya ditanya di sini, bukan di baris tombol. */
+        <section className="photo-review">
+          <div className="photo-review-frame">
+            <img src={tempel[0].url} alt="Foto yang baru ditempel" />
+            <button
+              type="button"
+              className="photo-review-kill"
+              aria-label="Buang foto ke-1"
+              onClick={() => buangSatuTempelan(0)}
+            >
+              ×
+            </button>
           </div>
-        </div>
+          {tempel.length > 1 ? (
+            /* Semua foto tampil di strip, termasuk yang sedang besar: kalau yang
+               besar tidak ikut dihitung, judul "3 foto" di bawahnya bertabrakan
+               dengan dua thumbnail yang terlihat. */
+            <div className="photo-review-strip">
+              {tempel.map((item, i) => (
+                <div className={'photo-review-item' + (i === 0 ? ' is-active' : '')} key={item.url}>
+                  <button
+                    type="button"
+                    className="photo-review-pick"
+                    aria-label={i === 0 ? 'Sedang ditampilkan' : `Tampilkan foto ke-${i + 1}`}
+                    onClick={() => jadikanUtama(i)}
+                  >
+                    <img src={item.url} alt="" />
+                  </button>
+                  <button
+                    type="button"
+                    className="photo-review-kill"
+                    aria-label={`Buang foto ke-${i + 1}`}
+                    onClick={() => buangSatuTempelan(i)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="app-inline">
+            <b>{tempel.length > 1 ? tempel.length + ' foto siap dipakai' : 'Screenshot siap dipakai'}</b>
+            <span className="app-spacer" />
+            <button type="button" className="link-quiet" onClick={bersihkanTempelan}>
+              Buang semua
+            </button>
+          </div>
+          <p className="app-note">
+            Mau dibacakan AI supaya item dan totalnya terisi sendiri, atau cuma dilampirkan sebagai bukti?
+          </p>
+          <div className="photo-actions">
+            <Button onClick={() => pakaiTempelan('ocr')}>Baca pakai AI</Button>
+            <Button variant="secondary" onClick={() => pakaiTempelan('attach')}>
+              Lampirkan saja
+            </Button>
+          </div>
+          <div className="photo-review-foot">
+            {bisaTempelGambar ? (
+              <button type="button" className="link-quiet" onClick={() => void tempelDariPapanKlip()}>
+                Tempel lagi
+              </button>
+            ) : null}
+            <span className="app-spacer" />
+            <span className="photo-review-count">{tempel.length} dari 10</span>
+          </div>
+        </section>
       ) : (
         <div className="ds-create-hero is-choice">
           <img src={createHeroArt} alt="" width={64} height={64} />
@@ -568,32 +651,31 @@ export function Create({ identityId }: { identityId: string | null }) {
             <p className="app-note">
               AI bisa membaca struk atau screenshot pesanan (Gojek, ShopeeFood, Grab). Sampai 3 foto sekaligus.
             </p>
-            <div className="photo-actions">
+            {/* Tempel itu sumber foto, bukan niat ketiga: karena itu ia ikon
+                48 px di ujung baris aksi, bukan pil atau tautan di tengah
+                kalimat. Ikon netral — dua tombol mint di samping pil hijau
+                membuat mata membaca tiga ajakan sekaligus. */}
+            <div className={'photo-actions' + (bisaTempelGambar ? ' is-three' : '')}>
               <Button onClick={() => pickPhoto('ocr')}>Scan pakai AI</Button>
               <Button variant="secondary" onClick={() => pickPhoto('attach')}>
                 Lampirkan saja
               </Button>
-            </div>
-            {/* Tempel bukan niat ketiga, tapi cara memasukkan foto yang sama —
-                karena itu tombolnya tenang dan niatnya ditanyakan sesudahnya. */}
-            {/* Satu baris: 'atau' + tindakannya. Kalau 'atau' berdiri sendiri di
-                atas tombol, ia terbaca menempel pada tombol kiri saja. */}
-            <div className="photo-paste-row">
-              <p className="photo-or">atau</p>
               {bisaTempelGambar ? (
-                <Button variant="quiet" onClick={() => void tempelDariPapanKlip()}>
-                  <span className="photo-paste-label">
-                    <IconPaste /> Tempel screenshot
-                  </span>
-                </Button>
-              ) : (
-                <p className="photo-paste-hint">Tekan Ctrl+V untuk menempelkan screenshot.</p>
-              )}
+                <button
+                  type="button"
+                  className="ds-icon-button photo-paste-btn"
+                  aria-label="Tempel screenshot"
+                  title="Tempel screenshot dari papan klip"
+                  onClick={() => void tempelDariPapanKlip()}
+                >
+                  <IconPaste />
+                </button>
+              ) : null}
             </div>
             <p className="photo-paste-hint">
               {bisaTempelGambar
-                ? 'Screenshot yang baru disalin bisa langsung ditempel. Di komputer cukup Ctrl+V.'
-                : 'Di komputer, screenshot bisa langsung ditempel dengan Ctrl+V.'}
+                ? 'Screenshot bisa langsung ditempel: tekan ikon papan klip, atau Ctrl+V di komputer.'
+                : 'Screenshot bisa langsung ditempel dengan Ctrl+V di komputer.'}
             </p>
           </div>
         </div>

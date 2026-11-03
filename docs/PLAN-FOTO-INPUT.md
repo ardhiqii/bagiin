@@ -1,6 +1,12 @@
 # Rencana: foto struk dan tempelan di layar buat bill
 
-Status: **rencana, belum dikerjakan.** Menunggu persetujuan.
+Status: **dikerjakan 2026-11-03** (Opsi A). Dua keputusan yang menggantung diambil
+sebagai berikut: AI membaca **3 foto** per permintaan (kode yang menang, dokumen
+disesuaikan), dan sisa tempelan yang tidak dibaca AI **dilampirkan sebagai bukti**.
+Yang sudah ada di kode: ikon papan klip 48 px menggantikan baris "ATAU", kartu
+pemeriksaan dengan foto besar + strip semua foto + tombol buang per foto, tempelan
+menambah sampai 10, dan perbaikan `extras` yang membuat foto ketiga terkirim dua
+kali. Yang belum: sheet pemilih kalau papan klip berisi lebih dari satu gambar.
 
 ## Masalah yang harus dibereskan
 
