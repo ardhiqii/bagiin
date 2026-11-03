@@ -651,7 +651,9 @@ export function Create({ identityId }: { identityId: string | null }) {
             {/* Tanpa tautan "Isi manual saja": formulirnya ada persis di bawah
                 kartu ini, jadi tautan itu cuma berebut perhatian dengan tombol
                 utama tanpa menambah jalan yang belum ada. */}
-            <b>Foto struk (opsional)</b>
+            <b>
+              Foto struk <em className="hero-optional">(opsional)</em>
+            </b>
             <p className="app-note">AI bisa baca struk atau screenshot.</p>
             {/* Satu tombol, karena pertanyaannya cuma satu: "fotonya dari mana?".
                 Niatnya (dibacakan AI atau tidak) ditanya setelah fotonya ada —

@@ -546,38 +546,50 @@ p, small, .app-note { text-wrap: pretty; }
 .receipt-preview b { font-size: var(--ds-text-base); }
 
 /* Kartu pilihan foto: ilustrasi kecil di kiri, judul + dua tombol sebaris. */
-/* Kartu media, bukan kartu dengan gambar kecil di pojok.
-   Sebelumnya ilustrasi 96 px duduk di dalam padding, tombolnya 158 px, dan
-   sisa ~73 px di kanan tombol kosong — kartu terasa setengah jadi. Sekarang
-   gambar menyentuh tepi kiri kartu (setinggi kartu), teks dan tombol mengisi
-   kolom kanan sampai tepi, jadi tidak ada ruang mati yang perlu dijelaskan. */
+/* Gambar menyentuh tepi kartu TIDAK dipakai: ilustrasinya persegi, jadi
+   memotongnya jadi kolom setinggi kartu memakan sisi cangkir dan menempelkan
+   koin ke garis batas — terbaca sebagai gambar yang salah potong, bukan gaya.
+   Yang dipakai: gambar utuh yang besar, dan tombol mengisi lebar kolom teks
+   supaya tidak ada ruang mati di kanan tombol. */
 .ds-create-hero.is-choice {
-  grid-template-columns: 104px 1fr;
-  align-items: stretch;
-  gap: 0;
-  padding: 0;
-  overflow: hidden;
+  grid-template-columns: 100px 1fr;
+  align-items: center;
+  gap: var(--ds-space-3);
+  padding: 14px;
 }
 .ds-create-hero.is-choice img {
-  width: 104px;
-  height: 100%;
-  min-height: 112px;
-  border-radius: 0;
+  width: 100px;
+  height: 100px;
+  border-radius: 18px;
   object-fit: cover;
 }
 .ds-create-hero.is-choice > div {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 14px;
   min-width: 0;
 }
 .ds-create-hero.is-choice .ds-button { width: 100%; }
-/* Di layar sempit, 104 px memakan kolom teks sampai judulnya pecah tiga baris. */
+/* "(opsional)" itu keterangan, bukan bagian nama kartu. Dengan bobot yang sama
+   seperti judul, ia ikut dibaca sebagai judul dan judulnya jadi berat. */
+.hero-optional {
+  font-style: normal;
+  font-weight: var(--ds-weight-regular);
+  font-size: var(--ds-text-sm);
+  color: var(--ds-muted);
+}
+.ds-create-hero.is-choice p {
+  margin-top: 3px;
+  font-size: var(--ds-text-sm);
+  color: var(--ds-muted);
+}
+/* Di layar sempit, 100 px memakan kolom teks sampai tombolnya sesak. */
 @media (max-width: 360px) {
-  .ds-create-hero.is-choice { grid-template-columns: 88px 1fr; }
-  .ds-create-hero.is-choice img { width: 88px; }
-  .ds-create-hero.is-choice > div { padding: 12px; }
+  .ds-create-hero.is-choice {
+    grid-template-columns: 84px 1fr;
+    gap: 10px;
+    padding: 12px;
+  }
+  .ds-create-hero.is-choice img { width: 84px; height: 84px; border-radius: 16px; }
 }
 .ds-create-hero b { font-family: var(--ds-font-display); letter-spacing: -.01em; }
 .ds-create-hero.is-choice b { font-size: var(--ds-text-base); }
