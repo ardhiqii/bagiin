@@ -171,6 +171,48 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     expect(diam, 'gerak dikurangi berarti animasinya mati').toBe('none')
   })
 
+  test('40c. screenshot di papan klip bisa ditempel, teks biasa tidak mengganggu', async ({ page }) => {
+    await freshUser(page, 'Sinta')
+    let dibaca = 0
+    await page.route('**/api/ocr', async (route) => {
+      dibaca += 1
+      await new Promise((resolve) => setTimeout(resolve, 1200))
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ title: 'Gojek', items: [{ name: 'Nasi padang', price: 35000 }] }),
+      })
+    })
+
+    await page.goto('/create')
+    await page.locator('#bill-title').waitFor()
+
+    // Teks biasa: biarkan menempel di kolomnya, jangan dianggap foto.
+    await page.evaluate(() => {
+      const dt = new DataTransfer()
+      dt.setData('text/plain', 'halo, ini cuma teks')
+      document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }))
+    })
+    await page.waitForTimeout(400)
+    expect(dibaca, 'teks tidak boleh memicu pembacaan struk').toBe(0)
+
+    /* Ctrl+V dengan gambar: event paste membawa datanya sendiri, jadi jalur ini
+       juga berlaku di komputer yang tidak memberi izin baca papan klip. */
+    await page.evaluate(async () => {
+      const png =
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
+      const blob = await (await fetch(png)).blob()
+      const dt = new DataTransfer()
+      dt.items.add(new File([blob], 'screenshot.png', { type: 'image/png' }))
+      document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }))
+    })
+
+    await expect(page.locator('.ds-create-hero.is-scanning')).toBeVisible({ timeout: 20000 })
+    await expect(page.locator('.ds-scan-beam')).toBeVisible()
+    await expect(page.locator('#bill-title')).toHaveValue(/Gojek/i, { timeout: 20000 })
+    expect(dibaca, 'gambar yang ditempel harus dibaca AI').toBeGreaterThan(0)
+  })
+
   test('41. struk yang pajaknya sudah termasuk: kolom pajak dikunci, bill ditandai', async ({ page }) => {
     await freshUser(page, 'Budi')
     await page.route('**/api/ocr', (route) =>

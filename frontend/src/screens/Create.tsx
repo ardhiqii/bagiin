@@ -40,6 +40,13 @@ const newItem = (): DraftItem => ({ key: Math.random().toString(36).slice(2), na
 /** Angka -> teks ribuan tanpa prefix, untuk isi input. */
 const formatRd = (value: number): string => formatRp(value).replace('Rp', '')
 
+/**
+ * Papan klip hanya bisa dibaca lewat izin pengguna (Chrome Android, Safari iOS
+ * 13.1+). Kalau tidak ada, tombolnya tidak ditampilkan — lebih baik tidak
+ * menjanjikan jalan yang tidak ada daripada tombol yang selalu gagal.
+ */
+const bisaTempelGambar = typeof navigator !== 'undefined' && Boolean(navigator.clipboard?.read)
+
 export function Create({ identityId }: { identityId: string | null }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -94,9 +101,68 @@ export function Create({ identityId }: { identityId: string | null }) {
     return () => clearInterval(timer)
   }, [photoBusy])
 
+  /* Ctrl+V di mana saja di layar ini menempelkan screenshot struk. Teks biasa
+     dibiarkan menempel di kolomnya sendiri — hanya gambar yang kita ambil. */
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      if (photoBusy) return
+      const berkas = gambarDariPapanKlip(e.clipboardData)
+      if (!berkas.length) return
+      e.preventDefault()
+      intentRef.current = 'ocr'
+      onFilesPicked(berkas)
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+  }, [photoBusy])
+
   function pickPhoto(intent: 'ocr' | 'attach') {
     intentRef.current = intent
     fileRef.current?.click()
+  }
+
+  /**
+   * Gambar dari papan klip. Struk yang paling sering dibagi orang Indonesia
+   * bukan berkas — ia screenshot pesanan ojol yang masih nempel di papan klip,
+   * atau struk yang difoto lalu disalin. Tanpa jalur tempel, orang harus
+   * menyimpan screenshot ke galeri dulu baru bisa memilihnya.
+   */
+  function gambarDariPapanKlip(data: DataTransfer | null): File[] {
+    if (!data) return []
+    const hasil: File[] = []
+    for (const butir of Array.from(data.items ?? [])) {
+      if (butir.kind !== 'file' || !butir.type.startsWith('image/')) continue
+      const berkas = butir.getAsFile()
+      if (berkas) hasil.push(berkas)
+    }
+    // Sebagian aplikasi hanya mengisi `files` tanpa `items`.
+    if (!hasil.length) {
+      for (const berkas of Array.from(data.files ?? [])) {
+        if (berkas.type.startsWith('image/')) hasil.push(berkas)
+      }
+    }
+    return hasil.slice(0, 3)
+  }
+
+  async function tempelDariPapanKlip() {
+    if (photoBusy) return
+    setOcrError('')
+    try {
+      const butir = await navigator.clipboard.read()
+      for (const isi of butir) {
+        const jenis = isi.types.find((t) => t.startsWith('image/'))
+        if (!jenis) continue
+        const blob = await isi.getType(jenis)
+        const ext = jenis.split('/')[1] || 'png'
+        // Sama persis dengan jalur "Scan pakai AI": satu pembaca, dua pintu masuk.
+        intentRef.current = 'ocr'
+        onFilesPicked([new File([blob], `tempel-${Date.now()}.${ext}`, { type: jenis })])
+        return
+      }
+      toast('Papan klip tidak berisi gambar. Salin dulu screenshot struknya.')
+    } catch {
+      toast('Browser ini melarang membaca papan klip. Pakai "Scan pakai AI" ya.')
+    }
   }
 
   function onFilesPicked(files: File[]) {
@@ -434,6 +500,15 @@ export function Create({ identityId }: { identityId: string | null }) {
             </div>
             <p className="app-note">
               AI bisa membaca struk atau screenshot pesanan (Gojek, ShopeeFood, Grab). Sampai 3 foto sekaligus.
+              Screenshot di papan klip bisa langsung ditempel:{' '}
+              {bisaTempelGambar ? (
+                <button type="button" className="link-quiet" onClick={() => void tempelDariPapanKlip()}>
+                  tempel dari papan klip
+                </button>
+              ) : (
+                <span>di komputer Ctrl+V, di HP salin dulu lalu tempel di sini</span>
+              )}
+              .
             </p>
             <div className="photo-actions">
               <Button onClick={() => pickPhoto('ocr')}>Scan pakai AI</Button>
