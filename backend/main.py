@@ -2067,7 +2067,12 @@ def my_bills(identity_id: str, request: Request, month: str | None = None):
     # query itself and _bill_settled used. Pop it so it never reaches the JSON
     # response — the existing summary fields remain unchanged while the
     # additive pick-state fields below are populated from the same snapshot.
+    # Peta identitas dibangun sekali di `get_bills_for_identity` (dipakai juga
+    # oleh `_bill_settled`); di sini tinggal dipakai, jangan disusun ulang.
+    peta_identitas = rows[0].pop("_identitas", {}) if rows else {}
+
     for row in rows:
+        row.pop("_identitas", None)
         bill_data = row.pop("_bill_data", None)
         if bill_data:
             (
@@ -2085,7 +2090,7 @@ def my_bills(identity_id: str, request: Request, month: str | None = None):
             # record. Must use the SAME resolver as the bill screen — deriving
             # it from _owner_id instead said "Kamu udah bayar" in history while
             # the bill itself showed the same person owing the full total.
-            payer_id, _ = db.resolve_payer(bill_data)
+            payer_id, _ = db.resolve_payer(bill_data, peta_identitas.get)
             row["i_am_payer"] = payer_id == identity_id
             row["my_paid"] = (payer_id == identity_id) or any(
                 p["identity_id"] == identity_id and p["status"] == "paid"

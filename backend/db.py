@@ -257,6 +257,12 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_payacct_identity ON payment_account(identity_id);
         CREATE INDEX IF NOT EXISTS idx_billphoto_bill ON bill_photo(bill_id);
         CREATE INDEX IF NOT EXISTS idx_invite_identity ON bill_invite(identity_id, status);
+        -- Beranda memuat satu bulan, bukan seluruh riwayat. Tanpa index pada
+        -- ekspresi bulan, penyaring bulan berjalan sebagai pemindaian penuh dan
+        -- biayanya ikut tumbuh seiring riwayat — persis yang mau dihindari.
+        CREATE INDEX IF NOT EXISTS idx_bill_bulan
+            ON bill(strftime('%Y-%m', COALESCE(transacted_at, created_at)));
+        CREATE INDEX IF NOT EXISTS idx_bill_creator ON bill(creator_identity_id);
         CREATE INDEX IF NOT EXISTS idx_invite_bill ON bill_invite(bill_id);
         """
     )
@@ -941,44 +947,93 @@ def create_bill(creator_id: str, title: str, tax_mode: str,
         conn.close()
 
 
-def get_bill(bill_id: str):
+def _potong(seq, ukuran: int = 900):
+    """SQLite membatasi jumlah parameter per kueri (~999), jadi IN (...) dipecah."""
+    for i in range(0, len(seq), ukuran):
+        yield seq[i:i + ukuran]
+
+
+def get_bills_bulk(bill_ids: list[str]) -> dict[str, dict]:
+    """Ambil banyak bill dalam satu koneksi, satu kueri per tabel.
+
+    Sebelumnya daftar bill memanggil `get_bill()` per baris: pada data produksi
+    3 November 2026 (71 bill untuk satu orang) itu berarti **142 koneksi SQLite
+    dan 639 kueri** untuk satu permintaan beranda, 75 ms — dan biayanya tumbuh
+    lurus dengan jumlah bill. Di sini tabel anak diambil sekali lewat `IN (...)`
+    lalu dikelompokkan per bill.
+
+    Bentuk hasilnya sama persis dengan `get_bill()` — termasuk kolom yang dulu
+    ikut terkirim (`bill_id` pada item dan payment) dan yang dulu tidak
+    (`bill_id` pada participant/selection/photo, yang di sini dibuang lagi
+    setelah dipakai untuk mengelompokkan).
+    """
+    ids = [b for b in dict.fromkeys(bill_ids) if b]
+    if not ids:
+        return {}
     conn = get_db()
-    bill = conn.execute("SELECT * FROM bill WHERE id = ?", (bill_id,)).fetchone()
-    if not bill:
+    hasil: dict[str, dict] = {}
+    try:
+        for bagian in _potong(ids):
+            tanda = ",".join("?" * len(bagian))
+            for row in conn.execute(f"SELECT * FROM bill WHERE id IN ({tanda})", bagian):
+                hasil[row["id"]] = {
+                    "bill": dict(row),
+                    "items": [],
+                    "participants": [],
+                    "selections": [],
+                    "payments": [],
+                    "photos": [],
+                }
+        ada = list(hasil)
+        if not ada:
+            return hasil
+
+        for bagian in _potong(ada):
+            tanda = ",".join("?" * len(bagian))
+            for row in conn.execute(
+                f"SELECT * FROM item WHERE bill_id IN ({tanda}) ORDER BY sort_order, id",
+                bagian,
+            ):
+                hasil[row["bill_id"]]["items"].append(dict(row))
+            for row in conn.execute(
+                "SELECT name, identity_id, bill_id FROM bill_participant"
+                f" WHERE bill_id IN ({tanda}) ORDER BY sort_order",
+                bagian,
+            ):
+                data = dict(row)
+                pemilik = data.pop("bill_id")
+                hasil[pemilik]["participants"].append(data)
+            for row in conn.execute(
+                "SELECT s.item_id, s.identity_id, s.qty, i.name AS item_name,"
+                " i.price_idr, idn.name AS identity_name, i.bill_id"
+                " FROM selection s"
+                " JOIN item i ON i.id = s.item_id"
+                " JOIN identity idn ON idn.id = s.identity_id"
+                f" WHERE i.bill_id IN ({tanda})",
+                bagian,
+            ):
+                data = dict(row)
+                pemilik = data.pop("bill_id")
+                hasil[pemilik]["selections"].append(data)
+            for row in conn.execute(
+                f"SELECT * FROM payment WHERE bill_id IN ({tanda})", bagian
+            ):
+                hasil[row["bill_id"]]["payments"].append(dict(row))
+            for row in conn.execute(
+                "SELECT id, path, bill_id FROM bill_photo"
+                f" WHERE bill_id IN ({tanda}) ORDER BY sort_order, id",
+                bagian,
+            ):
+                data = dict(row)
+                pemilik = data.pop("bill_id")
+                hasil[pemilik]["photos"].append(data)
+    finally:
         conn.close()
-        return None
-    items = conn.execute(
-        "SELECT * FROM item WHERE bill_id = ? ORDER BY sort_order, id", (bill_id,)
-    ).fetchall()
-    participants = conn.execute(
-        "SELECT name, identity_id FROM bill_participant WHERE bill_id = ? ORDER BY sort_order",
-        (bill_id,),
-    ).fetchall()
-    selections = conn.execute(
-        """SELECT s.item_id, s.identity_id, s.qty, i.name AS item_name, i.price_idr,
-                  idn.name AS identity_name
-           FROM selection s
-           JOIN item i ON i.id = s.item_id
-           JOIN identity idn ON idn.id = s.identity_id
-           WHERE s.item_id IN (SELECT id FROM item WHERE bill_id = ?)""",
-        (bill_id,),
-    ).fetchall()
-    payments = conn.execute(
-        "SELECT * FROM payment WHERE bill_id = ?", (bill_id,)
-    ).fetchall()
-    photos = conn.execute(
-        "SELECT id, path FROM bill_photo WHERE bill_id = ? ORDER BY sort_order, id",
-        (bill_id,),
-    ).fetchall()
-    conn.close()
-    return {
-        "bill": dict(bill),
-        "items": [dict(i) for i in items],
-        "participants": [dict(p) for p in participants],
-        "selections": [dict(s) for s in selections],
-        "payments": [dict(p) for p in payments],
-        "photos": [dict(p) for p in photos],
-    }
+    return hasil
+
+
+def get_bill(bill_id: str):
+    return get_bills_bulk([bill_id]).get(bill_id)
 
 
 def update_bill_photo(bill_id: str, photo_path: str | None):
@@ -1200,7 +1255,29 @@ def claim_participant(bill_id: str, identity_id: str, name: str):
     conn.close()
 
 
-def resolve_payer(bill_data: dict) -> tuple[str | None, str]:
+def get_identities_bulk(identity_ids) -> dict[str, dict]:
+    """Beberapa identitas dalam satu kueri.
+
+    `resolve_payer()` memanggil `get_identity()` per bill, dan daftar bill
+    memanggil `resolve_payer()` per baris — 71 bill berarti 71 koneksi lagi
+    hanya untuk nama. Kalau daftar id-nya sudah diketahui, ambil sekaligus.
+    """
+    ids = [i for i in dict.fromkeys(identity_ids) if i]
+    if not ids:
+        return {}
+    conn = get_db()
+    hasil: dict[str, dict] = {}
+    try:
+        for bagian in _potong(ids):
+            tanda = ",".join("?" * len(bagian))
+            for row in conn.execute(f"SELECT * FROM identity WHERE id IN ({tanda})", bagian):
+                hasil[row["id"]] = dict(row)
+    finally:
+        conn.close()
+    return hasil
+
+
+def resolve_payer(bill_data: dict, lookup=None) -> tuple[str | None, str]:
     """Who fronted the money, as (identity_id, display_name).
 
     SINGLE SOURCE OF TRUTH for payer resolution — the detail payload, the
@@ -1212,13 +1289,16 @@ def resolve_payer(bill_data: dict) -> tuple[str | None, str]:
     against people who joined / claimed a slot. If nothing is declared at all,
     the creator is the payer.
     """
+    # `lookup` opsional: pemanggil yang sudah punya peta identitas (daftar bill)
+    # menyerahkan `peta.get`, supaya tidak membuka koneksi per bill.
+    cari = lookup or get_identity
     bill = bill_data["bill"]
     creator_id = bill["creator_identity_id"]
     paid_by_id = bill.get("paid_by_identity_id")
     paid_by_name = bill.get("paid_by_name") or ""
 
     if paid_by_id:
-        ident = get_identity(paid_by_id)
+        ident = cari(paid_by_id)
         return paid_by_id, (ident["name"] if ident else paid_by_name)
 
     if paid_by_name:
@@ -1227,7 +1307,7 @@ def resolve_payer(bill_data: dict) -> tuple[str | None, str]:
         candidates += [p["identity_id"] for p in bill_data.get("participants", [])
                        if p.get("identity_id")]
         for cid in candidates:
-            ident = get_identity(cid)
+            ident = cari(cid)
             if ident and ident["name"].strip().lower() == target:
                 return cid, ident["name"]
         # declared but not joined yet: nobody is auto-paid, bill can't settle
@@ -1235,7 +1315,7 @@ def resolve_payer(bill_data: dict) -> tuple[str | None, str]:
 
     # nothing declared -> the creator fronted it. Safe even after v58's
     # creator_left: leaving requires a confirmed payer, which is handled above.
-    creator = get_identity(creator_id)
+    creator = cari(creator_id)
     return creator_id, (creator["name"] if creator else "?")
 
 
@@ -1584,7 +1664,7 @@ def delete_bill(bill_id: str, owner_id: str) -> bool:
     return True
 
 
-def _bill_settled(bill_data: dict | None) -> bool:
+def _bill_settled(bill_data: dict | None, lookup=None) -> bool:
     """True when nobody owes anything: everyone with a real share has paid and
     no slot is left empty.
 
@@ -1639,7 +1719,7 @@ def _bill_settled(bill_data: dict | None) -> bool:
         roster_ids.add(bill["creator_identity_id"])
     owed_ids = {p["identity_id"] for p in result["people"] if p["total_idr"] > 0}
     paid_ids = {p["identity_id"] for p in data["payments"] if p["status"] == "paid"}
-    payer_id, _ = resolve_payer(data)
+    payer_id, _ = resolve_payer(data, lookup)
     if payer_id:
         paid_ids.add(payer_id)
     # v60: owner-declared manual settle overrides the auto math (solo bills
@@ -1720,11 +1800,31 @@ def get_bills_for_identity(identity_id: str, month: str | None = None):
     sql += " ORDER BY COALESCE(b.transacted_at, b.created_at) DESC, b.created_at DESC"
     rows = conn.execute(sql, params).fetchall()
     conn.close()
+    # Satu kueri per tabel untuk semua bill, bukan `get_bill()` per baris
+    # (bug performa: 71 bill = 142 koneksi, 639 kueri, 75 ms per permintaan).
+    lengkap = get_bills_bulk([r["id"] for r in rows])
+
+    # Peta identitas sekali untuk seluruh daftar: `_bill_settled` dan `my_bills`
+    # sama-sama butuh nama, dan dulu masing-masing membaca lewat koneksinya
+    # sendiri per bill (71 bill = 71 koneksi tambahan).
+    dikenal: set[str] = set()
+    for data in lengkap.values():
+        dikenal.add(data["bill"]["creator_identity_id"])
+        if data["bill"].get("paid_by_identity_id"):
+            dikenal.add(data["bill"]["paid_by_identity_id"])
+        for bayar in data.get("payments", []):
+            dikenal.add(bayar["identity_id"])
+        for peserta in data.get("participants", []):
+            if peserta.get("identity_id"):
+                dikenal.add(peserta["identity_id"])
+    peta = get_identities_bulk(dikenal)
+
     out = []
     for r in rows:
         d = dict(r)
-        bill_data = get_bill(d["id"])
-        d["settled"] = _bill_settled(bill_data)
+        bill_data = lengkap.get(d["id"])
+        d["settled"] = _bill_settled(bill_data, peta.get)
         d["_bill_data"] = bill_data
+        d["_identitas"] = peta
         out.append(d)
     return out

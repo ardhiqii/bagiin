@@ -6,12 +6,10 @@ import { useToast } from '../components/Toast'
 import { billActions, useBill, useBillAction, useContacts, type Contact } from '../lib/queries'
 import { PeoplePicker } from '../components/PeoplePicker'
 import { invalidateMoneyViews } from '../lib/mutations'
-import { formatRp, parseRupiah } from '../lib/money'
+import { formatDigits, formatRp, parseRupiah } from '../lib/money'
 import { Alert, Button, DateField, Field, SectionHead, Sheet, SkeletonCard, SkeletonList } from '../ds/primitives'
 import manualArt from '../assets/manual.webp'
 import type { BillItem } from '../lib/types'
-
-const formatRd = (value: number): string => formatRp(value).replace('Rp', '')
 
 /** "2026-10-31 12:00:00" -> "2026-10-31", bentuk yang diterima <input type=date>. */
 const isoDate = (value?: string | null): string => (value ? value.slice(0, 10) : '')
@@ -37,7 +35,7 @@ const draftFrom = (item: BillItem): Draft => ({
   key: String(item.id),
   name: item.name,
   qty: String(item.quantity),
-  price: formatRd(item.price_idr),
+  price: formatDigits(item.price_idr),
   mode: item.mode === 'slot' ? 'slot' : 'free',
   slotCount: item.mode === 'slot' ? (item.slot_count ?? null) : null,
 })
@@ -70,9 +68,9 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
   // Nilai awal diambil sekali dari server, sesudah itu state lokal yang menang.
   const titleValue = title ?? data?.bill.title ?? ''
   const merchantValue = merchant ?? data?.bill.merchant ?? ''
-  const taxValue = tax ?? (data ? formatRd(data.bill.tax_idr) : '')
-  const serviceValue = service ?? (data ? formatRd(data.bill.service_idr) : '')
-  const discountValue = discount ?? (data ? formatRd(data.bill.order_discount_idr) : '')
+  const taxValue = tax ?? (data ? formatDigits(data.bill.tax_idr) : '')
+  const serviceValue = service ?? (data ? formatDigits(data.bill.service_idr) : '')
+  const discountValue = discount ?? (data ? formatDigits(data.bill.order_discount_idr) : '')
   // Tanggal transaksi, bukan tanggal pencatatan: bill bisa dibuat hari ini
   // untuk makan yang terjadi kemarin atau tanggal yang akan datang.
   const dateValue = billDate ?? isoDate(data?.bill.transacted_at)
@@ -330,7 +328,7 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
                       inputMode="numeric"
                       onChange={(value) =>
                         setItems((prev) =>
-                          (prev ?? drafts).map((it) => (it.key === draft.key ? { ...it, price: formatRd(parseRupiah(value)) } : it)),
+                          (prev ?? drafts).map((it) => (it.key === draft.key ? { ...it, price: formatDigits(parseRupiah(value)) } : it)),
                         )
                       }
                     />
@@ -401,15 +399,15 @@ export function EditBill({ billId, identityId }: { billId: string; identityId: s
 
           <section className="app-stack">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <Field id="edit-tax" label="Pajak" value={taxValue} inputMode="numeric" onChange={(v) => setTax(formatRd(parseRupiah(v)))} />
-              <Field id="edit-service" label="Service" value={serviceValue} inputMode="numeric" onChange={(v) => setService(formatRd(parseRupiah(v)))} />
+              <Field id="edit-tax" label="Pajak" value={taxValue} inputMode="numeric" onChange={(v) => setTax(formatDigits(parseRupiah(v)))} />
+              <Field id="edit-service" label="Service" value={serviceValue} inputMode="numeric" onChange={(v) => setService(formatDigits(parseRupiah(v)))} />
             </div>
             <Field
               id="edit-discount"
               label="Diskon pesanan"
               value={discountValue}
               inputMode="numeric"
-              onChange={(v) => setDiscount(formatRd(parseRupiah(v)))}
+              onChange={(v) => setDiscount(formatDigits(parseRupiah(v)))}
               hint={
                 discountTooBig
                   ? 'Diskon lebih besar dari total bill. Kecilkan angkanya.'

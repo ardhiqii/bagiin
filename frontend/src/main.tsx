@@ -10,7 +10,23 @@ import './design-system.css'
 import './app.css'
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 15_000, refetchOnWindowFocus: true, retry: 1 } },
+  defaultOptions: {
+    queries: {
+      // Data uang boleh berumur pendek, tapi tidak perlu ditahan selamanya:
+      // 15 detik cukup untuk berpindah layar tanpa permintaan ulang, dan
+      // mutasi tetap menyapu tampilan uang lewat `invalidateMoneyViews`.
+      staleTime: 15_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: true,
+      // 4xx bukan gangguan sementara. Mengulanginya cuma menambah permintaan
+      // yang pasti gagal — 403 sesi basi dan 404 bill terhapus paling sering.
+      retry: (count, error) => {
+        const status = (error as { status?: number }).status
+        if (status && status >= 400 && status < 500) return false
+        return count < 1
+      },
+    },
+  },
 })
 
 /**

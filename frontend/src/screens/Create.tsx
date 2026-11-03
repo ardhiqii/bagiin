@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import { formatRp, parseRupiah } from '../lib/money'
+import { formatDigits, formatRp, parseRupiah } from '../lib/money'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
 import { ActionGroup, ActionRow, Alert, Button, DateField, Field, SectionHead, Sheet } from '../ds/primitives'
@@ -39,8 +39,6 @@ function todayISO(): string {
 const newItem = (): DraftItem => ({ key: Math.random().toString(36).slice(2), name: '', qty: '1', price: '' })
 
 /** Angka -> teks ribuan tanpa prefix, untuk isi input. */
-const formatRd = (value: number): string => formatRp(value).replace('Rp', '')
-
 /**
  * Papan klip hanya bisa dibaca lewat izin pengguna (Chrome Android, Safari iOS
  * 13.1+). Kalau tidak ada, tombolnya tidak ditampilkan — lebih baik tidak
@@ -329,10 +327,10 @@ export function Create({ identityId }: { identityId: string | null }) {
       if (draft.merchant) setMerchant(draft.merchant)
       const included = Boolean(draft.tax_included)
       setTaxIncluded(included)
-      setTax(included ? '' : draft.tax ? formatRd(draft.tax) : '')
-      if (draft.service) setService(formatRd(draft.service))
+      setTax(included ? '' : draft.tax ? formatDigits(draft.tax) : '')
+      if (draft.service) setService(formatDigits(draft.service))
       const discountFromReceipt = draft.order_discount ?? draft.discount
-      if (discountFromReceipt) setDiscount(formatRd(discountFromReceipt))
+      if (discountFromReceipt) setDiscount(formatDigits(discountFromReceipt))
       const readPaths = (draft.photos?.length
         ? draft.photos
         : draft.photo_path
@@ -346,7 +344,7 @@ export function Create({ identityId }: { identityId: string | null }) {
             key: Math.random().toString(36).slice(2),
             name: it.name ?? '',
             qty: String(it.quantity ?? 1),
-            price: formatRd(it.price ?? 0),
+            price: formatDigits(it.price ?? 0),
           })),
         )
       }
@@ -777,7 +775,7 @@ export function Create({ identityId }: { identityId: string | null }) {
                   label="Harga satuan"
                   value={item.price}
                   inputMode="numeric"
-                  onChange={(v) => setItems((prev) => prev.map((it) => (it.key === item.key ? { ...it, price: formatRd(parseRupiah(v)) } : it)))}
+                  onChange={(v) => setItems((prev) => prev.map((it) => (it.key === item.key ? { ...it, price: formatDigits(parseRupiah(v)) } : it)))}
                 />
                 <button
                   type="button"
@@ -916,9 +914,9 @@ export function Create({ identityId }: { identityId: string | null }) {
             value={taxIncluded ? '' : tax}
             inputMode="numeric"
             disabled={taxIncluded}
-            onChange={(v) => setTax(formatRp(parseRupiah(v)).replace('Rp', ''))}
+            onChange={(v) => setTax(formatDigits(parseRupiah(v)))}
           />
-          <Field id="bill-service" label="Service" value={service} inputMode="numeric" onChange={(v) => setService(formatRp(parseRupiah(v)).replace('Rp', ''))} />
+          <Field id="bill-service" label="Service" value={service} inputMode="numeric" onChange={(v) => setService(formatDigits(parseRupiah(v)))} />
         </div>
         <label className="check-row">
           <input
@@ -939,7 +937,7 @@ export function Create({ identityId }: { identityId: string | null }) {
           label="Diskon pesanan"
           value={discount}
           inputMode="numeric"
-          onChange={(v) => setDiscount(formatRp(parseRupiah(v)).replace('Rp', ''))}
+          onChange={(v) => setDiscount(formatDigits(parseRupiah(v)))}
           hint={
             discountTooBig
               ? 'Diskon lebih besar dari total bill. Kecilkan angkanya.'
