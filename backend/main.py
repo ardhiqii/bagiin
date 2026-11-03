@@ -625,18 +625,26 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
         })
     result["people"].sort(key=lambda p: -p["total_idr"])
     all_ids = [p["identity_id"] for p in result["people"]]
-    names = _names_for_identities(all_ids)
+    # Satu peta identitas dipakai untuk semuanya di bawah: nama peserta, nama
+    # kreator, dan resolusi "siapa yang menalangi". Dulu tiap kebutuhan membuka
+    # koneksinya sendiri, jadi satu `GET /bill` bisa membuka 7 koneksi SQLite —
+    # di endpoint yang paling sering dibuka dan paling sering dipanggil ulang.
+    peta_identitas = db.get_identities_bulk(all_ids + [bill["creator_identity_id"]])
+    names = {
+        iid: (peta_identitas[iid]["name"] if iid in peta_identitas else "?")
+        for iid in all_ids
+    }
     # claimed participants -> canonical display name (creator-typed casing, e.g. "Sari")
     claimed = {p["identity_id"]: p["name"] for p in bill_data["participants"]
                if p.get("identity_id")}
     for p in result["people"]:
         p["name"] = claimed.get(p["identity_id"]) or names.get(p["identity_id"], "?")
     # creator name
-    creator = db.get_identity(bill["creator_identity_id"])
-    creator_name = creator["name"] if creator else "?"
+    kreator = peta_identitas.get(bill["creator_identity_id"])
+    creator_name = kreator["name"] if kreator else "?"
     # who paid? one shared resolver (db.resolve_payer) so the detail payload,
     # the settled flag and the bill list can never disagree again
-    paid_by_id, paid_by_name = db.resolve_payer(bill_data)
+    paid_by_id, paid_by_name = db.resolve_payer(bill_data, peta_identitas.get)
     # payment status
     pay_status = {p["identity_id"]: p["status"] for p in bill_data["payments"]}
     for p in result["people"]:
@@ -679,10 +687,15 @@ def _compute_response(bill_data: dict, viewer_id: str | None = None):
     # (bug found in the v66 audit).
     pending_invites = []
     if can_manage_flag:
-        for inv in db.get_invites_for_bill(bill["id"]):
-            if inv["status"] != "pending":
-                continue
-            target = db.get_identity(inv["identity_id"])
+        tertunda = [inv for inv in db.get_invites_for_bill(bill["id"]) if inv["status"] == "pending"]
+        # Nama penerima undangan diambil sekaligus, bukan satu koneksi per
+        # undangan: bill dengan lima undangan dulu membuka lima koneksi ekstra
+        # hanya untuk nama.
+        nama_undangan = (
+            db.get_identities_bulk([inv["identity_id"] for inv in tertunda]) if tertunda else {}
+        )
+        for inv in tertunda:
+            target = nama_undangan.get(inv["identity_id"])
             pending_invites.append({
                 "id": inv["id"],
                 "identity_id": inv["identity_id"],
@@ -1402,11 +1415,9 @@ def _build_identity_recap(identity: dict) -> dict:
             pending["bill_ids"].add(action["bill_id"])
 
     _recap_alias_map = accounts.aliases_for(viewer_id, list(counterparties.keys()))
-    _recap_user_map = {}
-    for _oid in counterparties.keys():
-        _row = db.get_identity(_oid)
-        if _row:
-            _recap_user_map[_oid] = _row
+    # Satu kueri untuk semua lawan transaksi. Dulu satu koneksi per orang, jadi
+    # Rekap orang yang punya 30 lawan membuka 30 koneksi hanya untuk nama.
+    _recap_user_map = db.get_identities_bulk(list(counterparties.keys()))
     final_rows = []
     for other_id, counterparty in counterparties.items():
         net = counterparty["receivable_idr"] - counterparty["payable_idr"]

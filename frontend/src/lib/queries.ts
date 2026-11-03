@@ -1,6 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
-import { invalidateMoneyViews, markMoneyViewsStale } from './mutations'
+import { markMoneyViewsStale } from './mutations'
 import type { BillResponse, BillRow, Recap } from './types'
 
 export const keys = {
@@ -26,6 +26,10 @@ export const keys = {
 export function useBills(identityId: string | null, month?: string | null, enabled = true) {
   return useQuery({
     queryKey: keys.bills(identityId ?? '', month),
+    // Pindah bulan tidak perlu mengosongkan layar: daftar bulan sebelumnya
+    // ditahan sampai yang baru datang. Dulu layar sempat kosong sekejap dan
+    // terbaca sebagai "tidak ada tagihan bulan itu".
+    placeholderData: keepPreviousData,
     queryFn: () =>
       api<BillRow[]>(
         '/api/identities/' +
@@ -178,7 +182,15 @@ export function useBillAction(billId: string | null, identityId: string | null) 
   return useMutation({
     mutationFn: (action: BillAction) =>
       api<unknown>(action.path, { method: action.method ?? 'POST', body: action.body ?? {} }),
-    onSuccess: () => invalidateMoneyViews(qc, { billId, identityId }),
+    onSuccess: () => {
+      // Aksi di layar bill (lunas, tutup, bayar, undang, buang peserta) cuma
+      // mengubah bill yang sedang dibuka. Dulu daftar Beranda DAN Rekap ikut
+      // diminta ulang setiap kali, padahal layarnya tidak sedang dilihat —
+      // tiga permintaan untuk satu tombol. Sekarang yang diminta ulang hanya
+      // bill ini; daftar cukup ditandai basi dan segar saat dibuka.
+      if (billId) void qc.invalidateQueries({ queryKey: keys.bill(billId) })
+      markMoneyViewsStale(qc, { identityId })
+    },
   })
 }
 

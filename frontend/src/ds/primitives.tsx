@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import loadingReceipt from '../assets/anim/receipt-app.webp'
 import loadingCoin from '../assets/anim/coin-app.webp'
 import { PROVIDERS, opticalHeight, providerKey } from '../lib/providers'
+import { buzz } from '../lib/haptics'
 import { CalendarBlank, CaretRight, Check, CheckCircle, Clock, Info, Wallet, WarningCircle, X } from '@phosphor-icons/react'
 
 /* ---------- money ---------- */
@@ -37,10 +38,18 @@ export function Button({
    *  tetap 44 px supaya target sentuh tidak mengecil. */
   compact?: boolean
 }) {
+  /* Getar di satu tempat, bukan ditempel di tiap layar: tombol yang sama
+     harus berperilaku sama di mana pun ia dipakai. Tombol `quiet` sengaja diam
+     — ia tautan berteks, dan getar di sana jadi bising. */
+  const tekan = () => {
+    if (disabled || loading) return
+    if (variant !== 'quiet') buzz(8)
+    onClick?.()
+  }
   return <button
     type={type}
     className={`ds-button ds-button-${variant}${block ? ' is-block' : ''}${loading ? ' is-loading' : ''}${compact ? ' is-compact' : ''}`}
-    onClick={onClick}
+    onClick={tekan}
     disabled={disabled || loading}
     aria-busy={loading || undefined}
   >
@@ -352,7 +361,10 @@ export function ActionRow({
     <button
       type="button"
       className={'ds-action-row' + (danger ? ' is-danger' : '')}
-      onClick={onClick}
+      onClick={() => {
+        buzz(danger ? 12 : 8)
+        onClick()
+      }}
     >
       <span className="ds-action-icon" aria-hidden="true">{icon}</span>
       <span className="ds-action-copy">
