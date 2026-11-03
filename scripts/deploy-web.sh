@@ -30,8 +30,16 @@ if [ -d "$TARGET" ]; then
   echo "   build lama  -> $BACKUPS/dist-$STAMP.tar.gz"
 fi
 if [ -f "$DB" ]; then
-  cp "$DB" "$BACKUPS/db-$STAMP.db"
-  echo "   DB          -> $BACKUPS/db-$STAMP.db"
+  # DB memakai WAL: commit terakhir hidup di berkas -wal, jadi `cp` biasa bisa
+  # menghasilkan salinan yang kehilangan data terbaru (atau setengah transisi).
+  # Salinan lewat API backup SQLite selalu konsisten.
+  "$ROOT/backend/venv/bin/python" - "$DB" "$BACKUPS/db-$STAMP.db" <<'PYDB'
+import sqlite3, sys
+sumber, tujuan = sys.argv[1], sys.argv[2]
+with sqlite3.connect('file:' + sumber + '?mode=ro', uri=True) as asal, sqlite3.connect(tujuan) as tuj:
+    asal.backup(tuj)
+PYDB
+  echo "   DB          -> $BACKUPS/db-$STAMP.db (backup API, aman untuk WAL)"
 fi
 
 echo "== salin ke $TARGET =="

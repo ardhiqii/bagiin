@@ -25,6 +25,7 @@ Urutan perbaikan, dari yang paling terasa oleh jari:
 | Daftar bill 71 baris | 142 koneksi, 639 kueri, 75 ms | 3 koneksi, 11 kueri, 8 ms |
 | Filter bulan, 3.000 bill | `SCAN` 1,76 ms | `SEARCH ... USING INDEX` 0,03 ms |
 | Ketuk item | centang muncul setelah POST + `GET /bill` (+daftar +rekap) | centang **< 100 ms**, 0 permintaan tambahan |
+| Tulis ke DB (satu commit) | 2,18 ms, pembaca terblokir saat menulis | **0,90 ms**, pembaca tidak terblokir (WAL) |
 | Aksi di layar bill | 3 permintaan (bill + daftar + rekap) | 1 (bill), daftar ditandai basi |
 
 ## Per layar
@@ -81,6 +82,22 @@ Urutan perbaikan, dari yang paling terasa oleh jari:
   berteks) sengaja diam.
 - **Keadaan tekan** (`:active`) sudah ada di design system untuk tombol, baris,
   dan tombol ikon.
+
+## Database: WAL
+
+Setiap ketukan pilihan item adalah satu transaksi tulis. Di mode jurnal bawaan,
+tiap commit menulis lalu menghapus berkas jurnal disertai fsync, **dan pembaca
+ikut menunggu** — jadi ketukan beruntun saling mengantre dengan permintaan baca
+layar yang sama.
+
+Sekarang `journal_mode=WAL` dengan `synchronous=FULL`: tulis ditambahkan ke
+jurnal berurutan, pembaca tidak pernah terblokir. `synchronous=NORMAL` akan
+45x lebih cepat lagi (0,02 ms), tapi commit terakhir bisa hilang kalau listrik
+mati — untuk angka uang itu tidak pantas.
+
+Konsekuensi yang harus dijaga: **jangan `cp` berkas DB** untuk cadangan, karena
+commit terakhir hidup di berkas `-wal`. `scripts/deploy-web.sh` sekarang
+memakai API backup SQLite (`.backup`) yang selalu konsisten.
 
 ## Sisa yang belum dikerjakan (urut dampak)
 

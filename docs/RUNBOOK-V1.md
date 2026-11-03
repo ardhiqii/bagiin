@@ -5,6 +5,20 @@ Versi vanilla (0.9) sudah pensiun: kodenya diarsipkan, layanannya dimatikan,
 dan domainnya dialihkan. Catatan di bawah ini menggantikan runbook dua-jalur
 yang lama.
 
+## Cadangan database (WAJIB pakai API backup)
+
+DB produksi berjalan di `journal_mode=WAL`: commit terakhir berada di berkas
+`bagiin.db-wal`, bukan di `bagiin.db`. Menyalin `bagiin.db` dengan `cp` bisa
+menghasilkan cadangan yang kehilangan data terbaru.
+
+Pakai API backup SQLite (yang dipakai `scripts/deploy-web.sh`):
+
+```python
+import sqlite3, sys
+with sqlite3.connect('file:' + sys.argv[1] + '?mode=ro', uri=True) as a, sqlite3.connect(sys.argv[2]) as b:
+    a.backup(b)
+```
+
 ## Topologi
 
 | Apa | Di mana | Keterangan |

@@ -145,6 +145,20 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # Setiap ketukan pilihan item adalah satu transaksi tulis. Di mode jurnal
+    # bawaan (DELETE) tiap commit harus menulis dan menghapus berkas jurnal
+    # plus fsync, dan pembaca ikut terblokir selama itu — jadi mengetuk item
+    # beruntun saling mengantre dengan permintaan baca layar yang sama.
+    #
+    # WAL: tulis ditambahkan ke jurnal berurutan, pembaca tidak pernah
+    # terblokir penulis. synchronous tetap FULL supaya jaminan ketahanannya
+    # sama seperti sebelumnya (NORMAL akan 45x lebih cepat lagi, tapi commit
+    # terakhir bisa hilang kalau listrik mati — tidak pantas untuk angka uang).
+    # Terukur, satu update+commit: 2,18 ms -> 0,90 ms, dan baca tidak lagi
+    # menunggu tulis.
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = FULL")
+    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 
