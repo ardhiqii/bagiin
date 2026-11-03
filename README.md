@@ -18,7 +18,7 @@ tinggal di riwayat git. Domain lama sudah dihapus, bukan dialihkan.
 ├── frontend/                 # React 19 + TypeScript + Vite
 ├── scripts/                  # deploy, rollback, salinan konfigurasi nginx
 ├── docs/                     # semua dokumen: produk, spec, desain, API, uji, runbook
-└── README.md + AGENTS.md + CLAUDE.md   # pintu masuk & aturan kerja agen
+└── README.md + AGENTS.md      # pintu masuk & aturan kerja agen
 
 /var/www/bagiin               # hasil build (dilayani nginx)
 /var/www/bagiin-uploads       # foto struk produksi
@@ -38,6 +38,7 @@ Semua ada di `docs/`, daftarnya di `docs/README.md`. Yang paling sering dibuka:
 - `docs/DESIGN_SYSTEM.md` — arah visual, token, dan aturan tata letak.
 - `docs/API_CONTRACT.md` — bentuk endpoint yang sebenarnya.
 - `docs/RUNBOOK-V1.md` — topologi, deploy, rollback, keadaan darurat.
+- `docs/ARCHITECTURE.md` — cara backend dan frontend benar-benar bekerja.
 - `docs/TEST-MATRIX.md` — kasus uji kotak hitam dan hasil putaran terakhir.
 
 ## How it works

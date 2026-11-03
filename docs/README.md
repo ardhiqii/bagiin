@@ -1,12 +1,12 @@
 # Dokumen Bagiin
 
-Semua dokumen proyek ada di folder ini. Di akar repo hanya tinggal tiga berkas
-yang memang harus di akar: `README.md` (pintu masuk), `AGENTS.md` dan
-`CLAUDE.md` (aturan kerja agen — alat baca keduanya dari akar repo, jadi
-memindahkannya membuatnya tidak terbaca).
+Semua dokumen proyek ada di folder ini. Di akar repo hanya tinggal dua berkas
+yang memang harus di akar: `README.md` (pintu masuk) dan `AGENTS.md` (aturan kerja
+agen — alat agen membacanya dari akar repo, jadi memindahkannya membuatnya tidak
+terbaca).
 
 Urutan baca yang masuk akal untuk orang baru: `PRODUCT.md` → `DESIGN_SYSTEM.md`
-→ `FRONTEND_STACK.md` → `API_CONTRACT.md` → `RUNBOOK-V1.md`.
+→ `FRONTEND_STACK.md` → `ARCHITECTURE.md` → `API_CONTRACT.md` → `RUNBOOK-V1.md`.
 
 ## Produk dan aturan
 
@@ -32,11 +32,12 @@ Urutan baca yang masuk akal untuk orang baru: `PRODUCT.md` → `DESIGN_SYSTEM.md
 | --- | --- | --- |
 | `API_CONTRACT.md` | Bentuk endpoint yang sebenarnya dipakai frontend. | Sebelum mengubah request/response. |
 | `RUNBOOK-V1.md` | Topologi, layanan, port, DB, deploy, rollback, keadaan darurat. | Sebelum deploy atau saat produksi bermasalah. |
+| `ARCHITECTURE.md` | Cara backend dan frontend benar-benar bekerja: model identitas, kepemilikan, invarian pembagian, kebiasaan kode. | Sebelum menyentuh otorisasi, pembagian, atau struktur kode. |
 | `TEST-MATRIX.md` | Kasus uji kotak hitam, dua mesin (Chromium + WebKit), dan hasil putaran terakhir. | Sebelum menambah kasus uji atau membaca kenapa sebuah kasus ada. |
 
 ## Di luar folder ini
 
-- `../AGENTS.md`, `../CLAUDE.md` — aturan kerja agen; harus di akar repo.
+- `../AGENTS.md` — aturan kerja agen; harus di akar repo.
 - `../frontend/src/assets/ART_CONTRACT.md` — kontrak seni aset ilustrasi; sengaja
   menempel pada asetnya supaya ikut terbaca saat membuat aset baru.
 - `../frontend/README.md` — catatan khusus frontend (perintah dev, uji, build).

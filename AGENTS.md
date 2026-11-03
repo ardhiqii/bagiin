@@ -50,8 +50,8 @@ Semua dokumen ada di `docs/`; daftarnya `docs/README.md`.
 3. `docs/UX_RESEARCH.md` — catatan riset; memisahkan perilaku pihak ketiga dari
    rekomendasi untuk Bagiin.
 4. `docs/RUNBOOK-V1.md` — topologi, deploy, rollback, keadaan darurat.
-5. `CLAUDE.md` — cara backend dan frontend benar-benar bekerja (di akar repo,
-   karena alat agen membacanya dari sana).
+5. `docs/ARCHITECTURE.md` — cara backend dan frontend benar-benar bekerja, termasuk
+   model identitas, aturan kepemilikan, dan invarian pembagian.
 6. `docs/SPEC.md` — changelog implementasi historis.
 
 ## Aturan uang (tidak negotiable)
