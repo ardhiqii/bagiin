@@ -99,6 +99,21 @@ Konsekuensi yang harus dijaga: **jangan `cp` berkas DB** untuk cadangan, karena
 commit terakhir hidup di berkas `-wal`. `scripts/deploy-web.sh` sekarang
 memakai API backup SQLite (`.backup`) yang selalu konsisten.
 
+## Bundel JS: sengaja TIDAK dipecah per rute
+
+Satu berkas JS 553 KB mentah, 140 KB brotli, `cache-control: immutable` satu
+tahun — jadi diunduh sekali per versi.
+
+Dipecah per rute akan memangkas unduhan pertama ke ~90-100 KB brotli, tapi tiap
+layar yang baru pertama kali dibuka harus mengambil potongannya sendiri
+(10-30 KB). Di 4G Indonesia penghematannya ~50-70 ms di pembukaan pertama,
+sementara biayanya ~20-40 ms di setiap layar baru — dan yang dikorbankan justru
+perpindahan layar, bagian yang paling sering disentuh.
+
+Keputusan: tetap satu bundel. Yang diperbaiki bukan ukurannya, tapi kapan
+pekerjaan terjadi (prefetch dari sentuhan jari) dan berapa kerja yang diulang
+(balasan mutasi dipakai sebagai cache).
+
 ## Sisa yang belum dikerjakan (urut dampak)
 
 1. ~~155 kelas CSS tidak dipakai~~ **selesai**: 142 kelas / 260 aturan dihapus,
