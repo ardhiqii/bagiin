@@ -11,8 +11,9 @@ import { IconPaste } from '../ds/icons'
 import createHeroArt from '../assets/create-hero.webp'
 import scanArt from '../assets/scan.webp'
 import scanLine from '../assets/scan-line.webp'
-import { invalidateMoneyViews } from '../lib/mutations'
-import { useContacts, type Contact } from '../lib/queries'
+import { markMoneyViewsStale } from '../lib/mutations'
+import { keys, useContacts, type Contact } from '../lib/queries'
+import type { BillResponse } from '../lib/types'
 import { PeoplePicker } from '../components/PeoplePicker'
 
 /**
@@ -407,7 +408,9 @@ export function Create({ identityId }: { identityId: string | null }) {
     setError('')
     setBusy(true)
     try {
-      const created = await api<{ id: string }>('/api/bills', {
+      // Balasan POST /api/bills sudah berisi payload bill lengkap (plus `id`),
+      // jadi layar tujuan tidak perlu `GET /bill` lagi.
+      const created = await api<{ id: string } & BillResponse>('/api/bills?include=bill', {
         method: 'POST',
         body: {
           title: title.trim() || merchant.trim() || 'Bill',
@@ -449,7 +452,8 @@ export function Create({ identityId }: { identityId: string | null }) {
         },
       })
       // bill baru mengubah beranda DAN rekap: yang lain belum tahu bill ini ada
-      invalidateMoneyViews(qc, { identityId })
+      qc.setQueryData(keys.bill(created.id), created)
+      markMoneyViewsStale(qc, { identityId })
       toast('Bill sudah jadi. Bagikan linknya ke teman kamu.')
       navigate({ to: '/b/$billId', params: { billId: created.id } })
     } catch (err) {

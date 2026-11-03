@@ -2259,8 +2259,15 @@ async def create_bill(request: Request):
         paid_by_name=paid_by_name,
     )
     _link_and_invite_participants(created["id"], data.get("participants"), ident["id"])
-    # bentuk respons tetap {"id": ...} seperti sebelumnya: layar Buat bill
-    # memakainya untuk pindah ke bill yang baru dibuat
+    # Bentuk balasan lama ({"id": ...}) dipertahankan apa adanya: pemanggil lain
+    # dan uji kontrak bergantung padanya. Yang mau cepat meminta `?include=bill`
+    # dan menerima payload yang sama seperti `GET /bill`, ditambah `id`. Layar
+    # Buat bill memakainya sebagai cache, jadi layar tujuan tidak perlu
+    # mengambil ulang tepat setelah orang menekan "Buat bill" dan menunggu.
+    if request.query_params.get("include") == "bill":
+        lengkap = db.get_bill(created["id"])
+        if lengkap:
+            return {**_compute_response(lengkap, ident["id"]), "id": created["id"]}
     return created
 
 

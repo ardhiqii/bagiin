@@ -296,7 +296,7 @@ Dijalankan di Chromium headful yang sudah punya sesi Google, terhadap build live
 
 ## Kotak hitam 1.0 — e2e sebagai orang yang belum pernah melihat aplikasi
 
-Dua puluh berkas, **141 kasus**, semuanya dijalankan lewat layar: tidak ada
+Dua puluh satu berkas, **142 kasus**, semuanya dijalankan lewat layar: tidak ada
 satu pun pemanggilan API langsung untuk menyiapkan keadaan, karena yang diuji
 adalah apa yang bisa dilakukan orang, bukan apa yang bisa dilakukan klien HTTP.
 
@@ -325,7 +325,7 @@ Sejak bug sheet iPhone, setiap kasus dijalankan di **dua mesin**: `mobile-chrome
 | `tests/blackbox-eighteen.spec.ts` | 6 | orang yang belum tahu apa-apa: tautan bill dari orang asing, langkah berikutnya setelah memilih, tautan salah, jaringan mati, nominal miliaran di 320 px, bahasa daftar aksi |
 | `tests/blackbox-nineteen.spec.ts` | 6 | isian uang seperti orang mengetik: tempel "Rp 25.000", ketik "25rb", jumlah dikosongkan lalu 0, jumlah 999, nama item hanya spasi, tempel nama menu beberapa baris |
 
-Jumlah seluruhnya: **640 penjalanan** (320 kasus × 2 mesin).
+Jumlah seluruhnya: **642 penjalanan** (321 kasus × 2 mesin).
 
 **Hasil putaran penuh terakhir (serial, dua mesin): 606 lulus, 20 dilewati,
 0 gagal, 1,5 jam.** Yang dilewati adalah kasus yang memang butuh OCR asli,
