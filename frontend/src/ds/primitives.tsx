@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import loadingReceipt from '../assets/anim/receipt-app.webp'
-import loadingCoin from '../assets/anim/coin-app.webp'
+import loadingCoinSprite from '../assets/anim/coin-sprite.webp'
 import { PROVIDERS, opticalHeight, providerKey } from '../lib/providers'
 import { buzz } from '../lib/haptics'
 import { CalendarBlank, CaretRight, Check, CheckCircle, Clock, Info, Wallet, WarningCircle, X } from '@phosphor-icons/react'
@@ -708,10 +708,11 @@ export function LoadingState({
     <div className="ds-loading" role="status" aria-live="polite">
       <div className="ds-loading-art" aria-hidden="true">
         <span className="ds-loading-receipt" style={{ backgroundImage: `url(${loadingReceipt})` }} />
-        {/* bayangan digambar di sini, bukan di dalam PNG koin: yang di PNG ikut
-            terbang saat koin melompat */}
+        {/* Koin: 16 frame hasil generate, diputar 12,5 fps lewat steps().
+            Bayangan tetap digambar di sini (bukan di dalam gambar frame) karena
+            benda yang meninggalkan tanah tidak boleh membawa bayangannya. */}
         <span className="ds-loading-coin-shadow" />
-        <span className="ds-loading-coin" style={{ backgroundImage: `url(${loadingCoin})` }} />
+        <span className="ds-loading-coin" style={{ backgroundImage: `url(${loadingCoinSprite})` }} />
       </div>
       <div className="ds-loading-copy">
         <b className="ds-loading-title">{label}…</b>

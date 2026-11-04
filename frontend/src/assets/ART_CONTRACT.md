@@ -36,6 +36,7 @@ Composition/framing: <porsi frame, penempatan, ruang kosong>
 
 | File | Subjek | Tampil | Berat |
 | --- | --- | --- | --- |
+| `anim/coin-sprite.webp` 3584×224 | 16 frame koin memantul, satu baris | 112 px (kotak art) | 62 KB |
 | `empty-bill.webp` 648 px | meja dari atas, struk kosong, cangkir, koin | 216 px (empty state) | 30 KB |
 | `create-hero.webp` 576 px | struk sobek jadi tiga strip, cangkir, koin | 120 px (Buat · Dari foto) | 10 KB |
 | `manual.webp` 320 px | struk dan pensil | 120 px (Buat · Ketik manual) | 13 KB |

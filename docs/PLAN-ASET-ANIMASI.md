@@ -101,6 +101,29 @@ Tiga jenis, dan hanya tiga, dengan tempat yang tegas:
 Akibatnya: `.create-hero img { box-shadow: … }` dihapus, dan setiap aset yang
 menyimpang (koin, `create-hero`) diseragamkan.
 
+## 2b. Keputusan pemilik: frame-per-frame dari Codex (dikerjakan)
+
+Pemilik memilih jalur frame-per-frame, bukan satu gambar + transform. Sudah
+dikerjakan dan terpasang untuk koin di loading:
+
+- 16 frame koin digenerate Codex satu per satu (satu `image_gen` per frame),
+  lalu dirakit jadi satu sprite 3584x224 yang diputar `steps(16)` selama 1,28 s
+  (12,5 fps) di kotak art 112 px.
+- Posisi vertikal tiap frame **dipaksa dari kurva yang kita hitung**, bukan dari
+  tempat model menaruhnya — model menggambar koinnya, geraknya presisi. Tanpa
+  ini koin goyang ke samping karena tiap frame digambar dengan pusat berbeda.
+- Berat: **62 KB** sprite, dibanding 9 KB untuk satu gambar. Waktu muat tidak
+  berubah berarti karena dimuat bersamaan dengan layar pertama, tapi ini
+  konsekuensi yang harus dicatat.
+- Bayangan tetap lapisan CSS terpisah, sekarang **keras satu warna** (bukan
+  `radial-gradient`), dengan 16 langkah sepadan frame koin.
+- `anim/coin-app.webp` dihapus; tidak ada lagi dua sumber untuk benda yang sama.
+
+Catatan mutu: pada pengujian 6 frame pertama, bentuk koin bergeser 1,2-4,4%
+antar frame. Di ukuran tampil 47 px itu tidak terlihat; di 112 px pun masih
+terbaca sebagai satu koin. Yang membuat geraknya halus ternyata **jumlah fase
+dan posisi yang presisi**, bukan kesamaan sempurna antar frame.
+
 ## 3. Soal "frame per frame" dari Codex
 
 Perlu dijelaskan sebelum dikerjakan, karena ini menentukan bentuk asetnya:
