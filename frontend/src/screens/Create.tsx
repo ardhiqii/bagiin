@@ -10,7 +10,7 @@ import { Camera, Images, Plus, X } from '@phosphor-icons/react'
 import { IconPaste } from '../ds/icons'
 import createHeroArt from '../assets/create-hero.webp'
 import scanArt from '../assets/scan.webp'
-import scanLine from '../assets/scan-line.webp'
+import scanFrames from '../assets/anim/scan-frames.webp'
 import { markMoneyViewsStale } from '../lib/mutations'
 import { keys, useContacts, type Contact } from '../lib/queries'
 import type { BillResponse } from '../lib/types'
@@ -556,10 +556,18 @@ export function Create({ identityId }: { identityId: string | null }) {
         </section>
       ) : photoBusy ? (
         <div className={'ds-create-hero' + (photoBusy === 'ocr' ? ' is-scanning' : '')} role="status">
-          {/* Ilustrasi diam; hanya garis hijaunya yang menyapu atas-bawah. */}
+          {/* Ilustrasi diam; saat membaca, 8 frame hasil generate menimpanya:
+              pita pindainya benar-benar bergerak turun dari frame ke frame,
+              bukan satu gambar yang digeser transform. */}
           <span className="ds-scan-art">
             <img src={scanArt} alt="" width={120} height={120} />
-            {photoBusy === 'ocr' ? <img className="ds-scan-beam" src={scanLine} alt="" aria-hidden="true" /> : null}
+            {photoBusy === 'ocr' ? (
+              <span
+                className="ds-scan-frames"
+                style={{ backgroundImage: `url(${scanFrames})` }}
+                aria-hidden="true"
+              />
+            ) : null}
           </span>
           <div>
             <b>

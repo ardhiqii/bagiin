@@ -136,7 +136,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
 
     await page.goto('/create')
     await pickPhotoThrough(page, 'ocr')
-    await expect(page.locator('.ds-scan-beam')).toBeVisible({ timeout: 20000 })
+    await expect(page.locator('.ds-scan-frames')).toBeVisible({ timeout: 20000 })
 
     /* Ilustrasinya harus diam: dulu seluruh gambar diangguk 3 px, dan mata
        membacanya sebagai gambar goyang, bukan alat yang sedang memindai. */
@@ -145,39 +145,46 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     )
     expect(latar, 'ilustrasi tidak boleh ikut bergerak').toBe('none')
 
-    // Garisnya bergerak, dan bergerak dengan transform (kompositor, bukan layout).
+    /* Pita pindainya 8 frame hasil generate: yang berubah adalah pilihan sel
+       (background-position), bukan transform satu gambar. Diukur bukan dari
+       animasinya tapi dari nilai yang benar-benar dipakai — kalau jarak
+       langkahnya salah, posisinya jatuh di antara dua sel dan yang tampil
+       potongan struk sebelah. */
     const baca = () =>
       page.evaluate(() => {
-        const beam = document.querySelector('.ds-scan-beam') as HTMLElement
+        const pita = document.querySelector('.ds-scan-frames') as HTMLElement
         const art = document.querySelector('.ds-scan-art') as HTMLElement
-        const gaya = getComputedStyle(beam)
+        const gaya = getComputedStyle(pita)
         return {
-          transform: gaya.transform,
+          posisi: gaya.backgroundPosition,
+          ukuran: gaya.backgroundSize,
           animasi: gaya.animationName,
-          beam: beam.getBoundingClientRect().toJSON(),
+          pita: pita.getBoundingClientRect().toJSON(),
           art: art.getBoundingClientRect().toJSON(),
         }
       })
 
     const awal = await baca()
-    expect(awal.animasi).toBe('scan-sweep')
-    await page.waitForTimeout(500)
+    expect(awal.animasi).toContain('ds-scan-frames')
+    expect(awal.ukuran).toBe('800% 100%')
+    await page.waitForTimeout(700)
     const tengah = await baca()
-    expect(tengah.transform, 'garis harus bergerak').not.toBe(awal.transform)
+    expect(tengah.posisi, 'pitanya harus pindah frame').not.toBe(awal.posisi)
 
-    // Selama bergerak, garis tetap di dalam kotak ilustrasi.
+    // Selama bergerak, pitanya tetap di dalam kotak ilustrasi.
     for (const f of [awal, tengah]) {
-      expect(f.beam.top, 'garis keluar dari atas kotak').toBeGreaterThanOrEqual(f.art.top - 0.5)
-      expect(f.beam.bottom, 'garis keluar dari bawah kotak').toBeLessThanOrEqual(f.art.bottom + 0.5)
+      expect(f.pita.top, 'pita keluar dari atas kotak').toBeGreaterThanOrEqual(f.art.top - 0.5)
+      expect(f.pita.bottom, 'pita keluar dari bawah kotak').toBeLessThanOrEqual(f.art.bottom + 0.5)
     }
 
-    // Yang meminta gerak dikurangi: garisnya diam di tengah, bukan melambat.
+    // Yang meminta gerak dikurangi: pitanya diam di frame pertama, bukan melambat.
     await page.emulateMedia({ reducedMotion: 'reduce' })
     const diam = await page.evaluate(() => {
-      const beam = document.querySelector('.ds-scan-beam') as HTMLElement
-      return getComputedStyle(beam).animationName
+      const pita = document.querySelector('.ds-scan-frames') as HTMLElement
+      return { animasi: getComputedStyle(pita).animationName, posisi: getComputedStyle(pita).backgroundPosition }
     })
-    expect(diam, 'gerak dikurangi berarti animasinya mati').toBe('none')
+    expect(diam.animasi, 'gerak dikurangi berarti animasinya mati').toBe('none')
+    expect(diam.posisi, 'tanpa animasi, pitanya menetap di frame pertama').toBe('0px 0px')
   })
 
   test('40c. screenshot di papan klip bisa ditempel, teks biasa tidak mengganggu', async ({ page }) => {
@@ -224,7 +231,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
 
     await page.getByRole('button', { name: 'Baca pakai AI' }).click()
     await expect(page.locator('.ds-create-hero.is-scanning')).toBeVisible({ timeout: 20000 })
-    await expect(page.locator('.ds-scan-beam')).toBeVisible()
+    await expect(page.locator('.ds-scan-frames')).toBeVisible()
     await expect(page.locator('#bill-title')).toHaveValue(/Gojek/i, { timeout: 20000 })
     expect(dibaca, 'setelah dipilih, tempelan dibaca AI').toBe(1)
   })

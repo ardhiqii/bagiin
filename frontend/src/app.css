@@ -375,9 +375,9 @@ p, small, .app-note { text-wrap: pretty; }
 /* Ilustrasi pindai: gambarnya diam, hanya garis hijaunya yang bergerak.
    Sebelumnya seluruh ilustrasi diangguk 3 px — mata membacanya sebagai gambar
    yang goyang, bukan sebagai alat yang sedang memindai. Sekarang yang bergerak
-   hanya satu lapis: berkas garis hasil generate (`scan-line.webp`) di atas
-   latar yang diam, digerakkan `transform` saja sehingga kompositor yang
-   menjalankannya di 60 fps tanpa reflow dan tanpa satu pun frame tetap. */
+   hanya pitanya, dan pitanya benar-benar delapan gambar berbeda: pita pindai
+   turun dari frame ke frame (`anim/scan-frames.webp`), bukan satu garis yang
+   digeser transform di atas gambar diam lain. Ilustrasi diamnya tetap diam. */
 .ds-scan-art {
   position: relative;
   width: 120px;
@@ -393,29 +393,36 @@ p, small, .app-note { text-wrap: pretty; }
   border-radius: 16px;
   display: block;
 }
-.ds-create-hero .ds-scan-beam {
+/* 8 sel, tiap sel 120 px di layar: jarak 8 langkah harus tepat 960 px. Memakai
+   persentase membuat tiap langkah jatuh di antara dua sel dan yang tampil
+   potongan struk sebelah (pelajaran yang sama dari koin). */
+.ds-scan-frames {
   position: absolute;
-  /* Sedikit di dalam bingkai bidik: kalau garisnya menimpa bracket, yang
-     terlihat adalah tempelan datar di atas gambar, bukan cahaya yang menyapu
-     di dalam bingkai. */
-  left: 10%;
-  width: 80%;
-  height: auto;
-  top: 0;
-  pointer-events: none;
-  will-change: transform;
-  animation: scan-sweep 2.3s cubic-bezier(.45, 0, .55, 1) infinite alternate;
+  inset: 0;
+  z-index: 1;
+  border-radius: 16px;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: 800% 100%;
+  animation:
+    ds-scan-frames 1.9s steps(8) infinite,
+    ds-scan-in .18s ease both;
+  will-change: background-position;
 }
-@keyframes scan-sweep {
-  from { transform: translate3d(0, 6px, 0) }
-  to   { transform: translate3d(0, 78px, 0) }
+@keyframes ds-scan-frames {
+  from { background-position: 0 0; }
+  to { background-position: -960px 0; }
 }
-/* Kurangi gerak, jangan sekadar memperlambat: garisnya berhenti di tengah. */
+/* Silang-pudar singkat: frame-frame ini struk tegak, sedangkan ilustrasi
+   diamnya struk miring di dalam bingkai bidik. Tanpa pudar, gantinya terlihat
+   seperti gambar yang tiba-tiba melompat. */
+@keyframes ds-scan-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* Kurangi gerak, jangan sekadar memperlambat: pitanya berhenti. */
 @media (prefers-reduced-motion: reduce) {
-  .ds-create-hero .ds-scan-beam {
-    animation: none;
-    transform: translate3d(0, 42px, 0);
-  }
+  .ds-scan-frames { animation: none; background-position: 0 0; }
 }
 
 .welcome-body {

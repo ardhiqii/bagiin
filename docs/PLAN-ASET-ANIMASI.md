@@ -145,6 +145,21 @@ tumpukan koin semuanya berbayangan keras satu warna, tanpa gradien. 576 px,
 
 `box-shadow` di `.create-hero img` dihapus: aset membawa bayangannya sendiri.
 
+## 2e. Keadaan membaca struk (dikerjakan)
+
+- `anim/scan-frames.webp`: **8 frame** struk tegak dengan pita pindai yang turun
+  dari frame ke frame, 1920x240, **24 KB** — lebih ringan dari pasangan lama
+  (`scan.webp` 24 KB + `scan-line.webp` 19 KB), dan `scan-line.webp` dihapus.
+- Diputar `steps(8)` 1,9 detik. Jarak langkah tepat 8 x 120 = 960 px; dengan
+  persentase, tiap langkah jatuh di antara dua sel.
+- Modelnya mengembalikan kedelapan frame dengan kotak objek **identik**
+  (468x918 di koordinat yang sama), jadi tidak ada normalisasi posisi yang
+  perlu dikerjakan — potong kotak yang sama, susun satu baris.
+- Ilustrasi diamnya tetap diam; frame-frame ini masuk dengan silang-pudar 180 ms
+  karena komposisinya beda (struk tegak vs struk miring di bingkai bidik).
+- Uji 40b diubah mengikuti kontrak baru: yang diperiksa `background-position`
+  yang benar-benar berubah, bukan `transform` satu garis.
+
 ## 3. Soal "frame per frame" dari Codex
 
 Perlu dijelaskan sebelum dikerjakan, karena ini menentukan bentuk asetnya:
