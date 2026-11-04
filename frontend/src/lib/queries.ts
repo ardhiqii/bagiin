@@ -67,6 +67,12 @@ export function useBill(billId: string | null) {
     queryKey: keys.bill(billId ?? ''),
     queryFn: () => ambilBill(billId ?? ''),
     enabled: Boolean(billId),
+    /* Bill dibagi sambil dipegang beberapa orang sekaligus: yang lain memilih
+       item, ikut bergabung, atau membayar, dan tanpa ini layar berhenti pada
+       gambar saat dibuka. Dua belas detik cukup sering untuk terasa hidup dan
+       cukup jarang untuk tidak membebani. Saat tab disembunyikan berhenti
+       sendiri (`refetchIntervalInBackground` bawaannya false). */
+    refetchInterval: 12000,
     retry: (count, error) => {
       const status = (error as { status?: number }).status
       if (status === 404 || status === 403) return false

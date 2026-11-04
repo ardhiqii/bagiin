@@ -1617,6 +1617,22 @@ p, small, .app-note { text-wrap: pretty; }
   color: var(--ds-muted);
 }
 
+/* Orang yang baru bergabung: barisnya masuk sekali, dengan kilau mint singkat.
+   Tanpa ini, orang baru muncul di antara baris lain tanpa penanda apa pun, dan
+   yang sedang memegang HP tidak tahu bill-nya bertambah. */
+.app-row.is-baru {
+  animation: ds-orang-masuk 700ms cubic-bezier(.2, .9, .3, 1) both;
+  border-radius: 14px;
+}
+@keyframes ds-orang-masuk {
+  0% { transform: translateY(7px); opacity: 0; background-color: rgba(8, 118, 101, .12); }
+  55% { opacity: 1; background-color: rgba(8, 118, 101, .12); }
+  100% { transform: none; opacity: 1; background-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-row.is-baru { animation: none; }
+}
+
 /* ---------- perayaan lunas ----------
    Stempel 6 frame (jatuh, sentuh, tekan, lepas) diputar `steps(1)` dengan
    keyframe tidak rata: 4 frame turun, 1 frame menekan, 1 frame lepas. Turunnya

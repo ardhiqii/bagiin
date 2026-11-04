@@ -120,6 +120,23 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
 
   const data: BillResponse | undefined = bill.data
   const me = useMemo(() => data?.people.find((p) => p.identity_id === identityId), [data, identityId])
+
+  /* Semua yang sudah pernah tampil. Render pertama hanya mengisi daftar —
+     kalau tidak, saat layar dibuka semua orang beranimasi masuk sekaligus dan
+     geraknya kehilangan arti. */
+  useEffect(() => {
+    const ids = data?.people.map((person) => person.identity_id) ?? []
+    if (sudahTerlihat.current === null) {
+      sudahTerlihat.current = new Set(ids)
+      return
+    }
+    const belum = ids.filter((id) => !sudahTerlihat.current!.has(id))
+    if (belum.length === 0) return
+    for (const id of belum) sudahTerlihat.current.add(id)
+    setOrangBaru(new Set(belum))
+    const t = window.setTimeout(() => setOrangBaru(new Set()), 1400)
+    return () => window.clearTimeout(t)
+  }, [data])
   /** item_id -> berapa slot/porsi yang saya ambil menurut server. */
   const picksServer = useMemo(() => {
     const picked = new Map<number, number>()
@@ -189,6 +206,9 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
   const [lunasPesta, setLunasPesta] = useState(false)
   /** Momen setelah "Tutup bill" diterima server. */
   const [tutupPesta, setTutupPesta] = useState(false)
+  /** Orang yang baru muncul di bill ini — diberi gerak masuk sekali. */
+  const [orangBaru, setOrangBaru] = useState<Set<string>>(new Set())
+  const sudahTerlihat = useRef<Set<string> | null>(null)
   const [nameOpen, setNameOpen] = useState(false)
   const [joinName, setJoinName] = useState('')
   const [joinBusy, setJoinBusy] = useState(false)
@@ -784,7 +804,10 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                    buruk daripada tombol yang tidak ada. */
                 const removable = canManage && data.bill.status === 'open' && !data.settled && !isMe
                 return (
-                  <div className="app-row" key={person.identity_id}>
+                  <div
+                    className={'app-row' + (orangBaru.has(person.identity_id) ? ' is-baru' : '')}
+                    key={person.identity_id}
+                  >
                     <Avatar label={initials(person.display_name ?? person.name)} tone={isMe ? 'teal' : 'navy'} />
                     <span className="grow">
                       {/* display_name = alias milik penampil. Nama asli tetap

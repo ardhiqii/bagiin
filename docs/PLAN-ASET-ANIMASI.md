@@ -176,6 +176,34 @@ tumpukan koin semuanya berbayangan keras satu warna, tanpa gradien. 576 px,
 - Tanpa konfeti: menutup bill bukan prestasi, cuma memastikan angkanya berhenti
   berubah.
 
+## 2g. Tamu yang baru bergabung (dikerjakan)
+
+Bukan aset baru, tetapi ini yang membuat bill terasa hidup: dulu bill yang
+sedang dibuka **berhenti pada gambar saat dibuka**. Orang lain memilih item,
+ikut bergabung, atau membayar, dan layar tidak berubah sampai ditarik ulang.
+Jadi:
+
+- `useBill` sekarang menyegarkan tiap **12 detik** selama layar bill terbuka
+  (`refetchInterval`; saat tab disembunyikan berhenti sendiri). Satu GET /bill
+  terukur 4–13 ms di server, jadi ini murah.
+- Baris orang yang **baru** muncul diberi gerak masuk sekali: naik 7 px, kilau
+  mint 12%, selesai 0,7 detik. Render pertama hanya mengisi daftar orang —
+  kalau tidak, saat layar dibuka semua orang beranimasi masuk sekaligus dan
+  geraknya kehilangan arti.
+- Diukur di aplikasi nyata: baris baru ditemukan **9,7 detik** setelah tamu
+  bergabung, `background-color` saat terdeteksi `rgba(8,118,101,.12)`, animasi
+  `ds-orang-masuk` 0,7 dtk.
+
+## 2h. Dua aset mati (diputuskan)
+
+- `empty-bill.webp` (31 KB) **dihapus**: subjeknya meja kafe dengan struk kosong,
+  sedangkan keadaan "belum ada bill" sudah dipegang `home-empty.webp` (dompet
+  kosong) — dua gambar untuk satu makna.
+- `recap.webp` (6 KB) **dihapus**: keadaan kosong Rekap berjudul "Semua bill
+  beres", dan `paid.webp` (stempel) memang lebih tepat untuk itu daripada koin
+  dan kartu kosong.
+- Keduanya hilang dari `ART_CONTRACT.md`; tidak ada kode yang mengimpornya.
+
 ## 3. Soal "frame per frame" dari Codex
 
 Perlu dijelaskan sebelum dikerjakan, karena ini menentukan bentuk asetnya:
