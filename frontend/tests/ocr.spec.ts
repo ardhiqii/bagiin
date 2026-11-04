@@ -26,20 +26,28 @@ test.describe('Bagiin — baca struk dari foto', () => {
     // aplikasinya sendiri benar: dia menampilkan gangguan dan menyuruh isi manual.
     const done = page.getByText('Struk terbaca. Cek lagi angkanya ya.')
     const down = page.getByText(/Layanan AI (gratis )?sedang (mengalami gangguan|penuh)/)
-    const input = page.locator('input[type="file"]')
+    const input = page.locator('input[type="file"]').first()
     let read = false
+    // Anggaran waktu keseluruhan, bukan per percobaan. Dulu tiap percobaan
+    // menunggu sampai 150 detik, jadi tiga percobaan bisa melewati batas tes
+    // 300 detik dan hasilnya "timeout" — padahal yang terjadi cuma penyedia AI
+    // yang tidak menjawab. Sekarang totalnya dibatasi, lalu tes di-skip dengan
+    // alasan yang benar.
+    const batas = Date.now() + 120_000
     for (let attempt = 0; attempt < 3 && !read; attempt += 1) {
+      const sisa = batas - Date.now()
+      if (sisa < 10_000) break
       await input.setInputFiles('tests/fixtures/receipt.png')
       const result = await Promise.race([
-        done.waitFor({ timeout: 150_000 }).then(() => 'ok').catch(() => 'timeout'),
-        down.waitFor({ timeout: 150_000 }).then(() => 'down').catch(() => 'timeout'),
+        done.waitFor({ timeout: sisa }).then(() => 'ok').catch(() => 'timeout'),
+        down.waitFor({ timeout: sisa }).then(() => 'down').catch(() => 'timeout'),
       ])
       if (result === 'ok') { read = true; break }
       if (result === 'down') {
         test.skip(true, 'Penyedia OCR sedang 429 — bukan kegagalan aplikasi')
         return
       }
-      await page.waitForTimeout(20_000)
+      await page.waitForTimeout(5_000)
     }
     if (!read) {
       test.skip(true, 'Penyedia OCR tidak menjawab dalam tiga percobaan')

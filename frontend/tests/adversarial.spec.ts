@@ -55,8 +55,11 @@ test.describe('Bagiin — keadaan yang berubah di belakang layar', () => {
     await guest.getByRole('button', { name: /Kwetiau, ketuk/ }).click()
     await expect(guest.getByText('Bill sudah ditutup')).toBeVisible({ timeout: 15_000 })
 
-    // state tamu tidak berubah jadi "dipilih"
-    await expect(guest.getByRole('button', { name: /Kwetiau, ketuk/ })).toHaveAttribute('aria-pressed', 'false')
+    // state tamu tidak berubah jadi "dipilih" — dan labelnya ikut jujur bahwa
+    // baris ini sudah tidak bisa ditekan (bukan lagi mengajak "ketuk")
+    const baris = guest.getByRole('button', { name: /Kwetiau, tidak bisa dipilih/ })
+    await expect(baris).toHaveAttribute('aria-pressed', 'false')
+    await expect(baris).toBeDisabled()
     await ctx.close()
   })
 

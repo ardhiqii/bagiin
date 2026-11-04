@@ -264,7 +264,12 @@ test.describe('Bagiin — jaringan tidak bersahabat', () => {
       before.people.find((p: any) => p.identity_id === me.id).total_idr,
     )
     const text = await page.locator('body').innerText()
-    expect(text, 'harus ada pesan gagal, bukan diam').toMatch(/koneksi bermasalah|periksa internet/i)
+    // Sejak pilihan dibuat optimistis, jaringan putus bukan "gagal": pilihan
+    // tetap di layar dan dikirim ulang sendiri. Yang wajib ada: pesan jelas
+    // bahwa belum terkirim, bukan layar diam tanpa kabar.
+    expect(text, 'harus ada pesan gagal, bukan diam').toMatch(
+      /koneksi bermasalah|periksa internet|Belum terkirim/i,
+    )
   })
 
   test('C-02. daftar bill lambat: tidak ada angka 0 yang menipu selama memuat', async ({ page }) => {

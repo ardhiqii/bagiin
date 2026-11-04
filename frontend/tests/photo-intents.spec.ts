@@ -324,7 +324,7 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     )
 
     let sent: Record<string, unknown> = {}
-    await page.route('**/api/bills', async (route) => {
+    await page.route('**/api/bills*', async (route) => {
       if (route.request().method() === 'POST') sent = route.request().postDataJSON()
       await route.continue()
     })
