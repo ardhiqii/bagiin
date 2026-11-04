@@ -124,6 +124,27 @@ antar frame. Di ukuran tampil 47 px itu tidak terlihat; di 112 px pun masih
 terbaca sebagai satu koin. Yang membuat geraknya halus ternyata **jumlah fase
 dan posisi yang presisi**, bukan kesamaan sempurna antar frame.
 
+## 2c. Perayaan lunas (dikerjakan)
+
+- `anim/stamp-paid.webp`: **6 frame** stempel hasil generate (jatuh, menyentuh,
+  menekan/squash, lepas), 1344x260, 116 KB. Diputar `steps(1)` dengan keyframe
+  tidak rata; turunnya diatur `translateY` ber-steps karena kalau posisi ikut
+  digambar, tiap frame mendarat di titik berbeda dan capnya terlihat melayang.
+- Cincin tinta: CSS, menyusul 420 ms setelah cap menyentuh.
+- Konfeti: **canvas**, 84 partikel, 1,15 detik, nol byte aset.
+- Total di bawah 1,8 detik, `pointer-events: none` supaya bisa terus diketuk, dan
+  seluruh gerak dimatikan saat `prefers-reduced-motion`.
+- Muncul **hanya kalau server menerima** aksi (bukan saat gagal), sekali per aksi.
+
+## 2d. `create-hero` v2 (dikerjakan)
+
+Versi baru digenerate dengan instruksi tegas: **satu bayangan keras per benda,
+tepi tajam, tanpa blur/gradien**. Diperiksa visual: mug, tiga strip struk, dan
+tumpukan koin semuanya berbayangan keras satu warna, tanpa gradien. 576 px,
+63 KB (dari 10 KB — versi lama bayangannya lembut dan melanggar kontrak).
+
+`box-shadow` di `.create-hero img` dihapus: aset membawa bayangannya sendiri.
+
 ## 3. Soal "frame per frame" dari Codex
 
 Perlu dijelaskan sebelum dikerjakan, karena ini menentukan bentuk asetnya:
@@ -241,11 +262,11 @@ gradient"**. Bagian subjek/komposisi yang berubah saja.
 
 ## 6. Urutan kerja
 
-1. **Fase 1 — satu bahasa bayangan (tanpa aset baru).** Koin: bayangan CSS
-   keras. Hapus `box-shadow` dari semua `<img>` aset. Putuskan dua aset mati.
-   Ukur ulang dengan tangkapan layar tiga fase.
-2. **Fase 2 — perayaan lunas.** Stempel + cincin + konfeti canvas, plus
-   `prefers-reduced-motion` mematikannya total.
+1. ~~**Fase 1 — satu bahasa bayangan.**~~ **Selesai**: bayangan koin jadi keras
+   satu warna, `box-shadow` di `.create-hero img` dihapus. Sisa: dua aset mati
+   (`empty-bill.webp`, `recap.webp`) belum diputuskan.
+2. ~~**Fase 2 — perayaan lunas.**~~ **Selesai**: stempel 6 frame + cincin +
+   konfeti canvas, `prefers-reduced-motion` mematikannya total.
 3. **Fase 3 — keadaan membaca di Buat tagihan** (garis sapu → skeleton angka →
    hasil) dan indikator unggah.
 4. **Fase 4 — aset baru dari Codex** (`create-hero` v2, opsional struk

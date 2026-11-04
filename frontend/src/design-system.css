@@ -808,7 +808,10 @@
 .create-hero .create-copy { flex: 1; min-width: 0; }
 .create-hero h1 { margin: 0 0 6px; font: var(--ds-weight-strong) var(--ds-text-2xl)/1.12 var(--ds-font-display); letter-spacing: -.045em; }
 .create-hero p { margin: 0; color: var(--ds-muted); font: var(--ds-weight-regular) var(--ds-text-sm)/1.5 var(--ds-font-body); }
-.create-hero img { flex: none; width: 120px; height: 120px; object-fit: cover; border-radius: 18px; margin-top: 0; box-shadow: var(--ds-shadow-content); }
+/* Aset membawa bayangannya sendiri (satu bayangan keras di dalam gambar), jadi
+   wadahnya tidak menambah box-shadow lembut: dua bayangan dengan arah dan
+   kelembutan berbeda di satu benda terbaca sebagai gambar yang salah tempel. */
+.create-hero img { flex: none; width: 120px; height: 120px; object-fit: cover; border-radius: 18px; margin-top: 0; }
 .ds-empty b { font: var(--ds-weight-strong) var(--ds-text-base)/1.3 var(--ds-font-body); }
 .ds-empty p { margin: 0; max-width: 270px; color: var(--ds-muted); font: var(--ds-weight-regular) var(--ds-text-sm)/1.5 var(--ds-font-body); }
 

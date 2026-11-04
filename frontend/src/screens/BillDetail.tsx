@@ -8,6 +8,7 @@ import { api, endpoints, isSessionError } from '../lib/api'
 import { startIdentity } from '../lib/identity'
 import { formatRp } from '../lib/money'
 import { buzz } from '../lib/haptics'
+import { PaidCelebration } from '../ds/celebration'
 import { shareLink } from '../lib/share'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
@@ -166,7 +167,10 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
         label: 'Tandai lunas · ' + formatRp(me!.total_idr),
         onClick: () => {
           buzz(20)
-          void run(billActions.markPaid(billId, me!.identity_id), 'Ditandai lunas')
+          // perayaan hanya kalau server benar-benar menerima — bukan saat gagal
+          void run(billActions.markPaid(billId, me!.identity_id), 'Ditandai lunas').then(
+            (berhasil) => berhasil && setLunasPesta(true),
+          )
         },
       }
     }
@@ -180,6 +184,8 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
     : []
 
   const [photoBusy, setPhotoBusy] = useState(false)
+  /** Perayaan setelah "Tandai lunas" diterima server. */
+  const [lunasPesta, setLunasPesta] = useState(false)
   const [nameOpen, setNameOpen] = useState(false)
   const [joinName, setJoinName] = useState('')
   const [joinBusy, setJoinBusy] = useState(false)
@@ -202,12 +208,17 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
     }
   }
 
-  async function run(todo: { path: string; method?: 'POST' | 'PUT' | 'DELETE'; body?: unknown }, message: string) {
+  async function run(
+    todo: { path: string; method?: 'POST' | 'PUT' | 'DELETE'; body?: unknown },
+    message: string,
+  ): Promise<boolean> {
     try {
       await action.mutateAsync(todo)
       toast(message)
+      return true
     } catch (err) {
       toast((err as Error).message)
+      return false
     }
   }
 
@@ -1240,6 +1251,11 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
           </>
         ) : null}
       </Sheet>
+      <PaidCelebration
+        open={lunasPesta}
+        onDone={() => setLunasPesta(false)}
+        keterangan={me ? formatRp(me.total_idr) + ' sudah tercatat lunas' : undefined}
+      />
     </AppShell>
   )
 }
