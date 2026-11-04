@@ -16,6 +16,7 @@ Urutan baca yang masuk akal untuk orang baru: `PRODUCT.md` → `DESIGN_SYSTEM.md
 | `SPEC.md` | Spesifikasi + changelog implementasi historis. | Saat mencari "kenapa dulu diputuskan begitu". |
 | `PLAN-AUTH-KONTAK.md` | Rencana identitas, tautan akun, dan kontak. | Sebelum menyentuh identitas, tamu, atau undangan. |
 | `PLAN-REKAP.md` | Rencana rekap tagihan antar orang. | Sebelum menyentuh rekap. |
+| `PLAN-ASET-ANIMASI.md` | Rencana aset & animasi: inventaris aset per layar, hukum bayangan, dan apa yang perlu dibuat — termasuk kenapa kehalusan dikejar lewat lapisan + CSS, bukan urutan frame. | Sebelum membuat atau mengganti aset, atau saat bayangan/animasi terasa tidak konsisten. |
 | `PERF-AUDIT.md` | Audit performa & responsivitas per layar: apa yang sudah instan, apa yang menunggu jaringan, angka terukur, dan sisa yang belum dikerjakan. | Sebelum mengubah jalur aksi, atau saat ada keluhan "kerasa lambat". |
 | `PLAN-FOTO-INPUT.md` | Rencana bentuk kartu foto struk: dua niat, sumber foto, tempelan berulang. | Sebelum mengubah kartu foto di layar buat bill. |
 
