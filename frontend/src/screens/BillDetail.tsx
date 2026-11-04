@@ -8,7 +8,8 @@ import { api, endpoints, isSessionError } from '../lib/api'
 import { startIdentity } from '../lib/identity'
 import { formatRp } from '../lib/money'
 import { buzz } from '../lib/haptics'
-import { PaidCelebration } from '../ds/celebration'
+import { Moment, PaidCelebration } from '../ds/celebration'
+import billClosedFrames from '../assets/anim/bill-closed.webp'
 import { shareLink } from '../lib/share'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
@@ -186,6 +187,8 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
   const [photoBusy, setPhotoBusy] = useState(false)
   /** Perayaan setelah "Tandai lunas" diterima server. */
   const [lunasPesta, setLunasPesta] = useState(false)
+  /** Momen setelah "Tutup bill" diterima server. */
+  const [tutupPesta, setTutupPesta] = useState(false)
   const [nameOpen, setNameOpen] = useState(false)
   const [joinName, setJoinName] = useState('')
   const [joinBusy, setJoinBusy] = useState(false)
@@ -942,7 +945,12 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
                   icon={<LockSimple size={20} weight="bold" />}
                   label="Tutup bill"
                   note="Kunci bill: tidak bisa dipilih atau diubah lagi. Yang belum bayar tetap tercatat"
-                  onClick={() => { setActionsOpen(false); void run(billActions.close(billId), 'Bill ditutup') }}
+                  onClick={() => {
+                    setActionsOpen(false)
+                    void run(billActions.close(billId), 'Bill ditutup').then(
+                      (berhasil) => berhasil && setTutupPesta(true),
+                    )
+                  }}
                 />
               ) : (
                 <ActionRow
@@ -1255,6 +1263,19 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
         open={lunasPesta}
         onDone={() => setLunasPesta(false)}
         keterangan={me ? formatRp(me.total_idr) + ' sudah tercatat lunas' : undefined}
+      />
+      {/* Struk terlipat: bill dikunci. Tanpa konfeti — menutup bill bukan
+          prestasi, cuma memastikan angkanya berhenti berubah. */}
+      <Moment
+        open={tutupPesta}
+        onDone={() => setTutupPesta(false)}
+        sprite={billClosedFrames}
+        frame={6}
+        durasi={820}
+        tinggi={150}
+        latar
+        judul="Bill ditutup"
+        keterangan="Item dan pilihan terkunci"
       />
     </AppShell>
   )

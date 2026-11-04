@@ -160,6 +160,22 @@ tumpukan koin semuanya berbayangan keras satu warna, tanpa gradien. 576 px,
 - Uji 40b diubah mengikuti kontrak baru: yang diperiksa `background-position`
   yang benar-benar berubah, bukan `transform` satu garis.
 
+## 2f. Menutup bill (dikerjakan)
+
+- `anim/bill-closed.webp`: **6 frame** struk terlipat (dari 8 yang digenerate;
+  dua frame terakhir — versi berikat karet — dibuang karena pembaca visual
+  menilainya berhenti bergerak dan bentuknya jadi mirip blok lain).
+- Satu faktor skala untuk semua frame, dihitung dari frame pertama. Kalau tiap
+  frame diskalakan sendiri-sendiri, struk terlihat menyusut saat terlipat —
+  padahal kertasnya cuma terlipat.
+- Kaki semua frame di garis yang sama; model mengembalikan tepi bawah struk di y
+  yang konstan (1068 px di semua frame), dan itu dipertahankan.
+- **Alas mint di kotak art.** Kertas krem di atas kartu putih nyaris tidak
+  bertepi — pemeriksaan visual pertama menyebutnya "terlihat seperti bayangan".
+  Alas `#EAF2EE` membuat bentuknya terbaca sebagai benda.
+- Tanpa konfeti: menutup bill bukan prestasi, cuma memastikan angkanya berhenti
+  berubah.
+
 ## 3. Soal "frame per frame" dari Codex
 
 Perlu dijelaskan sebelum dikerjakan, karena ini menentukan bentuk asetnya:

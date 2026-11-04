@@ -1659,16 +1659,46 @@ p, small, .app-note { text-wrap: pretty; }
   height: 130px;
   margin: 0 auto 4px;
 }
+/* Kertas krem di atas kartu putih kehilangan tepinya. Alas mint membuat
+   bentuknya terbaca sebagai benda, bukan bayangan. */
+.ds-celebrate-art.is-latar {
+  border-radius: 18px;
+  background: #EAF2EE;
+}
 .ds-celebrate-stamp {
   position: absolute;
   inset: 0;
   background-repeat: no-repeat;
   background-position: 0 0;
   background-size: 600% 100%;
-  animation:
-    ds-stamp-frames 640ms steps(1) both,
-    ds-stamp-fall 640ms steps(6, end) both;
+  animation-name: ds-stamp-frames, ds-stamp-fall;
+  animation-duration: 640ms;
+  animation-timing-function: steps(1), steps(6, end);
+  animation-fill-mode: both;
   will-change: transform, background-position;
+}
+/* Struk yang dilipat: 8 sel, dan bendanya diam — jadi animasi keduanya kosong.
+   Keyframe dipisah per jumlah sel, bukan lewat var() di dalam keyframe:
+   substitusi var() di keyframe masih bermasalah di WebKit. */
+.ds-celebrate-stamp.is-8 {
+  background-size: 800% 100%;
+  animation-name: ds-lipat-frames, ds-diam;
+  animation-timing-function: steps(1), linear;
+  animation-duration: 820ms;
+}
+@keyframes ds-lipat-frames {
+  0% { background-position: 0 0; }
+  14.28% { background-position: -112px 0; }
+  28.57% { background-position: -224px 0; }
+  42.85% { background-position: -336px 0; }
+  57.14% { background-position: -448px 0; }
+  71.42% { background-position: -560px 0; }
+  85.71% { background-position: -672px 0; }
+  100% { background-position: -784px 0; }
+}
+@keyframes ds-diam {
+  from { transform: none; }
+  to { transform: none; }
 }
 /* 6 sel, tiap sel 112 px di layar */
 @keyframes ds-stamp-frames {

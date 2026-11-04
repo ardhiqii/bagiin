@@ -3,27 +3,54 @@ import stampFrames from '../assets/anim/stamp-paid.webp'
 import { buzz } from '../lib/haptics'
 
 /**
- * Momen "lunas".
+ * Momen besar dalam satu bill: lunas dan ditutup.
  *
- * Stempelnya 6 frame hasil generate: jatuh, menyentuh, menekan (squash), lalu
- * lepas. Turunnya diatur CSS `translateY` dengan langkah yang sama, jadi
- * mendaratnya lurus di satu titik — kalau posisi ikut digambar, tiap frame
- * mendarat di tempat berbeda dan capnya terlihat melayang.
+ * Frame-framenya hasil generate, bukan satu gambar yang digeser. Yang harus
+ * benar supaya terbaca mulus:
  *
- * Konfeti digambar di canvas, bukan frame gambar: butuh 80 partikel dengan arah
- * acak, dan itu 0 byte aset serta deterministik. Semua gerak dimatikan kalau
- * pengguna meminta gerak dikurangi.
+ * 1. Jarak langkah `background-position` tepat `lebar kotak x jumlah frame`.
+ *    Memakai persentase membuat tiap langkah jatuh di antara dua sel dan yang
+ *    tampil potongan frame sebelah.
+ * 2. Untuk stempel, turunnya diatur `translateY` ber-steps, bukan digambar di
+ *    frame — kalau posisi ikut digambar, tiap frame mendarat di titik berbeda
+ *    dan capnya terlihat melayang. Untuk struk yang dilipat, `turun` = 0
+ *    karena bendanya memang diam di tempat.
+ *
+ * Keyframe dipisah per jumlah frame (`.is-8`), bukan lewat variabel CSS di
+ * dalam keyframe: substitusi `var()` di keyframe masih bermasalah di WebKit,
+ * dan pengguna kita ada yang memakai Safari.
  */
-export function PaidCelebration({
+const WARNA_KONFETI = ['#087665', '#C98A2E', '#142F3A', '#E2F5EF']
+
+export function Moment({
   open,
   onDone,
-  judul = 'Lunas!',
+  sprite = stampFrames,
+  frame = 6,
+  durasi = 640,
+  tinggi = 130,
+  latar = false,
+  judul,
   keterangan,
+  konfeti = false,
+  cincin = false,
 }: {
   open: boolean
   onDone: () => void
-  judul?: string
+  sprite?: string
+  /** Jumlah sel di sprite. Menentukan `background-size` dan keyframe mana yang dipakai. */
+  frame?: 6 | 8
+  /** Lama satu putaran frame, milidetik. */
+  durasi?: number
+  /** Tinggi kotak art, px. Sprite perlu dirinya sendiri kalau rasionya lain. */
+  tinggi?: number
+  /** Beri alas mint di kotak art. Kertas krem di atas kartu putih nyaris tak
+   *  bertepi; tanpa alas, bentuknya terbaca sebagai bayangan, bukan benda. */
+  latar?: boolean
+  judul: string
   keterangan?: string
+  konfeti?: boolean
+  cincin?: boolean
 }) {
   const kanvasRef = useRef<HTMLCanvasElement | null>(null)
   const selesaiRef = useRef(onDone)
@@ -43,24 +70,21 @@ export function PaidCelebration({
     let raf = 0
     let mulai = 0
     let bubar = 0
-    const warna = ['#087665', '#C98A2E', '#142F3A', '#E2F5EF']
     const partikel = Array.from({ length: 84 }, () => {
-      const sudut = (-Math.PI * 0.85) + Math.random() * Math.PI * 0.7
+      const sudut = -Math.PI * 0.85 + Math.random() * Math.PI * 0.7
       const laju = 240 + Math.random() * 320
       return {
-        x: 0,
-        y: 0,
         vx: Math.cos(sudut) * laju,
         vy: Math.sin(sudut) * laju,
         putar: Math.random() * Math.PI,
         putaran: (Math.random() - 0.5) * 12,
         lebar: 3 + Math.random() * 4,
         tinggi: 6 + Math.random() * 7,
-        warna: warna[Math.floor(Math.random() * warna.length)],
+        warna: WARNA_KONFETI[Math.floor(Math.random() * WARNA_KONFETI.length)],
       }
     })
 
-    /** Konfeti mulai saat stempel mendarat (~380 ms), bukan saat kartu muncul. */
+    /** Konfeti mulai saat bendanya mendarat, bukan saat kartu muncul. */
     const mulaiKonfeti = () => {
       if (!kanvas || !ctx) return
       const dpr = Math.min(3, window.devicePixelRatio || 1)
@@ -79,7 +103,7 @@ export function PaidCelebration({
         ctx.clearRect(0, 0, lebar, tinggi)
         for (const p of partikel) {
           const x = titikX + p.vx * t
-          const y = titikY + p.vy * t + 900 * t * t * 0.5
+          const y = titikY + p.vy * t + 450 * t * t
           const alfa = Math.max(0, 1 - t / 1.15)
           if (alfa <= 0) continue
           ctx.save()
@@ -96,29 +120,66 @@ export function PaidCelebration({
       raf = requestAnimationFrame(gambar)
     }
 
-    bubar = window.setTimeout(mulaiKonfeti, 360)
-    const tutup = window.setTimeout(() => selesaiRef.current(), 1750)
+    if (konfeti) bubar = window.setTimeout(mulaiKonfeti, 360)
+    const tutup = window.setTimeout(() => selesaiRef.current(), durasi + 1150)
     return () => {
       window.clearTimeout(bubar)
       window.clearTimeout(tutup)
       cancelAnimationFrame(raf)
     }
-  }, [open])
+  }, [open, durasi, konfeti])
 
   if (!open) return null
 
   return (
     <div className="ds-celebrate" role="status" aria-live="polite">
       <div className="ds-celebrate-scrim" aria-hidden="true" />
-      <canvas ref={kanvasRef} className="ds-celebrate-confetti" aria-hidden="true" />
+      {konfeti ? <canvas ref={kanvasRef} className="ds-celebrate-confetti" aria-hidden="true" /> : null}
       <div className="ds-celebrate-card">
-        <div className="ds-celebrate-art" aria-hidden="true">
-          <span className="ds-celebrate-stamp" style={{ backgroundImage: `url(${stampFrames})` }} />
-          <span className="ds-celebrate-ring" />
+        <div
+          className={'ds-celebrate-art' + (latar ? ' is-latar' : '')}
+          style={{ height: tinggi }}
+          aria-hidden="true"
+        >
+          <span
+            className={'ds-celebrate-stamp' + (frame === 8 ? ' is-8' : '')}
+            style={{
+              backgroundImage: `url(${sprite})`,
+              backgroundSize: `${frame * 100}% 100%`,
+              // Lama putaran; jatuh dan cincin memakai durasi yang sama.
+              animationDuration: `${durasi}ms`,
+            }}
+          />
+          {cincin ? <span className="ds-celebrate-ring" /> : null}
         </div>
         <b className="ds-celebrate-title">{judul}</b>
         {keterangan ? <span className="ds-celebrate-note">{keterangan}</span> : null}
       </div>
     </div>
+  )
+}
+
+/** Perayaan lunas: stempel turun, cincin tinta, konfeti. */
+export function PaidCelebration({
+  open,
+  onDone,
+  keterangan,
+}: {
+  open: boolean
+  onDone: () => void
+  keterangan?: string
+}) {
+  return (
+    <Moment
+      open={open}
+      onDone={onDone}
+      judul="Lunas!"
+      keterangan={keterangan}
+      sprite={stampFrames}
+      frame={6}
+      durasi={640}
+      konfeti
+      cincin
+    />
   )
 }
