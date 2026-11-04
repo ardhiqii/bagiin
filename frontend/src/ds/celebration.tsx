@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import stampFrames from '../assets/anim/stamp-paid.webp'
 import { buzz } from '../lib/haptics'
+import { SpriteFrames } from './SpriteFrames'
 
 /**
  * Momen besar dalam satu bill: lunas dan ditutup.
@@ -28,6 +29,7 @@ export function Moment({
   sprite = stampFrames,
   frame = 6,
   durasi = 640,
+  turun = 0,
   tinggi = 130,
   latar = false,
   judul,
@@ -39,9 +41,12 @@ export function Moment({
   onDone: () => void
   sprite?: string
   /** Jumlah sel di sprite. Menentukan `background-size` dan keyframe mana yang dipakai. */
-  frame?: 6 | 8
+  frame?: number
   /** Lama satu putaran frame, milidetik. */
   durasi?: number
+  /** Jarak jatuh dalam px sebelum mendarat; 0 kalau bendanya diam di tempat
+   *  (struk terlipat tidak jatuh, cuma berubah bentuk). */
+  turun?: number
   /** Tinggi kotak art, px. Sprite perlu dirinya sendiri kalau rasionya lain. */
   tinggi?: number
   /** Beri alas mint di kotak art. Kertas krem di atas kartu putih nyaris tak
@@ -141,15 +146,12 @@ export function Moment({
           style={{ height: tinggi }}
           aria-hidden="true"
         >
-          <span
-            className={'ds-celebrate-stamp' + (frame === 8 ? ' is-8' : '')}
-            style={{
-              backgroundImage: `url(${sprite})`,
-              backgroundSize: `${frame * 100}% 100%`,
-              // Lama putaran; jatuh dan cincin memakai durasi yang sama.
-              animationDuration: `${durasi}ms`,
-            }}
-          />
+          <div
+            className={'ds-celebrate-stamp' + (turun > 0 ? ' is-jatuh' : '')}
+            style={{ animationDuration: `${durasi}ms` }}
+          >
+            <SpriteFrames src={sprite} frame={frame} durasi={durasi} className="ds-celebrate-sel" />
+          </div>
           {cincin ? <span className="ds-celebrate-ring" /> : null}
         </div>
         <b className="ds-celebrate-title">{judul}</b>
@@ -176,8 +178,9 @@ export function PaidCelebration({
       judul="Lunas!"
       keterangan={keterangan}
       sprite={stampFrames}
-      frame={6}
+      frame={20}
       durasi={640}
+      turun={58}
       konfeti
       cincin
     />

@@ -1293,7 +1293,7 @@ export function BillDetail({ billId, identityId }: { billId: string; identityId:
         open={tutupPesta}
         onDone={() => setTutupPesta(false)}
         sprite={billClosedFrames}
-        frame={6}
+        frame={24}
         durasi={820}
         tinggi={150}
         latar

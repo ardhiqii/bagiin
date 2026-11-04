@@ -165,9 +165,11 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
       })
 
     const awal = await baca()
-    expect(awal.animasi).toContain('ds-scan-frames')
-    expect(awal.ukuran).toBe('800% 100%')
-    await page.waitForTimeout(700)
+    /* 20 sel sekarang; animasinya digerakkan `requestAnimationFrame`, bukan
+       keyframe CSS, jadi yang diperiksa nilai `background-position` yang benar-
+       benar berubah — bukan nama animasinya. */
+    expect(awal.ukuran).toBe('2000% 100%')
+    await page.waitForTimeout(300)
     const tengah = await baca()
     expect(tengah.posisi, 'pitanya harus pindah frame').not.toBe(awal.posisi)
 
@@ -181,10 +183,9 @@ test.describe('Bill baru — foto boleh dibaca AI, boleh cuma dilampirkan', () =
     await page.emulateMedia({ reducedMotion: 'reduce' })
     const diam = await page.evaluate(() => {
       const pita = document.querySelector('.ds-scan-frames') as HTMLElement
-      return { animasi: getComputedStyle(pita).animationName, posisi: getComputedStyle(pita).backgroundPosition }
+      return { posisi: getComputedStyle(pita).backgroundPosition }
     })
-    expect(diam.animasi, 'gerak dikurangi berarti animasinya mati').toBe('none')
-    expect(diam.posisi, 'tanpa animasi, pitanya menetap di frame pertama').toBe('0px 0px')
+    expect(diam.posisi, 'gerak dikurangi: pitanya menetap di frame pertama').toBe('0px 0px')
   })
 
   test('40c. screenshot di papan klip bisa ditempel, teks biasa tidak mengganggu', async ({ page }) => {

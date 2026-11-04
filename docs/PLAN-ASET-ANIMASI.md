@@ -226,6 +226,35 @@ ada perubahan" dan angkanya melompat 0 → final tanpa animasi. Yang benar: titi
 awal dibaca dari nilai yang **sedang tampil** (`ref`), jadi jalan kedua
 melanjutkan dari tempat jalan pertama berhenti.
 
+## 2j. 24–30 fps (dikerjakan)
+
+Model gambar tidak bisa menjaga benda yang sama di 24 frame berturut-turut. Yang
+stabil: 6–8 frame kunci. Jadi **frame antaranya diinterpolasi gerak** — ffmpeg
+`minterpolate` mode mci/aobmc, cara yang sama dengan retiming video. Hasil
+pemeriksaan visual: tidak ada ghosting atau bayangan ganda pada frame tengah.
+
+| Animasi | Frame | Durasi | fps | Berat |
+| --- | --- | --- | --- | --- |
+| Struk terlipat | 24 | 820 ms | ~29 | 136 KB |
+| Stempel lunas | 20 | 640 ms | ~31 | 103 KB |
+| Pita pindai | 20 | 700 ms | ~28 | 126 KB |
+
+Tiga hal yang harus benar:
+
+1. **Pemutarnya `requestAnimationFrame`, bukan `steps()`.** Keyframe CSS harus
+   ditulis satu per satu untuk tiap jumlah frame; pemutar JS menerima jumlah apa
+   pun dan menghitung sel dari **waktu nyata** — di layar 120 Hz, "satu frame per
+   render" akan berjalan dua kali lebih cepat.
+2. **Butir kertas dihaluskan 3 px sebelum encode.** Butir halus adalah biaya
+   terbesar WebP: 24 frame dengan grain utuh 260 KB, dengan grain dihaluskan
+   128–136 KB pada ukuran tampil yang sama. Di 112 px butirnya tidak terlihat.
+3. **`p` dijepit ke ≥ 0.** Di frame pertama jam rAF bisa sedikit lebih awal dari
+   `performance.now()`; tanpa penjepit, sel-nya jadi −1 dan muncul satu frame
+   kosong di awal animasi.
+
+Total aset animasi naik dari 219 KB ke 365 KB — harga dari 30 fps. Dicatat
+terang-terangan karena ini trade-off, bukan perbaikan gratis.
+
 ## 3. Soal "frame per frame" dari Codex
 
 Perlu dijelaskan sebelum dikerjakan, karena ini menentukan bentuk asetnya:

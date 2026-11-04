@@ -8,6 +8,7 @@ import { useToast } from '../components/Toast'
 import { ActionGroup, ActionRow, Alert, Button, DateField, Field, SectionHead, Sheet } from '../ds/primitives'
 import { Camera, Images, Plus, X } from '@phosphor-icons/react'
 import { IconPaste } from '../ds/icons'
+import { SpriteFrames } from '../ds/SpriteFrames'
 import createHeroArt from '../assets/create-hero.webp'
 import scanArt from '../assets/scan.webp'
 import scanFrames from '../assets/anim/scan-frames.webp'
@@ -562,11 +563,7 @@ export function Create({ identityId }: { identityId: string | null }) {
           <span className="ds-scan-art">
             <img src={scanArt} alt="" width={120} height={120} />
             {photoBusy === 'ocr' ? (
-              <span
-                className="ds-scan-frames"
-                style={{ backgroundImage: `url(${scanFrames})` }}
-                aria-hidden="true"
-              />
+              <SpriteFrames src={scanFrames} frame={20} durasi={700} loop className="ds-scan-frames" />
             ) : null}
           </span>
           <div>

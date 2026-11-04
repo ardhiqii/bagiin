@@ -393,25 +393,14 @@ p, small, .app-note { text-wrap: pretty; }
   border-radius: 16px;
   display: block;
 }
-/* 8 sel, tiap sel 120 px di layar: jarak 8 langkah harus tepat 960 px. Memakai
-   persentase membuat tiap langkah jatuh di antara dua sel dan yang tampil
-   potongan struk sebelah (pelajaran yang sama dari koin). */
+/* 20 sel: pemutar JS yang memilih selnya (lihat SpriteFrames), jadi ukuran
+   gambar cukup dinyatakan sekali di sana. Di sini tinggal tempatnya. */
 .ds-scan-frames {
   position: absolute;
   inset: 0;
   z-index: 1;
   border-radius: 16px;
-  background-repeat: no-repeat;
-  background-position: 0 0;
-  background-size: 800% 100%;
-  animation:
-    ds-scan-frames 1.9s steps(8) infinite,
-    ds-scan-in .18s ease both;
-  will-change: background-position;
-}
-@keyframes ds-scan-frames {
-  from { background-position: 0 0; }
-  to { background-position: -960px 0; }
+  animation: ds-scan-in .18s ease both;
 }
 /* Silang-pudar singkat: frame-frame ini struk tegak, sedangkan ilustrasi
    diamnya struk miring di dalam bingkai bidik. Tanpa pudar, gantinya terlihat
@@ -422,7 +411,7 @@ p, small, .app-note { text-wrap: pretty; }
 }
 /* Kurangi gerak, jangan sekadar memperlambat: pitanya berhenti. */
 @media (prefers-reduced-motion: reduce) {
-  .ds-scan-frames { animation: none; background-position: 0 0; }
+  .ds-scan-frames { animation: none; }
 }
 
 .welcome-body {
@@ -1704,46 +1693,20 @@ p, small, .app-note { text-wrap: pretty; }
 .ds-celebrate-stamp {
   position: absolute;
   inset: 0;
-  background-repeat: no-repeat;
-  background-position: 0 0;
-  background-size: 600% 100%;
-  animation-name: ds-stamp-frames, ds-stamp-fall;
-  animation-duration: 640ms;
-  animation-timing-function: steps(1), steps(6, end);
+}
+/* Jatuhnya di CSS, frame-nya di JS. Transform dijalankan kompositor (60 fps,
+   tanpa layout); `ease-in` menirukan benda yang jatuh — mulai pelan, makin
+   cepat, lalu berhenti mendadak saat menyentuh kertas. */
+.ds-celebrate-stamp.is-jatuh {
+  animation-name: ds-stamp-fall;
+  animation-timing-function: cubic-bezier(.45, .05, .9, .35);
   animation-fill-mode: both;
-  will-change: transform, background-position;
+  will-change: transform;
 }
-/* Struk yang dilipat: 8 sel, dan bendanya diam — jadi animasi keduanya kosong.
-   Keyframe dipisah per jumlah sel, bukan lewat var() di dalam keyframe:
-   substitusi var() di keyframe masih bermasalah di WebKit. */
-.ds-celebrate-stamp.is-8 {
-  background-size: 800% 100%;
-  animation-name: ds-lipat-frames, ds-diam;
-  animation-timing-function: steps(1), linear;
-  animation-duration: 820ms;
-}
-@keyframes ds-lipat-frames {
-  0% { background-position: 0 0; }
-  14.28% { background-position: -112px 0; }
-  28.57% { background-position: -224px 0; }
-  42.85% { background-position: -336px 0; }
-  57.14% { background-position: -448px 0; }
-  71.42% { background-position: -560px 0; }
-  85.71% { background-position: -672px 0; }
-  100% { background-position: -784px 0; }
-}
-@keyframes ds-diam {
-  from { transform: none; }
-  to { transform: none; }
-}
-/* 6 sel, tiap sel 112 px di layar */
-@keyframes ds-stamp-frames {
-  0% { background-position: 0 0; }
-  20% { background-position: -112px 0; }
-  40% { background-position: -224px 0; }
-  60% { background-position: -336px 0; }
-  80% { background-position: -448px 0; }
-  100% { background-position: -560px 0; }
+.ds-celebrate-sel {
+  position: absolute;
+  inset: 0;
+  display: block;
 }
 @keyframes ds-stamp-fall {
   from { transform: translateY(-58px); }
@@ -1787,6 +1750,6 @@ p, small, .app-note { text-wrap: pretty; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ds-celebrate-scrim, .ds-celebrate-card { animation: none; }
-  .ds-celebrate-stamp { animation: none; background-position: 0 0; }
+  .ds-celebrate-stamp.is-jatuh { animation: none; }
   .ds-celebrate-ring, .ds-celebrate-confetti { display: none; }
 }
