@@ -204,6 +204,28 @@ Jadi:
   dan kartu kosong.
 - Keduanya hilang dari `ART_CONTRACT.md`; tidak ada kode yang mengimpornya.
 
+## 2i. Angka besar naik, daftar masuk berurutan (dikerjakan)
+
+- **Angka besar** (Beranda & Rekap, satu komponen `BalanceCard`) naik dari 0 ke
+  nilai akhir dalam 460 ms, ease-out kubik. Saat nilainya berubah karena
+  penyegaran, dia naik dari nilai lama ke nilai baru dalam 320 ms — bukan
+  berdetak dari 0 lagi.
+- **Angka panjang (di atas 8 karakter) tidak dinaikkan.** Tiap langkah mengubah
+  lebar teks, dan di nominal 10 digit itu memicu perubahan ukuran font
+  (`is-long` / `is-xl`) di tengah jalan: angka besar melompat ukuran sambil
+  berdetak.
+- **Baris daftar masuk berurutan**, maksimal enam baris (35–150 ms). Setelah
+  baris keenam tidak ditunda lagi: daftarnya panjang, dan menunda baris
+  keduapuluh membuat layar terasa lambat.
+- Semuanya mati saat `prefers-reduced-motion`.
+
+Jebakan yang kena dua kali dan layak dicatat: **React StrictMode menjalankan
+efek dua kali**. Versi pertama memakai "nilai render sebelumnya" sebagai titik
+awal; jalan pertama sudah mencatat nilai akhir, jalan kedua menyimpulkan "tidak
+ada perubahan" dan angkanya melompat 0 → final tanpa animasi. Yang benar: titik
+awal dibaca dari nilai yang **sedang tampil** (`ref`), jadi jalan kedua
+melanjutkan dari tempat jalan pertama berhenti.
+
 ## 3. Soal "frame per frame" dari Codex
 
 Perlu dijelaskan sebelum dikerjakan, karena ini menentukan bentuk asetnya:

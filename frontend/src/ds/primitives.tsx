@@ -5,6 +5,7 @@ import loadingReceipt from '../assets/anim/receipt-app.webp'
 import loadingCoinSprite from '../assets/anim/coin-sprite.webp'
 import { PROVIDERS, opticalHeight, providerKey } from '../lib/providers'
 import { buzz } from '../lib/haptics'
+import { useAngkaNaik } from '../lib/useAngkaNaik'
 import { CalendarBlank, CaretRight, Check, CheckCircle, Clock, Info, Wallet, WarningCircle, X } from '@phosphor-icons/react'
 
 /* ---------- money ---------- */
@@ -230,13 +231,17 @@ export function BalanceCard({
      membaca nominal yang salah. Ukurannya turun satu tingkat setiap kali
      angkanya bertambah panjang — bukan dipotong elipsis, karena nominal yang
      disingkat di aplikasi uang sama saja dengan nominal yang salah. */
+  /* Ukuran font dihitung dari nilai AKHIR, bukan nilai yang sedang berdetak:
+     kalau ikut berdetak, angka bisa berganti ukuran di tengah jalan. */
   const teksAngka = Math.round(Math.abs(value)).toLocaleString('id-ID')
   const panjangAngka = teksAngka.length > 12 ? ' is-xl' : teksAngka.length > 8 ? ' is-long' : ''
+  const tampil = useAngkaNaik(Math.round(Math.abs(value)))
+  const teksTampil = tampil.toLocaleString('id-ID')
   const angka = (
     <>
       {sign ? <span className="ds-balance-sign">{sign}</span> : null}
       <span className="ds-balance-cur">Rp</span>
-      {teksAngka}
+      {teksTampil}
     </>
   )
   return <div className="ds-balance">

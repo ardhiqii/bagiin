@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { angkaStabil } from './angka'
 
 const stamp = Date.now().toString().slice(-6)
 
@@ -194,7 +195,7 @@ test.describe('Bagiin — satu angka untuk uang yang sama', () => {
     const kartuBeranda = page.locator('.ds-balance')
     await expect(kartuBeranda).toBeVisible({ timeout: 15_000 })
     const labelBeranda = (await kartuBeranda.locator('.ds-balance-label').innerText()).trim()
-    const angkaBeranda = (await kartuBeranda.locator('.ds-balance-value').innerText()).replace(/[^0-9]/g, '')
+    const angkaBeranda = (await angkaStabil(kartuBeranda.locator('.ds-balance-value'))).replace(/[^0-9]/g, '')
     const rincianBeranda = (await kartuBeranda.locator('.ds-balance-row').allInnerTexts())
       .join(' | ')
       .replace(/\s+/g, ' ')
@@ -205,7 +206,7 @@ test.describe('Bagiin — satu angka untuk uang yang sama', () => {
     const kartuRekap = page.locator('.ds-balance')
     await expect(kartuRekap).toBeVisible({ timeout: 15_000 })
     const labelRekap = (await kartuRekap.locator('.ds-balance-label').innerText()).trim()
-    const angkaRekap = (await kartuRekap.locator('.ds-balance-value').innerText()).replace(/[^0-9]/g, '')
+    const angkaRekap = (await angkaStabil(kartuRekap.locator('.ds-balance-value'))).replace(/[^0-9]/g, '')
     const rincianRekap = (await kartuRekap.locator('.ds-balance-row').allInnerTexts())
       .join(' | ')
       .replace(/\s+/g, ' ')

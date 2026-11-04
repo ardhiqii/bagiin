@@ -51,6 +51,8 @@ async function manualBill(page: Page, title: string, price = 30000) {
 async function totalOnScreen(page: Page): Promise<number> {
   const balance = page.locator('.ds-balance-value').first()
   if (await balance.count()) {
+    // angka besar naik dari 0 sejak 1.0 — baca setelah animasinya selesai
+    await page.waitForTimeout(650)
     const t = (await balance.innerText()).replace(/[^0-9]/g, '')
     if (t) return Number(t)
   }

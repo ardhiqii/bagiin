@@ -152,12 +152,15 @@ async function sendWithMethod(page: Page, method: 'POST' | 'DELETE' | 'PUT', pat
 }
 
 async function cardValue(page: Page) {
+  // angka besar naik dari 0 sejak 1.0; 650 ms cukup untuk animasi 460 ms-nya
+  await page.waitForTimeout(650)
   return num(await page.locator('.ds-balance-value').first().textContent())
 }
 
 async function recapCardOrZero(page: Page) {
   const card = page.locator('.ds-balance-value')
   if (!(await card.count())) return 0
+  await page.waitForTimeout(650)
   return num(await card.first().textContent())
 }
 
@@ -776,6 +779,7 @@ test.describe('Bagiin — integrasi Beranda, Bill, Rekap', () => {
     await nav(second, 'Rekap')
     await second.waitForTimeout(1200)
     const recap = await apiGet(second, '/api/identities/' + me.id + '/recap')
+    await second.waitForTimeout(650)
     const cardText = await second.locator('.ds-balance-value').first().textContent()
     expect(num(cardText)).toBe(
       recap.final.payable_idr > 0 ? recap.final.payable_idr : recap.final.receivable_idr,
