@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import stampFrames from '../assets/anim/stamp-paid.webp'
+import inkFrames from '../assets/anim/stamp-ink.webp'
+import stampFrames from '../assets/anim/stamp-press.webp'
 import { buzz } from '../lib/haptics'
 import { SpriteFrames } from './SpriteFrames'
 
@@ -36,6 +37,9 @@ export function Moment({
   keterangan,
   konfeti = false,
   cincin = false,
+  tinta,
+  tintaTunda = 0,
+  kotak = false,
 }: {
   open: boolean
   onDone: () => void
@@ -56,6 +60,13 @@ export function Moment({
   keterangan?: string
   konfeti?: boolean
   cincin?: boolean
+  /** Sprite cetakan tinta yang muncul di bawah benda setelah mendarat. */
+  tinta?: string
+  /** Jeda sebelum cetakan mulai tercetak, milidetik. */
+  tintaTunda?: number
+  /** Kotak art persegi: sprite-nya persegi, jadi kotaknya tidak boleh dipaksa
+   *  112x130 atau capnya ketarik 16% lebih tinggi. */
+  kotak?: boolean
 }) {
   const kertasDepanRef = useRef<HTMLCanvasElement | null>(null)
   const kertasBelakangRef = useRef<HTMLCanvasElement | null>(null)
@@ -198,13 +209,31 @@ export function Moment({
       ) : null}
       <div className="ds-celebrate-card">
         <div
-          className={'ds-celebrate-art' + (latar ? ' is-latar' : '')}
+          className={'ds-celebrate-art' + (latar ? ' is-latar' : '') + (kotak ? ' is-kotak' : '')}
           style={{ height: tinggi }}
           aria-hidden="true"
         >
+          {tinta ? (
+            /* Cetakan disembunyikan sampai capnya mendarat. Tanpa pembungkus ini
+               frame pertama tinta (cincin) sudah tampil sejak kartu muncul, dan
+               perayaannya jadi bohong: tinta ada sebelum capnya menekan. */
+            <span className="ds-celebrate-tinta" style={{ animationDelay: `${tintaTunda}ms` }}>
+              <SpriteFrames
+                src={tinta}
+                frame={3}
+                durasi={170}
+                tunda={tintaTunda}
+                className="ds-celebrate-ink"
+              />
+            </span>
+          ) : null}
           <div
-            className={'ds-celebrate-stamp' + (turun > 0 ? ' is-jatuh' : '')}
-            style={{ animationDuration: `${durasi}ms` }}
+            className={'ds-celebrate-stamp' + (turun > 0 ? ' is-jatuh' : '') + (tinta ? ' is-angkat' : '')}
+            style={
+              tinta
+                ? { animation: `ds-cap-angkat 240ms cubic-bezier(.3,0,.7,1) ${tintaTunda + 150}ms both` }
+                : { animationDuration: `${durasi}ms` }
+            }
           >
             <SpriteFrames src={sprite} frame={frame} durasi={durasi} className="ds-celebrate-sel" />
           </div>
@@ -234,11 +263,12 @@ export function PaidCelebration({
       judul="Lunas!"
       keterangan={keterangan}
       sprite={stampFrames}
-      frame={20}
+      frame={10}
       durasi={640}
-      turun={58}
+      tinta={inkFrames}
+      tintaTunda={330}
+      kotak
       konfeti
-      cincin
     />
   )
 }

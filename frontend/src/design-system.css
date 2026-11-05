@@ -1542,9 +1542,11 @@ body.sheet-open .app-body { overflow: hidden; }
   inset: 0;
   z-index: 1;
   background-repeat: no-repeat;
-  background-size: 1600% 100%;
+  /* 12 sel x 112 px = 1344 px. Jarak langkah harus px absolut, bukan persentase:
+     persentase membuat tiap langkah jatuh di antara dua sel. */
+  background-size: 1200% 100%;
   background-position: 0 0;
-  animation: ds-coin-frames 1.28s steps(16) infinite .3s;
+  animation: ds-coin-frames .96s steps(12) infinite .3s;
   will-change: background-position;
 }
 @keyframes ds-wobble {
@@ -1555,7 +1557,7 @@ body.sheet-open .app-body { overflow: hidden; }
 }
 @keyframes ds-coin-frames {
   from { background-position: 0 0; }
-  to { background-position: -1792px 0; }
+  to { background-position: -1344px 0; }
 }
 @keyframes ds-pop-in {
   from { opacity: 0; transform: translateY(8px) scale(.94); }
@@ -1600,7 +1602,7 @@ body.sheet-open .app-body { overflow: hidden; }
   background: #142f3a;
   transform-origin: 50% 50%;
   z-index: 1;
-  animation: ds-coin-shadow 1.28s steps(16) infinite .3s;
+  animation: ds-coin-shadow .96s linear infinite .3s;
 }
 /* 16 langkah, sepadan dengan frame koin: menyusut dan memudar saat koin naik,
    membesar saat mendarat. */

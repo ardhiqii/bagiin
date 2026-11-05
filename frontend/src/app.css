@@ -1723,6 +1723,38 @@ p, small, .app-note { text-wrap: pretty; }
   from { transform: translateY(-58px); }
   to { transform: translateY(0); }
 }
+.ds-celebrate-art.is-kotak {
+  width: 130px;
+}
+/* Cetakan tinta: di bawah cap (dirender lebih dulu), jadi terlihat sebagai
+   cetakan di kertas, bukan stiker di atas benda. Capnya sendiri tidak
+   menghilang, jadi yang tampak hanya cincin dan centang yang keluar dari tepi
+   plat — sama seperti cap sungguhan yang diangkat sebentar setelah menekan. */
+.ds-celebrate-tinta {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  width: 104px;
+  height: 104px;
+  margin-left: -52px;
+  opacity: 0;
+  animation: ds-tinta-muncul 80ms linear both;
+}
+.ds-celebrate-ink {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+}
+@keyframes ds-tinta-muncul {
+  to { opacity: 1; }
+}
+/* Cap diangkat setelah menekan: tanpa ini cetakannya tidak pernah terlihat,
+   karena capnya sendiri menutupi seluruh cetakan — persis seperti cap sungguhan
+   yang baru memperlihatkan hasilnya setelah diangkat. */
+@keyframes ds-cap-angkat {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-10px); }
+}
 .ds-celebrate-ring {
   position: absolute;
   left: 50%;
@@ -1763,4 +1795,5 @@ p, small, .app-note { text-wrap: pretty; }
   .ds-celebrate-scrim, .ds-celebrate-card { animation: none; }
   .ds-celebrate-stamp.is-jatuh { animation: none; }
   .ds-celebrate-ring, .ds-celebrate-kertas { display: none; }
+  .ds-celebrate-tinta { display: none; }
 }

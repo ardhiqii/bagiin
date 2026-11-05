@@ -36,9 +36,10 @@ Composition/framing: <porsi frame, penempatan, ruang kosong>
 
 | File | Subjek | Tampil | Berat |
 | --- | --- | --- | --- |
-| `anim/coin-sprite.webp` 3584×224 | 16 frame koin memantul, satu baris | 112 px (kotak art) | 62 KB |
+| `anim/coin-sprite.webp` 2688×224 | **12 frame koin berputar** pada sumbu tegak (muka → tepi → muka), satu baris; diputar `steps(12)` 0,96 dtk | 112 px (kotak art) | 81 KB |
 | `anim/scan-frames.webp` 1920×240 | 8 frame struk dengan pita pindai turun | 120 px (Buat · membaca) | 24 KB |
-| `anim/stamp-paid.webp` 1344×260 | 6 frame stempel turun, menekan, lepas | 112 px (perayaan lunas) | 116 KB |
+| `anim/stamp-press.webp` 1280×128 | **10 frame cap menekan**: plat polos (die menghadap ke bawah, tidak kelihatan), mampat 2/4/6%, lalu pulih | 130 px (perayaan lunas) | 37 KB |
+| `anim/stamp-ink.webp` 384×128 | **3 frame cetakan tinta** (cincin → setengah → penuh) yang muncul setelah cap mendarat | 104 px (perayaan lunas) | 24 KB |
 | `anim/bill-closed.webp` 1080×240 | 6 frame struk terlipat | 112×150 px (bill ditutup) | 79 KB |
 | `create-hero.webp` 576 px | struk sobek jadi tiga strip, cangkir, koin, bayangan keras | 120 px (Buat · Dari foto) | 63 KB |
 | `manual.webp` 320 px | struk dan pensil | 120 px (Buat · Ketik manual) | 13 KB |
@@ -49,7 +50,7 @@ Composition/framing: <porsi frame, penempatan, ruang kosong>
 | `home-empty.webp` 512 px | dompet terbuka kosong, dua koin | 216 px (Beranda kosong) | 24 KB |
 | `scan.webp` 384 px | struk di dalam bingkai pindai, satu garis | 120 px (Buat · sedang membaca) | 20 KB |
 | `share.webp` 384 px | struk terlipat jadi pesawat kertas | 120 px (Bill · ajakan bagikan) | 9 KB |
-| `paid.webp` 384 px | stempel dengan centang menghantam struk | 150 px (Bill lunas) | 24 KB |
+| `paid.webp` 384 px | cap terangkat dari kertas, **centang hanya ada sebagai tinta di kertas** (plat cap polos) | 150 px (Bill lunas) | 16 KB |
 | `error.webp` 384 px | struk sobek dua, di depan segitiga amber | 160 px (bill tidak bisa dibuka) | 14 KB |
 | `transfer.webp` 384 px | kartu bank dan koin berbaris | 120 px (sheet pembayar) | 18 KB |
 

@@ -21,6 +21,7 @@ export function SpriteFrames({
   frame,
   durasi,
   loop = false,
+  tunda = 0,
   className,
   onSelesai,
 }: {
@@ -29,6 +30,9 @@ export function SpriteFrames({
   /** Lama satu putaran penuh, milidetik. */
   durasi: number
   loop?: boolean
+  /** Tunggu sekian ms sebelum mulai. Dipakai untuk tinta: cetakannya baru muncul
+   *  setelah capnya mendarat, bukan bersamaan dengan capnya turun. */
+  tunda?: number
   className?: string
   onSelesai?: () => void
 }) {
@@ -68,13 +72,15 @@ export function SpriteFrames({
       raf = requestAnimationFrame(langkah)
     }
 
-    mainkan()
+    const tunggu = tunda > 0 ? window.setTimeout(mainkan, tunda) : 0
+    if (tunda <= 0) mainkan()
     tanya.addEventListener('change', mainkan)
     return () => {
+      window.clearTimeout(tunggu)
       tanya.removeEventListener('change', mainkan)
       berhenti()
     }
-  }, [src, frame, durasi, loop])
+  }, [src, frame, durasi, loop, tunda])
 
   return (
     <span

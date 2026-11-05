@@ -22,16 +22,21 @@ import os
 from PIL import Image
 
 
-def atas(path):
-    """Baris teratas yang bukan latar putih — ukuran seberapa jauh lipatan jalan."""
+def ukuran_benda(path, ukur):
+    """Seberapa jauh gerakannya jalan. Untuk lipatan: baris teratas benda (kertas
+    makin pendek). Untuk benda yang berputar seperti koin: lebarnya."""
     im = Image.open(path).convert('RGB')
     px = im.load()
+    xs, ys = [], []
     for y in range(0, im.height):
-        for x in range(0, im.width, 2):
+        for x in range(0, im.width):
             r, g, b = px[x, y]
             if abs(r - 255) + abs(g - 255) + abs(b - 255) > 40:
-                return y
-    return im.height
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        return 0
+    return min(ys) if ukur == 'atas' else (max(xs) - min(xs))
 
 
 def transparan(path):
@@ -57,13 +62,19 @@ def main():
     p.add_argument('--pola', default='*.png')
     p.add_argument('--jumlah', type=int, default=24)
     p.add_argument('--keluar', required=True)
+    p.add_argument('--ukur', choices=['atas', 'lebar'], default='atas',
+                   help='atas: tinggi benda (lipatan); lebar: lebar benda (putaran)')
     a = p.parse_args()
 
     berkas = sorted(glob.glob(os.path.join(a.folder, a.pola)))
     if len(berkas) < 2:
         raise SystemExit('butuh minimal dua frame')
-    tinggi = {b: atas(b) for b in berkas}
+    tinggi = {b: ukuran_benda(b, a.ukur) for b in berkas}
     lo, hi = min(tinggi.values()), max(tinggi.values())
+    if hi == lo:
+        raise SystemExit('semua frame berukuran sama; tidak ada gerak untuk diratakan')
+    # Untuk putaran koin, makin lebar = makin jauh dari tepi; progresnya tetap
+    # dibalik supaya urutannya sama seperti frame aslinya.
     progres = {b: (v - lo) / (hi - lo) for b, v in tinggi.items()}
     urut = sorted(berkas, key=lambda k: progres[k])
 
