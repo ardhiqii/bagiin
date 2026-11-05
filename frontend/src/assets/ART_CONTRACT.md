@@ -37,21 +37,21 @@ Composition/framing: <porsi frame, penempatan, ruang kosong>
 | File | Subjek | Tampil | Berat |
 | --- | --- | --- | --- |
 | `anim/coin-sprite.webp` 2688×224 | **12 frame koin berputar** pada sumbu tegak (muka → tepi → muka), satu baris; diputar `steps(12)` 0,96 dtk | 112 px (kotak art) | 81 KB |
-| `anim/scan-frames.webp` 1920×240 | 8 frame struk dengan pita pindai turun | 120 px (Buat · membaca) | 24 KB |
-| `anim/stamp-press.webp` 1280×128 | **10 frame cap menekan**: plat polos (die menghadap ke bawah, tidak kelihatan), mampat 2/4/6%, lalu pulih | 130 px (perayaan lunas) | 37 KB |
+| *(dihapus)* `anim/scan-frames.webp` | diganti pita gradient CSS: 0 byte, `transform` saja, 60 fps | — | 0 KB |
+| `anim/stamp-press.webp` 768×128 | **6 frame cap menekan tanpa bayangan**: diam → stretch 4% → mampat 10% → mampat 14% → pulih 7% → diam. Plat polos (die menghadap ke bawah), bayangan elips di CSS | 130 px (perayaan lunas) | 31 KB |
 | `anim/stamp-ink.webp` 384×128 | **3 frame cetakan tinta** (cincin → setengah → penuh) yang muncul setelah cap mendarat | 104 px (perayaan lunas) | 24 KB |
 | `anim/bill-closed.webp` 1080×240 | 6 frame struk terlipat | 112×150 px (bill ditutup) | 79 KB |
-| `create-hero.webp` 576 px | struk sobek jadi tiga strip, cangkir, koin, bayangan keras | 120 px (Buat · Dari foto) | 63 KB |
+| `create-hero.webp` 576 px | struk sobek jadi tiga strip, cangkir, koin, bayangan keras | 120 px (Buat · Dari foto) | 20 KB |
 | `manual.webp` 320 px | struk dan pensil | 120 px (Buat · Ketik manual) | 13 KB |
 | `invite.webp` 320 px | dua cangkir bersulang | 108 px (sheet Undang teman) | 13 KB |
-| `item.webp` 320 px | piring, sendok, garpu | 108 px (sheet item) | 7 KB |
+| `item.webp` 320 px | piring (tepi potong tangan), garpu, pisau, koin amber | 108 px (sheet item) | 9 KB |
 | `person.webp` 320 px | koin dan setengah struk | 108 px (sheet orang) | 9 KB |
 | `welcome.webp` 512 px | struk berdiri, koin di kakinya | 200 px (layar kenalan) | 5 KB |
-| `home-empty.webp` 512 px | dompet terbuka kosong, dua koin | 216 px (Beranda kosong) | 24 KB |
+| `home-empty.webp` 512 px | dompet terbuka kosong, dua koin; flat, tanpa gradien | 216 px (Beranda kosong) | 21 KB |
 | `scan.webp` 384 px | struk di dalam bingkai pindai, satu garis | 120 px (Buat · sedang membaca) | 20 KB |
-| `share.webp` 384 px | struk terlipat jadi pesawat kertas | 120 px (Bill · ajakan bagikan) | 9 KB |
+| `share.webp` 384 px | struk bergaris terlipat jadi pesawat kertas, koin di kakinya | 120 px (Bill · ajakan bagikan) | 6 KB |
 | `paid.webp` 384 px | cap terangkat dari kertas, **centang hanya ada sebagai tinta di kertas** (plat cap polos) | 150 px (Bill lunas) | 16 KB |
-| `error.webp` 384 px | struk sobek dua, di depan segitiga amber | 160 px (bill tidak bisa dibuka) | 14 KB |
+| `error.webp` 384 px | struk sobek dua terpisah, koin menggelinding dari sobekan. **Tanpa segitiga** — sobetannya yang bercerita | 160 px (bill tidak bisa dibuka) | 5 KB |
 | `transfer.webp` 384 px | kartu bank dan koin berbaris | 120 px (sheet pembayar) | 18 KB |
 
 Aset besar (648/576 px) untuk tempat yang tampil ≥200 px; aset kecil (320 px) untuk

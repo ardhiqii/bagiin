@@ -8,10 +8,8 @@ import { useToast } from '../components/Toast'
 import { ActionGroup, ActionRow, Alert, Button, DateField, Field, SectionHead, Sheet } from '../ds/primitives'
 import { Camera, Images, Plus, X } from '@phosphor-icons/react'
 import { IconPaste } from '../ds/icons'
-import { SpriteFrames } from '../ds/SpriteFrames'
 import createHeroArt from '../assets/create-hero.webp'
 import scanArt from '../assets/scan.webp'
-import scanFrames from '../assets/anim/scan-frames.webp'
 import { markMoneyViewsStale } from '../lib/mutations'
 import { keys, useContacts, type Contact } from '../lib/queries'
 import type { BillResponse } from '../lib/types'
@@ -557,14 +555,11 @@ export function Create({ identityId }: { identityId: string | null }) {
         </section>
       ) : photoBusy ? (
         <div className={'ds-create-hero' + (photoBusy === 'ocr' ? ' is-scanning' : '')} role="status">
-          {/* Ilustrasi diam; saat membaca, 8 frame hasil generate menimpanya:
-              pita pindainya benar-benar bergerak turun dari frame ke frame,
-              bukan satu gambar yang digeser transform. */}
+          {/* Ilustrasi diam, pitanya sendiri yang bergerak: gradient CSS digeser
+              `transform`, jadi 60 fps tanpa satu byte aset tambahan. */}
           <span className="ds-scan-art">
             <img src={scanArt} alt="" width={120} height={120} />
-            {photoBusy === 'ocr' ? (
-              <SpriteFrames src={scanFrames} frame={20} durasi={700} loop className="ds-scan-frames" />
-            ) : null}
+            {photoBusy === 'ocr' ? <span className="ds-scan-beam" aria-hidden="true" /> : null}
           </span>
           <div>
             <b>

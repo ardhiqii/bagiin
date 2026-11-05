@@ -372,12 +372,12 @@ p, small, .app-note { text-wrap: pretty; }
 
 .welcome-art { border-radius: 22px; object-fit: cover; }
 
-/* Ilustrasi pindai: gambarnya diam, hanya garis hijaunya yang bergerak.
-   Sebelumnya seluruh ilustrasi diangguk 3 px — mata membacanya sebagai gambar
-   yang goyang, bukan sebagai alat yang sedang memindai. Sekarang yang bergerak
-   hanya pitanya, dan pitanya benar-benar delapan gambar berbeda: pita pindai
-   turun dari frame ke frame (`anim/scan-frames.webp`), bukan satu garis yang
-   digeser transform di atas gambar diam lain. Ilustrasi diamnya tetap diam. */
+/* Ilustrasi pindai: gambarnya diam, hanya pitanya yang bergerak.
+   Pita ini dulu 20 frame raster (126 KB) yang isinya struk yang sama, cuma
+   garis hijaunya yang turun — bayar 126 KB untuk memindahkan satu garis, dan
+   artefaknya ditumpuk dua lapis di atas `scan.webp` (rawan dobel 1 px). Sekarang
+   pitanya gradient CSS: 0 byte, digerakkan `transform` saja, jadi compositor
+   yang jalan di 60 fps — bukan 20 sel di 700 ms (~28 fps). */
 .ds-scan-art {
   position: relative;
   width: 120px;
@@ -393,25 +393,45 @@ p, small, .app-note { text-wrap: pretty; }
   border-radius: 16px;
   display: block;
 }
-/* 20 sel: pemutar JS yang memilih selnya (lihat SpriteFrames), jadi ukuran
-   gambar cukup dinyatakan sekali di sana. Di sini tinggal tempatnya. */
-.ds-scan-frames {
+.ds-scan-beam {
   position: absolute;
-  inset: 0;
+  left: 10%;
+  right: 10%;
+  top: 0;
+  height: 26px;
   z-index: 1;
-  border-radius: 16px;
-  animation: ds-scan-in .18s ease both;
+  border-radius: 8px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    rgba(8, 118, 101, 0) 0%,
+    rgba(8, 118, 101, 0.34) 38%,
+    rgba(8, 118, 101, 0.86) 50%,
+    rgba(8, 118, 101, 0.34) 62%,
+    rgba(8, 118, 101, 0) 100%
+  );
+  will-change: transform;
+  animation:
+    ds-pindai-masuk 0.18s ease both,
+    ds-pindai 1.15s cubic-bezier(0.45, 0, 0.55, 1) 0.18s infinite alternate;
 }
-/* Silang-pudar singkat: frame-frame ini struk tegak, sedangkan ilustrasi
-   diamnya struk miring di dalam bingkai bidik. Tanpa pudar, gantinya terlihat
-   seperti gambar yang tiba-tiba melompat. */
-@keyframes ds-scan-in {
+/* Menyapu turun lalu balik. Easing yang melambat di dua ujung membuatnya
+   terbaca sebagai alat yang bekerja, bukan garis yang dilempar. Jarak tempuh
+   0-92 px menjaga seluruh pita tetap di dalam kotak 120 px. */
+@keyframes ds-pindai {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, 92px, 0); }
+}
+@keyframes ds-pindai-masuk {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-/* Kurangi gerak, jangan sekadar memperlambat: pitanya berhenti. */
+/* Kurangi gerak, jangan sekadar memperlambat: pitanya diam di tengah. */
 @media (prefers-reduced-motion: reduce) {
-  .ds-scan-frames { animation: none; }
+  .ds-scan-beam {
+    animation: none;
+    transform: translate3d(0, 46px, 0);
+  }
 }
 
 .welcome-body {

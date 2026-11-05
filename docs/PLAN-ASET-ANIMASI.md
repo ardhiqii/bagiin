@@ -147,7 +147,14 @@ tumpukan koin semuanya berbayangan keras satu warna, tanpa gradien. 576 px,
 
 ## 2e. Keadaan membaca struk (dikerjakan)
 
-- `anim/scan-frames.webp`: **8 frame** struk tegak dengan pita pindai yang turun
+- ~~`anim/scan-frames.webp`~~: **DIHAPUS.** 20 frame (126 KB) berisi struk yang sama,
+  hanya garis hijaunya yang turun — 126 KB untuk memindahkan satu garis, dan
+  ditumpuk dua lapis di atas `scan.webp` (rawan dobel 1 px). Sekarang pitanya
+  gradient CSS: `.ds-scan-beam`, `translate3d` 0→92 px, 1,15 dtk `alternate`,
+  easing melambat di dua ujung. **0 byte**, 60 fps. Diukur: `transform` berubah
+  antar 320 ms, pita tetap di dalam kotak 120 px, `prefers-reduced-motion`
+  mematikannya (`animation-name: none`).
+- `anim/scan-frames.webp` (lama): **8 frame** struk tegak dengan pita pindai yang turun
   dari frame ke frame, 1920x240, **24 KB** — lebih ringan dari pasangan lama
   (`scan.webp` 24 KB + `scan-line.webp` 19 KB), dan `scan-line.webp` dihapus.
 - Diputar `steps(8)` 1,9 detik. Jarak langkah tepat 8 x 120 = 960 px; dengan
@@ -374,6 +381,32 @@ menekan, jadi yang terbaca "lingkaran muncul duluan". Tinta sekarang baru ada di
 browser: opasitas tinta 0,00 sampai 491 ms, 0,17 di 558 ms, penuh di 626 ms —
 sebelum penyesuaian; setelah diubah, frame 620 ms belum menampakkan cincin dan frame
 760 ms sudah.
+
+## 2o. Enam ilustrasi statis yang keluar dari keluarga (dikerjakan)
+
+Audit 13 ilustrasi statis pada satu contact sheet menemukan enam yang bahannya beda:
+`create-hero` (cat air/editorial: highlight dimensional, cokelat dalam), `share`
+(vektor bersih, gradien halus, nol grain), `item` (lingkaran sempurna, tanpa aksen
+amber), `receipt-app` (garis saja, tanpa bayangan), `home-empty` (gradien + bayangan
+blur), dan `error` (segitiga amber dominan, tanpa bayangan jatuh).
+
+Keenamnya digambar ulang lewat Codex dengan **kontrak yang sama disalin apa adanya**
+dan tiga aset yang sudah benar (`welcome`, `scan`, `manual`) dikirim sebagai referensi
+gaya untuk dilihat lebih dulu. Hasilnya dinilai pada **ukuran tampil sebenarnya**,
+bukan 1254 px: semua terbaca, yang paling rapuh `receipt-app` (104 px) tapi masih
+terbaca sebagai dokumen.
+
+Dua keputusan subjek:
+
+- **`error` kehilangan segitiganya.** Pemilik: "segitiga nya aneh". Sekarang hanya
+  struk yang sobek dua, terpisah, dengan satu koin menggelinding dari sobekan.
+  Tidak ada tanda seru, tanda tanya, garis putus-putus, atau glow.
+- **`item` diberi koin amber** supaya ada satu aksen keluarga di antara objek besi
+  putih, dan pisau/garpu diberi margin ≥8% supaya crop tidak memotongnya (kejadian
+  lama: pisau terpotong).
+
+Berat: 131 KB → 61 KB untuk enam aset, karena hasil generate sekarang flat dan
+sedikit warna (WebP q88 lebih efisien pada bidang datar).
 
 ## 3. Soal "frame per frame" dari Codex
 
