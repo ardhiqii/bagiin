@@ -22,6 +22,7 @@ export function SpriteFrames({
   durasi,
   loop = false,
   tunda = 0,
+  jadwal,
   className,
   onSelesai,
 }: {
@@ -33,6 +34,10 @@ export function SpriteFrames({
   /** Tunggu sekian ms sebelum mulai. Dipakai untuk tinta: cetakannya baru muncul
    *  setelah capnya mendarat, bukan bersamaan dengan capnya turun. */
   tunda?: number
+  /** Jadwal sel manual: `[mulaiMs, sel]`, urut naik. Dipakai kalau tiap babak
+   *  animasi butuh lama berbeda — membagi rata 6 sel di 900 ms menaruh frame
+   *  mampat di waktu yang salah, dan justru itu yang menghapus rasa hentakan. */
+  jadwal?: [number, number][]
   className?: string
   onSelesai?: () => void
 }) {
@@ -64,7 +69,15 @@ export function SpriteFrames({
         // t bisa sedikit negatif di frame pertama (jam rAF < performance.now);
         // tanpa penjepit ini sel-nya jadi -1 dan yang tampil satu frame kosong.
         const p = Math.max(0, loop ? t % 1 : Math.min(1, t))
-        const sel = Math.min(frame - 1, Math.floor(p * frame))
+        let sel: number
+        if (jadwal && jadwal.length) {
+          const ms = Math.max(0, sekarang - mulai)
+          sel = jadwal[0][1]
+          for (const [mulaiSel, s] of jadwal) if (ms >= mulaiSel) sel = s
+          sel = Math.min(frame - 1, sel)
+        } else {
+          sel = Math.min(frame - 1, Math.floor(p * frame))
+        }
         el.style.backgroundPosition = `${-sel * lebar}px 0px`
         if (p < 1 || loop) raf = requestAnimationFrame(langkah)
         else selesaiRef.current?.()
@@ -80,7 +93,7 @@ export function SpriteFrames({
       tanya.removeEventListener('change', mainkan)
       berhenti()
     }
-  }, [src, frame, durasi, loop, tunda])
+  }, [src, frame, durasi, loop, tunda, jadwal])
 
   return (
     <span

@@ -1746,14 +1746,109 @@ p, small, .app-note { text-wrap: pretty; }
   background-repeat: no-repeat;
 }
 @keyframes ds-tinta-muncul {
-  to { opacity: 1; }
+  from { opacity: 0; transform: scale(1.18); }
+  60% { opacity: 1; }
+  to { opacity: 1; transform: scale(1); }
 }
-/* Cap diangkat setelah menekan: tanpa ini cetakannya tidak pernah terlihat,
-   karena capnya sendiri menutupi seluruh cetakan — persis seperti cap sungguhan
-   yang baru memperlihatkan hasilnya setelah diangkat. */
-@keyframes ds-cap-angkat {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-10px); }
+/* Bayangan cap: unsur terpisah, bukan bagian dari gambar. Ia tetap di tanah
+   sementara capnya terangkat dan menghantam — inilah satu-satunya alasan
+   hentakannya terasa punya berat. */
+.ds-celebrate-bayang {
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  width: 96px;
+  height: 18px;
+  margin-left: -48px;
+  border-radius: 50%;
+  background: #142f3a;
+  opacity: .3;
+  animation: ds-bayang-cap 900ms linear both;
+}
+@keyframes ds-bayang-cap {
+  0% { transform: scale(1.2); opacity: .26; }
+  9% { transform: scale(1.2); opacity: .26; }
+  19% { transform: scale(1.44); opacity: .15; }
+  29% { transform: scale(.98); opacity: .6; }
+  36% { transform: scale(1.06); opacity: .52; }
+  56% { transform: scale(1); opacity: .55; }
+  76% { transform: scale(1.3); opacity: .18; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+/* Cipratan tinta: kanvas di dalam kotak art, di atas cetakan dan di bawah cap. */
+.ds-celebrate-cipratan {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  pointer-events: none;
+}
+/* KARTU IKUT TERHENTAK. Ini setengah dari rasa "berat": benda yang menghantam
+   kertas menggetarkan meja, bukan cuma dirinya sendiri. Digetarkan di pembungkus
+   isi, bukan di kartunya, supaya animasi munculnya kartu (ds-celebrate-pop) tidak
+   saling menimpa `transform`. */
+.ds-celebrate-isi.is-hentak {
+  animation: ds-kartu-hentak 260ms cubic-bezier(.2, .8, .3, 1) 290ms both;
+}
+@keyframes ds-kartu-hentak {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  14% { transform: translateY(3px) rotate(.45deg) scale(.994); }
+  38% { transform: translateY(-2px) rotate(-.28deg) scale(1.002); }
+  66% { transform: translateY(1px) rotate(.12deg); }
+}
+/* Capnya sendiri, 800 ms, empat babak. Easing ditulis per segmen karena satu
+   kurva untuk seluruh gerakan menghapus perbedaan "mundur pelan" dan "hajar
+   cepat" — dan perbedaan itulah yang terasa. */
+@keyframes ds-cap-tekan {
+  0% {
+    /* diam dulu: kartunya baru mendarat, cap belum bergerak. Tanpa jeda ini cap
+       sudah bergerak sebelum mata sempat melihatnya. */
+    transform: translateY(0) scale(1) rotate(0deg);
+    opacity: 1;
+    animation-timing-function: linear;
+  }
+  9% {
+    transform: translateY(0) scale(1) rotate(0deg);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(.25, .6, .35, 1);
+  }
+  19% {
+    /* angkat: mundur 40 px sambil membesar, sedikit miring */
+    transform: translateY(-40px) scale(1.06) rotate(1.6deg);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(.5, 0, .95, .5);
+  }
+  29% {
+    /* hajar: 100 ms turun penuh, mempercepat */
+    transform: translateY(0) scale(1.14) rotate(-2deg);
+    opacity: 1;
+    animation-timing-function: linear;
+  }
+  36% {
+    /* hentak: berhenti total. Inilah "hit stop" — beda antara menempel dan
+       menghantam ada di frame yang tidak bergerak. */
+    transform: translateY(0) scale(1.1) rotate(-2deg);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(.2, 1.25, .4, 1);
+  }
+  56% {
+    /* pulih: balik ke bentuk aslinya */
+    transform: translateY(0) scale(1) rotate(0deg);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(.3, 0, .6, 1);
+  }
+  76% {
+    /* terangkat jelas, masih kelihatan — cap yang memudar saat naik terbaca
+       sebagai hilang, bukan terangkat */
+    transform: translateY(-26px) scale(1.02) rotate(0deg);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(.4, 0, .8, 1);
+  }
+  100% {
+    transform: translateY(-34px) scale(1.02) rotate(0deg);
+    opacity: 0;
+  }
 }
 .ds-celebrate-ring {
   position: absolute;
@@ -1795,5 +1890,7 @@ p, small, .app-note { text-wrap: pretty; }
   .ds-celebrate-scrim, .ds-celebrate-card { animation: none; }
   .ds-celebrate-stamp.is-jatuh { animation: none; }
   .ds-celebrate-ring, .ds-celebrate-kertas { display: none; }
-  .ds-celebrate-tinta { display: none; }
+  .ds-celebrate-tinta, .ds-celebrate-cipratan { display: none; }
+  .ds-celebrate-bayang { animation: none; opacity: .5; transform: scale(1); }
+  .ds-celebrate-isi.is-hentak { animation: none; }
 }

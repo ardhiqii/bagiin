@@ -324,6 +324,48 @@ Jadi stempel tetap memakai art 6 frame yang sudah ada, dan angka yang benar untu
 bukan "24 fps" tapi **delta antar frame**: rata 6,66 dengan satu lompatan 41 yang
 kebaca sebagai hantaman cap ke kertas — bukan patahan.
 
+## 2n. Rasa cap: yang bikin "berat" bukan jumlah frame (dikerjakan)
+
+Versi sebelumnya (mampat 2/4/6% lalu pulih) terbaca "kenyal", bukan menghantam.
+Referensi yang dipakai: pola *hit stop* dari animasi game (berhenti total beberapa
+frame tepat di titik kontak), prinsip *anticipation* Disney (gerak kecil ke arah
+berlawanan sebelum aksi, 100-200 ms), dan tiga komponen cap di web
+(Corsair/Ephemera/Galactrex: turun dari atas, mendarat dengan sedikit melewati,
+meninggalkan tinta tidak rata, dan menggetarkan permukaan di bawahnya).
+
+Yang diubah, semuanya terukur:
+
+| babak | waktu | isi |
+| --- | --- | --- |
+| diam | 0-90 ms | kartu mendarat dulu, cap belum gerak |
+| angkat | 90-190 ms | mundur 40 px, membesar 6%, miring 1,6°, ikut **stretch 4%** |
+| hajar | 190-290 ms | turun penuh dalam 100 ms, mempercepat, sedikit melewati datar |
+| hentak | 290-380 ms | **berhenti total** + mampat 10% lalu 14% |
+| pulih | 380-560 ms | balik ke bentuk asli |
+| angkat | 560-900 ms | naik 26 px **masih terlihat**, baru memudar di 100% |
+
+Empat hal yang di luar perkiraan gua dan justru paling berpengaruh:
+
+1. **Bayangan harus dipisah dari gambar.** Selama bayangan ikut tergambar, ia ikut
+   mampat — dan benda yang bayangannya ikut melar terbaca kenyal. Sekarang bayangan
+   elips di CSS: membesar dan memudar saat cap naik (skala 1,44 / alfa 0,15), mengecil
+   dan menggelap saat menghantam (0,98 / 0,6). Frame art dibuat ulang **tanpa
+   bayangan sama sekali** (`stamp-bersih/n01-n06`).
+2. **`opacity` di keyframe terakhir bocor ke seluruh animasi.** Keyframe pertama
+   tanpa `opacity` membuat browser menginterpolasi dari 1 ke 0 sepanjang 900 ms, jadi
+   cap sudah memudar sejak awal. Harus ditulis `opacity: 1` di setiap keyframe sampai
+   babak pergi.
+3. **Membagi rata sel sprite menghapus hentakan.** 6 sel dibagi rata di 900 ms
+   menaruh frame mampat di waktu yang salah. `SpriteFrames` sekarang menerima
+   `jadwal` (`[mulaiMs, sel]`): diam → stretch → mampat 10% → mampat 14% (ditahan
+   90 ms) → pulih → diam.
+4. **Cipratan tinta radial, bukan satu arah.** 30 butir dari lingkaran penuh, 18%
+   di antaranya butir besar; satu arah terbaca sebagai angin.
+
+Ditambah getaran kedua (`buzz(26)`) tepat di titik hentakan, dan kartu ikut terhentak
+260 ms (pembungkus isi terpisah supaya tidak menimpa `transform` animasi munculnya
+kartu).
+
 ## 3. Soal "frame per frame" dari Codex
 
 Perlu dijelaskan sebelum dikerjakan, karena ini menentukan bentuk asetnya:
