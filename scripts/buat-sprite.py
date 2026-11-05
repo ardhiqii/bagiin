@@ -130,13 +130,18 @@ def main():
     p.add_argument('--keluar', required=True)
     p.add_argument('--kualitas', type=int, default=82)
     p.add_argument('--halus', type=int, default=1, help='median filter radius; 0 = grain utuh')
+    p.add_argument('--langsung', action='store_true',
+                   help='pakai frame kunci apa adanya (tanpa interpolasi gerak)')
     a = p.parse_args()
 
     sel_w, sel_h = (int(v) for v in a.sel.lower().split('x'))
     berkas = baca_kunci(a.folder, a.pola)
-    with tempfile.TemporaryDirectory() as kerja:
-        frame = interpolasi(berkas, a.jumlah, kerja)
-        gambar = [transparan(f, a.halus) for f in frame]
+    if a.langsung:
+        gambar = [transparan(f, a.halus) for f in berkas]
+    else:
+        with tempfile.TemporaryDirectory() as kerja:
+            frame = interpolasi(berkas, a.jumlah, kerja)
+            gambar = [transparan(f, a.halus) for f in frame]
     rakit(gambar, sel_w, sel_h, a.angker, a.keluar, a.kualitas)
 
 

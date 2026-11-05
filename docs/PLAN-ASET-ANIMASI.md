@@ -255,6 +255,36 @@ Tiga hal yang harus benar:
 Total aset animasi naik dari 219 KB ke 365 KB — harga dari 30 fps. Dicatat
 terang-terangan karena ini trade-off, bukan perbaikan gratis.
 
+## 2k. Referensi berantai: yang terbukti dan yang tidak (diuji)
+
+Pemilik menantang: "masa nggak bisa? pakai gambar awal sebagai referensi, terus
+lanjutin frame-nya." Diuji sungguhan, 33 frame lewat mode **edit** Codex
+(`view_image` frame sebelumnya, lalu `image_gen` mengedit gambar yang terlihat).
+
+**Yang terbukti — identitas benda jauh lebih terjaga:**
+
+| | frame independen (6) | rantai edit (24) |
+| --- | --- | --- |
+| tepi bawah | 1068–1070 (bergerak) | **1070 di semua frame** |
+| tepi kanan | 798–812 | 798–800 |
+| lebar | 336–392 (+17%) | 336–354 (**+4%**) |
+
+**Yang tidak terbukti — jarak lipatan.** Model tidak bisa diminta "lipat 3,5%
+lebih": hasilnya kadang berhenti (5 frame dalam rentang progres 0,615–0,621) dan
+kadang melompat 88 px. Diukur pada 24 frame rantai: langkah tinggi 0–17 px,
+sementara yang dibutuhkan 24 langkah rata. Menambal celahnya dengan 9 frame
+tambahan juga gagal — dua frame yang diminta di 617/646 keluar di 600/598.
+
+Jadi urutannya dibalik: **art dari rantai edit, jarak diratakan dengan mencampur
+dua frame yang mengapit tiap target** (`scripts/ratakan-frame.py`). Hasil akhir 24
+frame, 133 KB; dibaca visual: "progresnya rata, tidak ada bayangan dobel".
+
+Satu temuan yang lebih penting dari percobaan ini: **versi yang dikirim sebelumnya
+ternyata tidak sehalus klaimnya.** Profil beda-antar-frame sprite lama:
+0,75–7,15 dengan empat frame nyaris kembar berderet — `minterpolate` menahan
+frame ketika tidak yakin. Versi campur-ratakan membaca rata di mata, dan pita
+pindai (yang geraknya lurus) memang sudah rata: 2,3–5,8 tanpa duplikat.
+
 ## 3. Soal "frame per frame" dari Codex
 
 Perlu dijelaskan sebelum dikerjakan, karena ini menentukan bentuk asetnya:
