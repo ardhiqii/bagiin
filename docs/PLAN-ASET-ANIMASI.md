@@ -366,6 +366,15 @@ Ditambah getaran kedua (`buzz(26)`) tepat di titik hentakan, dan kartu ikut terh
 260 ms (pembungkus isi terpisah supaya tidak menimpa `transform` animasi munculnya
 kartu).
 
+**Urutan cetakan.** Versi pertama memunculkan tinta di 290 ms — bersamaan dengan
+hentakan — dan itu salah: cincinnya mengintip di pinggir cap selagi capnya masih
+menekan, jadi yang terbaca "lingkaran muncul duluan". Tinta sekarang baru ada di
+**740 ms**, saat cap sudah naik 26 px dan mulai memudar (900 ms), dan ukurannya
+**88 px**, lebih kecil dari plat cap, supaya tidak ada tepi yang mengintip. Diukur di
+browser: opasitas tinta 0,00 sampai 491 ms, 0,17 di 558 ms, penuh di 626 ms —
+sebelum penyesuaian; setelah diubah, frame 620 ms belum menampakkan cincin dan frame
+760 ms sudah.
+
 ## 3. Soal "frame per frame" dari Codex
 
 Perlu dijelaskan sebelum dikerjakan, karena ini menentukan bentuk asetnya:

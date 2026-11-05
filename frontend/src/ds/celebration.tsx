@@ -41,7 +41,7 @@ const WARNA_KONFETI = ['#087665', '#C98A2E', '#142F3A', '#E2F5EF']
  * - **Pulih (250-560)** — mampat lalu balik, sedikit melewati (overshoot).
  * - **Angkat (560-800)** — cap menjauh, cetakan tinta tertinggal.
  */
-const CAP = { angkat: 190, hajar: 290, pulih: 560, hilang: 900 }
+const CAP = { angkat: 190, hajar: 290, pulih: 560, angkatCap: 560, tinta: 740, hilang: 900 }
 
 /** Sel sprite cap menurut waktu. 6 sel: 0 diam, 1 stretch (tarik ke atas),
  *  2-3 mampat 10/14%, 4 pulih 7%, 5 diam lagi. */
@@ -310,7 +310,7 @@ export function Moment({
                frame pertama tinta (cincin) sudah tampil sejak kartu muncul, dan
                perayaannya jadi bohong: tinta ada sebelum capnya menekan. */
             <span className="ds-celebrate-tinta" style={{ animationDelay: `${tintaTunda}ms` }}>
-              <SpriteFrames src={tinta} frame={3} durasi={170} tunda={tintaTunda} className="ds-celebrate-ink" />
+              <SpriteFrames src={tinta} frame={3}              durasi={160} tunda={tintaTunda} className="ds-celebrate-ink" />
             </span>
           ) : null}
           {/* Bayangan dipisah dari aset: kalau ikut tergambar, ia ikut mampat dan
@@ -364,7 +364,7 @@ export function PaidCelebration({
       frame={6}
       durasi={310}
       tinta={inkFrames}
-      tintaTunda={CAP.hajar}
+      tintaTunda={CAP.tinta}
       kotak
       konfeti
     />

@@ -1733,10 +1733,12 @@ p, small, .app-note { text-wrap: pretty; }
 .ds-celebrate-tinta {
   position: absolute;
   left: 50%;
-  bottom: 6px;
-  width: 104px;
-  height: 104px;
-  margin-left: -52px;
+  bottom: 8px;
+  /* Lebih kecil dari plat cap (88 px): cetakan yang lebih besar dari capnya
+     mengintip di pinggir dan terbaca sebagai lingkaran yang muncul sendiri. */
+  width: 88px;
+  height: 88px;
+  margin-left: -44px;
   opacity: 0;
   animation: ds-tinta-muncul 80ms linear both;
 }
@@ -1746,8 +1748,10 @@ p, small, .app-note { text-wrap: pretty; }
   background-repeat: no-repeat;
 }
 @keyframes ds-tinta-muncul {
-  from { opacity: 0; transform: scale(1.18); }
-  60% { opacity: 1; }
+  /* Cetakan tidak "tumbuh": ia sudah seukuran plat sejak detik pertama. Yang
+     berubah hanya terlihat atau tidak — persis seperti tinta yang baru kelihatan
+     setelah capnya diangkat. */
+  from { opacity: 0; transform: scale(1.04); }
   to { opacity: 1; transform: scale(1); }
 }
 /* Bayangan cap: unsur terpisah, bukan bagian dari gambar. Ia tetap di tanah
