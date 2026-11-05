@@ -285,6 +285,45 @@ ternyata tidak sehalus klaimnya.** Profil beda-antar-frame sprite lama:
 frame ketika tidak yakin. Versi campur-ratakan membaca rata di mata, dan pita
 pindai (yang geraknya lurus) memang sudah rata: 2,3–5,8 tanpa duplikat.
 
+## 2l. Kertas perayaan + urutan tumpuk (dikerjakan)
+
+Perayaan lunas dulu punya kanvas konfeti yang duduk **sebelum** kartu di dalam DOM
+dan tanpa `z-index` — jadi seluruh kertasnya tergambar **di belakang modal**:
+perayaan yang terjadi di balik kaca. Sekarang tiga lapis dengan urutan eksplisit:
+
+| lapis | z-index |
+| --- | --- |
+| scrim | 0 |
+| kertas belakang (kecil, alfa 60%) | 1 |
+| kartu "Lunas!" | 2 |
+| kertas depan (besar, penuh) | 3 |
+
+Dua lapis, bukan satu: satu lapis selalu salah di satu sisi — di belakang kartu
+semua, perayaannya tenggelam; di depan semua, ia menutupi tulisan.
+
+Kertasnya juga bukan lagi serpihan kecil: sebagian berupa pita panjang (22%),
+keluar bergelombang (62% langsung, sisanya menyusul sampai 0,7 detik), memudar
+2,1–2,6 detik alih-alih 1,9 detik, dan jumlahnya naik dari 84 ke 100 (42 belakang
++ 58 depan). Gelombang kedua yang bikin beda: satu ledakan langsung habis, dan
+itulah yang terbaca sebagai "animasinya mati".
+
+## 2m. Stempel lewat rantai edit: dicoba, ditolak
+
+Pemilik minta perlakuan yang sama untuk stempel lunas. Dicoba: 16 frame chained
+edit dari satu frame dasar 1254 px. Hasilnya **lebih buruk** daripada art yang
+sudah ada, dan Codex sendiri menutup dengan "the edits show visible texture and
+color drift, I can't claim exact object consistency".
+
+Penyebabnya masuk akal: struk itu kertas datar — kalau bentuknya berubah sedikit,
+masih terbaca benda yang sama. Stempel punya gagang glossy, kerah, dan basis oval
+bertanda centang; tiap edit menggeser proporsi dan kilau, dan di frame 11–16
+basisnya melebar sambil centangnya bergeser. Ditambah lagi geraknya tidak monoton
+(baris kedua kembali ke atas).
+
+Jadi stempel tetap memakai art 6 frame yang sudah ada, dan angka yang benar untuknya
+bukan "24 fps" tapi **delta antar frame**: rata 6,66 dengan satu lompatan 41 yang
+kebaca sebagai hantaman cap ke kertas — bukan patahan.
+
 ## 3. Soal "frame per frame" dari Codex
 
 Perlu dijelaskan sebelum dikerjakan, karena ini menentukan bentuk asetnya:

@@ -57,7 +57,8 @@ export function Moment({
   konfeti?: boolean
   cincin?: boolean
 }) {
-  const kanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const kertasDepanRef = useRef<HTMLCanvasElement | null>(null)
+  const kertasBelakangRef = useRef<HTMLCanvasElement | null>(null)
   const selesaiRef = useRef(onDone)
   selesaiRef.current = onDone
 
@@ -70,63 +71,113 @@ export function Moment({
     }
 
     buzz(18)
-    const kanvas = kanvasRef.current
-    const ctx = kanvas?.getContext('2d') ?? null
+
+    /* Dua lapis kertas, bukan satu: satu di belakang kartu dan satu di depan.
+       Satu lapis saja selalu salah di satu sisi — di belakang kartu, kertasnya
+       "tenggelam" di balik modal dan perayaannya terasa jauh; di depan semua, ia
+       menutupi tulisan. Dua lapis memberi kedalaman sekaligus tidak menutupi
+       apa pun: yang depan lebih besar dan lebih sedikit jumlahnya. */
+    type Lapisan = {
+      ctx: CanvasRenderingContext2D
+      lebar: number
+      tinggi: number
+      alfa: number
+      partikel: {
+        vx: number
+        vy: number
+        putar: number
+        putaran: number
+        lebar: number
+        tinggi: number
+        fase: number
+        goyang: number
+        tunda: number
+        umur: number
+        warna: string
+      }[]
+    }
+
+    const siapkan = (el: HTMLCanvasElement | null, jumlah: number, skala: number, alfa: number): Lapisan | null => {
+      const ctx = el?.getContext('2d')
+      if (!el || !ctx) return null
+      const dpr = Math.min(3, window.devicePixelRatio || 1)
+      const lebar = el.clientWidth
+      const tinggi = el.clientHeight
+      el.width = Math.round(lebar * dpr)
+      el.height = Math.round(tinggi * dpr)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      const partikel = Array.from({ length: jumlah }, () => {
+        const sudut = -Math.PI * 0.9 + Math.random() * Math.PI * 0.8
+        const laju = 210 + Math.random() * 380
+        // Sebagian besar keluar sekaligus; sisanya menyusul sampai ~0,7 detik
+        // kemudian, jadi perayaannya bergelombang alih-alih satu ledakan yang
+        // langsung habis.
+        const tunda = Math.random() < 0.62 ? Math.random() * 0.08 : 0.12 + Math.random() * 0.58
+        const panjang = Math.random() < 0.22
+        return {
+          vx: Math.cos(sudut) * laju,
+          vy: Math.sin(sudut) * laju,
+          putar: Math.random() * Math.PI * 2,
+          putaran: (Math.random() - 0.5) * 10,
+          lebar: (4 + Math.random() * 5) * skala,
+          // Sesekali potongan panjang seperti pita, bukan serpihan kecil.
+          tinggi: (panjang ? 16 + Math.random() * 12 : 7 + Math.random() * 9) * skala,
+          fase: Math.random() * Math.PI * 2,
+          goyang: 12 + Math.random() * 24,
+          tunda,
+          umur: 2.1 + Math.random() * 0.5,
+          warna: WARNA_KONFETI[Math.floor(Math.random() * WARNA_KONFETI.length)],
+        }
+      })
+      return { ctx, lebar, tinggi, alfa, partikel }
+    }
+
+    const lapisan = [
+      siapkan(kertasBelakangRef.current, 42, 0.75, 0.6),
+      siapkan(kertasDepanRef.current, 58, 1.05, 1),
+    ].filter((l): l is Lapisan => l !== null)
+
     let raf = 0
     let mulai = 0
     let bubar = 0
-    const partikel = Array.from({ length: 84 }, () => {
-      const sudut = -Math.PI * 0.85 + Math.random() * Math.PI * 0.7
-      const laju = 240 + Math.random() * 320
-      return {
-        vx: Math.cos(sudut) * laju,
-        vy: Math.sin(sudut) * laju,
-        putar: Math.random() * Math.PI,
-        putaran: (Math.random() - 0.5) * 12,
-        lebar: 3 + Math.random() * 4,
-        tinggi: 6 + Math.random() * 7,
-        warna: WARNA_KONFETI[Math.floor(Math.random() * WARNA_KONFETI.length)],
-      }
-    })
 
-    /** Konfeti mulai saat bendanya mendarat, bukan saat kartu muncul. */
-    const mulaiKonfeti = () => {
-      if (!kanvas || !ctx) return
-      const dpr = Math.min(3, window.devicePixelRatio || 1)
-      const lebar = kanvas.clientWidth
-      const tinggi = kanvas.clientHeight
-      kanvas.width = Math.round(lebar * dpr)
-      kanvas.height = Math.round(tinggi * dpr)
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      mulai = performance.now()
-      const titikX = lebar / 2
-      const titikY = tinggi / 2 + 40
-
-      const gambar = (sekarang: number) => {
-        if (!mulai) mulai = sekarang
-        const t = (sekarang - mulai) / 1000
-        ctx.clearRect(0, 0, lebar, tinggi)
-        for (const p of partikel) {
-          const x = titikX + p.vx * t
-          const y = titikY + p.vy * t + 450 * t * t
-          const alfa = Math.max(0, 1 - t / 1.15)
+    const gambar = (sekarang: number) => {
+      if (!mulai) mulai = sekarang
+      const t = (sekarang - mulai) / 1000
+      for (const l of lapisan) {
+        l.ctx.clearRect(0, 0, l.lebar, l.tinggi)
+        const tengahX = l.lebar / 2
+        const tengahY = l.tinggi / 2 + 40
+        for (const p of l.partikel) {
+          const tp = t - p.tunda
+          if (tp < 0) continue
+          // Goyang sinus + gravitasi: kertas ringan melayang, bukan menembak
+          // lurus seperti percikan.
+          const x = tengahX + p.vx * tp + Math.sin(tp * 6.5 + p.fase) * p.goyang
+          const y = tengahY + p.vy * tp + 470 * tp * tp
+          // Memudar pelan lalu hilang: 2,1-2,6 detik, bukan 1,9 detik yang
+          // membuat perayaan terasa berhenti di tengah.
+          const alfa = Math.max(0, 1 - tp / p.umur)
           if (alfa <= 0) continue
-          ctx.save()
-          ctx.translate(x, y)
-          ctx.rotate(p.putar + p.putaran * t)
-          ctx.globalAlpha = alfa
-          ctx.fillStyle = p.warna
-          ctx.fillRect(-p.lebar / 2, -p.tinggi / 2, p.lebar, p.tinggi)
-          ctx.restore()
+          // Lebar menyusut-membesar seperti kertas yang berputar di udara.
+          const lipat = 0.28 + 0.72 * Math.abs(Math.cos(p.putaran * 1.6 * tp + p.fase))
+          l.ctx.save()
+          l.ctx.translate(x, y)
+          l.ctx.rotate(p.putar + p.putaran * tp)
+          l.ctx.globalAlpha = alfa * l.alfa
+          l.ctx.fillStyle = p.warna
+          l.ctx.fillRect(-(p.lebar * lipat) / 2, -p.tinggi / 2, p.lebar * lipat, p.tinggi)
+          l.ctx.restore()
         }
-        if (t < 1.2) raf = requestAnimationFrame(gambar)
-        else ctx.clearRect(0, 0, lebar, tinggi)
       }
-      raf = requestAnimationFrame(gambar)
+      if (t < 2.9) raf = requestAnimationFrame(gambar)
+      else for (const l of lapisan) l.ctx.clearRect(0, 0, l.lebar, l.tinggi)
     }
 
-    if (konfeti) bubar = window.setTimeout(mulaiKonfeti, 360)
-    const tutup = window.setTimeout(() => selesaiRef.current(), durasi + 1150)
+    /* Kertas mulai sedikit sebelum bendanya mendarat, bukan sesudah: kalau
+       menunggu stempel, ledakannya terasa seperti efek susulan. */
+    if (konfeti) bubar = window.setTimeout(() => { raf = requestAnimationFrame(gambar) }, 240)
+    const tutup = window.setTimeout(() => selesaiRef.current(), durasi + 2900)
     return () => {
       window.clearTimeout(bubar)
       window.clearTimeout(tutup)
@@ -139,7 +190,12 @@ export function Moment({
   return (
     <div className="ds-celebrate" role="status" aria-live="polite">
       <div className="ds-celebrate-scrim" aria-hidden="true" />
-      {konfeti ? <canvas ref={kanvasRef} className="ds-celebrate-confetti" aria-hidden="true" /> : null}
+      {konfeti ? (
+        <>
+          <canvas ref={kertasBelakangRef} className="ds-celebrate-kertas is-belakang" aria-hidden="true" />
+          <canvas ref={kertasDepanRef} className="ds-celebrate-kertas is-depan" aria-hidden="true" />
+        </>
+      ) : null}
       <div className="ds-celebrate-card">
         <div
           className={'ds-celebrate-art' + (latar ? ' is-latar' : '')}
